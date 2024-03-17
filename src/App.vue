@@ -4,6 +4,7 @@ import LandingPage from './components/LandingPage.vue'
 
 <template>
   <LandingPage></LandingPage>
+  Test
 </template>
 
 <style scoped>
