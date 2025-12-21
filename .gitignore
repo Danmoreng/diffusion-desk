@@ -1,24 +1,35 @@
-# Logs
-logs
-*.log
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-pnpm-debug.log*
-lerna-debug.log*
+# Build directories
+build/
+bin/
+out/
 
-node_modules
-dist
-dist-ssr
-*.local
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
 
-# Editor directories and files
-.vscode/*
-!.vscode/extensions.json
-.idea
+# OS files
 .DS_Store
-*.suo
-*.ntvs*
-*.njsproj
-*.sln
-*.sw?
+Thumbs.db
+
+# Dependencies
+node_modules/
+libs/llama.cpp/*
+!libs/llama.cpp/.git
+libs/stable-diffusion.cpp/*
+!libs/stable-diffusion.cpp/.git
+
+# Submodule content (usually ignored by git if added as submodules, 
+# but good to be explicit for nested build dirs)
+**/build/
+**/bin/
+**/dist/
+
+# Logs
+*.log
+*.err
+
+# Generated outputs
+outputs/
+models/

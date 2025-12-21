@@ -1,0 +1,6 @@
+[submodule "libs/stable-diffusion.cpp"]
+	path = libs/stable-diffusion.cpp
+	url = https://github.com/leejet/stable-diffusion.cpp
+[submodule "libs/llama.cpp"]
+	path = libs/llama.cpp
+	url = https://github.com/ggerganov/llama.cpp
