@@ -1,0 +1,32 @@
+:root {
+  font-family: system-ui, Avenir, Helvetica, Arial, sans-serif;
+  line-height: 1.5;
+  font-weight: 400;
+
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+html, body, #app {
+  height: 100%;
+  margin: 0;
+  overflow-x: hidden;
+}
+
+#content-wrapper {
+  display: flex;
+  height: 100%; /* Fill remaining height from #app */
+}
+
+.sidebar {
+  width: 240px;
+  flex-shrink: 0;
+  overflow-y: auto;
+}
+
+.main-content {
+  flex-grow: 1;
+  overflow-y: auto;
+}
