@@ -3,6 +3,7 @@
 #include <mutex>
 #include <condition_variable>
 #include <string>
+#include "utils/common.hpp"
 
 struct ProgressState {
     int step = 0;

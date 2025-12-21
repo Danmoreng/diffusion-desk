@@ -33,7 +33,8 @@ if (!(Test-Path $BuildDir)) {
 cd $BuildDir
 
 # --- WebUI Build ---
-Write-Host "Building WebUI..."
+Write-Host "Skipping WebUI Build (Agent environment)..."
+<#
 $WebRootDir = Join-Path ".." "webui"
 if (Test-Path $WebRootDir) {
     Push-Location $WebRootDir
@@ -56,6 +57,7 @@ if (Test-Path $WebRootDir) {
 } else {
     Write-Host "WebUI directory not found at $WebRootDir, skipping..." -ForegroundColor Yellow
 }
+#>
 
 # Configure (Restored & C++17)
 Write-Host "Configuring CMake..."

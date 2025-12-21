@@ -6,6 +6,9 @@
 #include "server_state.hpp"
 #include <mutex>
 
+#include "server/llama_server.hpp"
+#include "utils/common.hpp"
+
 // Parameters struct for the server instance
 struct SDSvrParams {
     std::string listen_ip = "127.0.0.1";
@@ -30,6 +33,7 @@ struct ServerContext {
     std::mutex& sd_ctx_mutex;
     upscaler_ctx_t*& upscaler_ctx;
     std::string& current_upscale_model_path;
+    LlamaServer& llm_server;
 };
 
 // Endpoint handlers
@@ -46,3 +50,6 @@ void handle_upscale_image(const httplib::Request& req, httplib::Response& res, S
 void handle_get_history(const httplib::Request& req, httplib::Response& res, ServerContext& ctx);
 void handle_generate_image(const httplib::Request& req, httplib::Response& res, ServerContext& ctx);
 void handle_edit_image(const httplib::Request& req, httplib::Response& res, ServerContext& ctx);
+
+// LLM Handlers
+void handle_load_llm_model(const httplib::Request& req, httplib::Response& res, ServerContext& ctx);

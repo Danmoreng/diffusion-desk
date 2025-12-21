@@ -6,7 +6,6 @@
 #include <iomanip>
 #include <fstream>
 
-using json = nlohmann::json;
 namespace fs = std::filesystem;
 
 // SDSvrParams Implementation
@@ -93,7 +92,7 @@ void handle_health(const httplib::Request&, httplib::Response& res) {
 }
 
 void handle_get_config(const httplib::Request&, httplib::Response& res, ServerContext& ctx) {
-    json c;
+    mysti::json c;
     c["output_dir"] = ctx.svr_params.output_dir;
     c["model_dir"] = ctx.svr_params.model_dir;
     res.set_content(c.dump(), "application/json");
@@ -101,17 +100,14 @@ void handle_get_config(const httplib::Request&, httplib::Response& res, ServerCo
 
 void handle_post_config(const httplib::Request& req, httplib::Response& res, ServerContext& ctx) {
     try {
-        json body = json::parse(req.body);
-        bool updated = false;
+        mysti::json body = mysti::json::parse(req.body);
         if (body.contains("output_dir")) {
             ctx.svr_params.output_dir = body["output_dir"];
             LOG_INFO("Config updated: output_dir = %s", ctx.svr_params.output_dir.c_str());
-            updated = true;
         }
         if (body.contains("model_dir")) {
             ctx.svr_params.model_dir = body["model_dir"];
             LOG_INFO("Config updated: model_dir = %s", ctx.svr_params.model_dir.c_str());
-            updated = true;
         }
         res.set_content(R"({\"status\":\"success\"})", "application/json");
     } catch (const std::exception& e) {
@@ -121,7 +117,7 @@ void handle_post_config(const httplib::Request& req, httplib::Response& res, Ser
 }
 
 void handle_get_progress(const httplib::Request&, httplib::Response& res) {
-    json r;
+    mysti::json r;
     {
         std::lock_guard<std::mutex> lock(progress_state.mutex);
         r["step"] = progress_state.step;
@@ -153,7 +149,7 @@ void handle_stream_progress(const httplib::Request&, httplib::Response& res) {
             phase = progress_state.phase;
         }
         
-        json initial_j;
+        mysti::json initial_j;
         initial_j["step"] = step;
         initial_j["steps"] = steps;
         initial_j["time"] = time;
@@ -179,7 +175,7 @@ void handle_stream_progress(const httplib::Request&, httplib::Response& res) {
             last_version = progress_state.version;
             lock.unlock();
 
-            json j;
+            mysti::json j;
             j["step"] = step;
             j["steps"] = steps;
             j["time"] = time;
@@ -215,8 +211,8 @@ void handle_get_outputs(const httplib::Request& req, httplib::Response& res, Ser
 }
 
 void handle_get_models(const httplib::Request&, httplib::Response& res, ServerContext& ctx) {
-    json r;
-    r["data"] = json::array();
+    mysti::json r;
+    r["data"] = mysti::json::array();
     
     std::string current_model_name = fs::path(ctx.ctx_params.diffusion_model_path).filename().string();
     if (current_model_name.empty()) {
@@ -230,7 +226,7 @@ void handle_get_models(const httplib::Request&, httplib::Response& res, ServerCo
                 if (entry.is_regular_file()) {
                     auto ext = entry.path().extension().string();
                     if (ext == ".gguf" || ext == ".safetensors" || ext == ".ckpt" || ext == ".pth") {
-                        json model;
+                        mysti::json model;
                         // Use relative path from model_dir as ID for easy loading
                         std::string rel_path = fs::relative(entry.path(), ctx.svr_params.model_dir).string();
                         std::replace(rel_path.begin(), rel_path.end(), '\\', '/');
@@ -261,7 +257,7 @@ void handle_get_models(const httplib::Request&, httplib::Response& res, ServerCo
                 if (entry.is_regular_file()) {
                     auto ext = entry.path().extension().string();
                     if (ext == ".gguf" || ext == ".safetensors" || ext == ".ckpt") {
-                        json model;
+                        mysti::json model;
                         model["id"] = entry.path().filename().string();
                         model["name"] = entry.path().filename().string();
                         model["type"] = "root";
@@ -282,7 +278,7 @@ void handle_get_models(const httplib::Request&, httplib::Response& res, ServerCo
 
 void handle_load_model(const httplib::Request& req, httplib::Response& res, ServerContext& ctx) {
     try {
-        json body = json::parse(req.body);
+        mysti::json body = mysti::json::parse(req.body);
         if (!body.contains("model_id")) {
             res.status = 400;
             res.set_content(R"({\"error\":\"model_id (relative path) required\"})", "application/json");
@@ -354,7 +350,7 @@ void handle_load_model(const httplib::Request& req, httplib::Response& res, Serv
 
 void handle_load_upscale_model(const httplib::Request& req, httplib::Response& res, ServerContext& ctx) {
     try {
-        json body = json::parse(req.body);
+        mysti::json body = mysti::json::parse(req.body);
         if (!body.contains("model_id")) {
             res.status = 400;
             res.set_content(R"({\"error\":\"model_id required\"})", "application/json");
@@ -400,7 +396,7 @@ void handle_load_upscale_model(const httplib::Request& req, httplib::Response& r
 
 void handle_upscale_image(const httplib::Request& req, httplib::Response& res, ServerContext& ctx) {
     try {
-        json body = json::parse(req.body);
+        mysti::json body = mysti::json::parse(req.body);
         std::string image_data;
         std::string image_name;
 
@@ -432,15 +428,15 @@ void handle_upscale_image(const httplib::Request& req, httplib::Response& res, S
         
         if (!image_name.empty()) {
             int w, h;
-            input_image.data = load_image_from_memory(image_data.data(), image_data.size(), w, h, 0, 0, 3);
-            input_image.width = w;
-            input_image.height = h;
+            input_image.data = load_image_from_memory(image_data.data(), (int)image_data.size(), w, h, 0, 0, 3);
+            input_image.width = (uint32_t)w;
+            input_image.height = (uint32_t)h;
         } else {
             decoded_bytes = base64_decode(image_data);
             int w, h;
-            input_image.data = load_image_from_memory((const char*)decoded_bytes.data(), decoded_bytes.size(), w, h, 0, 0, 3);
-            input_image.width = w;
-            input_image.height = h;
+            input_image.data = load_image_from_memory((const char*)decoded_bytes.data(), (int)decoded_bytes.size(), w, h, 0, 0, 3);
+            input_image.width = (uint32_t)w;
+            input_image.height = (uint32_t)h;
         }
 
         if (!input_image.data) {
@@ -477,9 +473,9 @@ void handle_upscale_image(const httplib::Request& req, httplib::Response& res, S
 
         auto image_bytes = write_image_to_vector(ImageFormat::PNG,
                                                     upscaled_image.data,
-                                                    upscaled_image.width,
-                                                    upscaled_image.height,
-                                                    upscaled_image.channel);
+                                                    (int)upscaled_image.width,
+                                                    (int)upscaled_image.height,
+                                                    (int)upscaled_image.channel);
         
         free(upscaled_image.data);
 
@@ -490,7 +486,7 @@ void handle_upscale_image(const httplib::Request& req, httplib::Response& res, S
         }
 
         std::string b64 = base64_encode(image_bytes);
-        json out;
+        mysti::json out;
         out["width"] = upscaled_image.width;
         out["height"] = upscaled_image.height;
         out["b64_json"] = b64;
@@ -517,7 +513,7 @@ void handle_upscale_image(const httplib::Request& req, httplib::Response& res, S
 
 void handle_get_history(const httplib::Request&, httplib::Response& res, ServerContext& ctx) {
     const std::string output_dir = ctx.svr_params.output_dir;
-    json image_list = json::array();
+    mysti::json image_list = mysti::json::array();
     try {
         if (fs::exists(output_dir) && fs::is_directory(output_dir)) {
             std::vector<fs::path> image_paths;
@@ -534,7 +530,7 @@ void handle_get_history(const httplib::Request&, httplib::Response& res, ServerC
             });
 
             for(const auto& img_path : image_paths) {
-                json item;
+                mysti::json item;
                 item["name"] = img_path.filename().string();
                 
                 auto txt_path = img_path;
@@ -554,7 +550,7 @@ void handle_get_history(const httplib::Request&, httplib::Response& res, ServerC
                     if (fs::exists(json_path)) {
                         try {
                             std::ifstream json_file(json_path);
-                            item["params"] = json::parse(json_file);
+                            item["params"] = mysti::json::parse(json_file);
                         } catch (...) {
                             LOG_WARN("failed to parse json metadata: %s", json_path.string().c_str());
                         }
@@ -581,9 +577,9 @@ void handle_generate_image(const httplib::Request& req, httplib::Response& res, 
             return;
         }
 
-        json j                    = json::parse(req.body);
+        mysti::json j             = mysti::json::parse(req.body);
         std::string prompt        = j.value("prompt", "");
-        int n                     = std::max(1, j.value("n", 1));
+        int n                     = std::max(1, (int)j.value("n", 1));
         std::string size          = j.value("size", "");
         std::string output_format = j.value("output_format", "png");
         int output_compression    = j.value("output_compression", 100);
@@ -622,9 +618,9 @@ void handle_generate_image(const httplib::Request& req, httplib::Response& res, 
             output_compression = 0;
         }
 
-        json out;
+        mysti::json out;
         out["created"]       = iso_timestamp_now();
-        out["data"]          = json::array();
+        out["data"]          = mysti::json::array();
         out["output_format"] = output_format;
 
         SDGenerationParams gen_params = ctx.default_gen_params;
@@ -662,7 +658,7 @@ void handle_generate_image(const httplib::Request& req, httplib::Response& res, 
                 int img_h = gen_params.height;
                 init_image.data = load_image_from_memory(
                     reinterpret_cast<const char*>(init_bytes.data()),
-                    init_bytes.size(),
+                    (int)init_bytes.size(),
                     img_w, img_h,
                     gen_params.width, gen_params.height, 3);
                 init_image.width = (uint32_t)img_w;
@@ -769,9 +765,9 @@ void handle_generate_image(const httplib::Request& req, httplib::Response& res, 
                         upscaled_img.height = (uint32_t)(base_img.height * gen_params.hires_upscale_factor);
                         upscaled_img.channel = base_img.channel;
                         upscaled_img.data = (uint8_t*)malloc(upscaled_img.width * upscaled_img.height * upscaled_img.channel);
-                        stbir_resize_uint8(base_img.data, base_img.width, base_img.height, 0,
-                                            upscaled_img.data, upscaled_img.width, upscaled_img.height, 0,
-                                            upscaled_img.channel);
+                        stbir_resize_uint8(base_img.data, (int)base_img.width, (int)base_img.height, 0,
+                                            upscaled_img.data, (int)upscaled_img.width, (int)upscaled_img.height, 0,
+                                            (int)upscaled_img.channel);
                     }
 
                     set_progress_phase("Highres-fix Pass...");
@@ -783,17 +779,17 @@ void handle_generate_image(const httplib::Request& req, httplib::Response& res, 
                         LOG_INFO("Resizing upscaled image to target size: %dx%d", target_width, target_height);
                         sd_image_t resized_img = { target_width, target_height, upscaled_img.channel, nullptr };
                         resized_img.data = (uint8_t*)malloc(target_width * target_height * resized_img.channel);
-                        stbir_resize_uint8(upscaled_img.data, upscaled_img.width, upscaled_img.height, 0,
-                                            resized_img.data, target_width, target_height, 0,
-                                            resized_img.channel);
+                        stbir_resize_uint8(upscaled_img.data, (int)upscaled_img.width, (int)upscaled_img.height, 0,
+                                            resized_img.data, (int)target_width, (int)target_height, 0,
+                                            (int)resized_img.channel);
                         free(upscaled_img.data);
                         upscaled_img = resized_img;
                     }
 
                     sd_img_gen_params_t hires_params = img_gen_params;
                     hires_params.init_image = upscaled_img;
-                    hires_params.width = upscaled_img.width;
-                    hires_params.height = upscaled_img.height;
+                    hires_params.width = (int)upscaled_img.width;
+                    hires_params.height = (int)upscaled_img.height;
                     hires_params.strength = gen_params.hires_denoising_strength;
                     hires_params.sample_params.sample_steps = gen_params.hires_steps;
                     hires_params.batch_count = 1;
@@ -802,9 +798,9 @@ void handle_generate_image(const httplib::Request& req, httplib::Response& res, 
                     hires_params.mask_image.height = target_height;
                     hires_params.mask_image.data = (uint8_t*)malloc(target_width * target_height * hires_params.mask_image.channel);
                     if (img_gen_params.mask_image.data) {
-                        stbir_resize_uint8(img_gen_params.mask_image.data, img_gen_params.mask_image.width, img_gen_params.mask_image.height, 0,
-                                            hires_params.mask_image.data, target_width, target_height, 0,
-                                            hires_params.mask_image.channel);
+                        stbir_resize_uint8(img_gen_params.mask_image.data, (int)img_gen_params.mask_image.width, (int)img_gen_params.mask_image.height, 0,
+                                            hires_params.mask_image.data, (int)target_width, (int)target_height, 0,
+                                            (int)hires_params.mask_image.channel);
                     } else {
                         memset(hires_params.mask_image.data, 255, target_width * target_height * hires_params.mask_image.channel);
                     }
@@ -813,9 +809,9 @@ void handle_generate_image(const httplib::Request& req, httplib::Response& res, 
                     hires_params.control_image.height = target_height;
                     hires_params.control_image.data = (uint8_t*)calloc(1, target_width * target_height * hires_params.control_image.channel);
                     if (img_gen_params.control_image.data) {
-                        stbir_resize_uint8(img_gen_params.control_image.data, img_gen_params.control_image.width, img_gen_params.control_image.height, 0,
-                                            hires_params.control_image.data, target_width, target_height, 0,
-                                            hires_params.control_image.channel);
+                        stbir_resize_uint8(img_gen_params.control_image.data, (int)img_gen_params.control_image.width, (int)img_gen_params.control_image.height, 0,
+                                            hires_params.control_image.data, (int)target_width, (int)target_height, 0,
+                                            (int)hires_params.control_image.channel);
                     }
 
                     sd_image_t* second_pass_result = generate_image(ctx.sd_ctx, &hires_params);
@@ -847,9 +843,9 @@ void handle_generate_image(const httplib::Request& req, httplib::Response& res, 
             }
             auto image_bytes = write_image_to_vector(output_format == "jpeg" ? ImageFormat::JPEG : ImageFormat::PNG,
                                                         results[i].data,
-                                                        results[i].width,
-                                                        results[i].height,
-                                                        results[i].channel,
+                                                        (int)results[i].width,
+                                                        (int)results[i].height,
+                                                        (int)results[i].channel,
                                                         output_compression);
             if (image_bytes.empty()) {
                 LOG_ERROR("write image to mem failed");
@@ -883,7 +879,7 @@ void handle_generate_image(const httplib::Request& req, httplib::Response& res, 
             }
 
             std::string b64 = base64_encode(image_bytes);
-            json item;
+            mysti::json item;
             item["b64_json"] = b64;
             item["seed"] = gen_params.seed;
             out["data"].push_back(item);
@@ -904,7 +900,7 @@ void handle_generate_image(const httplib::Request& req, httplib::Response& res, 
 
     } catch (const std::exception& e) {
         res.status = 500;
-        json err;
+        mysti::json err;
         err["error"]   = "server_error";
         err["message"] = e.what();
         res.set_content(err.dump(), "application/json");
@@ -1026,7 +1022,7 @@ void handle_edit_image(const httplib::Request& req, httplib::Response& res, Serv
             int img_h           = height;
             uint8_t* raw_pixels = load_image_from_memory(
                 reinterpret_cast<const char*>(bytes.data()),
-                bytes.size(),
+                (int)bytes.size(),
                 img_w, img_h,
                 width, height, 3);
 
@@ -1044,13 +1040,13 @@ void handle_edit_image(const httplib::Request& req, httplib::Response& res, Serv
             int mask_h        = height;
             uint8_t* mask_raw = load_image_from_memory(
                 reinterpret_cast<const char*>(mask_bytes.data()),
-                mask_bytes.size(),
+                (int)mask_bytes.size(),
                 mask_w, mask_h,
                 width, height, 1);
             mask_image = {(uint32_t)mask_w, (uint32_t)mask_h, 1, mask_raw};
         } else {
-            mask_image.width   = width;
-            mask_image.height  = height;
+            mask_image.width   = (uint32_t)width;
+            mask_image.height  = (uint32_t)height;
             mask_image.channel = 1;
             mask_image.data    = nullptr;
         }
@@ -1101,9 +1097,9 @@ void handle_edit_image(const httplib::Request& req, httplib::Response& res, Serv
         }
 
         set_progress_phase("VAE Decoding...");
-        json out;
+        mysti::json out;
         out["created"]       = iso_timestamp_now();
-        out["data"]          = json::array();
+        out["data"]          = mysti::json::array();
         out["output_format"] = output_format;
 
         for (int i = 0; i < num_results; i++) {
@@ -1111,12 +1107,12 @@ void handle_edit_image(const httplib::Request& req, httplib::Response& res, Serv
                 continue;
             auto image_bytes = write_image_to_vector(output_format == "jpeg" ? ImageFormat::JPEG : ImageFormat::PNG,
                                                         results[i].data,
-                                                        results[i].width,
-                                                        results[i].height,
-                                                        results[i].channel,
+                                                        (int)results[i].width,
+                                                        (int)results[i].height,
+                                                        (int)results[i].channel,
                                                         output_compression);
             std::string b64 = base64_encode(image_bytes);
-            json item;
+            mysti::json item;
             item["b64_json"] = b64;
             item["seed"] = gen_params.seed;
             out["data"].push_back(item);
@@ -1136,9 +1132,41 @@ void handle_edit_image(const httplib::Request& req, httplib::Response& res, Serv
         }
     } catch (const std::exception& e) {
         res.status = 500;
-        json err;
+        mysti::json err;
         err["error"]   = "server_error";
         err["message"] = e.what();
         res.set_content(err.dump(), "application/json");
+    }
+}
+
+void handle_load_llm_model(const httplib::Request& req, httplib::Response& res, ServerContext& ctx) {
+    try {
+        mysti::json body = mysti::json::parse(req.body);
+        if (!body.contains("model_id")) {
+            res.status = 400;
+            res.set_content(R"({\"error\":\"model_id required\"})", "application/json");
+            return;
+        }
+        std::string model_id = body["model_id"];
+        fs::path model_path = fs::path(ctx.svr_params.model_dir) / model_id;
+        
+        if (!fs::exists(model_path)) {
+            res.status = 404;
+            res.set_content(R"({\"error\":\"LLM model file not found\"})", "application/json");
+            return;
+        }
+
+        LOG_INFO("Loading LLM model: %s", model_path.string().c_str());
+
+        if (ctx.llm_server.load_model(model_path.string())) {
+            res.set_content(R"({\"status\":\"success\",\"model\":\")" + model_id + R"("})", "application/json");
+        } else {
+            res.status = 500;
+            res.set_content(R"({\"error\":\"failed to load LLM model\"})", "application/json");
+        }
+    } catch (const std::exception& e) {
+        LOG_ERROR("error loading LLM model: %s", e.what());
+        res.status = 500;
+        res.set_content(R"({\"error\":\")" + std::string(e.what()) + R"("})", "application/json");
     }
 }
