@@ -65,7 +65,9 @@ export const useGenerationStore = defineStore('generation', () => {
   // Model Management State
   const models = ref<any[]>([])
   const currentModel = ref<string>('')
+  const currentLlmModel = ref<string>('')
   const isModelsLoading = ref(false)
+  const isLlmLoading = ref(false)
 
   async function fetchConfig() {
     try {
@@ -237,6 +239,42 @@ export const useGenerationStore = defineStore('generation', () => {
       error.value = e.message
     } finally {
       isModelSwitching.value = false
+    }
+  }
+
+  async function loadLlmModel(modelId: string) {
+    isLlmLoading.value = true
+    try {
+      const response = await fetch('/v1/llm/load', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model_id: modelId })
+      })
+      if (!response.ok) throw new Error('Failed to load LLM model')
+      currentLlmModel.value = modelId
+    } catch (e: any) {
+      error.value = e.message
+    } finally {
+      isLlmLoading.value = false
+    }
+  }
+
+  async function testLlmCompletion(promptText: string) {
+    try {
+      const response = await fetch('/v1/chat/completions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          messages: [{ role: 'user', content: promptText }],
+          stream: false
+        })
+      })
+      if (!response.ok) throw new Error('LLM request failed')
+      const data = await response.json()
+      return data.choices[0].message.content
+    } catch (e: any) {
+      error.value = e.message
+      return null
     }
   }
 
@@ -535,5 +573,17 @@ export const useGenerationStore = defineStore('generation', () => {
     }
   }
 
-  return { isGenerating, isUpscaling, isModelSwitching, imageUrls, error, generateImage, requestImage, upscaleImage, parseA1111Parameters, prompt, negativePrompt, steps, seed, cfgScale, strength, batchCount, sampler, samplers, width, height, hiresFix, hiresUpscaleModel, hiresUpscaleFactor, hiresDenoisingStrength, hiresSteps, isSidebarCollapsed, toggleSidebar, theme, toggleTheme, saveImages, initImage, models, currentModel, upscaleModel, upscaleFactor, isModelsLoading, fetchModels, loadModel, loadUpscaleModel, progressStep, progressSteps, progressTime, progressPhase, eta, startStreamingProgress, stopStreamingProgress, lastParams, outputDir, modelDir, updateConfig, reuseLastSeed, randomizeSeed, swapDimensions }
+  return { 
+    isGenerating, isUpscaling, isModelSwitching, isLlmLoading,
+    imageUrls, error, 
+    generateImage, requestImage, upscaleImage, parseA1111Parameters, 
+    prompt, negativePrompt, steps, seed, cfgScale, strength, batchCount, sampler, samplers, width, height, 
+    hiresFix, hiresUpscaleModel, hiresUpscaleFactor, hiresDenoisingStrength, hiresSteps, 
+    isSidebarCollapsed, toggleSidebar, theme, toggleTheme, saveImages, initImage, 
+    models, currentModel, currentLlmModel, upscaleModel, upscaleFactor, 
+    isModelsLoading, fetchModels, loadModel, loadLlmModel, loadUpscaleModel, testLlmCompletion,
+    progressStep, progressSteps, progressTime, progressPhase, eta, 
+    startStreamingProgress, stopStreamingProgress, lastParams, outputDir, modelDir, 
+    updateConfig, reuseLastSeed, randomizeSeed, swapDimensions 
+  }
 })

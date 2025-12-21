@@ -99,6 +99,7 @@ int main(int argc, const char** argv) {
     }
 
     std::mutex sd_ctx_mutex;
+    LlamaServer llm_server;
 
     ServerContext ctx = {
         svr_params,
@@ -107,10 +108,13 @@ int main(int argc, const char** argv) {
         sd_ctx,
         sd_ctx_mutex,
         upscaler_ctx,
-        current_upscale_model_path
+        current_upscale_model_path,
+        llm_server
     };
 
     httplib::Server svr;
+
+    llm_server.init_server(svr);
 
     svr.Get(R"(/outputs/(.*))", [&](const httplib::Request& req, httplib::Response& res) {
         handle_get_outputs(req, res, ctx);
@@ -143,6 +147,9 @@ int main(int argc, const char** argv) {
     svr.Get("/v1/history/images", [&](const httplib::Request& req, httplib::Response& res) { handle_get_history(req, res, ctx); });
     svr.Post("/v1/images/generations", [&](const httplib::Request& req, httplib::Response& res) { handle_generate_image(req, res, ctx); });
     svr.Post("/v1/images/edits", [&](const httplib::Request& req, httplib::Response& res) { handle_edit_image(req, res, ctx); });
+
+    // LLM Endpoints
+    svr.Post("/v1/llm/load", [&](const httplib::Request& req, httplib::Response& res) { handle_load_llm_model(req, res, ctx); });
 
     LOG_INFO("listening on: %s:%d\n", svr_params.listen_ip.c_str(), svr_params.listen_port);
     svr.listen(svr_params.listen_ip, svr_params.listen_port);

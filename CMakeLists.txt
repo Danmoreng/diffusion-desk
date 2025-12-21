@@ -11,7 +11,10 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 # Llama.cpp options (MUST come first to define ggml for others)
 set(LLAMA_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 set(LLAMA_BUILD_TESTS OFF CACHE BOOL "" FORCE)
-set(LLAMA_BUILD_SERVER OFF CACHE BOOL "" FORCE)
+set(LLAMA_BUILD_SERVER ON CACHE BOOL "" FORCE)
+set(LLAMA_BUILD_TOOLS ON CACHE BOOL "" FORCE)
+set(LLAMA_BUILD_COMMON ON CACHE BOOL "" FORCE)
+set(LLAMA_CURL OFF CACHE BOOL "" FORCE)
 
 # Stable Diffusion.cpp options
 set(SD_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
@@ -24,7 +27,12 @@ add_subdirectory(libs/llama.cpp)
 add_subdirectory(libs/stable-diffusion.cpp)
 
 if(MSVC)
-    target_compile_options(stable-diffusion PRIVATE /bigobj)
+    if(TARGET stable-diffusion)
+        target_compile_options(stable-diffusion PRIVATE /bigobj)
+    endif()
+    if(TARGET server-context)
+        target_compile_options(server-context PRIVATE /bigobj)
+    endif()
 endif()
 
 # --- Main Server ---
@@ -36,6 +44,7 @@ set(SOURCE_FILES
     src/sd/api_utils.cpp
     src/sd/server_state.cpp
     src/sd/model_loader.cpp
+    src/server/llama_server.cpp
 )
 
 add_executable(mysti_server ${SOURCE_FILES})
@@ -49,14 +58,25 @@ target_include_directories(mysti_server PRIVATE
     libs/llama.cpp/include
     libs/llama.cpp/common
     libs/llama.cpp/ggml/include
+    libs/llama.cpp/tools/server
+    libs/llama.cpp/tools/mtmd
+    libs/llama.cpp/vendor/cpp-httplib
+    libs/llama.cpp/vendor/nlohmann
     libs/stable-diffusion.cpp
+    ${CMAKE_BINARY_DIR}/libs/llama.cpp/tools/server
 )
 
 # Link libraries
 target_link_libraries(mysti_server PRIVATE
     stable-diffusion
     llama
+    server-context
+    common
 )
+
+if(WIN32)
+    target_link_libraries(mysti_server PRIVATE ws2_32)
+endif()
 
 # Copy WebUI assets to build directory (Optional, for convenience)
 add_custom_command(TARGET mysti_server POST_BUILD

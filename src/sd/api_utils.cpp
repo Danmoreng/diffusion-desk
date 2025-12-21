@@ -40,7 +40,7 @@ bool is_base64(unsigned char c) {
 }
 
 std::vector<uint8_t> base64_decode(const std::string& encoded_string) {
-    int in_len = encoded_string.size();
+    int in_len = (int)encoded_string.size();
     int i      = 0;
     int j      = 0;
     int in_    = 0;
@@ -52,7 +52,7 @@ std::vector<uint8_t> base64_decode(const std::string& encoded_string) {
         in_++;
         if (i == 4) {
             for (i = 0; i < 4; i++)
-                char_array_4[i] = base64_chars.find(char_array_4[i]);
+                char_array_4[i] = (unsigned char)base64_chars.find(char_array_4[i]);
 
             char_array_3[0] = (char_array_4[0] << 2) + ((char_array_4[1] & 0x30) >> 4);
             char_array_3[1] = ((char_array_4[1] & 0xf) << 4) + ((char_array_4[2] & 0x3c) >> 2);
@@ -69,7 +69,7 @@ std::vector<uint8_t> base64_decode(const std::string& encoded_string) {
             char_array_4[j] = 0;
 
         for (j = 0; j < 4; j++)
-            char_array_4[j] = base64_chars.find(char_array_4[j]);
+            char_array_4[j] = (unsigned char)base64_chars.find(char_array_4[j]);
 
         char_array_3[0] = (char_array_4[0] << 2) + ((char_array_4[1] & 0x30) >> 4);
         char_array_3[1] = ((char_array_4[1] & 0xf) << 4) + ((char_array_4[2] & 0x3c) >> 2);
@@ -82,15 +82,15 @@ std::vector<uint8_t> base64_decode(const std::string& encoded_string) {
     return ret;
 }
 
-json parse_image_params(const std::string& txt) {
+mysti::json parse_image_params(const std::string& txt) {
     // Placeholder: Try to parse JSON from text comment if available
     // For now, return empty object
-    return json::object();
+    return mysti::json::object();
 }
 
 std::string get_image_params(const SDContextParams& ctx_params, const SDGenerationParams& gen_params, int64_t seed) {
     // Construct a JSON string or similar metadata string
-    json j;
+    mysti::json j;
     j["prompt"] = gen_params.prompt;
     j["seed"] = seed;
     j["steps"] = gen_params.sample_params.sample_steps;

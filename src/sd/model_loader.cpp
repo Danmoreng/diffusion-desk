@@ -3,7 +3,7 @@
 #include <fstream>
 #include <json.hpp>
 
-using json = nlohmann::json;
+using json = mysti::json;
 namespace fs = std::filesystem;
 
 void load_model_config(SDContextParams& ctx_params, const std::string& model_path_str, const std::string& model_dir) {

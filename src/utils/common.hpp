@@ -12,7 +12,9 @@
 #include <cmath>
 
 #include <json.hpp>
-using json   = nlohmann::json;
+namespace mysti {
+    using json = nlohmann::json;
+}
 namespace fs = std::filesystem;
 
 #if defined(_WIN32)
@@ -1135,9 +1137,9 @@ struct SDGenerationParams {
     }
 
     bool from_json_str(const std::string& json_str) {
-        json j;
+        mysti::json j;
         try {
-            j = json::parse(json_str);
+            j = mysti::json::parse(json_str);
         } catch (...) {
             LOG_ERROR("json parse failed %s", json_str.c_str());
             return false;

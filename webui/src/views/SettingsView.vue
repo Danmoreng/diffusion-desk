@@ -1,6 +1,16 @@
 <script setup lang="ts">
+import { ref } from 'vue'
 import { useGenerationStore } from '@/stores/generation'
 const store = useGenerationStore()
+
+const testPrompt = ref('Hello, what can you do?')
+const testResult = ref('')
+
+async function runTest() {
+  testResult.value = 'Thinking...'
+  const result = await store.testLlmCompletion(testPrompt.value)
+  testResult.value = result || 'Error: check console or server logs.'
+}
 </script>
 
 <template>
@@ -46,6 +56,43 @@ const store = useGenerationStore()
                         </button>
                       </div>
           <div class="form-text x-small">Root directory to scan for models.</div>
+        </div>
+      </div>
+    </div>
+
+    <hr class="my-4" />
+
+    <div class="row g-4">
+      <div class="col-md-6">
+        <h5>LLM Settings (Llama.cpp)</h5>
+        <div class="mb-3">
+          <label class="form-label small fw-bold text-muted">Active LLM Model</label>
+          <div class="input-group input-group-sm">
+            <select class="form-select" v-model="store.currentLlmModel" :disabled="store.isLlmLoading">
+              <option value="">None</option>
+              <option v-for="m in store.models.filter(m => m.id.includes('text-encoder') || m.id.includes('llm'))" :key="m.id" :value="m.id">
+                {{ m.name }}
+              </option>
+            </select>
+            <button class="btn btn-outline-primary" type="button" @click="store.loadLlmModel(store.currentLlmModel)" :disabled="store.isLlmLoading || !store.currentLlmModel">
+              <span v-if="store.isLlmLoading" class="spinner-border spinner-border-sm me-1"></span>
+              Load LLM
+            </button>
+          </div>
+          <div class="form-text x-small">Select a GGUF model from the text-encoder directory to enable rewriting.</div>
+        </div>
+      </div>
+
+      <div class="col-md-6">
+        <h5>Test LLM Completion</h5>
+        <div class="input-group input-group-sm mb-2">
+          <input type="text" class="form-control" v-model="testPrompt" placeholder="Enter a test prompt...">
+          <button class="btn btn-success" type="button" @click="runTest" :disabled="!store.currentLlmModel || store.isLlmLoading">
+            Send Request
+          </button>
+        </div>
+        <div v-if="testResult" class="p-2 border rounded bg-light small" style="white-space: pre-wrap;">
+          <strong>Response:</strong><br/>{{ testResult }}
         </div>
       </div>
     </div>
