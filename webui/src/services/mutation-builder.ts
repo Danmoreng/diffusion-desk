@@ -15,6 +15,7 @@ export type LockedParams = {
   guidance: boolean;
   scheduler: boolean;
   seed: boolean;
+  prompt: boolean;
 };
 
 export type MutationResult = {
@@ -27,11 +28,47 @@ export type MutationResult = {
 export class MutationBuilder {
   private samplers = ['euler', 'euler_a', 'heun', 'dpm2', 'dpmpp_2s_a', 'dpmpp_2m', 'dpmpp_2mv2', 'ipndm', 'ipndm_v', 'lcm', 'ddim_trailing', 'tcd'];
 
-  async generateVariations(centerParams: GenParams, locks: LockedParams): Promise<MutationResult[]> {
+  private async fetchPromptVariation(originalPrompt: string): Promise<string> {
+    try {
+      const response = await fetch('/v1/chat/completions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          messages: [
+            {
+              role: "system", 
+              content: "You are a creative assistant. Rewrite the user's prompt to create a single, subtle variation. Maintain the core subject and style but change one or two adjectives or details. Keep it concise. Do not add any conversational text or prefixes. Return ONLY the new prompt text."
+            },
+            { role: "user", content: originalPrompt }
+          ],
+          stream: false,
+          temperature: 0.9, // Higher temperature for diversity across parallel calls
+          max_tokens: 300
+        })
+      });
+
+      if (!response.ok) throw new Error('LLM request failed');
+      const data = await response.json();
+      const content = data.choices?.[0]?.message?.content;
+      return content ? content.trim().replace(/^["']|["']$/g, '') : originalPrompt;
+    } catch (e) {
+      console.warn('Failed to fetch prompt variation:', e);
+      return originalPrompt;
+    }
+  }
+
+  async generateVariations(centerParamsInput: GenParams, locks: LockedParams): Promise<MutationResult[]> {
+    // Ensure all numeric params are actually numbers to prevent string concatenation bugs
+    const centerParams: GenParams = {
+      ...centerParamsInput,
+      steps: Number(centerParamsInput.steps),
+      guidanceScale: Number(centerParamsInput.guidanceScale),
+      width: Number(centerParamsInput.width),
+      height: Number(centerParamsInput.height),
+      seed: Number(centerParamsInput.seed),
+    };
+
     const slots: MutationResult[] = [];
-    const unlockedFields = Object.entries(locks)
-      .filter(([_, locked]) => !locked)
-      .map(([field]) => field);
 
     // Rule 1: If Seed is unlocked, always reserve exactly 1 slot for 'Random Seed'.
     if (!locks.seed) {
@@ -41,7 +78,17 @@ export class MutationBuilder {
       });
     }
 
-    // Rule 2: (Removed Prompt Rewriting)
+    // Pre-fetch prompt variations if unlocked
+    // We launch multiple parallel requests to get diverse variations
+    let promptVariants: string[] = [];
+    if (!locks.prompt) {
+      // Request 8 variations in parallel
+      const promises = Array.from({ length: 8 }, () => this.fetchPromptVariation(centerParams.prompt));
+      const results = await Promise.all(promises);
+      
+      // Filter out failures (which return original prompt) and duplicates
+      promptVariants = [...new Set(results)].filter(p => p !== centerParams.prompt && p.length > 0);
+    }
 
     // Rule 3: Fill remaining slots
     const maxAttempts = 50;
@@ -51,6 +98,19 @@ export class MutationBuilder {
       attempts++;
       
       const candidates: (() => MutationResult | null)[] = [];
+
+      // Prompt Variations
+      if (!locks.prompt && promptVariants.length > 0) {
+        candidates.push(() => {
+          // Pick a random variant from our pool
+          const variant = promptVariants[Math.floor(Math.random() * promptVariants.length)];
+          if (variant === centerParams.prompt) return null;
+          return {
+            params: { ...centerParams, prompt: variant },
+            label: 'Prompt Var'
+          };
+        });
+      }
 
       if (!locks.steps) {
         // Try ±1, ±2, ±3 etc based on slots already filled
@@ -115,17 +175,28 @@ export class MutationBuilder {
           }
         }
       } else {
-        // If nothing is unlocked, we just have to break or fill with duplicates (though seed is usually unlocked)
+        // If nothing is unlocked or no candidates generated
         break;
       }
     }
 
-    // Final fill with random seeds if still not at 8
+    // Final fill
     while (slots.length < 8) {
-       slots.push({
-          params: { ...centerParams, seed: Math.floor(Math.random() * 2147483647) },
-          label: 'Random Seed'
-        });
+       if (!locks.seed) {
+         slots.push({
+            params: { ...centerParams, seed: Math.floor(Math.random() * 2147483647) },
+            label: 'Random Seed'
+          });
+       } else {
+         // Fallback if everything else is locked or exhausted: duplicate center
+         // If we still have unused prompt variants, we could try to force them here,
+         // but the loop above should have picked them.
+         // If we are here, it means we failed to find 8 distinct valid mutations.
+         slots.push({
+            params: { ...centerParams },
+            label: 'No Change'
+         });
+       }
     }
 
     return slots.slice(0, 8);

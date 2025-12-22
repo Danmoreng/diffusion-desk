@@ -46,6 +46,18 @@ void parse_args(int argc, const char** argv, SDSvrParams& svr_params, SDContextP
 
     if (has_model) {
         std::string active_path = ctx_params.diffusion_model_path.empty() ? ctx_params.model_path : ctx_params.diffusion_model_path;
+        
+        // Resolve simple filenames against model_dir if needed
+        fs::path p(active_path);
+        if (!p.is_absolute() && !fs::exists(p)) {
+            fs::path candidate = fs::path(svr_params.model_dir) / p;
+            if (fs::exists(candidate)) {
+                active_path = candidate.string();
+                if (ctx_params.diffusion_model_path.empty()) ctx_params.model_path = active_path;
+                else ctx_params.diffusion_model_path = active_path;
+            }
+        }
+        
         load_model_config(ctx_params, active_path, svr_params.model_dir);
     }
 

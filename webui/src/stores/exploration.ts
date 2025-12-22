@@ -23,6 +23,7 @@ export const useExplorationStore = defineStore('exploration', () => {
     guidance: true,
     scheduler: true,
     seed: false,
+    prompt: true,
   });
 
   const neighborCells = ref<MutationResult[]>([]);
