@@ -1,49 +1,81 @@
 #include "api_utils.hpp"
-#include <chrono>
+#include <ctime>
 #include <iomanip>
 #include <sstream>
-#include <iostream>
+#include <vector>
+#include <regex>
+#include <cctype> // For isalnum
+#include "sd/api_endpoints.hpp" // For SDSvrParams definition
 
+#include "stb_image_write.h"
+
+// Time utilities
 std::string iso_timestamp_now() {
     auto now = std::chrono::system_clock::now();
-    auto in_time_t = std::chrono::system_clock::to_time_t(now);
+    std::time_t now_c = std::chrono::system_clock::to_time_t(now);
+    std::tm now_tm;
+    #ifdef _WIN32
+        localtime_s(&now_tm, &now_c);
+    #else
+        localtime_r(&now_c, &now_tm);
+    #endif
     std::stringstream ss;
-    ss << std::put_time(std::localtime(&in_time_t), "%Y-%m-%dT%H:%M:%S");
+    ss << std::put_time(&now_tm, "%Y-%m-%dT%H:%M:%S");
     return ss.str();
 }
 
-static const std::string base64_chars =
-    "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
-    "abcdefghijklmnopqrstuvwxyz"
-    "0123456789+/";
-
-std::string base64_encode(const std::vector<uint8_t>& bytes) {
-    std::string ret;
-    int val = 0, valb = -6;
-    for (uint8_t c : bytes) {
-        val = (val << 8) + c;
-        valb += 8;
-        while (valb >= 0) {
-            ret.push_back(base64_chars[(val >> valb) & 0x3F]);
-            valb -= 6;
-        }
-    }
-    if (valb > -6)
-        ret.push_back(base64_chars[((val << 8) >> (valb + 8)) & 0x3F]);
-    while (ret.size() % 4)
-        ret.push_back('=');
-    return ret;
-}
+// Base64 utilities
+static const std::string base64_chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 
 bool is_base64(unsigned char c) {
     return (isalnum(c) || (c == '+') || (c == '/'));
 }
 
+std::string base64_encode(const std::vector<uint8_t>& bytes) {
+    std::string ret;
+    int i = 0;
+    int j = 0;
+    unsigned char char_array_3[3];
+    unsigned char char_array_4[4];
+
+    for (uint8_t byte : bytes) {
+        char_array_3[i++] = byte;
+        if (i == 3) {
+            char_array_4[0] = (char_array_3[0] & 0xfc) >> 2;
+            char_array_4[1] = ((char_array_3[0] & 0x03) << 4) + ((char_array_3[1] & 0xf0) >> 4);
+            char_array_4[2] = ((char_array_3[1] & 0x0f) << 2) + ((char_array_3[2] & 0xc0) >> 6);
+            char_array_4[3] = char_array_3[2] & 0x3f;
+
+            for (i = 0; i < 4; i++)
+                ret += base64_chars[char_array_4[i]];
+            i = 0;
+        }
+    }
+
+    if (i) {
+        for (j = i; j < 3; j++)
+            char_array_3[j] = '\0';
+
+        char_array_4[0] = (char_array_3[0] & 0xfc) >> 2;
+        char_array_4[1] = ((char_array_3[0] & 0x03) << 4) + ((char_array_3[1] & 0xf0) >> 4);
+        char_array_4[2] = ((char_array_3[1] & 0x0f) << 2) + ((char_array_3[2] & 0xc0) >> 6);
+        char_array_4[3] = char_array_3[2] & 0x3f;
+
+        for (j = 0; j < i + 1; j++)
+            ret += base64_chars[char_array_4[j]];
+
+        while (i++ < 3)
+            ret += '=';
+    }
+
+    return ret;
+}
+
 std::vector<uint8_t> base64_decode(const std::string& encoded_string) {
     int in_len = (int)encoded_string.size();
-    int i      = 0;
-    int j      = 0;
-    int in_    = 0;
+    int i = 0;
+    int j = 0;
+    int in_ = 0;
     unsigned char char_array_4[4], char_array_3[3];
     std::vector<uint8_t> ret;
 
@@ -82,63 +114,80 @@ std::vector<uint8_t> base64_decode(const std::string& encoded_string) {
     return ret;
 }
 
+// Image params
+
 mysti::json parse_image_params(const std::string& txt) {
-    // Placeholder: Try to parse JSON from text comment if available
-    // For now, return empty object
-    return mysti::json::object();
+    mysti::json j;
+    std::regex param_re(R"(([^:]+):\s*(.*))");
+    std::stringstream ss(txt);
+    std::string line;
+    bool in_params = false;
+    std::string prompt = "";
+    std::string neg_prompt = "";
+    
+    while(std::getline(ss, line)) {
+        if (line.find("Negative prompt:") == 0) {
+            neg_prompt = line.substr(16);
+            in_params = false;
+            continue;
+        }
+        if (line.find("Steps:") == 0) {
+            in_params = true;
+            std::regex kv_re(R"(([^:,]+):\s*([^,]+))");
+            std::sregex_iterator begin(line.begin(), line.end(), kv_re);
+            std::sregex_iterator end;
+            for (std::sregex_iterator i = begin; i != end; ++i) {
+                std::smatch match = *i;
+                std::string key = match[1];
+                std::string val = match[2];
+                key.erase(0, key.find_first_not_of(" "));
+                j[key] = val;
+            }
+            continue;
+        }
+        if (!in_params) {
+            if (!prompt.empty()) prompt += "\n";
+            prompt += line;
+        }
+    }
+    j["prompt"] = prompt;
+    j["negative_prompt"] = neg_prompt;
+    return j;
 }
 
 std::string get_image_params(const SDContextParams& ctx_params, const SDGenerationParams& gen_params, int64_t seed) {
-    // Construct a JSON string or similar metadata string
-    mysti::json j;
-    j["prompt"] = gen_params.prompt;
-    j["seed"] = seed;
-    j["steps"] = gen_params.sample_params.sample_steps;
-    j["cfg_scale"] = gen_params.sample_params.guidance.txt_cfg;
-    j["width"] = gen_params.width;
-    j["height"] = gen_params.height;
-    return j.dump();
+    std::stringstream ss;
+    ss << gen_params.prompt << "\n";
+    if (!gen_params.negative_prompt.empty()) {
+        ss << "Negative prompt: " << gen_params.negative_prompt << "\n";
+    }
+    ss << "Steps: " << gen_params.sample_params.sample_steps << ", ";
+    ss << "Sampler: " << sd_sample_method_name(gen_params.sample_params.sample_method) << ", ";
+    ss << "CFG scale: " << gen_params.sample_params.guidance.txt_cfg << ", ";
+    ss << "Seed: " << seed << ", ";
+    ss << "Size: " << gen_params.width << "x" << gen_params.height << ", ";
+    ss << "Model: " << fs::path(ctx_params.diffusion_model_path.empty() ? ctx_params.model_path : ctx_params.diffusion_model_path).filename().string();
+    return ss.str();
 }
 
+void write_func(void *context, void *data, int size) {
+    std::vector<uint8_t> *vec = (std::vector<uint8_t> *)context;
+    vec->insert(vec->end(), (uint8_t *)data, (uint8_t *)data + size);
+}
 
-std::vector<uint8_t> write_image_to_vector(
-    ImageFormat format,
-    const uint8_t* image,
-    int width,
-    int height,
-    int channels,
-    int quality) {
+std::vector<uint8_t> write_image_to_vector(ImageFormat format, const uint8_t* image, int width, int height, int channels, int quality) {
     std::vector<uint8_t> buffer;
-
-    auto write_func = [&buffer](void* context, void* data, int size) {
-        uint8_t* src = reinterpret_cast<uint8_t*>(data);
-        buffer.insert(buffer.end(), src, src + size);
-    };
-
-    struct ContextWrapper {
-        decltype(write_func)& func;
-    } ctx{write_func};
-
-    auto c_func = [](void* context, void* data, int size) {
-        auto* wrapper = reinterpret_cast<ContextWrapper*>(context);
-        wrapper->func(context, data, size);
-    };
-
-    int result = 0;
-    switch (format) {
-        case ImageFormat::JPEG:
-            result = stbi_write_jpg_to_func(c_func, &ctx, width, height, channels, image, quality);
-            break;
-        case ImageFormat::PNG:
-            result = stbi_write_png_to_func(c_func, &ctx, width, height, channels, image, width * channels);
-            break;
-        default:
-            throw std::runtime_error("invalid image format");
+    int res = 0;
+    if (format == ImageFormat::PNG) {
+        res = stbi_write_png_to_func(write_func, &buffer, width, height, channels, image, width * channels);
+    } else {
+        res = stbi_write_jpg_to_func(write_func, &buffer, width, height, channels, image, quality);
     }
-
-    if (!result) {
-        throw std::runtime_error("write imgage to mem failed");
-    }
-
+    if (res == 0) return {};
     return buffer;
+}
+
+void sd_log_cb(enum sd_log_level_t level, const char* log, void* data) {
+    SDSvrParams* svr_params = (SDSvrParams*)data;
+    log_print(level, log, svr_params->verbose, svr_params->color);
 }

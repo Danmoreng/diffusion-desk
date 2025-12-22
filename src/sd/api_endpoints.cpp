@@ -20,6 +20,11 @@ ArgOptions SDSvrParams::get_options() {
             &listen_ip},
         {
             "",
+            "--mode",
+            "server run mode: orchestrator, sd-worker, llm-worker (default: orchestrator)",
+            &mode},
+        {
+            "",
             "--model-dir",
             "directory to scan for models (default: ./models)",
             &model_dir},
@@ -27,7 +32,12 @@ ArgOptions SDSvrParams::get_options() {
             "",
             "--output-dir",
             "directory to save generated images (default: ./outputs)",
-            &output_dir}};
+            &output_dir},
+        {
+            "",
+            "--default-llm",
+            "default LLM model to load automatically",
+            &default_llm_model}};
 
     options.int_options = {
         {
@@ -35,6 +45,16 @@ ArgOptions SDSvrParams::get_options() {
             "--listen-port",
             "server listen port (default: 1234)",
             &listen_port},
+        {
+            "",
+            "--llm-threads",
+            "number of threads for LLM",
+            &llm_threads},
+        {
+            "",
+            "--llm-idle-timeout",
+            "seconds of inactivity before unloading LLM (default: 300)",
+            &llm_idle_timeout},
     };
 
     options.bool_options = {
@@ -1148,6 +1168,9 @@ void handle_load_llm_model(const httplib::Request& req, httplib::Response& res, 
             return;
         }
         std::string model_id = body["model_id"];
+        int n_gpu_layers = body.value("n_gpu_layers", -1);
+        int n_ctx = body.value("n_ctx", 2048);
+        
         fs::path model_path = fs::path(ctx.svr_params.model_dir) / model_id;
         
         if (!fs::exists(model_path)) {
@@ -1156,9 +1179,9 @@ void handle_load_llm_model(const httplib::Request& req, httplib::Response& res, 
             return;
         }
 
-        LOG_INFO("Loading LLM model: %s", model_path.string().c_str());
+        LOG_INFO("Loading LLM model: %s (gpu_layers: %d, ctx: %d)", model_path.string().c_str(), n_gpu_layers, n_ctx);
 
-        if (ctx.llm_server.load_model(model_path.string())) {
+        if (ctx.llm_server.load_model(model_path.string(), n_gpu_layers, n_ctx)) {
             res.set_content(R"({\"status\":\"success\",\"model\":\")" + model_id + R"("})", "application/json");
         } else {
             res.status = 500;
@@ -1168,5 +1191,26 @@ void handle_load_llm_model(const httplib::Request& req, httplib::Response& res, 
         LOG_ERROR("error loading LLM model: %s", e.what());
         res.status = 500;
         res.set_content(R"({\"error\":\")" + std::string(e.what()) + R"("})", "application/json");
+    }
+}
+
+void handle_unload_llm_model(const httplib::Request&, httplib::Response& res, ServerContext& ctx) {
+    LOG_INFO("Unloading LLM model...");
+    ctx.llm_server.stop();
+    res.set_content(R"({\"status\":\"success\"})", "application/json");
+}
+
+void ensure_llm_loaded(ServerContext& ctx) {
+    if (ctx.llm_server.is_loaded()) return;
+
+    if (!ctx.svr_params.default_llm_model.empty()) {
+        fs::path model_path = fs::path(ctx.svr_params.model_dir) / ctx.svr_params.default_llm_model;
+        if (fs::exists(model_path)) {
+            LOG_INFO("Auto-loading default LLM: %s", ctx.svr_params.default_llm_model.c_str());
+            // Use 0 gpu layers by default for auto-load to protect SD performance
+            ctx.llm_server.load_model(model_path.string(), 0, 2048);
+        } else {
+            LOG_WARN("Default LLM model not found: %s", model_path.string().c_str());
+        }
     }
 }

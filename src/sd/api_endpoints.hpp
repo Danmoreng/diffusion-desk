@@ -15,6 +15,10 @@ struct SDSvrParams {
     int listen_port       = 1234;
     std::string model_dir = "./models";
     std::string output_dir = "./outputs";
+    std::string default_llm_model = "";
+    std::string mode = "orchestrator"; // orchestrator, sd-worker, llm-worker
+    int llm_threads = -1;
+    int llm_idle_timeout = 300; // 5 minutes default
     bool normal_exit      = false;
     bool verbose          = false;
     bool color            = false;
@@ -53,3 +57,5 @@ void handle_edit_image(const httplib::Request& req, httplib::Response& res, Serv
 
 // LLM Handlers
 void handle_load_llm_model(const httplib::Request& req, httplib::Response& res, ServerContext& ctx);
+void handle_unload_llm_model(const httplib::Request&, httplib::Response& res, ServerContext& ctx);
+void ensure_llm_loaded(ServerContext& ctx);

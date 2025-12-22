@@ -1,6 +1,12 @@
 
 #pragma once
 
+#if defined(_WIN32)
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#endif
+
 #include <filesystem>
 #include <iostream>
 #include <map>
@@ -112,6 +118,7 @@ struct SDContextParams {
     std::string t5xxl_path;
     std::string llm_path;
     std::string llm_vision_path;
+    std::string llm_model_path; // Added for --llm-model arg
     std::string diffusion_model_path;
     std::string high_noise_diffusion_model_path;
     std::string vae_path;
@@ -176,6 +183,10 @@ struct SDContextParams {
              "--llm",
              "path to the llm text encoder. For example: (qwenvl2.5 for qwen-image, mistral-small3.2 for flux2, ...)",
              &llm_path},
+            {"-lm",
+             "--llm-model",
+             "path to the chat/instruct LLM model to load on startup",
+             &llm_model_path},
             {"",
              "--llm_vision",
              "path to the llm vit",

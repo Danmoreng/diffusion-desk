@@ -68,6 +68,7 @@ export const useGenerationStore = defineStore('generation', () => {
   const currentLlmModel = ref<string>('')
   const isModelsLoading = ref(false)
   const isLlmLoading = ref(false)
+  const isLlmThinking = ref(false)
 
   async function fetchConfig() {
     try {
@@ -259,6 +260,54 @@ export const useGenerationStore = defineStore('generation', () => {
     }
   }
 
+  async function unloadLlmModel() {
+    try {
+      await fetch('/v1/llm/unload', { method: 'POST' })
+      currentLlmModel.value = ''
+    } catch (e) {
+      console.error('Failed to unload LLM:', e)
+    }
+  }
+
+  async function enhancePrompt() {
+    if (!prompt.value || isLlmThinking.value) return
+    isLlmThinking.value = true
+    try {
+      const response = await fetch('/v1/chat/completions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          messages: [
+            { 
+              role: 'system', 
+              content: 'You are a prompt engineer for Stable Diffusion. Your task is to take a short, simple prompt and expand it into a detailed, descriptive, and artistic prompt. Use vivid adjectives and specify style, lighting, and composition. Keep the output as a single paragraph of descriptive text. Do not include any conversational filler or meta-comments.' 
+            },
+            { role: 'user', content: `Enhance this prompt: ${prompt.value}` }
+          ],
+          max_tokens: 1024,
+          stream: false
+        })
+      })
+      if (!response.ok) throw new Error('LLM request failed')
+      const data = await response.json()
+      const message = data.choices[0].message
+      let enhanced = message.content ? message.content.trim() : ''
+      
+      // Fallback for reasoning models that might put content in reasoning_content or if content is empty due to length
+      if (!enhanced && message.reasoning_content) {
+          enhanced = message.reasoning_content.trim()
+      }
+
+      if (enhanced) {
+        prompt.value = enhanced
+      }
+    } catch (e: any) {
+      error.value = `Failed to enhance prompt: ${e.message}`
+    } finally {
+      isLlmThinking.value = false
+    }
+  }
+
   async function testLlmCompletion(promptText: string) {
     try {
       const response = await fetch('/v1/chat/completions', {
@@ -266,12 +315,16 @@ export const useGenerationStore = defineStore('generation', () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           messages: [{ role: 'user', content: promptText }],
-          stream: false
+          stream: false,
+          max_tokens: 1024
         })
       })
       if (!response.ok) throw new Error('LLM request failed')
       const data = await response.json()
-      return data.choices[0].message.content
+      const message = data.choices[0].message
+      if (message.content) return message.content
+      if (message.reasoning_content) return message.reasoning_content
+      return "No content returned (check tokens/model)"
     } catch (e: any) {
       error.value = e.message
       return null
@@ -581,9 +634,9 @@ export const useGenerationStore = defineStore('generation', () => {
     hiresFix, hiresUpscaleModel, hiresUpscaleFactor, hiresDenoisingStrength, hiresSteps, 
     isSidebarCollapsed, toggleSidebar, theme, toggleTheme, saveImages, initImage, 
     models, currentModel, currentLlmModel, upscaleModel, upscaleFactor, 
-    isModelsLoading, fetchModels, loadModel, loadLlmModel, loadUpscaleModel, testLlmCompletion,
+    isModelsLoading, fetchModels, loadModel, loadLlmModel, unloadLlmModel, loadUpscaleModel, testLlmCompletion, enhancePrompt,
     progressStep, progressSteps, progressTime, progressPhase, eta, 
-    startStreamingProgress, stopStreamingProgress, lastParams, outputDir, modelDir, 
+    startStreamingProgress, stopStreamingProgress, lastParams, outputDir, modelDir, isLlmThinking,
     updateConfig, reuseLastSeed, randomizeSeed, swapDimensions 
   }
 })

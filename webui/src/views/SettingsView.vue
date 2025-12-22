@@ -67,7 +67,7 @@ async function runTest() {
         <h5>LLM Settings (Llama.cpp)</h5>
         <div class="mb-3">
           <label class="form-label small fw-bold text-muted">Active LLM Model</label>
-          <div class="input-group input-group-sm">
+          <div class="input-group input-group-sm mb-2">
             <select class="form-select" v-model="store.currentLlmModel" :disabled="store.isLlmLoading">
               <option value="">None</option>
               <option v-for="m in store.models.filter(m => m.id.includes('text-encoder') || m.id.includes('llm'))" :key="m.id" :value="m.id">
@@ -76,10 +76,16 @@ async function runTest() {
             </select>
             <button class="btn btn-outline-primary" type="button" @click="store.loadLlmModel(store.currentLlmModel)" :disabled="store.isLlmLoading || !store.currentLlmModel">
               <span v-if="store.isLlmLoading" class="spinner-border spinner-border-sm me-1"></span>
-              Load LLM
+              Load
+            </button>
+            <button class="btn btn-outline-danger" type="button" @click="store.unloadLlmModel" :disabled="!store.currentLlmModel && !store.isLlmLoading">
+              Unload
             </button>
           </div>
-          <div class="form-text x-small">Select a GGUF model from the text-encoder directory to enable rewriting.</div>
+          <div class="form-text x-small">
+            Models are automatically managed in VRAM and unloaded after 5 minutes of inactivity. 
+            By default, LLMs run on CPU to ensure maximum performance for Stable Diffusion.
+          </div>
         </div>
       </div>
 
