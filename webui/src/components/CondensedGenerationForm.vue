@@ -21,7 +21,16 @@ const updateParams = () => {
   <div class="condensed-form overflow-y-auto pe-2" style="max-height: 75vh;">
     <!-- Prompt -->
     <div class="mb-2">
-      <label class="form-label small mb-1">Prompt</label>
+      <div class="d-flex justify-content-between align-items-center mb-1">
+        <label class="form-label small mb-0">Prompt</label>
+        <button 
+          class="btn btn-xs p-0 border-0 shadow-none" 
+          @click="explorationStore.toggleLock('prompt')"
+          title="Unlock to allow AI prompt variations"
+        >
+          {{ explorationStore.locks.prompt ? '🔒' : '🔓' }}
+        </button>
+      </div>
       <textarea 
         v-model="explorationStore.centerParams.prompt" 
         @change="updateParams"
@@ -55,7 +64,7 @@ const updateParams = () => {
         </div>
         <input 
           type="number" 
-          v-model="explorationStore.centerParams.steps" 
+          v-model.number="explorationStore.centerParams.steps" 
           @change="updateParams"
           class="form-control form-control-sm" 
           min="1"
@@ -74,7 +83,7 @@ const updateParams = () => {
         </div>
         <input 
           type="number" 
-          v-model="explorationStore.centerParams.guidanceScale" 
+          v-model.number="explorationStore.centerParams.guidanceScale" 
           @change="updateParams"
           class="form-control form-control-sm" 
           step="0.1"
@@ -115,7 +124,7 @@ const updateParams = () => {
       </div>
       <input 
         type="number" 
-        v-model="explorationStore.centerParams.seed" 
+        v-model.number="explorationStore.centerParams.seed" 
         @change="updateParams"
         class="form-control form-control-sm"
       />
@@ -125,11 +134,11 @@ const updateParams = () => {
     <div class="row g-2 mb-3">
       <div class="col-6">
         <label class="form-label small mb-1">Width</label>
-        <input type="number" v-model="explorationStore.centerParams.width" @change="updateParams" class="form-control form-control-sm" step="64" />
+        <input type="number" v-model.number="explorationStore.centerParams.width" @change="updateParams" class="form-control form-control-sm" step="64" />
       </div>
       <div class="col-6">
         <label class="form-label small mb-1">Height</label>
-        <input type="number" v-model="explorationStore.centerParams.height" @change="updateParams" class="form-control form-control-sm" step="64" />
+        <input type="number" v-model.number="explorationStore.centerParams.height" @change="updateParams" class="form-control form-control-sm" step="64" />
       </div>
     </div>
   </div>
@@ -147,15 +156,5 @@ const updateParams = () => {
 .btn-xs {
   font-size: 0.7rem;
   line-height: 1;
-}
-</style>
-
-<style scoped>
-.condensed-form {
-  scrollbar-width: thin;
-}
-.form-label {
-  font-weight: 600;
-  color: var(--bs-secondary-color);
 }
 </style>

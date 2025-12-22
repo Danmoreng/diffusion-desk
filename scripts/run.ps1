@@ -1,32 +1,56 @@
 # MystiCanvas Launch Script
 
-$ServerExe = "../build/bin/mysti_server.exe"
-if (!(Test-Path $ServerExe)) {
-    $ServerExe = "../build/mysti_server.exe"
+# Robustly resolve paths relative to the script location
+$ScriptDir = $PSScriptRoot
+$ProjectRoot = Split-Path -Parent $ScriptDir
+$BuildDir = Join-Path $ProjectRoot "build"
+
+# Define possible executable locations
+$PotentialPaths = @(
+    "$BuildDir\bin\mysti_server.exe",
+    "$BuildDir\mysti_server.exe",
+    "$BuildDir\bin\Debug\mysti_server.exe",
+    "$BuildDir\Debug\mysti_server.exe"
+)
+
+$ServerExe = $null
+foreach ($path in $PotentialPaths) {
+    if (Test-Path $path) {
+        $ServerExe = $path
+        break
+    }
 }
 
-if (!(Test-Path $ServerExe)) {
-    Write-Host "Error: mysti_server.exe not found. Please run scripts/build.ps1 first." -ForegroundColor Red
+if ($null -eq $ServerExe) {
+    Write-Host "Error: mysti_server.exe not found in build directories." -ForegroundColor Red
+    Write-Host "Searched locations:"
+    $PotentialPaths | ForEach-Object { Write-Host " - $_" }
+    Write-Host "Please run scripts/build.ps1 first." -ForegroundColor Yellow
     exit 1
 }
 
 # Configuration
-$ModelDir = "C:/StableDiffusion/models"
-$DefaultLLM = "llm/Qwen3-1.7B-Q8_0.gguf"
+$ModelBase = "C:\StableDiffusion\Models"
+$LLMPath = "$ModelBase\llm\Qwen3-1.7B-Q8_0.gguf"
+$SDPath = "$ModelBase\stable-diffusion\z_image_turbo-Q8_0.gguf" 
+
 $IdleTimeout = 600  # 10 minutes
 
 Write-Host "Starting MystiCanvas Server..." -ForegroundColor Cyan
-Write-Host "Model Directory: $ModelDir"
-Write-Host "Default LLM: $DefaultLLM (Auto-loaded on CPU)"
-Write-Host "LLM Idle Timeout: $IdleTimeout seconds"
+Write-Host "Executable: $ServerExe"
+Write-Host "Model Directory: $ModelBase"
+Write-Host "SD Model: $SDPath"
+Write-Host "LLM Model: $LLMPath"
 Write-Host "-------------------------------------------"
 
-# Run from project root
-Push-Location ..
-& "scripts/$ServerExe" `
-    --model-dir $ModelDir `
-    --default-llm $DefaultLLM `
+# Execute
+# We don't need Push-Location if we use absolute path to exe, 
+# BUT the server might expect CWD to be project root for assets (./public).
+Set-Location $ProjectRoot
+& $ServerExe `
+    --model-dir "$ModelBase" `
+    --model "$SDPath" `
+    --llm-model "$LLMPath" `
     --llm-idle-timeout $IdleTimeout `
     --listen-port 1234 `
     --verbose
-Pop-Location
