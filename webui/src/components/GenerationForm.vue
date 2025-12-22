@@ -112,7 +112,19 @@ const clearInitImage = () => {
 
       <div class="mb-3">
         <div class="d-flex justify-content-between align-items-center mb-2">
-          <label for="prompt" class="form-label mb-0">Prompt:</label>
+          <div class="d-flex align-items-center gap-2">
+            <label for="prompt" class="form-label mb-0">Prompt:</label>
+            <button 
+              type="button" 
+              class="btn btn-outline-success btn-sm py-0" 
+              style="font-size: 0.7rem; height: 20px;"
+              @click="store.enhancePrompt"
+              :disabled="store.isLlmThinking || !store.prompt"
+            >
+              <span v-if="store.isLlmThinking" class="spinner-border spinner-border-sm" style="width: 0.7rem; height: 0.7rem;"></span>
+              <span v-else>🪄 Enhance</span>
+            </button>
+          </div>
           <button 
             v-if="store.prompt.includes('Steps: ')"
             type="button" 

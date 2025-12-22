@@ -4,7 +4,8 @@ MystiCanvas is a high-performance, self-hosted Creative AI server that integrate
 
 ## Features
 
-- **Dual-Backend Integration:** Seamlessly links against both `stable-diffusion.cpp` and `llama.cpp` using a shared GGML foundation.
+- **Multi-Process Architecture:** Orchestrator-Worker design allows simultaneous Image and Text generation without resource conflicts or UI freezing.
+- **Dual-Backend Power:** Seamlessly links against both `stable-diffusion.cpp` and `llama.cpp` using a shared GGML foundation.
 - **Image Generation:** Supports FLUX, Z-Image, SDXL, and more with full GPU acceleration (CUDA).
 - **Advanced Sampling:** Includes support for various schedulers, guidance scales, and Highres-Fix upscaling.
 - **Built-in Upscaling:** Native integration of ESRGAN for high-quality image enhancement.

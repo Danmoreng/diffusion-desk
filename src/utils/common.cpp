@@ -14,6 +14,7 @@
 #if defined(_WIN32)
 #define NOMINMAX
 #include <windows.h>
+#include <shellapi.h>
 #endif
 
 #define STB_IMAGE_IMPLEMENTATION

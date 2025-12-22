@@ -17,7 +17,9 @@ function Import-VSEnv {
 }
 Import-VSEnv
 
-$BuildDir = "build"
+$PSScriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Definition
+$ProjectRoot = Split-Path -Parent $PSScriptRoot
+$BuildDir = Join-Path $ProjectRoot "build"
 
 # Check for Ninja
 if (Get-Command ninja -ErrorAction SilentlyContinue) {
@@ -30,12 +32,10 @@ if (Get-Command ninja -ErrorAction SilentlyContinue) {
 if (!(Test-Path $BuildDir)) {
     New-Item -ItemType Directory -Path $BuildDir
 }
-cd $BuildDir
+Set-Location $BuildDir
 
 # --- WebUI Build ---
-Write-Host "Skipping WebUI Build (Agent environment)..."
-<#
-$WebRootDir = Join-Path ".." "webui"
+$WebRootDir = Join-Path $ProjectRoot "webui"
 if (Test-Path $WebRootDir) {
     Push-Location $WebRootDir
     Write-Host "Installing NPM dependencies..."
@@ -57,11 +57,10 @@ if (Test-Path $WebRootDir) {
 } else {
     Write-Host "WebUI directory not found at $WebRootDir, skipping..." -ForegroundColor Yellow
 }
-#>
 
 # Configure (Restored & C++17)
 Write-Host "Configuring CMake..."
-cmake .. $Generator `
+cmake $ProjectRoot $Generator `
     -DSD_CUDA=ON `
     -DGGML_CUDA=ON `
     -DCMAKE_CXX_STANDARD=17 `

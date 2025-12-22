@@ -45,6 +45,11 @@ set(SOURCE_FILES
     src/sd/server_state.cpp
     src/sd/model_loader.cpp
     src/server/llama_server.cpp
+    src/orchestrator/process_manager.cpp
+    src/orchestrator/proxy.cpp
+    src/orchestrator/orchestrator_main.cpp
+    src/workers/sd_worker.cpp
+    src/workers/llm_worker.cpp
 )
 
 add_executable(mysti_server ${SOURCE_FILES})
@@ -55,6 +60,8 @@ target_include_directories(mysti_server PRIVATE
     src/sd
     src/server
     src/utils
+    src/orchestrator
+    src/workers
     libs/llama.cpp/include
     libs/llama.cpp/common
     libs/llama.cpp/ggml/include
@@ -75,7 +82,7 @@ target_link_libraries(mysti_server PRIVATE
 )
 
 if(WIN32)
-    target_link_libraries(mysti_server PRIVATE ws2_32)
+    target_link_libraries(mysti_server PRIVATE ws2_32 shell32)
 endif()
 
 # Copy WebUI assets to build directory (Optional, for convenience)
