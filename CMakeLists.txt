@@ -40,6 +40,7 @@ endif()
 set(SOURCE_FILES
     src/main.cpp
     src/utils/common.cpp
+    src/stb_image_writer.cpp
     src/sd/api_endpoints.cpp
     src/sd/api_utils.cpp
     src/sd/server_state.cpp
