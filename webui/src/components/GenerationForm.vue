@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, watch } from 'vue'
 import { useGenerationStore } from '@/stores/generation'
 
 const props = defineProps<{
-  mode: 'txt2img' | 'img2img'
+  mode: 'txt2img' | 'img2img' | 'inpainting'
 }>()
 
 const store = useGenerationStore()
@@ -22,7 +22,8 @@ const n = () => {
       width: store.width,
       height: store.height,
       saveImages: store.saveImages,
-      initImage: props.mode === 'img2img' ? store.initImage : null
+      initImage: (props.mode === 'img2img' || props.mode === 'inpainting') ? store.initImage : null,
+      maskImage: props.mode === 'inpainting' ? store.maskImage : null
     })
   }
   const onFileChange = (e: Event) => {
@@ -47,12 +48,13 @@ const n = () => {
 
 const uploadedImageWidth = ref(0)
 const uploadedImageHeight = ref(0)
+const scaleFactor = ref(1.0)
 
 const useImageSize = () => {
   if (uploadedImageWidth.value > 0 && uploadedImageHeight.value > 0) {
     // Round to nearest multiple of 64
-    store.width = Math.round(uploadedImageWidth.value / 64) * 64
-    store.height = Math.round(uploadedImageHeight.value / 64) * 64
+    store.width = Math.round((uploadedImageWidth.value * scaleFactor.value) / 64) * 64
+    store.height = Math.round((uploadedImageHeight.value * scaleFactor.value) / 64) * 64
     
     // Ensure minimum of 64
     if (store.width < 64) store.width = 64
@@ -60,11 +62,9 @@ const useImageSize = () => {
   }
 }
 
-const scale2x = () => {
-  store.width *= 2
-  store.height *= 2
-  store.strength = 0.4
-}
+watch(scaleFactor, () => {
+  useImageSize()
+})
 
 const clearInitImage = () => {
   store.initImage = null
@@ -76,32 +76,51 @@ const clearInitImage = () => {
 <template>
   <div class="card shadow-sm p-3">
     <form @submit.prevent="n">
-      <!-- Img2Img Upload -->
-      <div class="mb-3" v-if="mode === 'img2img'">
-        <label class="form-label">Initial Image:</label>
-        <div v-if="!store.initImage" class="image-upload-dropzone border rounded p-4 text-center" @click="($refs.fileInput as any).click()">
-          <span class="display-6">📁</span>
-          <p class="mb-0 mt-2">Click to upload or drag & drop</p>
-          <input type="file" ref="fileInput" class="d-none" accept="image/*" @change="onFileChange" />
-        </div>
-        <div v-else class="position-relative border rounded p-2 text-center">
-          <img :src="store.initImage" class="img-thumbnail" style="max-height: 200px;" />
-          <div class="mt-2 d-flex justify-content-center flex-wrap gap-2">
-            <button type="button" class="btn btn-outline-secondary btn-sm" @click="useImageSize">
-              📏 Use Size ({{ uploadedImageWidth }}x{{ uploadedImageHeight }})
-            </button>
-            <button type="button" class="btn btn-outline-info btn-sm" @click="scale2x">
-              🔍 Scale 2x
-            </button>
-            <button type="button" class="btn btn-danger btn-sm" @click="clearInitImage">
-              🗑️ Clear
-            </button>
+      <!-- Img2Img / Inpainting Upload & Scaling -->
+      <div class="mb-3" v-if="mode === 'img2img' || mode === 'inpainting'">
+        <div v-if="mode === 'img2img'">
+          <label class="form-label">Initial Image:</label>
+          <div v-if="!store.initImage" class="image-upload-dropzone border rounded p-4 text-center" @click="($refs.fileInput as any).click()">
+            <span class="display-6">📁</span>
+            <p class="mb-0 mt-2">Click to upload or drag & drop</p>
+            <input type="file" ref="fileInput" class="d-none" accept="image/*" @change="onFileChange" />
           </div>
+          <div v-else class="position-relative border rounded p-2 text-center">
+            <img :src="store.initImage" class="img-thumbnail" style="max-height: 200px;" />
+            <div class="mt-2 px-3">
+              <label class="form-label d-flex justify-content-between x-small text-muted text-uppercase fw-bold mb-1">
+                <span>Upscale Factor:</span>
+                <span class="text-primary">{{ scaleFactor.toFixed(1) }}x</span>
+              </label>
+              <input type="range" class="form-range" v-model.number="scaleFactor" min="1.0" max="2.0" step="0.1">
+            </div>
+            <div class="mt-2 d-flex justify-content-center flex-wrap gap-2">
+              <button type="button" class="btn btn-outline-secondary btn-sm" @click="useImageSize">
+                📏 Apply Scale ({{ Math.round((uploadedImageWidth * scaleFactor) / 64) * 64 }}x{{ Math.round((uploadedImageHeight * scaleFactor) / 64) * 64 }})
+              </button>
+              <button type="button" class="btn btn-danger btn-sm" @click="clearInitImage">
+                🗑️ Clear
+              </button>
+            </div>
+          </div>
+        </div>
+        
+        <div v-if="mode === 'inpainting' && store.initImage" class="border rounded p-2 text-center mb-3">
+            <div class="px-3">
+              <label class="form-label d-flex justify-content-between x-small text-muted text-uppercase fw-bold mb-1">
+                <span>Input Scale Factor:</span>
+                <span class="text-primary">{{ scaleFactor.toFixed(1) }}x</span>
+              </label>
+              <input type="range" class="form-range" v-model.number="scaleFactor" min="1.0" max="2.0" step="0.1">
+            </div>
+            <button type="button" class="btn btn-outline-secondary btn-sm mt-1" @click="useImageSize">
+              📏 Apply Scale to Canvas
+            </button>
         </div>
       </div>
 
       <!-- Strength Slider (only if initImage exists) -->
-      <div class="mb-3" v-if="mode === 'img2img' && store.initImage">
+      <div class="mb-3" v-if="(mode === 'img2img' || mode === 'inpainting') && store.initImage">
         <label for="strength" class="form-label d-flex justify-content-between">
           <span>Denoising Strength:</span>
           <span class="badge bg-primary">{{ store.strength }}</span>
@@ -264,7 +283,7 @@ const clearInitImage = () => {
       </div>
 
       <!-- Hires-fix Section -->
-      <div v-if="mode === 'txt2img'" class="mb-4">
+      <div class="mb-4">
         <div class="form-check form-switch mb-2">
           <input class="form-check-input" type="checkbox" id="hiresFix" v-model="store.hiresFix">
           <label class="form-check-label fw-bold" for="hiresFix">Highres-fix</label>
