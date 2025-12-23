@@ -694,6 +694,30 @@ void handle_generate_image(const httplib::Request& req, httplib::Response& res, 
         sd_image_t control_image = {(uint32_t)gen_params.width, (uint32_t)gen_params.height, 3, nullptr};
         sd_image_t mask_image    = {(uint32_t)gen_params.width, (uint32_t)gen_params.height, 1, nullptr};
 
+        if (j.contains("mask_image") && j["mask_image"].is_string()) {
+            std::string b64_mask = j["mask_image"];
+            if (b64_mask.find("base64,") != std::string::npos) {
+                b64_mask = b64_mask.substr(b64_mask.find("base64,") + 7);
+            }
+            auto mask_bytes_v = base64_decode(b64_mask);
+            if (!mask_bytes_v.empty()) {
+                int mask_w = gen_params.width;
+                int mask_h = gen_params.height;
+                mask_image.data = load_image_from_memory(
+                    reinterpret_cast<const char*>(mask_bytes_v.data()),
+                    (int)mask_bytes_v.size(),
+                    mask_w, mask_h,
+                    gen_params.width, gen_params.height, 1);
+                mask_image.width = (uint32_t)mask_w;
+                mask_image.height = (uint32_t)mask_h;
+                if (!mask_image.data) {
+                    LOG_ERROR("failed to load mask_image from base64");
+                } else {
+                    LOG_INFO("loaded mask_image for inpainting: %dx%d", mask_w, mask_h);
+                }
+            }
+        }
+
         if (mask_image.data == nullptr) {
             mask_image.data = (uint8_t*)malloc(mask_image.width * mask_image.height * mask_image.channel);
             memset(mask_image.data, 255, mask_image.width * mask_image.height * mask_image.channel);

@@ -54,6 +54,7 @@ export const useGenerationStore = defineStore('generation', () => {
 
   // Img2Img State
   const initImage = ref<string | null>(null)
+  const maskImage = ref<string | null>(null)
 
   // UI State
   const isSidebarCollapsed = ref(localStorage.getItem('sidebar-collapsed') === 'true')
@@ -460,6 +461,7 @@ export const useGenerationStore = defineStore('generation', () => {
     height: number
     saveImages: boolean
     initImage?: string | null
+    maskImage?: string | null
   }
 
   async function requestImage(params: GenerationParams, signal?: AbortSignal): Promise<string[]> {
@@ -484,6 +486,10 @@ export const useGenerationStore = defineStore('generation', () => {
 
     if (params.initImage) {
       body.init_image = params.initImage
+    }
+    
+    if (params.maskImage) {
+      body.mask_image = params.maskImage
     }
 
     const response = await fetch('/v1/images/generations', {
@@ -632,7 +638,7 @@ export const useGenerationStore = defineStore('generation', () => {
     generateImage, requestImage, upscaleImage, parseA1111Parameters, 
     prompt, negativePrompt, steps, seed, cfgScale, strength, batchCount, sampler, samplers, width, height, 
     hiresFix, hiresUpscaleModel, hiresUpscaleFactor, hiresDenoisingStrength, hiresSteps, 
-    isSidebarCollapsed, toggleSidebar, theme, toggleTheme, saveImages, initImage, 
+    isSidebarCollapsed, toggleSidebar, theme, toggleTheme, saveImages, initImage, maskImage,
     models, currentModel, currentLlmModel, upscaleModel, upscaleFactor, 
     isModelsLoading, fetchModels, loadModel, loadLlmModel, unloadLlmModel, loadUpscaleModel, testLlmCompletion, enhancePrompt,
     progressStep, progressSteps, progressTime, progressPhase, eta, 

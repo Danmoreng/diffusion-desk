@@ -67,6 +67,8 @@ const handleModelChange = (event: Event) => {
 const menuItems = [
   { path: '/', label: 'Text-to-Image', icon: '🎨' },
   { path: '/img2img', label: 'Image-to-Image', icon: '🖼️' },
+  { path: '/inpainting', label: 'Inpainting', icon: '🖌️' },
+  { path: '/upscale', label: 'Upscale', icon: '✨' },
   { path: '/exploration', label: 'Dynamic Exploration', icon: '🔍' },
   { path: '/history', label: 'History', icon: '📜' },
 ]
