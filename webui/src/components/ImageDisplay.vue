@@ -24,6 +24,9 @@ const parametersString = computed(() => {
   s += `Seed: ${p.seed}, `
   s += `Size: ${p.width}x${p.height}, `
   s += `Model: ${modelName}, `
+  if (p.total_generation_time) {
+    s += `Time: ${p.total_generation_time.toFixed(2)}s, `
+  }
   s += `Version: stable-diffusion.cpp`
   
   return s
@@ -133,6 +136,10 @@ function sendToImg2Img(url: string) {
           <div class="col-6 col-md-3">
             <span class="fw-bold text-muted text-uppercase x-small d-block mb-1">Sampler</span>
             {{ store.lastParams.sampler }}
+          </div>
+          <div v-if="store.lastParams.total_generation_time" class="col-6 col-md-3">
+            <span class="fw-bold text-muted text-uppercase x-small d-block mb-1">Time</span>
+            {{ store.lastParams.total_generation_time.toFixed(2) }}s
           </div>
         </div>
         

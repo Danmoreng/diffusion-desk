@@ -1,8 +1,17 @@
 <script setup lang="ts">
-import { ref, onMounted, watch, onUnmounted, nextTick } from 'vue'
+import { ref, onMounted, watch, onUnmounted, nextTick, computed } from 'vue'
 import { useGenerationStore } from '@/stores/generation'
 
 const store = useGenerationStore()
+
+const aspectRatio = computed(() => {
+  const w = store.width
+  const h = store.height
+  if (!w || !h) return ''
+  const gcd = (a: number, b: number): number => b ? gcd(b, a % b) : a
+  const common = gcd(w, h)
+  return `${w / common}:${h / common}`
+})
 
 const canvasRef = ref<HTMLCanvasElement | null>(null)
 const maskCanvasRef = ref<HTMLCanvasElement | null>(null)
@@ -317,7 +326,7 @@ watch(maskBlur, () => {
       <div class="canvas-info p-2 bg-dark text-white-50 small d-flex justify-content-between">
           <span>{{ uploadedImageWidth }}x{{ uploadedImageHeight }}</span>
           <span v-if="isMaskInverted" class="badge bg-info">Inverted</span>
-          <span>Target: {{ store.width }}x{{ store.height }}</span>
+          <span>Target: {{ store.width }}x{{ store.height }} ({{ aspectRatio }})</span>
           <a href="#" class="text-info" @click.prevent="useImageSize">Match Size</a>
       </div>
     </div>

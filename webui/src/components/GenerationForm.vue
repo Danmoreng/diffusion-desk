@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { ref, watch, computed } from 'vue'
 import { useGenerationStore } from '@/stores/generation'
 
 const props = defineProps<{
@@ -7,6 +7,15 @@ const props = defineProps<{
 }>()
 
 const store = useGenerationStore()
+
+const aspectRatio = computed(() => {
+  const w = store.width
+  const h = store.height
+  if (!w || !h) return ''
+  const gcd = (a: number, b: number): number => b ? gcd(b, a % b) : a
+  const common = gcd(w, h)
+  return `${w / common}:${h / common}`
+})
 
 const n = () => {
   if (!store.prompt || store.isGenerating || store.isModelSwitching) return
@@ -248,11 +257,9 @@ const clearInitImage = () => {
               step="64"
               class="form-control"
             />
+            <span class="input-group-text bg-body-tertiary font-monospace" style="min-width: 50px; justify-content: center;" title="Aspect Ratio">{{ aspectRatio }}</span>
           </div>
         </div>
-      </div>
-      <div v-if="store.width * store.height > 1024 * 1024" class="alert alert-warning py-1 small">
-        ⚠️ High resolution detected. This may be slow or crash without VAE Tiling.
       </div>
 
       <div class="row g-2 mb-4">
