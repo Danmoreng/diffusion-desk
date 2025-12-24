@@ -14,7 +14,8 @@ static ProcessManager::ProcessInfo llm_process;
 static int sd_port = 0;
 static int llm_port = 0;
 
-static std::string exe_path;
+static std::string sd_exe_path;
+static std::string llm_exe_path;
 static std::vector<std::string> sd_args;
 static std::vector<std::string> llm_args;
 
@@ -22,16 +23,52 @@ static std::vector<std::string> llm_args;
 static std::string last_sd_model_req_body;
 static std::string last_llm_model_req_body;
 static std::mutex state_mtx;
+static std::mutex process_mtx; // Protects access to ProcessManager
 
 static std::atomic<bool> is_shutting_down{false};
 
+#ifdef _WIN32
+BOOL WINAPI ConsoleCtrlHandler(DWORD dwCtrlType) {
+    switch (dwCtrlType) {
+    case CTRL_C_EVENT:
+    case CTRL_BREAK_EVENT:
+    case CTRL_CLOSE_EVENT:
+    case CTRL_LOGOFF_EVENT:
+    case CTRL_SHUTDOWN_EVENT:
+        std::cout << "\n[Orchestrator] Shutdown signal received. Cleaning up...\n";
+        is_shutting_down = true;
+        
+        {
+            std::lock_guard<std::mutex> lock(process_mtx);
+            // Terminate workers
+            if (pm.is_running(sd_process)) pm.terminate(sd_process);
+            if (pm.is_running(llm_process)) pm.terminate(llm_process);
+        }
+        
+        std::cout << "[Orchestrator] Workers terminated. Exiting.\n";
+        exit(0);
+        return TRUE;
+    default:
+        return FALSE;
+    }
+}
+#else
+#include <signal.h>
+
 void signal_handler(int sig) {
-    std::cout << "Orchestrator shutting down...\n";
+    std::cout << "\n[Orchestrator] Shutdown signal received (" << sig << "). Cleaning up...\n";
     is_shutting_down = true;
-    if (pm.is_running(sd_process)) pm.terminate(sd_process);
-    if (pm.is_running(llm_process)) pm.terminate(llm_process);
+
+    {
+        std::lock_guard<std::mutex> lock(process_mtx);
+        if (pm.is_running(sd_process)) pm.terminate(sd_process);
+        if (pm.is_running(llm_process)) pm.terminate(llm_process);
+    }
+    
+    std::cout << "[Orchestrator] Workers terminated. Exiting.\n";
     exit(0);
 }
+#endif
 
 std::string get_executable_path(const char* argv0) {
     return argv0;
@@ -55,13 +92,16 @@ void restart_sd_worker() {
     if (is_shutting_down) return;
     LOG_WARN("Detected SD Worker failure. Restarting...");
     
-    // Ensure dead
-    pm.terminate(sd_process);
+    {
+        std::lock_guard<std::mutex> lock(process_mtx);
+        // Ensure dead
+        pm.terminate(sd_process);
 
-    // Respawn
-    if (!pm.spawn(exe_path, sd_args, sd_process)) {
-        LOG_ERROR("Failed to respawn SD Worker!");
-        return;
+        // Respawn
+        if (!pm.spawn(sd_exe_path, sd_args, sd_process)) {
+            LOG_ERROR("Failed to respawn SD Worker!");
+            return;
+        }
     }
 
     // Wait for health
@@ -95,11 +135,14 @@ void restart_llm_worker() {
     if (is_shutting_down) return;
     LOG_WARN("Detected LLM Worker failure. Restarting...");
     
-    pm.terminate(llm_process);
+    {
+        std::lock_guard<std::mutex> lock(process_mtx);
+        pm.terminate(llm_process);
 
-    if (!pm.spawn(exe_path, llm_args, llm_process)) {
-        LOG_ERROR("Failed to respawn LLM Worker!");
-        return;
+        if (!pm.spawn(llm_exe_path, llm_args, llm_process)) {
+            LOG_ERROR("Failed to respawn LLM Worker!");
+            return;
+        }
     }
 
     if (wait_for_health(llm_port)) {
@@ -141,7 +184,12 @@ void health_check_loop(const std::string& sd_host, int sd_p, const std::string& 
         std::this_thread::sleep_for(std::chrono::seconds(2));
 
         // --- SD Check ---
-        bool sd_alive = pm.is_running(sd_process);
+        bool sd_alive = false;
+        {
+            std::lock_guard<std::mutex> lock(process_mtx);
+            sd_alive = pm.is_running(sd_process);
+        }
+
         if (sd_alive) {
             // Process is there, check HTTP
             if (auto res = sd_cli.Get("/internal/health")) {
@@ -162,7 +210,12 @@ void health_check_loop(const std::string& sd_host, int sd_p, const std::string& 
         }
 
         // --- LLM Check ---
-        bool llm_alive = pm.is_running(llm_process);
+        bool llm_alive = false;
+        {
+            std::lock_guard<std::mutex> lock(process_mtx);
+            llm_alive = pm.is_running(llm_process);
+        }
+
         if (llm_alive) {
             if (auto res = llm_cli.Get("/internal/health")) {
                 llm_fail_count = 0;
@@ -184,15 +237,29 @@ void health_check_loop(const std::string& sd_host, int sd_p, const std::string& 
 
 int run_orchestrator(int argc, const char** argv, SDSvrParams& svr_params) {
     LOG_INFO("Starting Orchestrator on port %d...", svr_params.listen_port);
+
+#ifdef _WIN32
+    if (!SetConsoleCtrlHandler(ConsoleCtrlHandler, TRUE)) {
+        LOG_ERROR("Could not set control handler");
+        return 1;
+    }
+#else
+    struct sigaction sa;
+    sa.sa_handler = signal_handler;
+    sigemptyset(&sa.sa_mask);
+    sa.sa_flags = 0;
+    
+    sigaction(SIGINT, &sa, NULL);
+    sigaction(SIGTERM, &sa, NULL);
+#endif
     
     // 1. Determine Ports and Paths
     sd_port = svr_params.listen_port + 1;
     llm_port = svr_params.listen_port + 2;
     
     fs::path bin_dir = fs::path(argv[0]).parent_path();
-    std::string sd_exe = (bin_dir / "mysti_sd_worker.exe").string();
-    std::string llm_exe = (bin_dir / "mysti_llm_worker.exe").string();
-    exe_path = argv[0]; // Keep for reference if needed, but not used for spawning workers anymore
+    sd_exe_path = (bin_dir / "mysti_sd_worker.exe").string();
+    llm_exe_path = (bin_dir / "mysti_llm_worker.exe").string();
 
     // 2. Prepare Args
     std::vector<std::string> common_args;
@@ -216,14 +283,14 @@ int run_orchestrator(int argc, const char** argv, SDSvrParams& svr_params) {
     llm_args.push_back("--listen-ip"); llm_args.push_back("127.0.0.1");
 
     // 3. Initial Spawn
-    LOG_INFO("Spawning SD Worker (%s) on port %d", sd_exe.c_str(), sd_port);
-    if (!pm.spawn(sd_exe, sd_args, sd_process)) {
+    LOG_INFO("Spawning SD Worker (%s) on port %d", sd_exe_path.c_str(), sd_port);
+    if (!pm.spawn(sd_exe_path, sd_args, sd_process)) {
         LOG_ERROR("Failed to spawn SD Worker");
         return 1;
     }
 
-    LOG_INFO("Spawning LLM Worker (%s) on port %d", llm_exe.c_str(), llm_port);
-    if (!pm.spawn(llm_exe, llm_args, llm_process)) {
+    LOG_INFO("Spawning LLM Worker (%s) on port %d", llm_exe_path.c_str(), llm_port);
+    if (!pm.spawn(llm_exe_path, llm_args, llm_process)) {
         LOG_ERROR("Failed to spawn LLM Worker");
         pm.terminate(sd_process);
         return 1;
