@@ -60,6 +60,15 @@ Launch the server using `scripts/run.ps1`.
 - [ ] While it is generating, click "Enhance Prompt".
 - [ ] **Expectation**: LLM should respond immediately without waiting for the image to finish.
 
+### 3.6 Model Loading Verification
+- [ ] **CLI Startup**: Ensure `scripts/run.ps1` uses `--diffusion-model` for GGUF-based SD models (like Flux, SD3).
+- [ ] **Smart Fallback**: If using `--model` with a `.gguf` file, verify logs show "Smart fallback: Moving GGUF...".
+- [ ] **API Check**:
+  ```powershell
+  curl http://localhost:1234/v1/models | Select-String '"active":true'
+  ```
+  Should return at least one match.
+
 ---
 
 ## 4. Troubleshooting
