@@ -8,6 +8,8 @@
 struct ProgressState {
     int step = 0;
     int steps = 0;
+    int total_steps = 0;
+    int base_step = 0;
     float time = 0;
     std::string phase = "";
     uint64_t version = 0;

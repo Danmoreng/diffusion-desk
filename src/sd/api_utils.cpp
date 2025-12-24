@@ -141,7 +141,9 @@ mysti::json parse_image_params(const std::string& txt) {
                 std::smatch match = *i;
                 std::string key = match[1];
                 std::string val = match[2];
-                key.erase(0, key.find_first_not_of(" "));
+                // Trim leading/trailing whitespace
+                key = std::regex_replace(key, std::regex("^\\s+|\\s+$"), "");
+                val = std::regex_replace(val, std::regex("^\\s+|\\s+$"), "");
                 j[key] = val;
             }
             continue;
@@ -156,7 +158,7 @@ mysti::json parse_image_params(const std::string& txt) {
     return j;
 }
 
-std::string get_image_params(const SDContextParams& ctx_params, const SDGenerationParams& gen_params, int64_t seed) {
+std::string get_image_params(const SDContextParams& ctx_params, const SDGenerationParams& gen_params, int64_t seed, double generation_time) {
     std::stringstream ss;
     ss << gen_params.prompt << "\n";
     if (!gen_params.negative_prompt.empty()) {
@@ -168,6 +170,9 @@ std::string get_image_params(const SDContextParams& ctx_params, const SDGenerati
     ss << "Seed: " << seed << ", ";
     ss << "Size: " << gen_params.width << "x" << gen_params.height << ", ";
     ss << "Model: " << fs::path(ctx_params.diffusion_model_path.empty() ? ctx_params.model_path : ctx_params.diffusion_model_path).filename().string();
+    if (generation_time > 0) {
+        ss << ", Time: " << std::fixed << std::setprecision(2) << generation_time << "s";
+    }
     return ss.str();
 }
 

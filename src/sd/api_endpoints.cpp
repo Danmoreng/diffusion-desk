@@ -760,17 +760,38 @@ void handle_generate_image(const httplib::Request& req, httplib::Response& res, 
 
         sd_image_t* results = nullptr;
         int num_results     = 0;
+        double total_generation_time = 0;
 
         {
+            auto start_time = std::chrono::high_resolution_clock::now();
             std::lock_guard<std::mutex> lock(ctx.sd_ctx_mutex);
             if (ctx.sd_ctx == nullptr) {
                 res.status = 400;
                 res.set_content(R"({\"error\":\"no model loaded\"})", "application/json");
                 return;
             }
+
+            {
+                std::lock_guard<std::mutex> lock_prog(progress_state.mutex);
+                int sampling_steps = gen_params.sample_params.sample_steps;
+                if (gen_params.hires_fix) {
+                    // One sampling pass for all batch + One hires pass for EACH image in batch
+                    progress_state.total_steps = sampling_steps + (gen_params.hires_steps * gen_params.batch_count);
+                } else {
+                    progress_state.total_steps = sampling_steps;
+                }
+                progress_state.base_step = 0;
+                LOG_INFO("Total expected steps: %d", progress_state.total_steps);
+            }
+
             set_progress_phase("Sampling...");
             results     = generate_image(ctx.sd_ctx, &img_gen_params);
             num_results = gen_params.batch_count;
+
+            {
+                std::lock_guard<std::mutex> lock_prog(progress_state.mutex);
+                progress_state.base_step = gen_params.sample_params.sample_steps;
+            }
 
             LOG_INFO("Generation done, num_results: %d, hires_fix: %s", num_results, gen_params.hires_fix ? "true" : "false");
 
@@ -867,6 +888,11 @@ void handle_generate_image(const httplib::Request& req, httplib::Response& res, 
                         hires_results[i] = upscaled_img; // Fallback to upscaled if second pass fails
                     }
 
+                    {
+                        std::lock_guard<std::mutex> lock_prog(progress_state.mutex);
+                        progress_state.base_step += gen_params.hires_steps;
+                    }
+
                     stbi_image_free(base_img.data);
                     if (upscaled_img.data && upscaled_img.data != hires_results[i].data) {
                         free(upscaled_img.data);
@@ -878,6 +904,8 @@ void handle_generate_image(const httplib::Request& req, httplib::Response& res, 
                 free(results);
                 results = hires_results;
             }
+            auto end_time = std::chrono::high_resolution_clock::now();
+            total_generation_time = std::chrono::duration<double>(end_time - start_time).count();
         }
 
         set_progress_phase("VAE Decoding...");
@@ -911,7 +939,7 @@ void handle_generate_image(const httplib::Request& req, httplib::Response& res, 
                     LOG_INFO("saved image to %s", img_filename.c_str());
 
                     std::string txt_filename = output_dir + "/" + base_filename + ".txt";
-                    std::string params_txt = get_image_params(ctx.ctx_params, gen_params, gen_params.seed);
+                    std::string params_txt = get_image_params(ctx.ctx_params, gen_params, gen_params.seed, total_generation_time);
                     
                     std::ofstream txt_file(txt_filename);
                     txt_file << params_txt;
