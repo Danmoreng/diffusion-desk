@@ -9,6 +9,15 @@ const selectedImage = ref<string | null>(null)
 const uploadedImageWidth = ref(0)
 const uploadedImageHeight = ref(0)
 
+const aspectRatio = computed(() => {
+  const w = uploadedImageWidth.value
+  const h = uploadedImageHeight.value
+  if (!w || !h) return ''
+  const gcd = (a: number, b: number): number => b ? gcd(b, a % b) : a
+  const common = gcd(w, h)
+  return `${w / common}:${h / common}`
+})
+
 const esrganModels = computed(() => {
   return store.models.filter(m => m.type === 'esrgan')
 })
@@ -67,7 +76,7 @@ const clearImage = () => {
           <div v-else class="position-relative border rounded p-2 text-center bg-dark">
             <img :src="selectedImage" class="img-fluid rounded" style="max-height: 300px;" />
             <div class="mt-2 text-white-50 small">
-              {{ uploadedImageWidth }}x{{ uploadedImageHeight }}
+              {{ uploadedImageWidth }}x{{ uploadedImageHeight }} ({{ aspectRatio }})
             </div>
             <button class="btn btn-danger btn-sm position-absolute top-0 end-0 m-2" @click="clearImage">✕</button>
           </div>

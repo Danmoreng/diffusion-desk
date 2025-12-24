@@ -618,11 +618,14 @@ export const useGenerationStore = defineStore('generation', () => {
     isGenerating.value = true
     imageUrls.value = []
     error.value = null
+    const startTime = Date.now();
     lastParams.value = { ...params }
     startStreamingProgress();
 
     try {
       imageUrls.value = await requestImage(params);
+      const endTime = Date.now();
+      lastParams.value.total_generation_time = (endTime - startTime) / 1000;
     } catch (e: any) {
       error.value = e.message
       console.error(e)

@@ -1,9 +1,19 @@
 <script setup lang="ts">
+import { computed } from 'vue';
 import { useExplorationStore } from '@/stores/exploration';
 import { useGenerationStore } from '@/stores/generation';
 
 const explorationStore = useExplorationStore();
 const generationStore = useGenerationStore();
+
+const aspectRatio = computed(() => {
+  const w = explorationStore.centerParams.width;
+  const h = explorationStore.centerParams.height;
+  if (!w || !h) return '';
+  const gcd = (a: number, b: number): number => b ? gcd(b, a % b) : a;
+  const common = gcd(w, h);
+  return `${w / common}:${h / common}`;
+});
 
 const updateParams = () => {
   generationStore.prompt = explorationStore.centerParams.prompt;
@@ -138,7 +148,10 @@ const updateParams = () => {
       </div>
       <div class="col-6">
         <label class="form-label small mb-1">Height</label>
-        <input type="number" v-model.number="explorationStore.centerParams.height" @change="updateParams" class="form-control form-control-sm" step="64" />
+        <div class="input-group input-group-sm">
+          <input type="number" v-model.number="explorationStore.centerParams.height" @change="updateParams" class="form-control" step="64" />
+          <span class="input-group-text bg-body-tertiary font-monospace" style="font-size: 0.65rem; padding: 0 0.4rem;">{{ aspectRatio }}</span>
+        </div>
       </div>
     </div>
   </div>

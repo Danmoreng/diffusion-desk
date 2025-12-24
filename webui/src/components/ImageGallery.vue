@@ -216,6 +216,7 @@ function getFormattedParams(item: HistoryItem) {
   s += `Seed: ${p.seed}, `
   s += `Size: ${p.width}x${p.height}, `
   if (p.model) s += `Model: ${p.model}, `
+  if (p.Time) s += `Time: ${p.Time}, `
   s += `Version: stable-diffusion.cpp`
   return s
 }
@@ -303,8 +304,9 @@ onMounted(() => {
                 <span class="text-truncate me-1" :title="image.name">{{ formatDate(image.name) }}</span>
                 <span class="fw-bold text-primary">#{{ image.params?.seed || '?' }}</span>
               </div>
-              <div v-if="image.params?.model" class="text-truncate text-secondary opacity-75" :title="image.params.model">
-                📦 {{ image.params.model }}
+              <div v-if="image.params?.model" class="d-flex justify-content-between text-secondary opacity-75 mt-1">
+                <span class="text-truncate" :title="image.params.model">📦 {{ image.params.model }}</span>
+                <span v-if="image.params.Time" class="text-nowrap ml-1">⏱️ {{ image.params.Time }}</span>
               </div>
             </div>
           </div>
@@ -387,6 +389,7 @@ onMounted(() => {
                       <strong>CFG:</strong> {{ filteredImages[activeIndex].params.cfg_scale }} |
                       <strong>Sampler:</strong> {{ filteredImages[activeIndex].params.sampling_method }} |
                       <strong>Size:</strong> {{ filteredImages[activeIndex].params.width }}x{{ filteredImages[activeIndex].params.height }}
+                      <span v-if="filteredImages[activeIndex].params.Time"> | <strong>Time:</strong> {{ filteredImages[activeIndex].params.Time }}</span>
                     </div>
                   </div>
                   <div class="mt-2 pt-2 border-top">
