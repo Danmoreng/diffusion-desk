@@ -6,27 +6,8 @@
 #include "server_state.hpp"
 #include <mutex>
 
-#include "server/llama_server.hpp"
-#include "utils/common.hpp"
-
-// Parameters struct for the server instance
-struct SDSvrParams {
-    std::string listen_ip = "127.0.0.1";
-    int listen_port       = 1234;
-    std::string model_dir = "./models";
-    std::string output_dir = "./outputs";
-    std::string default_llm_model = "";
-    std::string mode = "orchestrator"; // orchestrator, sd-worker, llm-worker
-    int llm_threads = -1;
-    int llm_idle_timeout = 300; // 5 minutes default
-    bool normal_exit      = false;
-    bool verbose          = false;
-    bool color            = false;
-
-    ArgOptions get_options();
-    bool process_and_check();
-    std::string to_string() const;
-};
+// Forward declaration if needed, but workers usually handle their own types
+class LlamaServer; 
 
 // Global context required by endpoints
 struct ServerContext {
@@ -37,7 +18,6 @@ struct ServerContext {
     std::mutex& sd_ctx_mutex;
     upscaler_ctx_t*& upscaler_ctx;
     std::string& current_upscale_model_path;
-    LlamaServer& llm_server;
 };
 
 // Endpoint handlers
@@ -54,8 +34,3 @@ void handle_upscale_image(const httplib::Request& req, httplib::Response& res, S
 void handle_get_history(const httplib::Request& req, httplib::Response& res, ServerContext& ctx);
 void handle_generate_image(const httplib::Request& req, httplib::Response& res, ServerContext& ctx);
 void handle_edit_image(const httplib::Request& req, httplib::Response& res, ServerContext& ctx);
-
-// LLM Handlers
-void handle_load_llm_model(const httplib::Request& req, httplib::Response& res, ServerContext& ctx);
-void handle_unload_llm_model(const httplib::Request&, httplib::Response& res, ServerContext& ctx);
-void ensure_llm_loaded(ServerContext& ctx);

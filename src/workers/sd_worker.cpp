@@ -34,8 +34,6 @@ int run_sd_worker(SDSvrParams& svr_params, SDContextParams& ctx_params, SDGenera
     }
 
     std::mutex sd_ctx_mutex;
-    LlamaServer llm_server_dummy; 
-    // We don't init llm_server_dummy, so it does nothing.
 
     ServerContext ctx = {
         svr_params,
@@ -44,8 +42,7 @@ int run_sd_worker(SDSvrParams& svr_params, SDContextParams& ctx_params, SDGenera
         sd_ctx,
         sd_ctx_mutex,
         upscaler_ctx,
-        current_upscale_model_path,
-        llm_server_dummy
+        current_upscale_model_path
     };
 
     httplib::Server svr;

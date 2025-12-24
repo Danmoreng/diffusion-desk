@@ -1,19 +1,15 @@
-#include <chrono>
-#include <filesystem>
 #include <iostream>
 #include <vector>
+#include <filesystem>
 
 #include "utils/common.hpp"
-#include "sd/api_endpoints.hpp"
 #include "sd/model_loader.hpp"
-#include "orchestrator/orchestrator_main.hpp"
 #include "workers/sd_worker.hpp"
-#include "workers/llm_worker.hpp"
 
 namespace fs = std::filesystem;
 
 void print_usage(int argc, const char* argv[], const std::vector<ArgOptions>& options_list) {
-    std::cout << "MystiCanvas Server v0.2\n";
+    std::cout << "MystiCanvas SD Worker v0.2\n";
     std::cout << "Usage: " << argv[0] << " [options]\n\n";
     std::cout << "Svr Options:\n";
     options_list[0].print();
@@ -37,17 +33,10 @@ void parse_args(int argc, const char** argv, SDSvrParams& svr_params, SDContextP
         print_usage(argc, argv, options_vec);
         exit(1);
     }
-    
-    // In Orchestrator mode, model paths might not be set yet, that's fine.
-    // In Worker modes, validation is stricter if needed, but handled inside worker if model load is attempted.
-    
-    // Legacy check removal: We don't force model path at startup anymore because we have model loading API.
-    // But if provided, we load it.
 
     if (has_model) {
         std::string active_path = ctx_params.diffusion_model_path.empty() ? ctx_params.model_path : ctx_params.diffusion_model_path;
         
-        // Resolve simple filenames against model_dir if needed
         fs::path p(active_path);
         if (!p.is_absolute() && !fs::exists(p)) {
             fs::path candidate = fs::path(svr_params.model_dir) / p;
@@ -75,14 +64,11 @@ int main(int argc, const char** argv) {
     SDSvrParams svr_params;
     SDContextParams ctx_params;
     SDGenerationParams default_gen_params;
+    
     parse_args(argc, argv, svr_params, ctx_params, default_gen_params);
 
-    if (svr_params.mode == "sd-worker") {
-        return run_sd_worker(svr_params, ctx_params, default_gen_params);
-    } else if (svr_params.mode == "llm-worker") {
-        return run_llm_worker(svr_params, ctx_params);
-    } else {
-        // Default: Orchestrator
-        return run_orchestrator(argc, argv, svr_params);
-    }
+    // Force mode just in case, though it should be passed via args or ignored
+    svr_params.mode = "sd-worker";
+
+    return run_sd_worker(svr_params, ctx_params, default_gen_params);
 }
