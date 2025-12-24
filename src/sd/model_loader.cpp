@@ -73,10 +73,11 @@ void load_model_config(SDContextParams& ctx_params, const std::string& model_pat
                 LOG_INFO("Config: forced shift_factor: %.3f", ctx_params.shift_factor);
             }
 
-            LOG_INFO("Config applied: vae=%s, clip_l=%s, t5=%s, clip_on_cpu=%s, flash_attn=%s",
+            LOG_INFO("Config applied: vae=%s, clip_l=%s, t5=%s, llm=%s, clip_on_cpu=%s, flash_attn=%s",
                      ctx_params.vae_path.c_str(),
                      ctx_params.clip_l_path.c_str(),
                      ctx_params.t5xxl_path.c_str(),
+                     ctx_params.llm_path.c_str(),
                      ctx_params.clip_on_cpu ? "true" : "false",
                      ctx_params.diffusion_flash_attn ? "true" : "false");
 

@@ -46,6 +46,18 @@ void parse_args(int argc, const char** argv, SDSvrParams& svr_params, SDContextP
                 else ctx_params.diffusion_model_path = active_path;
             }
         }
+
+        // Smart fallback: If we only have model_path but it looks like it should be a diffusion_model_path (GGUF),
+        // and we aren't in upscale mode, move it to diffusion_model_path to avoid "get version failed" errors.
+        if (ctx_params.diffusion_model_path.empty() && !ctx_params.model_path.empty()) {
+            std::string ext = fs::path(ctx_params.model_path).extension().string();
+            if (ext == ".gguf") {
+                LOG_INFO("Smart fallback: Moving GGUF from model_path to diffusion_model_path");
+                ctx_params.diffusion_model_path = ctx_params.model_path;
+                ctx_params.model_path = "";
+                active_path = ctx_params.diffusion_model_path;
+            }
+        }
         
         load_model_config(ctx_params, active_path, svr_params.model_dir);
     }

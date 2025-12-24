@@ -159,7 +159,7 @@ void handle_get_models(const httplib::Request&, httplib::Response& res, ServerCo
                         model["type"] = sub_dir;
                         model["object"] = "model";
                         model["owned_by"] = "local";
-                        model["active"] = (model["id"] == current_model_name || rel_path == ctx.current_upscale_model_path);
+                        model["active"] = (model["name"] == current_model_name || rel_path == ctx.current_upscale_model_path);
                         r["data"].push_back(model);
                     }
                 }

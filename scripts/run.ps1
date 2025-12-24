@@ -49,7 +49,7 @@ Write-Host "-------------------------------------------"
 Set-Location $ProjectRoot
 & $ServerExe `
     --model-dir "$ModelBase" `
-    --model "$SDPath" `
+    --diffusion-model "$SDPath" `
     --llm-model "$LLMPath" `
     --llm-idle-timeout $IdleTimeout `
     --listen-port 1234 `
