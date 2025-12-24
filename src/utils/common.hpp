@@ -1531,7 +1531,23 @@ struct SDGenerationParams {
     }
 };
 
+struct SDSvrParams {
+    std::string listen_ip = "127.0.0.1";
+    int listen_port       = 1234;
+    std::string model_dir = "./models";
+    std::string output_dir = "./outputs";
+    std::string default_llm_model = "";
+    std::string mode = "orchestrator"; // orchestrator, sd-worker, llm-worker
+    int llm_threads = -1;
+    int llm_idle_timeout = 300; // 5 minutes default
+    bool normal_exit      = false;
+    bool verbose          = false;
+    bool color            = false;
 
+    ArgOptions get_options();
+    bool process_and_check();
+    std::string to_string() const;
+};
 
 uint8_t* load_image_from_file(const char* image_path,
                               int& width,

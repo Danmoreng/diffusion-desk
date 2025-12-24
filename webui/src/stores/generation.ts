@@ -503,7 +503,16 @@ export const useGenerationStore = defineStore('generation', () => {
 
     if (!response.ok) {
       const errText = await response.text();
-      throw new Error(errText || 'An error occurred while generating the image.')
+      let errMessage = errText || 'An error occurred while generating the image.';
+      try {
+        const errJson = JSON.parse(errText);
+        if (errJson && errJson.error) {
+          errMessage = errJson.error;
+        }
+      } catch (e) {
+        // ignore, use text
+      }
+      throw new Error(errMessage)
     }
 
     const responseData = await response.json();

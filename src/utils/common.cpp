@@ -455,3 +455,100 @@ uint8_t* load_image_from_memory(const char* image_bytes,
                                 int expected_channel) {
     return load_image_common(true, image_bytes, len, width, height, expected_width, expected_height, expected_channel);
 }
+
+// SDSvrParams Implementation
+
+ArgOptions SDSvrParams::get_options() {
+    ArgOptions options;
+
+    options.string_options = {
+        {" -l",
+            "--listen-ip",
+            "server listen ip (default: 127.0.0.1)",
+            &listen_ip},
+        {
+            "",
+            "--mode",
+            "server run mode: orchestrator, sd-worker, llm-worker (default: orchestrator)",
+            &mode},
+        {
+            "",
+            "--model-dir",
+            "directory to scan for models (default: ./models)",
+            &model_dir},
+        {
+            "",
+            "--output-dir",
+            "directory to save generated images (default: ./outputs)",
+            &output_dir},
+        {
+            "",
+            "--default-llm",
+            "default LLM model to load automatically",
+            &default_llm_model}};
+
+    options.int_options = {
+        {
+            "",
+            "--listen-port",
+            "server listen port (default: 1234)",
+            &listen_port},
+        {
+            "",
+            "--llm-threads",
+            "number of threads for LLM",
+            &llm_threads},
+        {
+            "",
+            "--llm-idle-timeout",
+            "seconds of inactivity before unloading LLM (default: 300)",
+            &llm_idle_timeout},
+    };
+
+    options.bool_options = {
+        {" -v",
+            "--verbose",
+            "print extra info",
+            true, &verbose},
+        {
+            "",
+            "--color",
+            "colors the logging tags according to level",
+            true, &color},
+    };
+
+    auto on_help_arg = [&](int argc, const char** argv, int index) {
+        normal_exit = true;
+        return -1;
+    };
+
+    options.manual_options = {
+        {" -h",
+            "--help",
+            "show this help message and exit",
+            on_help_arg},
+    };
+    return options;
+};
+
+bool SDSvrParams::process_and_check() {
+    if (listen_ip.empty()) {
+        LOG_ERROR("error: the following arguments are required: listen_ip");
+        return false;
+    }
+
+    if (listen_port < 0 || listen_port > 65535) {
+        LOG_ERROR("error: listen_port should be in the range [0, 65535]");
+        return false;
+    }
+    return true;
+}
+
+std::string SDSvrParams::to_string() const {
+    std::ostringstream oss;
+    oss << "SDSvrParams {\n"
+        << "  listen_ip: " << listen_ip << ",\n"
+        << "  listen_port: \"" << listen_port << "\",\n"
+        << "}";
+    return oss.str();
+}

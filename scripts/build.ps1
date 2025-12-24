@@ -80,10 +80,24 @@ if ($LASTEXITCODE -ne 0) {
     exit 1
 }
 
-Write-Host "Building Main Server..."
+Write-Host "Building Main Server (Orchestrator)..."
 cmake --build . --config Release --target mysti_server --parallel > build_server.log 2> build_server.err
 if ($LASTEXITCODE -ne 0) {
     Write-Host "Server build failed! Check build_server.err/log" -ForegroundColor Red
+    exit 1
+}
+
+Write-Host "Building SD Worker..."
+cmake --build . --config Release --target mysti_sd_worker --parallel > build_sd_worker.log 2> build_sd_worker.err
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "SD Worker build failed! Check build_sd_worker.err/log" -ForegroundColor Red
+    exit 1
+}
+
+Write-Host "Building LLM Worker..."
+cmake --build . --config Release --target mysti_llm_worker --parallel > build_llm_worker.log 2> build_llm_worker.err
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "LLM Worker build failed! Check build_llm_worker.err/log" -ForegroundColor Red
     exit 1
 }
 

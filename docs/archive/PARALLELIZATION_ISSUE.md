@@ -1431,15 +1431,15 @@ On SIGINT / Ctrl+C:
 
 ## 8) Deliverables Checklist for the PR
 
-* [ ] `--mode` support with three modes
-* [ ] SD worker server functional standalone
-* [ ] LLM worker server functional standalone
-* [ ] Orchestrator spawns both and proxies requests
-* [ ] Streaming proxy works (or documented redirect fallback)
-* [ ] Health endpoints and `/health` aggregation
-* [ ] Graceful shutdown implemented
-* [ ] Basic restart policy
-* [ ] Minimal documentation for running in each mode
+* [x] `--mode` support with three modes
+* [x] SD worker server functional standalone
+* [x] LLM worker server functional standalone
+* [x] Orchestrator spawns both and proxies requests
+* [x] Streaming proxy works (or documented redirect fallback)
+* [x] Health endpoints and `/health` aggregation
+* [x] Graceful shutdown implemented
+* [x] Basic restart policy
+* [x] Minimal documentation for running in each mode
 
 ---
 
