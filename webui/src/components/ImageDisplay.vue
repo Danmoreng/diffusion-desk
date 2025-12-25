@@ -55,6 +55,9 @@ function sendToImg2Img(url: string) {
           </div>
           <h5 class="text-primary mb-1">{{ store.progressPhase }}</h5>
           <p class="mb-3 small">Generating image(s)...</p>
+          <div v-if="store.progressMessage" class="alert alert-info py-1 px-2 small mb-3">
+            <i class="bi bi-info-circle me-1"></i> {{ store.progressMessage }}
+          </div>
           
           <!-- Progress Bar -->
           <div v-if="store.progressSteps > 0" class="w-100 px-4" style="max-width: 400px;">

@@ -55,7 +55,11 @@ int run_sd_worker(SDSvrParams& svr_params, SDContextParams& ctx_params, SDGenera
     // Worker might need to serve some static files? Probably not.
 
     svr.Get("/internal/health", [&](const httplib::Request&, httplib::Response& res) {
-        res.set_content(R"({\"ok\":true,\"worker\":\"sd\"})", "application/json");
+        mysti::json j;
+        j["ok"] = true;
+        j["worker"] = "sd";
+        j["vram_free_gb"] = get_free_vram_gb();
+        res.set_content(j.dump(), "application/json");
     });
     
     svr.Post("/internal/shutdown", [&](const httplib::Request&, httplib::Response& res) {

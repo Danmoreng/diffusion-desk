@@ -25,6 +25,7 @@ void reset_progress() {
     progress_state.base_step = 0;
     progress_state.time = 0;
     progress_state.phase = "idle";
+    progress_state.message = "";
     progress_state.version++;
     progress_state.cv.notify_all();
 }
@@ -32,6 +33,13 @@ void reset_progress() {
 void set_progress_phase(const std::string& phase) {
     std::lock_guard<std::mutex> lock(progress_state.mutex);
     progress_state.phase = phase;
+    progress_state.version++;
+    progress_state.cv.notify_all();
+}
+
+void set_progress_message(const std::string& message) {
+    std::lock_guard<std::mutex> lock(progress_state.mutex);
+    progress_state.message = message;
     progress_state.version++;
     progress_state.cv.notify_all();
 }

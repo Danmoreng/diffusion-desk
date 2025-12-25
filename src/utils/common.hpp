@@ -53,6 +53,8 @@ std::string sd_basename(const std::string& path);
 std::string version_string();
 std::string argv_to_utf8(int index, const char** argv);
 float get_total_vram_gb();
+float get_free_vram_gb();
+std::map<int, float> get_vram_usage_map();
 
 // Logging
 void log_print(enum sd_log_level_t level, const char* log, bool verbose, bool color);

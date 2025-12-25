@@ -46,6 +46,7 @@ void handle_get_progress(const httplib::Request&, httplib::Response& res) {
         r["step"] = progress_state.step;
         r["steps"] = progress_state.steps;
         r["time"] = progress_state.time;
+        r["message"] = progress_state.message;
     }
     res.set_content(r.dump(), "application/json");
 }
@@ -61,6 +62,7 @@ void handle_stream_progress(const httplib::Request&, httplib::Response& res) {
         int steps = 0;
         float time = 0;
         std::string phase = "";
+        std::string message = "";
 
         // Send initial state or at least a comment to open the stream
         {
@@ -70,6 +72,7 @@ void handle_stream_progress(const httplib::Request&, httplib::Response& res) {
             steps = progress_state.steps;
             time = progress_state.time;
             phase = progress_state.phase;
+            message = progress_state.message;
         }
         
         mysti::json initial_j;
@@ -77,6 +80,7 @@ void handle_stream_progress(const httplib::Request&, httplib::Response& res) {
         initial_j["steps"] = steps;
         initial_j["time"] = time;
         initial_j["phase"] = phase;
+        initial_j["message"] = message;
         std::string initial_s = "data: " + initial_j.dump() + "\n\n";
         if (!sink.write(initial_s.c_str(), initial_s.size())) return false;
 
@@ -95,6 +99,7 @@ void handle_stream_progress(const httplib::Request&, httplib::Response& res) {
             steps = progress_state.steps;
             time = progress_state.time;
             phase = progress_state.phase;
+            message = progress_state.message;
             last_version = progress_state.version;
             lock.unlock();
 
@@ -103,6 +108,7 @@ void handle_stream_progress(const httplib::Request&, httplib::Response& res) {
             j["steps"] = steps;
             j["time"] = time;
             j["phase"] = phase;
+            j["message"] = message;
             std::string s = "data: " + j.dump() + "\n\n";
             if (!sink.write(s.c_str(), s.size())) {
                 return false;
@@ -672,6 +678,24 @@ void handle_generate_image(const httplib::Request& req, httplib::Response& res, 
                 res.status = 400;
                 res.set_content(R"({\"error\":\"no model loaded\"})", "application/json");
                 return;
+            }
+
+            // Dynamic VRAM management for VAE
+            float free_vram = get_free_vram_gb();
+            // Estimate VAE VRAM: 1.6GB for 512x512, scales with area
+            float estimated_vae_vram = (float(gen_params.width) * gen_params.height) / (512.0f * 512.0f) * 1.6f;
+            
+            LOG_INFO("VAE VRAM Check: Free=%.2fGB, Estimated Needed=%.2fGB", free_vram, estimated_vae_vram);
+            
+            if (estimated_vae_vram > free_vram * 0.7f && !img_gen_params.vae_tiling_params.enabled) {
+                LOG_WARN("High VRAM usage predicted. Automatically enabling VAE tiling.");
+                img_gen_params.vae_tiling_params.enabled = true;
+                set_progress_message("VRAM low: VAE tiling enabled");
+                // Use default tile size if not set
+                if (img_gen_params.vae_tiling_params.tile_size_x <= 0) {
+                    img_gen_params.vae_tiling_params.tile_size_x = 512;
+                    img_gen_params.vae_tiling_params.tile_size_y = 512;
+                }
             }
 
             {

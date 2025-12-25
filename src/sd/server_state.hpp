@@ -12,6 +12,7 @@ struct ProgressState {
     int base_step = 0;
     float time = 0;
     std::string phase = "";
+    std::string message = "";
     uint64_t version = 0;
     std::mutex mutex;
     std::condition_variable cv;
@@ -22,3 +23,4 @@ extern ProgressState progress_state;
 void on_progress(int step, int steps, float time, void* data);
 void reset_progress();
 void set_progress_phase(const std::string& phase);
+void set_progress_message(const std::string& message);

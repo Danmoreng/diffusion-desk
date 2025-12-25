@@ -71,6 +71,33 @@ export const useGenerationStore = defineStore('generation', () => {
   const isLlmLoading = ref(false)
   const isLlmThinking = ref(false)
 
+  // VRAM State
+  const vramInfo = ref({
+    total: 0,
+    free: 0,
+    sd: 0,
+    llm: 0
+  })
+
+  async function fetchVramInfo() {
+    try {
+      const response = await fetch('/health')
+      const data = await response.json()
+      vramInfo.value = {
+        total: data.vram_total_gb || 0,
+        free: data.vram_free_gb || 0,
+        sd: data.sd_worker?.vram_gb || 0,
+        llm: data.llm_worker?.vram_gb || 0
+      }
+    } catch (e) {
+      console.error('Failed to fetch VRAM info:', e)
+    }
+  }
+
+  // Start VRAM polling
+  fetchVramInfo()
+  setInterval(fetchVramInfo, 5000)
+
   async function fetchConfig() {
     try {
       const response = await fetch('/v1/config')
@@ -111,6 +138,7 @@ export const useGenerationStore = defineStore('generation', () => {
   const progressSteps = ref(0)
   const progressTime = ref(0)
   const progressPhase = ref('')
+  const progressMessage = ref('')
   let progressSource: EventSource | null = null
   
   // Helpers for better ETA
@@ -186,6 +214,7 @@ export const useGenerationStore = defineStore('generation', () => {
         progressStep.value = data.step;
         progressSteps.value = data.steps;
         progressTime.value = data.time;
+        progressMessage.value = data.message || '';
       } catch (e) {
         console.error('Error parsing progress stream data:', event.data, e);
       }
@@ -205,6 +234,7 @@ export const useGenerationStore = defineStore('generation', () => {
     progressSteps.value = 0;
     progressTime.value = 0;
     progressPhase.value = '';
+    progressMessage.value = '';
   }
 
   async function fetchModels() {
@@ -651,9 +681,9 @@ export const useGenerationStore = defineStore('generation', () => {
     prompt, negativePrompt, steps, seed, cfgScale, strength, batchCount, sampler, samplers, width, height, 
     hiresFix, hiresUpscaleModel, hiresUpscaleFactor, hiresDenoisingStrength, hiresSteps, 
     isSidebarCollapsed, toggleSidebar, theme, toggleTheme, saveImages, initImage, maskImage,
-    models, currentModel, currentLlmModel, upscaleModel, upscaleFactor, 
+    models, currentModel, currentLlmModel, upscaleModel, upscaleFactor, vramInfo,
     isModelsLoading, fetchModels, loadModel, loadLlmModel, unloadLlmModel, loadUpscaleModel, testLlmCompletion, enhancePrompt,
-    progressStep, progressSteps, progressTime, progressPhase, eta, 
+    progressStep, progressSteps, progressTime, progressPhase, progressMessage, eta, 
     startStreamingProgress, stopStreamingProgress, lastParams, outputDir, modelDir, isLlmThinking,
     updateConfig, reuseLastSeed, randomizeSeed, swapDimensions 
   }

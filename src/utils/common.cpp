@@ -430,6 +430,50 @@ float get_total_vram_gb() {
 #endif
 }
 
+float get_free_vram_gb() {
+#ifdef _WIN32
+    // Minimal fallback for Windows for now
+    return 4.0f; 
+#else
+    // Linux implementation using nvidia-smi
+    FILE* pipe = popen("nvidia-smi --query-gpu=memory.free --format=csv,noheader,nounits", "r");
+    if (!pipe) {
+        return 4.0f; // Fallback
+    }
+    char buffer[128];
+    float free_gb = 4.0f;
+    if (fgets(buffer, 128, pipe) != NULL) {
+        try {
+            float free_mb = std::stof(buffer);
+            free_gb = free_mb / 1024.0f;
+        } catch (...) {
+            // Failed to parse
+        }
+    }
+    pclose(pipe);
+    return free_gb;
+#endif
+}
+
+std::map<int, float> get_vram_usage_map() {
+    std::map<int, float> usage;
+#ifndef _WIN32
+    FILE* pipe = popen("nvidia-smi --query-compute-apps=pid,used_memory --format=csv,noheader,nounits", "r");
+    if (pipe) {
+        char buffer[256];
+        while (fgets(buffer, sizeof(buffer), pipe) != NULL) {
+            int pid;
+            float mem_mb;
+            if (sscanf(buffer, "%d, %f", &pid, &mem_mb) == 2) {
+                usage[pid] = mem_mb / 1024.0f; // Convert to GB
+            }
+        }
+        pclose(pipe);
+    }
+#endif
+    return usage;
+}
+
 uint8_t* load_image_common(bool from_memory,
                            const char* image_path_or_bytes,
                            int len,
