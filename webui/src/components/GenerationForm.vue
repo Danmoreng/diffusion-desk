@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch, computed } from 'vue'
+import { ref, watch, computed, onMounted } from 'vue'
 import { useGenerationStore } from '@/stores/generation'
 
 const props = defineProps<{
@@ -12,10 +12,42 @@ const aspectRatio = computed(() => {
   const w = store.width
   const h = store.height
   if (!w || !h) return ''
-  const gcd = (a: number, b: number): number => b ? gcd(b, a % b) : a
-  const common = gcd(w, h)
-  return `${w / common}:${h / common}`
+  const gcdValue = gcd(w, h)
+  return `${w / gcdValue}:${h / gcdValue}`
 })
+
+const commonRatios = [
+  { label: '1:1', w: 1, h: 1 },
+  { label: '4:3', w: 4, h: 3 },
+  { label: '3:4', w: 3, h: 4 },
+  { label: '3:2', w: 3, h: 2 },
+  { label: '2:3', w: 2, h: 3 },
+  { label: '16:9', w: 16, h: 9 },
+  { label: '9:16', w: 9, h: 16 },
+  { label: '16:10', w: 16, h: 10 },
+  { label: '10:16', w: 10, h: 16 },
+  { label: '21:9', w: 21, h: 9 },
+]
+
+const applyAspectRatio = (ratio: { w: number, h: number }) => {
+  isInternalScaleUpdate = true
+  
+  // Jump to the smallest valid resolution for this ratio
+  // Smallest unit is 16px. We need both dimensions >= 64px.
+  // multiplier * ratio.w * 16 >= 64  => multiplier * ratio.w >= 4
+  // multiplier * ratio.h * 16 >= 64  => multiplier * ratio.h >= 4
+  const multiplier = Math.ceil(Math.max(4 / ratio.w, 4 / ratio.h))
+  
+  store.width = ratio.w * multiplier * 16
+  store.height = ratio.h * multiplier * 16
+  
+  stepW.value = ratio.w
+  stepH.value = ratio.h
+  currentSizeStep.value = multiplier
+  
+  updateStepRange()
+  setTimeout(() => { isInternalScaleUpdate = false }, 0)
+}
 
 const n = () => {
   if (!store.prompt || store.isGenerating || store.isModelSwitching) return
@@ -59,21 +91,88 @@ const uploadedImageWidth = ref(0)
 const uploadedImageHeight = ref(0)
 const scaleFactor = ref(1.0)
 
+// Step-based sizing logic
+const currentSizeStep = ref(1)
+const minSizeStep = ref(1)
+const maxSizeStep = ref(256) // 4096 / 16
+const stepW = ref(8)
+const stepH = ref(8)
+let isInternalScaleUpdate = false
+
+const gcd = (a: number, b: number): number => b ? gcd(b, a % b) : a
+
+const updateStepRange = () => {
+  const unitsW = Math.round(store.width / 16)
+  const unitsH = Math.round(store.height / 16)
+  const common = gcd(unitsW, unitsH)
+  
+  stepW.value = unitsW / common
+  stepH.value = unitsH / common
+  currentSizeStep.value = common
+  
+  // Calculate max steps to stay within 4096px
+  const maxW = Math.floor(4096 / (stepW.value * 16))
+  const maxH = Math.floor(4096 / (stepH.value * 16))
+  maxSizeStep.value = Math.max(currentSizeStep.value, Math.min(maxW, maxH))
+  minSizeStep.value = 1
+}
+
 const useImageSize = () => {
   if (uploadedImageWidth.value > 0 && uploadedImageHeight.value > 0) {
-    // Round to nearest multiple of 64
-    store.width = Math.round((uploadedImageWidth.value * scaleFactor.value) / 64) * 64
-    store.height = Math.round((uploadedImageHeight.value * scaleFactor.value) / 64) * 64
+    // Round to nearest multiple of 16
+    store.width = Math.round((uploadedImageWidth.value * scaleFactor.value) / 16) * 16
+    store.height = Math.round((uploadedImageHeight.value * scaleFactor.value) / 16) * 16
     
     // Ensure minimum of 64
     if (store.width < 64) store.width = 64
     if (store.height < 64) store.height = 64
+    updateStepRange()
   }
 }
 
 watch(scaleFactor, () => {
   useImageSize()
 })
+
+// Initialize range
+onMounted(() => {
+  updateStepRange()
+})
+
+// When width or height change manually, recalculate our steps
+watch([() => store.width, () => store.height], ([newW, newH]) => {
+  if (!isInternalScaleUpdate) {
+    // Only update the slider internal state if we have valid multiples of 16
+    if (newW > 0 && newH > 0 && newW % 16 === 0 && newH % 16 === 0) {
+      updateStepRange()
+    }
+  }
+})
+
+watch(currentSizeStep, (newStep) => {
+  isInternalScaleUpdate = true
+  store.width = stepW.value * newStep * 16
+  store.height = stepH.value * newStep * 16
+  
+  // Use nextTick to reset flag after reactive updates propagate
+  setTimeout(() => { isInternalScaleUpdate = false }, 0)
+})
+
+const snapToNext16 = (val: number) => {
+  if (!val || val < 64) return 64
+  if (val % 16 === 0) return val
+  return Math.ceil(val / 16) * 16
+}
+
+const handleWidthBlur = () => {
+  store.width = snapToNext16(store.width)
+  updateStepRange()
+}
+
+const handleHeightBlur = () => {
+  store.height = snapToNext16(store.height)
+  updateStepRange()
+}
 
 const clearInitImage = () => {
   store.initImage = null
@@ -228,38 +327,76 @@ const clearInitImage = () => {
       </div>
 
       <div class="row g-2 mb-3 align-items-center">
-        <div class="col">
-          <div class="input-group input-group-sm">
-            <span class="input-group-text">Width</span>
-            <input
-              type="number"
-              v-model.number="store.width"
-              min="64"
-              max="2048"
-              step="64"
-              class="form-control"
-            />
+        <div class="col-md-8">
+          <div class="d-flex align-items-center gap-2">
+            <div class="input-group input-group-sm">
+              <span class="input-group-text">Width</span>
+              <input
+                type="number"
+                v-model.number="store.width"
+                @blur="handleWidthBlur"
+                min="64"
+                max="4096"
+                step="16"
+                class="form-control"
+              />
+            </div>
+            <button type="button" class="btn btn-outline-secondary btn-sm" @click="store.swapDimensions" title="Swap Dimensions">
+              ⇄
+            </button>
+            <div class="input-group input-group-sm">
+              <span class="input-group-text">Height</span>
+              <input
+                type="number"
+                v-model.number="store.height"
+                @blur="handleHeightBlur"
+                min="64"
+                max="4096"
+                step="16"
+                class="form-control"
+              />
+            </div>
           </div>
         </div>
-        <div class="col-auto">
-          <button type="button" class="btn btn-outline-secondary btn-sm" @click="store.swapDimensions" title="Swap Dimensions">
-            ⇄
-          </button>
-        </div>
-        <div class="col">
+        <div class="col-md-4">
           <div class="input-group input-group-sm">
-            <span class="input-group-text">Height</span>
-            <input
-              type="number"
-              v-model.number="store.height"
-              min="64"
-              max="2048"
-              step="64"
-              class="form-control"
-            />
-            <span class="input-group-text bg-body-tertiary font-monospace" style="min-width: 50px; justify-content: center;" title="Aspect Ratio">{{ aspectRatio }}</span>
+            <span class="input-group-text">AR</span>
+            <select 
+              class="form-select font-monospace" 
+              :value="commonRatios.find(r => r.label === aspectRatio) ? aspectRatio : 'custom'"
+              @change="(e) => {
+                const val = (e.target as HTMLSelectElement).value;
+                if (val !== 'custom') {
+                  const ratio = commonRatios.find(r => r.label === val);
+                  if (ratio) applyAspectRatio(ratio);
+                }
+              }"
+              title="Change Aspect Ratio"
+            >
+              <option value="custom" v-if="!commonRatios.find(r => r.label === aspectRatio)">{{ aspectRatio }} (Custom)</option>
+              <option value="custom" v-else disabled>Preset...</option>
+              <option v-for="r in commonRatios" :key="r.label" :value="r.label">
+                {{ r.label }}
+              </option>
+            </select>
           </div>
         </div>
+      </div>
+
+      <!-- Combined Size Slider -->
+      <div class="mb-3 px-1">
+        <label class="form-label d-flex justify-content-between x-small text-muted text-uppercase fw-bold mb-1">
+          <span>Overall Size Adjustment:</span>
+          <span class="text-primary">{{ store.width }} x {{ store.height }}</span>
+        </label>
+        <input 
+          type="range" 
+          class="form-range" 
+          v-model.number="currentSizeStep" 
+          :min="minSizeStep" 
+          :max="maxSizeStep" 
+          step="1"
+        >
       </div>
 
       <div class="row g-2 mb-4">
