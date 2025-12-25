@@ -12,7 +12,7 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 set(LLAMA_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 set(LLAMA_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 set(LLAMA_BUILD_SERVER ON CACHE BOOL "" FORCE)
-set(LLAMA_BUILD_TOOLS OFF CACHE BOOL "" FORCE)
+set(LLAMA_BUILD_TOOLS ON CACHE BOOL "" FORCE)
 set(LLAMA_BUILD_COMMON ON CACHE BOOL "" FORCE)
 set(LLAMA_CURL OFF CACHE BOOL "" FORCE)
 set(GGML_CUDA ON CACHE BOOL "" FORCE)
@@ -27,6 +27,22 @@ set(SD_CUDA ON CACHE BOOL "" FORCE)
 # Add subdirectories
 add_subdirectory(libs/llama.cpp)
 add_subdirectory(libs/stable-diffusion.cpp)
+
+# Optimization: Exclude unnecessary llama.cpp tools from default build
+# We need LLAMA_BUILD_TOOLS=ON to get 'server-context', but we don't want the CLI tools.
+set(LLAMA_TOOLS_TO_EXCLUDE
+    llama-batched-bench llama-bench llama-cli llama-completion 
+    llama-cvector-generator llama-export-lora llama-fit-params 
+    llama-gemma3-cli llama-gguf-split llama-imatrix llama-llava-cli 
+    llama-minicpmv-cli llama-mtmd-cli llama-perplexity llama-quantize 
+    llama-qwen2vl-cli llama-run llama-server llama-tokenize llama-tts
+)
+
+foreach(TOOL_TARGET ${LLAMA_TOOLS_TO_EXCLUDE})
+    if(TARGET ${TOOL_TARGET})
+        set_target_properties(${TOOL_TARGET} PROPERTIES EXCLUDE_FROM_ALL TRUE)
+    endif()
+endforeach()
 
 if(MSVC)
     if(TARGET stable-diffusion)
