@@ -93,6 +93,7 @@ int run_llm_worker(SDSvrParams& svr_params, SDContextParams& ctx_params) {
         j["ok"] = true;
         j["worker"] = "llm";
         j["loaded"] = llm_server.is_loaded();
+        j["vram_gb"] = get_current_process_vram_usage_gb();
         j["vram_free_gb"] = get_free_vram_gb();
         res.set_content(j.dump(), "application/json");
     });

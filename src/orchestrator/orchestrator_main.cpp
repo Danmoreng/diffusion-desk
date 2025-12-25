@@ -462,14 +462,28 @@ int run_orchestrator(int argc, const char** argv, SDSvrParams& svr_params) {
         bool sd_ok = pm.is_running(sd_process);
         bool llm_ok = pm.is_running(llm_process);
         
-        auto usage_map = get_vram_usage_map();
         float sd_vram = 0;
         float llm_vram = 0;
 
-#ifndef _WIN32
-        if (sd_ok) sd_vram = usage_map[sd_process.pid];
-        if (llm_ok) llm_vram = usage_map[llm_process.pid];
-#endif
+        if (sd_ok) {
+            httplib::Client cli("127.0.0.1", sd_port);
+            if (auto res_w = cli.Get("/internal/health")) {
+                try {
+                    auto j_w = mysti::json::parse(res_w->body);
+                    sd_vram = j_w.value("vram_gb", 0.0f);
+                } catch (...) {}
+            }
+        }
+
+        if (llm_ok) {
+            httplib::Client cli("127.0.0.1", llm_port);
+            if (auto res_w = cli.Get("/internal/health")) {
+                try {
+                    auto j_w = mysti::json::parse(res_w->body);
+                    llm_vram = j_w.value("vram_gb", 0.0f);
+                } catch (...) {}
+            }
+        }
 
         mysti::json j;
         j["status"] = (sd_ok && llm_ok) ? "ok" : "degraded";

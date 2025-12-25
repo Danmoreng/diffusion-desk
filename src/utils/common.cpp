@@ -15,6 +15,8 @@
 #define NOMINMAX
 #include <windows.h>
 #include <shellapi.h>
+#include <dxgi1_4.h>
+#pragma comment(lib, "dxgi.lib")
 #endif
 
 #define STB_IMAGE_IMPLEMENTATION
@@ -406,14 +408,14 @@ std::string version_string() {
 }
 
 float get_total_vram_gb() {
+    const char* cmd = "nvidia-smi --query-gpu=memory.total --format=csv,noheader,nounits";
 #ifdef _WIN32
-    // Minimal fallback for Windows for now
-    return 8.0f; 
+    FILE* pipe = _popen(cmd, "r");
 #else
-    // Linux implementation using nvidia-smi
-    FILE* pipe = popen("nvidia-smi --query-gpu=memory.total --format=csv,noheader,nounits", "r");
+    FILE* pipe = popen(cmd, "r");
+#endif
     if (!pipe) {
-        return 8.0f; // Fallback if nvidia-smi not available
+        return 8.0f; // Fallback
     }
     char buffer[128];
     float total_gb = 8.0f;
@@ -421,22 +423,23 @@ float get_total_vram_gb() {
         try {
             float total_mb = std::stof(buffer);
             total_gb = total_mb / 1024.0f;
-        } catch (...) {
-            // Failed to parse
-        }
+        } catch (...) {}
     }
+#ifdef _WIN32
+    _pclose(pipe);
+#else
     pclose(pipe);
-    return total_gb;
 #endif
+    return total_gb;
 }
 
 float get_free_vram_gb() {
+    const char* cmd = "nvidia-smi --query-gpu=memory.free --format=csv,noheader,nounits";
 #ifdef _WIN32
-    // Minimal fallback for Windows for now
-    return 4.0f; 
+    FILE* pipe = _popen(cmd, "r");
 #else
-    // Linux implementation using nvidia-smi
-    FILE* pipe = popen("nvidia-smi --query-gpu=memory.free --format=csv,noheader,nounits", "r");
+    FILE* pipe = popen(cmd, "r");
+#endif
     if (!pipe) {
         return 4.0f; // Fallback
     }
@@ -446,19 +449,54 @@ float get_free_vram_gb() {
         try {
             float free_mb = std::stof(buffer);
             free_gb = free_mb / 1024.0f;
-        } catch (...) {
-            // Failed to parse
-        }
+        } catch (...) {}
     }
+#ifdef _WIN32
+    _pclose(pipe);
+#else
     pclose(pipe);
+#endif
     return free_gb;
+}
+
+float get_current_process_vram_usage_gb() {
+#ifdef _WIN32
+    float usage_gb = 0.0f;
+    IDXGIFactory4* pFactory = nullptr;
+    if (SUCCEEDED(CreateDXGIFactory1(__uuidof(IDXGIFactory4), (void**)&pFactory))) {
+        IDXGIAdapter* pAdapter = nullptr;
+        if (SUCCEEDED(pFactory->EnumAdapters(0, &pAdapter))) {
+            IDXGIAdapter3* pAdapter3 = nullptr;
+            if (SUCCEEDED(pAdapter->QueryInterface(__uuidof(IDXGIAdapter3), (void**)&pAdapter3))) {
+                DXGI_QUERY_VIDEO_MEMORY_INFO info;
+                if (SUCCEEDED(pAdapter3->QueryVideoMemoryInfo(0, DXGI_MEMORY_SEGMENT_GROUP_LOCAL, &info))) {
+                    usage_gb = (float)info.CurrentUsage / (1024.0f * 1024.0f * 1024.0f);
+                }
+                pAdapter3->Release();
+            }
+            pAdapter->Release();
+        }
+        pFactory->Release();
+    }
+    return usage_gb;
+#else
+    auto usage_map = get_vram_usage_map();
+    int pid = getpid();
+    if (usage_map.count(pid)) {
+        return usage_map[pid];
+    }
+    return 0.0f;
 #endif
 }
 
 std::map<int, float> get_vram_usage_map() {
     std::map<int, float> usage;
-#ifndef _WIN32
-    FILE* pipe = popen("nvidia-smi --query-compute-apps=pid,used_memory --format=csv,noheader,nounits", "r");
+    const char* cmd = "nvidia-smi --query-compute-apps=pid,used_memory --format=csv,noheader,nounits";
+#ifdef _WIN32
+    FILE* pipe = _popen(cmd, "r");
+#else
+    FILE* pipe = popen(cmd, "r");
+#endif
     if (pipe) {
         char buffer[256];
         while (fgets(buffer, sizeof(buffer), pipe) != NULL) {
@@ -468,9 +506,12 @@ std::map<int, float> get_vram_usage_map() {
                 usage[pid] = mem_mb / 1024.0f; // Convert to GB
             }
         }
+#ifdef _WIN32
+        _pclose(pipe);
+#else
         pclose(pipe);
-    }
 #endif
+    }
     return usage;
 }
 
