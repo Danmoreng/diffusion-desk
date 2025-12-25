@@ -27,7 +27,7 @@ To provide a high-performance, private, and local AI creative suite that seamles
 ## ⚡ Milestone 2: Real-time Interactive Experience
 *Focus: Transition from one-way status updates to a full-duplex interactive UI.*
 
-- [ ] **2.1 WebSocket Integration**
+- [x] **2.1 WebSocket Integration**
     - Replace SSE (`/stream/progress`) with a robust WebSocket implementation.
     - Unified stream for generation progress, VRAM metrics, and system alerts.
 - [ ] **2.2 Bidirectional Control**
@@ -92,4 +92,5 @@ To provide a high-performance, private, and local AI creative suite that seamles
 ## ✅ Current Status: Milestone 2 (In Progress)
 *Last Updated: 2025-12-25*
 - [x] Milestone 1: Architectural Hardening & Security completed.
-- [ ] Next: WebSocket Integration for real-time progress.
+- [x] Milestone 2.1: Unified WebSocket Integration implemented.
+- [ ] Next: Bidirectional Control (Request Cancellation).

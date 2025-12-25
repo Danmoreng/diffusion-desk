@@ -24,9 +24,14 @@ set(SD_BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
 set(SD_BUILD_EXTERNAL_GGML ON CACHE BOOL "" FORCE) # Use llama.cpp's ggml to avoid target collision
 set(SD_CUDA ON CACHE BOOL "" FORCE)
 
+# IXWebSocket options
+set(USE_TLS OFF CACHE BOOL "" FORCE)
+set(USE_ZLIB OFF CACHE BOOL "" FORCE)
+
 # Add subdirectories
 add_subdirectory(libs/llama.cpp)
 add_subdirectory(libs/stable-diffusion.cpp)
+add_subdirectory(libs/ixwebsocket)
 
 # Optimization: Exclude unnecessary llama.cpp tools from default build
 # We need LLAMA_BUILD_TOOLS=ON to get 'server-context', but we don't want the CLI tools.
@@ -66,6 +71,7 @@ add_executable(mysti_server
     src/orchestrator/process_manager.cpp
     src/orchestrator/proxy.cpp
     src/orchestrator/orchestrator_main.cpp
+    src/orchestrator/ws_manager.cpp
     ${COMMON_SOURCES}
 )
 
@@ -78,13 +84,14 @@ target_include_directories(mysti_server PRIVATE
     libs/stable-diffusion.cpp/thirdparty # For stb_image.h
     libs/llama.cpp/vendor/nlohmann
     libs/llama.cpp/vendor/cpp-httplib
+    libs/ixwebsocket
 )
 
 # Only link system libs, no SD/LLM libs - wait, we need SD for common.cpp symbols
 if(WIN32)
-    target_link_libraries(mysti_server PRIVATE stable-diffusion ws2_32 shell32)
+    target_link_libraries(mysti_server PRIVATE stable-diffusion ixwebsocket ws2_32 shell32)
 else()
-    target_link_libraries(mysti_server PRIVATE stable-diffusion)
+    target_link_libraries(mysti_server PRIVATE stable-diffusion ixwebsocket)
 endif()
 
 # Copy WebUI assets to build directory

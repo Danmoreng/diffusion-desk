@@ -78,7 +78,6 @@ export const useExplorationStore = defineStore('exploration', () => {
     const signal = currentAbortController.signal;
 
     isGeneratingVariations.value = true
-    generationStore.startStreamingProgress();
     try {
       // Reset URLs so they show the loading spinner
       neighborCells.value.forEach(c => c.url = undefined);
@@ -90,7 +89,6 @@ export const useExplorationStore = defineStore('exploration', () => {
       if (currentAbortController?.signal === signal) {
         isGeneratingVariations.value = false;
         currentAbortController = null;
-        generationStore.stopStreamingProgress();
       }
     }
   }
