@@ -4,65 +4,60 @@ MystiCanvas is a local, privacy-focused AI sandbox that integrates Large Languag
 
 ## High-Level Overview
 
-The system consists of a central **Orchestrator** process that serves a web-based user interface and manages specialized **Worker** processes for AI inference. This design was chosen to resolve CUDA context conflicts and allow parallel execution of text and image generation.
+The system consists of a central **Orchestrator** process that serves a web-based user interface and manages specialized **Worker** processes for AI inference. This design chooses to resolve CUDA context conflicts and allow parallel execution of text and image generation.
 
 ```mermaid
 graph TD
-    User[User (Browser)] <-->|HTTP/WebSocket| Orch[Orchestrator (mysti_server --mode orchestrator)]
+    User[User (Browser)] <-->|HTTP/WebSocket| Orch[Orchestrator]
     
     subgraph "Backend Processes"
-        Orch -->|Spawns/Manages| SDWorker[SD Worker Process (--mode sd-worker)]
-        Orch -->|Spawns/Manages| LLMWorker[LLM Worker Process (--mode llm-worker)]
+        Orch -->|Spawns/Manages| SDWorker[SD Worker]
+        Orch -->|Spawns/Manages| LLMWorker[LLM Worker]
         
-        Orch <-->|HTTP Proxy| SDWorker
-        Orch <-->|HTTP Proxy| LLMWorker
+        Orch <-->|Auth HTTP Proxy| SDWorker
+        Orch <-->|Auth HTTP Proxy| LLMWorker
     end
     
     subgraph "Libraries"
         SDWorker -->|Uses| LibSD[stable-diffusion.cpp]
         LLMWorker -->|Uses| LibLlama[llama.cpp]
+        Orch -->|Uses| LibIXWS[ixwebsocket]
     end
 ```
 
 ## Architectural Decisions
 
 ### Multi-Process vs. Single-Process
-Initially, the project attempted to run both engines in a single process. This was abandoned due to:
-1.  **CUDA Context Conflicts:** Both `llama.cpp` and `stable-diffusion.cpp` use `ggml-cuda`. Managing VRAM pools and global backend state in a single process led to OOM crashes and resource contention.
-2.  **Responsiveness:** Image generation (a heavy, blocking GPU operation) freezes the main thread. Isolating it in a separate worker allows the Orchestrator to keep serving the UI and streaming LLM tokens smoothly.
+Initially, the project attempted to run both engines in a single process. This was abandoned due to CUDA context conflicts and responsiveness issues. Isolating image generation in a separate worker allows the Orchestrator to remain responsive and broadcast metrics.
 
 ### The Orchestrator (`src/orchestrator/`)
-The Orchestrator is the main entry point (`mysti_server`) when no mode is specified.
-- **Process Manager:** Spawns worker processes using `STARTF_USESTDHANDLES` on Windows to consolidate logs into a single console window.
-- **Reverse Proxy:** Routes requests to the appropriate worker:
-  - `/v1/images/*`, `/v1/models/*` -> **SD Worker**
-  - `/v1/chat/*`, `/v1/llm/*` -> **LLM Worker**
-- **Optimistic Streaming Proxy:** 
-  - For LLM chat completion (`POST`), the standard HTTP client blocks until the full response is ready. 
-  - To support streaming tokens, the Proxy immediately returns `200 OK` with `text/event-stream` and pipes data from the worker to the client in a background thread as it arrives.
+The Orchestrator is the main entry point (`mysti_server`).
+- **Unified Namespacing:** 
+  - `/app/` -> Static Vue.js frontend assets.
+  - `/v1/` -> Proxied API routes.
+  - `/` -> Automatically redirects to `/app/`.
+- **WebSocket Hub:** Serves a WebSocket server (port `listen_port + 3`) using `IXWebSocket`. It broadcasts:
+  - **System Metrics:** Real-time VRAM usage (Total, Free, Worker-specific).
+  - **Generation Progress:** Proxied from the SD Worker's SSE stream via a line-buffered internal parser.
+- **Internal Security Layer:** 
+  - Generates a **transient API token** on startup.
+  - Workers listen only on `127.0.0.1`.
+  - All internal communication requires the `X-Internal-Token` header.
+- **Process Manager:** Spawns and monitors worker health, automatically restarting crashed processes and restoring model state.
 
 ### Worker Processes (`src/workers/`)
-The `mysti_server` binary re-launches itself in "worker mode" to host specific capabilities.
-
-- **Stable Diffusion Worker (`sd-worker`):**
-  - Wraps `stable-diffusion.cpp`.
-  - Handles Model loading (checkpoint, LoRA, VAE).
-  - Exposes endpoints for text-to-image and image-to-image generation.
-  - Independent VRAM management.
-  
-- **LLM Worker (`llm-worker`):**
-  - Wraps `llama.cpp`.
-  - Manages the context and KV cache for the language model.
-  - Exposes OpenAI-compatible endpoints for chat completions.
+Workers are specialized subprocesses that handle high-latency inference.
+- **Isolaton:** Workers are protected from external access and only accept connections from the Orchestrator.
+- **SD Worker:** Wraps `stable-diffusion.cpp`, handles model loading and generation.
+- **LLM Worker:** Wraps `llama.cpp`, provides chat completion endpoints.
 
 ### Frontend WebUI (`webui/`)
-A modern web interface built with:
-- **Vue.js 3** (Composition API)
-- **Vite** (Build tool)
-- **Bootstrap 5** (Styling)
-- **Pinia** (State Management)
+Built with Vue 3 and Pinia.
+- **WebSocket Integration:** Connects to the Orchestrator hub for real-time updates, replacing all legacy polling and EventSource logic.
+- **Dynamic Routing:** Supports SPA history mode with a server-side fallback to `index.html`.
 
-The WebUI communicates exclusively with the Orchestrator's API (default port 1234), unaware of the underlying worker processes.
+## Configuration System
+Centralized `config.json` allows overriding default ports, paths, and performance settings. Supports Windows environment variables (e.g., `%APPDATA%`) for cross-system portability.
 
 ## Directory Structure
 
