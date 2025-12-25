@@ -6,5 +6,5 @@
 
 class Proxy {
 public:
-    static void forward_request(const httplib::Request& req, httplib::Response& res, const std::string& host, int port, const std::string& target_path = "");
+    static void forward_request(const httplib::Request& req, httplib::Response& res, const std::string& host, int port, const std::string& target_path = "", const std::string& internal_token = "");
 };

@@ -36,10 +36,39 @@ int main(int argc, const char** argv) {
     SDContextParams ctx_params;
     SDGenerationParams default_gen_params;
     
-    // Parse args primarily to get listen_ip, listen_port, model_dir, etc.
+    // 1. Try to load config.json from various locations
+    std::vector<fs::path> config_search_paths = {
+        "config.json",
+        fs::path(argv[0]).parent_path() / "config.json"
+    };
+
+#ifdef _WIN32
+    char* appdata = getenv("APPDATA");
+    if (appdata) {
+        config_search_paths.push_back(fs::path(appdata) / "MystiCanvas" / "config.json");
+    }
+#endif
+
+    for (const auto& p : config_search_paths) {
+        if (fs::exists(p)) {
+            LOG_INFO("Loading config from %s", p.string().c_str());
+            if (svr_params.load_from_file(p.string())) {
+                break;
+            }
+        }
+    }
+
+    // 2. Parse args primarily to get listen_ip, listen_port, model_dir, etc.
+    // Command line args override config file
     parse_args(argc, argv, svr_params, ctx_params, default_gen_params);
+
+    if (svr_params.internal_token.empty()) {
+        svr_params.internal_token = generate_random_token();
+        LOG_INFO("Generated transient internal token for worker security.");
+    }
     
     set_log_verbose(svr_params.verbose);
+    set_log_color(svr_params.color);
 
     // Run the orchestrator logic
     return run_orchestrator(argc, argv, svr_params);

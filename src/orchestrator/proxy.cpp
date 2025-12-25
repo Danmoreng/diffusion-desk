@@ -44,7 +44,7 @@ private:
     bool done = false;
 };
 
-void Proxy::forward_request(const httplib::Request& req, httplib::Response& res, const std::string& host, int port, const std::string& target_path) {
+void Proxy::forward_request(const httplib::Request& req, httplib::Response& res, const std::string& host, int port, const std::string& target_path, const std::string& internal_token) {
     std::string path = target_path.empty() ? req.path : target_path;
     
     // Copy headers and remove hop-by-hop
@@ -53,6 +53,10 @@ void Proxy::forward_request(const httplib::Request& req, httplib::Response& res,
     headers.erase("Transfer-Encoding");
     headers.erase("Content-Length");
     headers.erase("Host");
+
+    if (!internal_token.empty()) {
+        headers.emplace("X-Internal-Token", internal_token);
+    }
 
     // Detect if we should use streaming (SSE or long-running completion paths)
     bool is_completion = path.find("/completions") != std::string::npos || 
@@ -66,7 +70,7 @@ void Proxy::forward_request(const httplib::Request& req, httplib::Response& res,
         auto response_headers = std::make_shared<httplib::Headers>();
 
         // Start the client request in a background thread
-        std::thread client_thread([host, port, path, headers, req, queue, status, content_type, response_headers]() {
+        std::thread client_thread([host, port, path, headers, req, queue, status, content_type, response_headers, internal_token]() {
             httplib::Client cli(host, port);
             cli.set_connection_timeout(300, 0);
             cli.set_read_timeout(300, 0);

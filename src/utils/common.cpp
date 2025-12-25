@@ -1,6 +1,7 @@
 #include "common.hpp"
 
 #include <iostream>
+#include <fstream>
 #include <sstream>
 #include <vector>
 #include <map>
@@ -161,6 +162,21 @@ void set_log_verbose(bool verbose) {
 
 void set_log_color(bool color) {
     log_color = color;
+}
+
+std::string generate_random_token(size_t length) {
+    static const char charset[] =
+        "0123456789"
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+        "abcdefghijklmnopqrstuvwxyz";
+    std::random_device rd;
+    std::mt19937 gen(rd());
+    std::uniform_int_distribution<> dis(0, sizeof(charset) - 2);
+    std::string token;
+    for (size_t i = 0; i < length; ++i) {
+        token += charset[dis(gen)];
+    }
+    return token;
 }
 
 // ArgOptions implementation
@@ -661,9 +677,19 @@ ArgOptions SDSvrParams::get_options() {
             &output_dir},
         {
             "",
+            "--app-dir",
+            "directory for WebUI assets (default: ./public/app)",
+            &app_dir},
+        {
+            "",
             "--default-llm",
             "default LLM model to load automatically",
-            &default_llm_model}};
+            &default_llm_model},
+        {
+            "",
+            "--internal-token",
+            "transient API token for internal communication",
+            &internal_token}};
 
     options.int_options = {
         {
@@ -681,6 +707,11 @@ ArgOptions SDSvrParams::get_options() {
             "--llm-idle-timeout",
             "seconds of inactivity before unloading LLM (default: 300)",
             &llm_idle_timeout},
+        {
+            "",
+            "--safe-mode-crashes",
+            "number of crashes before enabling safe mode (default: 2)",
+            &safe_mode_crashes},
     };
 
     options.bool_options = {
@@ -722,11 +753,72 @@ bool SDSvrParams::process_and_check() {
     return true;
 }
 
+static std::string resolve_path(const std::string& p) {
+    if (p.empty()) return p;
+#ifdef _WIN32
+    char expanded[MAX_PATH];
+    DWORD ret = ExpandEnvironmentStringsA(p.c_str(), expanded, MAX_PATH);
+    if (ret > 0 && ret <= MAX_PATH) {
+        return std::string(expanded);
+    }
+#endif
+    return p;
+}
+
+bool SDSvrParams::load_from_file(const std::string& path) {
+    std::ifstream f(path);
+    if (!f.is_open()) {
+        return false;
+    }
+
+    try {
+        mysti::json j = mysti::json::parse(f);
+        
+        if (j.contains("server")) {
+            auto& s = j["server"];
+            if (s.contains("listen_ip")) listen_ip = s["listen_ip"];
+            if (s.contains("listen_port")) listen_port = s["listen_port"];
+            if (s.contains("verbose")) verbose = s["verbose"];
+            if (s.contains("color")) color = s["color"];
+        }
+
+        if (j.contains("paths")) {
+            auto& p = j["paths"];
+            if (p.contains("model_dir")) model_dir = resolve_path(p["model_dir"]);
+            if (p.contains("output_dir")) output_dir = resolve_path(p["output_dir"]);
+            if (p.contains("app_dir")) app_dir = resolve_path(p["app_dir"]);
+        }
+
+        if (j.contains("llm")) {
+            auto& l = j["llm"];
+            if (l.contains("default_model")) default_llm_model = l["default_model"];
+            if (l.contains("threads")) llm_threads = l["threads"];
+            if (l.contains("idle_timeout")) llm_idle_timeout = l["idle_timeout"];
+        }
+
+        if (j.contains("sd")) {
+            auto& sd = j["sd"];
+            if (sd.contains("safe_mode_crashes")) safe_mode_crashes = sd["safe_mode_crashes"];
+        }
+
+        return true;
+    } catch (const std::exception& e) {
+        LOG_ERROR("Failed to parse config file: %s", e.what());
+        return false;
+    }
+}
+
 std::string SDSvrParams::to_string() const {
     std::ostringstream oss;
     oss << "SDSvrParams {\n"
         << "  listen_ip: " << listen_ip << ",\n"
-        << "  listen_port: \"" << listen_port << "\",\n"
+        << "  listen_port: " << listen_port << ",\n"
+        << "  model_dir: " << model_dir << ",\n"
+        << "  output_dir: " << output_dir << ",\n"
+        << "  app_dir: " << app_dir << ",\n"
+        << "  mode: " << mode << ",\n"
+        << "  verbose: " << (verbose ? "true" : "false") << ",\n"
+        << "  color: " << (color ? "true" : "false") << "\n"
         << "}";
     return oss.str();
 }
