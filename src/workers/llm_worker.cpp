@@ -4,6 +4,10 @@
 
 namespace fs = std::filesystem;
 
+static std::string last_loaded_model_path;
+static int last_n_gpu_layers = -1;
+static int last_n_ctx = 2048;
+
 void handle_load_llm_model(const httplib::Request& req, httplib::Response& res, SDSvrParams& svr_params, LlamaServer& llm_server) {
     try {
         mysti::json body = mysti::json::parse(req.body);
@@ -27,6 +31,9 @@ void handle_load_llm_model(const httplib::Request& req, httplib::Response& res, 
         LOG_INFO("Loading LLM model: %s (gpu_layers: %d, ctx: %d)", model_path.string().c_str(), n_gpu_layers, n_ctx);
 
         if (llm_server.load_model(model_path.string(), n_gpu_layers, n_ctx)) {
+            last_loaded_model_path = model_path.string();
+            last_n_gpu_layers = n_gpu_layers;
+            last_n_ctx = n_ctx;
             res.set_content(R"({\"status\":\"success\",\"model\":\")" + model_id + R"("})", "application/json");
         } else {
             res.status = 500;
@@ -47,6 +54,12 @@ void handle_unload_llm_model(httplib::Response& res, LlamaServer& llm_server) {
 
 void ensure_llm_loaded(SDSvrParams& svr_params, LlamaServer& llm_server) {
     if (llm_server.is_loaded()) return;
+
+    if (!last_loaded_model_path.empty()) {
+        LOG_INFO("Auto-reloading last LLM: %s", last_loaded_model_path.c_str());
+        llm_server.load_model(last_loaded_model_path, last_n_gpu_layers, last_n_ctx);
+        return;
+    }
 
     if (!svr_params.default_llm_model.empty()) {
         fs::path model_path = fs::path(svr_params.model_dir) / svr_params.default_llm_model;
@@ -80,6 +93,7 @@ int run_llm_worker(SDSvrParams& svr_params, SDContextParams& ctx_params) {
         j["ok"] = true;
         j["worker"] = "llm";
         j["loaded"] = llm_server.is_loaded();
+        j["vram_free_gb"] = get_free_vram_gb();
         res.set_content(j.dump(), "application/json");
     });
     

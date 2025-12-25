@@ -26,6 +26,8 @@ static std::mutex state_mtx;
 static std::mutex process_mtx; // Protects access to ProcessManager
 
 static std::atomic<bool> is_shutting_down{false};
+static int sd_crash_count = 0;
+static const int MAX_CRASHES_FOR_SAFE_MODE = 2;
 
 #ifdef _WIN32
 BOOL WINAPI ConsoleCtrlHandler(DWORD dwCtrlType) {
@@ -92,13 +94,20 @@ void restart_sd_worker() {
     if (is_shutting_down) return;
     LOG_WARN("Detected SD Worker failure. Restarting...");
     
+    sd_crash_count++;
+    std::vector<std::string> current_sd_args = sd_args;
+    if (sd_crash_count >= MAX_CRASHES_FOR_SAFE_MODE) {
+        LOG_INFO("SD Worker keeps failing. Enabling safe mode (VAE on CPU)...");
+        current_sd_args.push_back("--vae-on-cpu");
+    }
+
     {
         std::lock_guard<std::mutex> lock(process_mtx);
         // Ensure dead
         pm.terminate(sd_process);
 
         // Respawn
-        if (!pm.spawn(sd_exe_path, sd_args, sd_process)) {
+        if (!pm.spawn(sd_exe_path, current_sd_args, sd_process)) {
             LOG_ERROR("Failed to respawn SD Worker!");
             return;
         }
@@ -122,9 +131,12 @@ void restart_sd_worker() {
             auto res = cli.Post("/v1/models/load", model_body, "application/json");
             if (res && res->status == 200) {
                 LOG_INFO("SD model restored successfully.");
+                sd_crash_count = 0; // Reset on success
             } else {
                 LOG_ERROR("Failed to restore SD model.");
             }
+        } else {
+            sd_crash_count = 0; // No state to restore, count as success
         }
     } else {
         LOG_ERROR("SD Worker failed to recover within timeout.");
@@ -386,13 +398,49 @@ int run_orchestrator(int argc, const char** argv, SDSvrParams& svr_params) {
         }
     };
 
+    auto intercept_sd_generate = [&](const httplib::Request& req, httplib::Response& res) {
+        // VRAM Arbitration
+        float free_vram = get_free_vram_gb();
+        LOG_INFO("VRAM Arbitration: Current free VRAM = %.2f GB", free_vram);
+
+        // Check LLM state
+        bool llm_loaded = false;
+        {
+            httplib::Client cli("127.0.0.1", llm_port);
+            if (auto hres = cli.Get("/internal/health")) {
+                if (hres->status == 200) {
+                    auto j = mysti::json::parse(hres->body);
+                    llm_loaded = j.value("loaded", false);
+                }
+            }
+        }
+
+        // Heuristic: If free VRAM < 4GB and LLM is loaded, unload it
+        // 4GB is a safe buffer for many SD models + VAE decode spike
+        if (free_vram < 4.0f && llm_loaded) {
+            LOG_INFO("Low VRAM detected (%.2f GB). Requesting LLM unload...", free_vram);
+            httplib::Client cli("127.0.0.1", llm_port);
+            auto ures = cli.Post("/v1/llm/unload", "", "application/json");
+            if (ures && ures->status == 200) {
+                LOG_INFO("LLM unloaded successfully.");
+                // Wait a bit for VRAM to be actually freed
+                std::this_thread::sleep_for(std::chrono::milliseconds(500));
+            } else {
+                LOG_WARN("Failed to unload LLM.");
+            }
+        }
+
+        // Forward to SD worker
+        Proxy::forward_request(req, res, "127.0.0.1", sd_port);
+    };
+
     // SD Routes
     svr.Get("/v1/models", proxy_sd);
     svr.Post("/v1/models/load", intercept_sd_load); // Intercepted
     svr.Post("/v1/upscale/load", proxy_sd); // Could also intercept if needed
     svr.Post("/v1/images/upscale", proxy_sd);
     svr.Get("/v1/history/images", proxy_sd);
-    svr.Post("/v1/images/generations", proxy_sd);
+    svr.Post("/v1/images/generations", intercept_sd_generate); // Intercepted
     svr.Post("/v1/images/edits", proxy_sd);
     svr.Get("/v1/progress", proxy_sd);
     svr.Get("/v1/config", proxy_sd);
@@ -413,10 +461,23 @@ int run_orchestrator(int argc, const char** argv, SDSvrParams& svr_params) {
     svr.Get("/health", [&](const httplib::Request& req, httplib::Response& res) {
         bool sd_ok = pm.is_running(sd_process);
         bool llm_ok = pm.is_running(llm_process);
+        
+        auto usage_map = get_vram_usage_map();
+        float sd_vram = 0;
+        float llm_vram = 0;
+
+#ifndef _WIN32
+        if (sd_ok) sd_vram = usage_map[sd_process.pid];
+        if (llm_ok) llm_vram = usage_map[llm_process.pid];
+#endif
+
         mysti::json j;
         j["status"] = (sd_ok && llm_ok) ? "ok" : "degraded";
-        j["sd_worker"] = sd_ok ? "running" : "stopped";
-        j["llm_worker"] = llm_ok ? "running" : "stopped";
+        j["sd_worker"] = {{"status", sd_ok ? "running" : "stopped"}, {"vram_gb", sd_vram}};
+        j["llm_worker"] = {{"status", llm_ok ? "running" : "stopped"}, {"vram_gb", llm_vram}};
+        j["vram_total_gb"] = get_total_vram_gb();
+        j["vram_free_gb"] = get_free_vram_gb();
+        
         res.set_content(j.dump(), "application/json");
     });
 
