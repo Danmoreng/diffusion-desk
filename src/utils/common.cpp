@@ -253,88 +253,181 @@ void ArgOptions::print() const {
 }
 
 bool parse_options(int argc, const char** argv, const std::vector<ArgOptions>& options_list) {
+
     bool invalid_arg = false;
+
     std::string arg;
 
+
+
     auto match_and_apply = [&](auto& opts, auto&& apply_fn) -> bool {
+
         for (auto& option : opts) {
+
             if ((option.short_name.size() > 0 && arg == option.short_name) ||
+
                 (option.long_name.size() > 0 && arg == option.long_name)) {
+
                 apply_fn(option);
+
                 return true;
+
             }
+
         }
+
         return false;
+
     };
+
+
 
     for (int i = 1; i < argc; i++) {
         arg            = argv[i];
         bool found_arg = false;
 
         for (auto& options : options_list) {
+
             if (match_and_apply(options.string_options, [&](auto& option) {
+
                     if (++i >= argc) {
+
                         invalid_arg = true;
+
                         return;
+
                     }
+
                     *option.target = argv_to_utf8(i, argv);
+
                     found_arg      = true;
+
                 }))
+
                 break;
+
+
 
             if (match_and_apply(options.int_options, [&](auto& option) {
+
                     if (++i >= argc) {
+
                         invalid_arg = true;
+
                         return;
+
                     }
+
                     *option.target = std::stoi(argv[i]);
+
                     found_arg      = true;
+
                 }))
+
                 break;
+
+
 
             if (match_and_apply(options.float_options, [&](auto& option) {
+
                     if (++i >= argc) {
+
                         invalid_arg = true;
+
                         return;
+
                     }
+
                     *option.target = std::stof(argv[i]);
+
                     found_arg      = true;
+
                 }))
+
                 break;
+
+
 
             if (match_and_apply(options.bool_options, [&](auto& option) {
+
                     *option.target = option.keep_true ? true : false;
+
                     found_arg      = true;
+
                 }))
+
                 break;
 
+
+
             if (match_and_apply(options.manual_options, [&](auto& option) {
+
                     int ret = option.cb(argc, argv, i);
+
                     if (ret < 0) {
+
                         invalid_arg = true;
+
                         return;
+
                     }
+
                     i += ret;
+
                     found_arg = true;
+
                 }))
+
                 break;
+
         }
+
+
 
         if (invalid_arg) {
             LOG_ERROR("error: invalid parameter for argument: %s", arg.c_str());
             return false;
         }
+
         if (!found_arg) {
             LOG_ERROR("error: unknown argument: %s", arg.c_str());
             return false;
         }
     }
 
+
+
     return true;
+
 }
 
 std::string version_string() {
     return std::string("stable-diffusion.cpp version ") + sd_version() + ", commit " + sd_commit();
+}
+
+float get_total_vram_gb() {
+#ifdef _WIN32
+    // Minimal fallback for Windows for now
+    return 8.0f; 
+#else
+    // Linux implementation using nvidia-smi
+    FILE* pipe = popen("nvidia-smi --query-gpu=memory.total --format=csv,noheader,nounits", "r");
+    if (!pipe) {
+        return 8.0f; // Fallback if nvidia-smi not available
+    }
+    char buffer[128];
+    float total_gb = 8.0f;
+    if (fgets(buffer, 128, pipe) != NULL) {
+        try {
+            float total_mb = std::stof(buffer);
+            total_gb = total_mb / 1024.0f;
+        } catch (...) {
+            // Failed to parse
+        }
+    }
+    pclose(pipe);
+    return total_gb;
+#endif
 }
 
 uint8_t* load_image_common(bool from_memory,

@@ -38,6 +38,8 @@ int main(int argc, const char** argv) {
     
     // Parse args primarily to get listen_ip, listen_port, model_dir, etc.
     parse_args(argc, argv, svr_params, ctx_params, default_gen_params);
+    
+    set_log_verbose(svr_params.verbose);
 
     // Run the orchestrator logic
     return run_orchestrator(argc, argv, svr_params);
