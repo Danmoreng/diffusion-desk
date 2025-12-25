@@ -5,27 +5,27 @@ MystiCanvas is a high-performance, self-hosted Creative AI server that integrate
 ## Features
 
 - **Multi-Process Architecture:** Orchestrator-Worker design allows simultaneous Image and Text generation without resource conflicts or UI freezing.
+- **WebSocket Hub:** Real-time generation progress and system-wide VRAM monitoring via a robust WebSocket connection.
+- **Internal Security:** Automatic transient token authentication between the Orchestrator and backend workers.
 - **Dual-Backend Power:** Seamlessly links against both `stable-diffusion.cpp` and `llama.cpp` using a shared GGML foundation.
 - **Image Generation:** Supports FLUX, Z-Image, SDXL, and more with full GPU acceleration (CUDA).
-- **Advanced Sampling:** Includes support for various schedulers, guidance scales, and Highres-Fix upscaling.
 - **Built-in Upscaling:** Native integration of ESRGAN for high-quality image enhancement.
-- **Modern WebUI:** A fast, responsive Vue.js (Vite) frontend for intuitive generation and model management.
-- **Progress Streaming:** Real-time feedback via Server-Sent Events (SSE).
-- **Flexible Model Loading:** Dynamic loading of Diffusion models, VAEs, Text Encoders, and LoRAs via a standardized directory structure and JSON sidecar configs.
+- **Modern WebUI:** A fast, responsive Vue.js (Vite) frontend with a server-side SPA fallback for a seamless experience.
+- **Centralized Config:** Manage paths and ports via `config.json` with support for environment variables.
 
 ## Project Structure
 
-- `src/`: C++ Backend source code (httplib server, SD/Llama wrappers).
+- `src/`: C++ Backend source code (httplib server, SD/Llama wrappers, WebSocket hub).
 - `webui/`: Vue.js 3 + TypeScript frontend.
-- `libs/`: Submodules for `stable-diffusion.cpp` and `llama.cpp`.
+- `libs/`: Submodules for `stable-diffusion.cpp`, `llama.cpp`, and `ixwebsocket`.
 - `scripts/`: Build and automation scripts.
-- `public/`: Static assets and compiled frontend location.
+- `public/`: Static assets and compiled frontend location (`/app/`).
 
 ## Quick Start
 
 ### Prerequisites
 
-- **C++ Compiler:** MSVC (Windows), GCC, or Clang.
+- **C++ Compiler:** MSVC 2022 (Windows), GCC, or Clang.
 - **CMake:** Version 3.14 or higher.
 - **Node.js & NPM:** For building the frontend.
 - **CUDA Toolkit:** (Optional) For GPU acceleration.
@@ -34,30 +34,23 @@ MystiCanvas is a high-performance, self-hosted Creative AI server that integrate
 
 1. **Clone the repository with submodules:**
    ```bash
-   git clone --recursive https://github.com/youruser/MystiCanvas.git
+   git clone --recursive https://github.com/Danmoreng/MystiCanvas.git
    cd MystiCanvas
    ```
 
-2. **Build the WebUI:**
-   ```bash
-   cd webui
-   npm install
-   npm run build
-   cd ..
-   ```
-
-3. **Build the Backend:**
-   Use the provided PowerShell script for a streamlined build on Windows:
+2. **Run the One-Click Build Script:**
+   The provided PowerShell script handles NPM installation, Vue compilation, and C++ build:
    ```powershell
    .\scripts\build.ps1
    ```
 
 ### Running the Server
 
-Start the server by pointing it to your models directory:
-```bash
-.\build\bin\mysti_server.exe --model-dir "C:\Path\To\Your\Models"
+Start the server using the launch script or directly via the binary:
+```powershell
+.\scripts\run.ps1
 ```
+The server will use the settings defined in `config.json`. By default, the UI is available at `http://localhost:1234/app/`.
 
 ## Model Organization
 
