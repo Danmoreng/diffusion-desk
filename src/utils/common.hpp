@@ -54,6 +54,7 @@ std::string version_string();
 std::string argv_to_utf8(int index, const char** argv);
 float get_total_vram_gb();
 float get_free_vram_gb();
+float get_current_process_vram_usage_gb();
 std::map<int, float> get_vram_usage_map();
 
 // Logging

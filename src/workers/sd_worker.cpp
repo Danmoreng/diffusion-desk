@@ -58,6 +58,7 @@ int run_sd_worker(SDSvrParams& svr_params, SDContextParams& ctx_params, SDGenera
         mysti::json j;
         j["ok"] = true;
         j["worker"] = "sd";
+        j["vram_gb"] = get_current_process_vram_usage_gb();
         j["vram_free_gb"] = get_free_vram_gb();
         res.set_content(j.dump(), "application/json");
     });
