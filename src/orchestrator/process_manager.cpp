@@ -79,11 +79,68 @@ void ProcessManager::wait(ProcessInfo& info) {
 }
 
 #else
-// POSIX implementation placeholder
+#include <unistd.h>
+#include <sys/types.h>
+#include <sys/wait.h>
+#include <signal.h>
+#include <vector>
+#include <cstring>
+
+// POSIX implementation
 bool ProcessManager::spawn(const std::string& command, const std::vector<std::string>& args, ProcessInfo& info) {
-    return false;
+    pid_t pid = fork();
+    if (pid < 0) {
+        perror("fork");
+        return false;
+    } else if (pid == 0) {
+        // Child process
+        std::vector<char*> c_args;
+        c_args.push_back(strdup(command.c_str()));
+        for (const auto& arg : args) {
+            c_args.push_back(strdup(arg.c_str()));
+        }
+        c_args.push_back(nullptr);
+
+        execvp(command.c_str(), c_args.data());
+        perror("execvp");
+        exit(1);
+    } else {
+        // Parent process
+        info.pid = pid;
+        info.valid = true;
+        return true;
+    }
 }
-bool ProcessManager::is_running(const ProcessInfo& info) { return false; }
-void ProcessManager::terminate(ProcessInfo& info) {}
-void ProcessManager::wait(ProcessInfo& info) {}
+
+bool ProcessManager::is_running(const ProcessInfo& info) {
+    if (!info.valid) return false;
+    int status;
+    pid_t result = waitpid(info.pid, &status, WNOHANG);
+    if (result == 0) {
+        return true; // Still running
+    } else if (result == -1) {
+        // Error or process doesn't exist
+        return false;
+    } else {
+        // Process exited
+        return false;
+    }
+}
+
+void ProcessManager::terminate(ProcessInfo& info) {
+    if (info.valid) {
+        kill(info.pid, SIGTERM);
+        int status;
+        waitpid(info.pid, &status, 0); // Wait for it to actually exit
+        info.valid = false;
+    }
+}
+
+void ProcessManager::wait(ProcessInfo& info) {
+    if (info.valid) {
+        int status;
+        waitpid(info.pid, &status, 0);
+        info.valid = false;
+    }
+}
 #endif

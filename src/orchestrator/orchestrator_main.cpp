@@ -258,8 +258,13 @@ int run_orchestrator(int argc, const char** argv, SDSvrParams& svr_params) {
     llm_port = svr_params.listen_port + 2;
     
     fs::path bin_dir = fs::path(argv[0]).parent_path();
+#ifdef _WIN32
     sd_exe_path = (bin_dir / "mysti_sd_worker.exe").string();
     llm_exe_path = (bin_dir / "mysti_llm_worker.exe").string();
+#else
+    sd_exe_path = (bin_dir / "mysti_sd_worker").string();
+    llm_exe_path = (bin_dir / "mysti_llm_worker").string();
+#endif
 
     // 2. Prepare Args
     std::vector<std::string> common_args;

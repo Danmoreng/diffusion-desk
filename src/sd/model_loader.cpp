@@ -53,6 +53,9 @@ void load_model_config(SDContextParams& ctx_params, const std::string& model_pat
             if (cfg.contains("vae_on_cpu")) ctx_params.vae_on_cpu = cfg["vae_on_cpu"];
             if (cfg.contains("offload_to_cpu")) ctx_params.offload_params_to_cpu = cfg["offload_to_cpu"];
             if (cfg.contains("flash_attn")) ctx_params.diffusion_flash_attn = cfg["flash_attn"];
+            
+            // Default VAE tiling to true if using CUDA to prevent OOM on large images
+            ctx_params.vae_tiling_params.enabled = true;
             if (cfg.contains("vae_tiling")) ctx_params.vae_tiling_params.enabled = cfg["vae_tiling"];
 
             if (cfg.contains("prediction")) {
