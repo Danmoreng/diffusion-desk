@@ -10,8 +10,9 @@ export default defineConfig({
     }
   },
   plugins: [vue()],
+  base: '/app/',
   build: {
-    outDir: '../public',
+    outDir: '../public/app',
     emptyOutDir: true
   },
   server: {

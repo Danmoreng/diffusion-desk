@@ -67,37 +67,42 @@ cmake $ProjectRoot $Generator `
     -DSD_BUILD_EXTERNAL_GGML=ON
 
 Write-Host "Building Llama.cpp..."
-cmake --build . --config Release --target llama --parallel > build_llama.log 2> build_llama.err
+cmake --build . --config Release --target llama --parallel > build_llama.log 2>&1
 if ($LASTEXITCODE -ne 0) {
-    Write-Host "Llama build failed! Check build_llama.err/log" -ForegroundColor Red
+    Write-Host "Llama build failed!" -ForegroundColor Red
+    Get-Content build_llama.log -Tail 20
     exit 1
 }
 
 Write-Host "Building Stable Diffusion..."
-cmake --build . --config Release --target stable-diffusion --parallel > build_sd.log 2> build_sd.err
+cmake --build . --config Release --target stable-diffusion --parallel > build_sd.log 2>&1
 if ($LASTEXITCODE -ne 0) {
-    Write-Host "Stable Diffusion build failed! Check build_sd.err/log" -ForegroundColor Red
+    Write-Host "Stable Diffusion build failed!" -ForegroundColor Red
+    Get-Content build_sd.log -Tail 20
     exit 1
 }
 
 Write-Host "Building Main Server (Orchestrator)..."
-cmake --build . --config Release --target mysti_server --parallel > build_server.log 2> build_server.err
+cmake --build . --config Release --target mysti_server --parallel > build_server.log 2>&1
 if ($LASTEXITCODE -ne 0) {
-    Write-Host "Server build failed! Check build_server.err/log" -ForegroundColor Red
+    Write-Host "Server build failed!" -ForegroundColor Red
+    Get-Content build_server.log -Tail 20
     exit 1
 }
 
 Write-Host "Building SD Worker..."
-cmake --build . --config Release --target mysti_sd_worker --parallel > build_sd_worker.log 2> build_sd_worker.err
+cmake --build . --config Release --target mysti_sd_worker --parallel > build_sd_worker.log 2>&1
 if ($LASTEXITCODE -ne 0) {
-    Write-Host "SD Worker build failed! Check build_sd_worker.err/log" -ForegroundColor Red
+    Write-Host "SD Worker build failed!" -ForegroundColor Red
+    Get-Content build_sd_worker.log -Tail 20
     exit 1
 }
 
 Write-Host "Building LLM Worker..."
-cmake --build . --config Release --target mysti_llm_worker --parallel > build_llm_worker.log 2> build_llm_worker.err
+cmake --build . --config Release --target mysti_llm_worker --parallel > build_llm_worker.log 2>&1
 if ($LASTEXITCODE -ne 0) {
-    Write-Host "LLM Worker build failed! Check build_llm_worker.err/log" -ForegroundColor Red
+    Write-Host "LLM Worker build failed!" -ForegroundColor Red
+    Get-Content build_llm_worker.log -Tail 20
     exit 1
 }
 

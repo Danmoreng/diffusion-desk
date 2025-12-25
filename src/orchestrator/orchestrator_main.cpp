@@ -3,6 +3,7 @@
 #include "proxy.hpp"
 #include "httplib.h"
 #include <iostream>
+#include <fstream>
 #include <thread>
 #include <chrono>
 #include <mutex>
@@ -18,6 +19,7 @@ static std::string sd_exe_path;
 static std::string llm_exe_path;
 static std::vector<std::string> sd_args;
 static std::vector<std::string> llm_args;
+static std::string internal_token;
 
 // State tracking for recovery
 static std::string last_sd_model_req_body;
@@ -27,7 +29,7 @@ static std::mutex process_mtx; // Protects access to ProcessManager
 
 static std::atomic<bool> is_shutting_down{false};
 static int sd_crash_count = 0;
-static const int MAX_CRASHES_FOR_SAFE_MODE = 2;
+static int max_sd_crashes = 2; // Will be set from svr_params
 
 #ifdef _WIN32
 BOOL WINAPI ConsoleCtrlHandler(DWORD dwCtrlType) {
@@ -77,12 +79,16 @@ std::string get_executable_path(const char* argv0) {
 }
 
 // Helper to wait for a port to be ready (health check)
-bool wait_for_health(int port, int timeout_sec = 30) {
+bool wait_for_health(int port, const std::string& token, int timeout_sec = 30) {
     httplib::Client cli("127.0.0.1", port);
     cli.set_connection_timeout(1);
+    httplib::Headers headers;
+    if (!token.empty()) {
+        headers.emplace("X-Internal-Token", token);
+    }
     for (int i = 0; i < timeout_sec; ++i) {
         if (is_shutting_down) return false;
-        if (auto res = cli.Get("/internal/health")) {
+        if (auto res = cli.Get("/internal/health", headers)) {
             if (res->status == 200) return true;
         }
         std::this_thread::sleep_for(std::chrono::seconds(1));
@@ -96,9 +102,12 @@ void restart_sd_worker() {
     
     sd_crash_count++;
     std::vector<std::string> current_sd_args = sd_args;
-    if (sd_crash_count >= MAX_CRASHES_FOR_SAFE_MODE) {
-        LOG_INFO("SD Worker keeps failing. Enabling safe mode (VAE on CPU)...");
-        current_sd_args.push_back("--vae-on-cpu");
+    if (sd_crash_count >= max_sd_crashes) {
+        LOG_WARN("SD Worker entered Safe Mode (Model auto-load disabled).");
+        {
+            std::lock_guard<std::mutex> lock(state_mtx);
+            last_sd_model_req_body.clear();
+        }
     }
 
     {
@@ -114,7 +123,7 @@ void restart_sd_worker() {
     }
 
     // Wait for health
-    if (wait_for_health(sd_port)) {
+    if (wait_for_health(sd_port, internal_token)) {
         LOG_INFO("SD Worker back online.");
         
         // Restore state
@@ -128,7 +137,11 @@ void restart_sd_worker() {
             LOG_INFO("Restoring SD model...");
             httplib::Client cli("127.0.0.1", sd_port);
             cli.set_read_timeout(300); // Model load can take time
-            auto res = cli.Post("/v1/models/load", model_body, "application/json");
+            httplib::Headers headers;
+            if (!internal_token.empty()) {
+                headers.emplace("X-Internal-Token", internal_token);
+            }
+            auto res = cli.Post("/v1/models/load", headers, model_body, "application/json");
             if (res && res->status == 200) {
                 LOG_INFO("SD model restored successfully.");
                 sd_crash_count = 0; // Reset on success
@@ -157,7 +170,7 @@ void restart_llm_worker() {
         }
     }
 
-    if (wait_for_health(llm_port)) {
+    if (wait_for_health(llm_port, internal_token)) {
         LOG_INFO("LLM Worker back online.");
 
         std::string model_body;
@@ -170,7 +183,11 @@ void restart_llm_worker() {
             LOG_INFO("Restoring LLM model...");
             httplib::Client cli("127.0.0.1", llm_port);
             cli.set_read_timeout(300);
-            auto res = cli.Post("/v1/llm/load", model_body, "application/json");
+            httplib::Headers headers;
+            if (!internal_token.empty()) {
+                headers.emplace("X-Internal-Token", internal_token);
+            }
+            auto res = cli.Post("/v1/llm/load", headers, model_body, "application/json");
             if (res && res->status == 200) {
                 LOG_INFO("LLM model restored successfully.");
             } else {
@@ -195,6 +212,11 @@ void health_check_loop(const std::string& sd_host, int sd_p, const std::string& 
     while (!is_shutting_down) {
         std::this_thread::sleep_for(std::chrono::seconds(2));
 
+        httplib::Headers headers;
+        if (!internal_token.empty()) {
+            headers.emplace("X-Internal-Token", internal_token);
+        }
+
         // --- SD Check ---
         bool sd_alive = false;
         {
@@ -204,7 +226,7 @@ void health_check_loop(const std::string& sd_host, int sd_p, const std::string& 
 
         if (sd_alive) {
             // Process is there, check HTTP
-            if (auto res = sd_cli.Get("/internal/health")) {
+            if (auto res = sd_cli.Get("/internal/health", headers)) {
                 sd_fail_count = 0;
             } else {
                 sd_fail_count++;
@@ -229,7 +251,7 @@ void health_check_loop(const std::string& sd_host, int sd_p, const std::string& 
         }
 
         if (llm_alive) {
-            if (auto res = llm_cli.Get("/internal/health")) {
+            if (auto res = llm_cli.Get("/internal/health", headers)) {
                 llm_fail_count = 0;
             } else {
                 llm_fail_count++;
@@ -268,6 +290,8 @@ int run_orchestrator(int argc, const char** argv, SDSvrParams& svr_params) {
     // 1. Determine Ports and Paths
     sd_port = svr_params.listen_port + 1;
     llm_port = svr_params.listen_port + 2;
+    max_sd_crashes = svr_params.safe_mode_crashes;
+    internal_token = svr_params.internal_token;
     
     fs::path bin_dir = fs::path(argv[0]).parent_path();
 #ifdef _WIN32
@@ -299,6 +323,13 @@ int run_orchestrator(int argc, const char** argv, SDSvrParams& svr_params) {
     llm_args.push_back("--listen-port"); llm_args.push_back(std::to_string(llm_port));
     llm_args.push_back("--listen-ip"); llm_args.push_back("127.0.0.1");
 
+    if (!svr_params.internal_token.empty()) {
+        sd_args.push_back("--internal-token");
+        sd_args.push_back(svr_params.internal_token);
+        llm_args.push_back("--internal-token");
+        llm_args.push_back(svr_params.internal_token);
+    }
+
     // 3. Initial Spawn
     LOG_INFO("Spawning SD Worker (%s) on port %d", sd_exe_path.c_str(), sd_port);
     if (!pm.spawn(sd_exe_path, sd_args, sd_process)) {
@@ -324,9 +355,10 @@ int run_orchestrator(int argc, const char** argv, SDSvrParams& svr_params) {
     }
 
     if (!preload_llm_model.empty()) {
-        std::thread([preload_llm_model]() {
+        std::string internal_token = svr_params.internal_token;
+        std::thread([preload_llm_model, internal_token]() {
             LOG_INFO("Waiting for LLM worker to be ready to load model: %s", preload_llm_model.c_str());
-            if (wait_for_health(llm_port)) {
+            if (wait_for_health(llm_port, internal_token)) {
                 mysti::json body;
                 body["model_id"] = preload_llm_model;
                 std::string body_str = body.dump();
@@ -339,7 +371,11 @@ int run_orchestrator(int argc, const char** argv, SDSvrParams& svr_params) {
 
                 httplib::Client cli("127.0.0.1", llm_port);
                 cli.set_read_timeout(600);
-                auto res = cli.Post("/v1/llm/load", body_str, "application/json");
+                httplib::Headers headers;
+                if (!internal_token.empty()) {
+                    headers.emplace("X-Internal-Token", internal_token);
+                }
+                auto res = cli.Post("/v1/llm/load", headers, body_str, "application/json");
                 if (res && res->status == 200) {
                     LOG_INFO("Successfully pre-loaded LLM model.");
                 } else {
@@ -352,9 +388,30 @@ int run_orchestrator(int argc, const char** argv, SDSvrParams& svr_params) {
     // 4. Start Proxy Server
     httplib::Server svr;
 
-    if (!svr.set_mount_point("/", "./public")) {
-        LOG_WARN("failed to mount ./public directory");
+    // Serve static files under /app
+    if (!svr.set_mount_point("/app", svr_params.app_dir)) {
+        LOG_WARN("failed to mount %s directory", svr_params.app_dir.c_str());
     }
+
+    // Redirect root to /app/
+    svr.Get("/", [](const httplib::Request& req, httplib::Response& res) {
+        res.set_redirect("/app/");
+    });
+
+    // SPA Fallback for /app/*
+    // If a request starts with /app/ and isn't found (handled by mount point), serve index.html
+    svr.set_error_handler([&svr_params](const httplib::Request& req, httplib::Response& res) {
+        if (req.path.find("/app/") == 0 && res.status == 404) {
+            std::string index_path = (fs::path(svr_params.app_dir) / "index.html").string();
+            std::ifstream file(index_path, std::ios::binary);
+            if (file) {
+                std::string content((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+                res.set_content(content, "text/html");
+                res.status = 200;
+                return;
+            }
+        }
+    });
 
     // CORS
     svr.set_pre_routing_handler([](const httplib::Request& req, httplib::Response& res) {
@@ -370,17 +427,17 @@ int run_orchestrator(int argc, const char** argv, SDSvrParams& svr_params) {
 
     // Proxy Helpers
     auto proxy_sd = [&](const httplib::Request& req, httplib::Response& res) {
-        Proxy::forward_request(req, res, "127.0.0.1", sd_port);
+        Proxy::forward_request(req, res, "127.0.0.1", sd_port, "", internal_token);
     };
 
     auto proxy_llm = [&](const httplib::Request& req, httplib::Response& res) {
-        Proxy::forward_request(req, res, "127.0.0.1", llm_port);
+        Proxy::forward_request(req, res, "127.0.0.1", llm_port, "", internal_token);
     };
 
     // State Interceptors
     auto intercept_sd_load = [&](const httplib::Request& req, httplib::Response& res) {
         // Forward first
-        Proxy::forward_request(req, res, "127.0.0.1", sd_port);
+        Proxy::forward_request(req, res, "127.0.0.1", sd_port, "", internal_token);
         // If success, save state
         if (res.status == 200) {
             std::lock_guard<std::mutex> lock(state_mtx);
@@ -390,7 +447,7 @@ int run_orchestrator(int argc, const char** argv, SDSvrParams& svr_params) {
     };
 
     auto intercept_llm_load = [&](const httplib::Request& req, httplib::Response& res) {
-        Proxy::forward_request(req, res, "127.0.0.1", llm_port);
+        Proxy::forward_request(req, res, "127.0.0.1", llm_port, "", internal_token);
         if (res.status == 200) {
             std::lock_guard<std::mutex> lock(state_mtx);
             last_llm_model_req_body = req.body;
@@ -403,11 +460,16 @@ int run_orchestrator(int argc, const char** argv, SDSvrParams& svr_params) {
         float free_vram = get_free_vram_gb();
         LOG_INFO("VRAM Arbitration: Current free VRAM = %.2f GB", free_vram);
 
+        httplib::Headers headers;
+        if (!internal_token.empty()) {
+            headers.emplace("X-Internal-Token", internal_token);
+        }
+
         // Check LLM state
         bool llm_loaded = false;
         {
             httplib::Client cli("127.0.0.1", llm_port);
-            if (auto hres = cli.Get("/internal/health")) {
+            if (auto hres = cli.Get("/internal/health", headers)) {
                 if (hres->status == 200) {
                     auto j = mysti::json::parse(hres->body);
                     llm_loaded = j.value("loaded", false);
@@ -420,7 +482,7 @@ int run_orchestrator(int argc, const char** argv, SDSvrParams& svr_params) {
         if (free_vram < 4.0f && llm_loaded) {
             LOG_INFO("Low VRAM detected (%.2f GB). Requesting LLM unload...", free_vram);
             httplib::Client cli("127.0.0.1", llm_port);
-            auto ures = cli.Post("/v1/llm/unload", "", "application/json");
+            auto ures = cli.Post("/v1/llm/unload", headers, "", "application/json");
             if (ures && ures->status == 200) {
                 LOG_INFO("LLM unloaded successfully.");
                 // Wait a bit for VRAM to be actually freed
@@ -431,7 +493,7 @@ int run_orchestrator(int argc, const char** argv, SDSvrParams& svr_params) {
         }
 
         // Forward to SD worker
-        Proxy::forward_request(req, res, "127.0.0.1", sd_port);
+        Proxy::forward_request(req, res, "127.0.0.1", sd_port, "", internal_token);
     };
 
     // SD Routes
@@ -465,9 +527,14 @@ int run_orchestrator(int argc, const char** argv, SDSvrParams& svr_params) {
         float sd_vram = 0;
         float llm_vram = 0;
 
+        httplib::Headers headers;
+        if (!internal_token.empty()) {
+            headers.emplace("X-Internal-Token", internal_token);
+        }
+
         if (sd_ok) {
             httplib::Client cli("127.0.0.1", sd_port);
-            if (auto res_w = cli.Get("/internal/health")) {
+            if (auto res_w = cli.Get("/internal/health", headers)) {
                 try {
                     auto j_w = mysti::json::parse(res_w->body);
                     sd_vram = j_w.value("vram_gb", 0.0f);
@@ -477,7 +544,7 @@ int run_orchestrator(int argc, const char** argv, SDSvrParams& svr_params) {
 
         if (llm_ok) {
             httplib::Client cli("127.0.0.1", llm_port);
-            if (auto res_w = cli.Get("/internal/health")) {
+            if (auto res_w = cli.Get("/internal/health", headers)) {
                 try {
                     auto j_w = mysti::json::parse(res_w->body);
                     llm_vram = j_w.value("vram_gb", 0.0f);

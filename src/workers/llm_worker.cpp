@@ -83,6 +83,20 @@ int run_llm_worker(SDSvrParams& svr_params, SDContextParams& ctx_params) {
 
     httplib::Server svr;
 
+    // Security: Check internal token
+    svr.set_pre_routing_handler([&svr_params](const httplib::Request& req, httplib::Response& res) {
+        if (!svr_params.internal_token.empty()) {
+            std::string token = req.get_header_value("X-Internal-Token");
+            if (token != svr_params.internal_token) {
+                LOG_WARN("Blocked unauthorized internal request from %s", req.remote_addr.c_str());
+                res.status = 401;
+                res.set_content("{\"error\":\"Unauthorized internal request\"}", "application/json");
+                return httplib::Server::HandlerResponse::Handled;
+            }
+        }
+        return httplib::Server::HandlerResponse::Unhandled;
+    });
+
     // init_server registers completions, chat, etc.
     llm_server.init_server(svr, [&svr_params, &llm_server]() {
         ensure_llm_loaded(svr_params, llm_server);

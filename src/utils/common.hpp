@@ -62,6 +62,8 @@ void log_print(enum sd_log_level_t level, const char* log, bool verbose, bool co
 void set_log_verbose(bool verbose);
 void set_log_color(bool color);
 
+std::string generate_random_token(size_t length = 32);
+
 
 struct StringOption {
     std::string short_name;
@@ -1540,10 +1542,13 @@ struct SDSvrParams {
     int listen_port       = 1234;
     std::string model_dir = "./models";
     std::string output_dir = "./outputs";
+    std::string app_dir = "./public/app";
     std::string default_llm_model = "";
     std::string mode = "orchestrator"; // orchestrator, sd-worker, llm-worker
     int llm_threads = -1;
     int llm_idle_timeout = 300; // 5 minutes default
+    int safe_mode_crashes = 2;
+    std::string internal_token;
     bool normal_exit      = false;
     bool verbose          = false;
     bool color            = false;
@@ -1551,6 +1556,7 @@ struct SDSvrParams {
     ArgOptions get_options();
     bool process_and_check();
     std::string to_string() const;
+    bool load_from_file(const std::string& path);
 };
 
 uint8_t* load_image_from_file(const char* image_path,
