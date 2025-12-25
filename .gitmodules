@@ -4,3 +4,6 @@
 [submodule "libs/llama.cpp"]
 	path = libs/llama.cpp
 	url = https://github.com/ggerganov/llama.cpp
+[submodule "libs/ixwebsocket"]
+	path = libs/ixwebsocket
+	url = https://github.com/machinezone/IXWebSocket

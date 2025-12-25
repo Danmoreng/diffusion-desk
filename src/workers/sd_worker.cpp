@@ -52,7 +52,10 @@ int run_sd_worker(SDSvrParams& svr_params, SDContextParams& ctx_params, SDGenera
         if (!svr_params.internal_token.empty()) {
             std::string token = req.get_header_value("X-Internal-Token");
             if (token != svr_params.internal_token) {
-                LOG_WARN("Blocked unauthorized internal request from %s", req.remote_addr.c_str());
+                LOG_WARN("Blocked unauthorized internal request from %s. Expected: %s..., Received: %s...", 
+                    req.remote_addr.c_str(),
+                    svr_params.internal_token.substr(0, 4).c_str(),
+                    token.empty() ? "None" : token.substr(0, 4).c_str());
                 res.status = 401;
                 res.set_content("{\"error\":\"Unauthorized internal request\"}", "application/json");
                 return httplib::Server::HandlerResponse::Handled;

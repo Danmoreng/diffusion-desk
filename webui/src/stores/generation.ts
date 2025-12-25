@@ -79,24 +79,95 @@ export const useGenerationStore = defineStore('generation', () => {
     llm: 0
   })
 
-  async function fetchVramInfo() {
-    try {
-      const response = await fetch('/health')
-      const data = await response.json()
-      vramInfo.value = {
-        total: data.vram_total_gb || 0,
-        free: data.vram_free_gb || 0,
-        sd: data.sd_worker?.vram_gb || 0,
-        llm: data.llm_worker?.vram_gb || 0
-      }
-    } catch (e) {
-      console.error('Failed to fetch VRAM info:', e)
+  // WebSocket Connection
+  let ws: WebSocket | null = null;
+  const isWsConnected = ref(false);
+
+  function setupWebSocket() {
+    if (ws) {
+      ws.close();
     }
+
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    // The WS port is listen_port + 3. Default is 1234 + 3 = 1237
+    // Since we don't know the exact port if user changed it in config, 
+    // we assume it is on the same host but we need the port.
+    // For now, we assume 1237 or we could fetch it from /v1/config.
+    // Better: let the orchestrator provide the WS port in a health check or config.
+    // For this prototype, we use the common +3 logic.
+    const port = window.location.port || '1234';
+    const wsPort = parseInt(port) + 3;
+    const wsUrl = `${protocol}//${window.location.hostname}:${wsPort}`;
+
+    console.log(`Connecting to WebSocket: ${wsUrl}`);
+    ws = new WebSocket(wsUrl);
+
+    ws.onopen = () => {
+      console.log('WebSocket connected');
+      isWsConnected.value = true;
+    };
+
+    ws.onclose = () => {
+      console.log('WebSocket disconnected, retrying in 5s...');
+      isWsConnected.value = false;
+      setTimeout(setupWebSocket, 5000);
+    };
+
+    ws.onmessage = (event) => {
+      try {
+        const msg = JSON.parse(event.data);
+        if (msg.type === 'metrics') {
+          vramInfo.value = {
+            total: msg.vram_total_gb || 0,
+            free: msg.vram_free_gb || 0,
+            sd: msg.workers?.sd?.vram_gb || 0,
+            llm: msg.workers?.llm?.vram_gb || 0
+          }
+        } else if (msg.type === 'progress') {
+          handleProgressUpdate(msg.data);
+        }
+      } catch (e) {
+        console.error('WS Message Error:', e);
+      }
+    };
   }
 
-  // Start VRAM polling
-  fetchVramInfo()
-  setInterval(fetchVramInfo, 5000)
+  // Helper to handle progress updates from WS
+  function handleProgressUpdate(data: any) {
+    if (data.phase) {
+      if (data.phase !== progressPhase.value) {
+        stepTimeHistory.value = [];
+      }
+      progressPhase.value = data.phase;
+    }
+
+    if (data.step > lastStepIndex.value) {
+      const deltaT = data.time - lastStepTime.value;
+      const deltaS = data.step - lastStepIndex.value;
+      const timePerStep = deltaT / deltaS;
+      
+      if (timePerStep > 0) {
+        stepTimeHistory.value.push(timePerStep);
+        if (stepTimeHistory.value.length > 5) {
+          stepTimeHistory.value.shift();
+        }
+      }
+      
+      lastStepTime.value = data.time;
+      lastStepIndex.value = data.step;
+    } else if (data.step < lastStepIndex.value) {
+      lastStepTime.value = data.time;
+      lastStepIndex.value = data.step;
+    }
+
+    progressStep.value = data.step;
+    progressSteps.value = data.steps;
+    progressTime.value = data.time;
+    progressMessage.value = data.message || '';
+  }
+
+  // Initialize WebSocket
+  setupWebSocket();
 
   async function fetchConfig() {
     try {
@@ -139,7 +210,6 @@ export const useGenerationStore = defineStore('generation', () => {
   const progressTime = ref(0)
   const progressPhase = ref('')
   const progressMessage = ref('')
-  let progressSource: EventSource | null = null
   
   // Helpers for better ETA
   const lastStepTime = ref(0);
@@ -159,83 +229,6 @@ export const useGenerationStore = defineStore('generation', () => {
     const remainingSteps = progressSteps.value - progressStep.value;
     return Math.round(avgStepTime * remainingSteps);
   });
-
-  function startStreamingProgress() {
-    if (progressSource) progressSource.close();
-    progressStep.value = 0;
-    progressSteps.value = 0;
-    progressTime.value = 0;
-    progressPhase.value = 'Initializing...';
-    lastStepTime.value = 0;
-    lastStepIndex.value = 0;
-    stepTimeHistory.value = [];
-    
-    console.log('Starting progress stream...');
-    progressSource = new EventSource('/v1/stream/progress');
-    
-    progressSource.onopen = () => {
-      console.log('Progress stream connection opened.');
-    };
-
-    progressSource.onmessage = (event) => {
-      try {
-        const data = JSON.parse(event.data);
-        
-        if (data.phase) {
-          if (data.phase !== progressPhase.value) {
-            // Reset history on phase change as VAE steps have different timings than Sampling
-            stepTimeHistory.value = [];
-          }
-          progressPhase.value = data.phase;
-        }
-
-        // Calculate time for this specific step
-        if (data.step > lastStepIndex.value) {
-          const deltaT = data.time - lastStepTime.value;
-          const deltaS = data.step - lastStepIndex.value;
-          const timePerStep = deltaT / deltaS;
-          
-          if (timePerStep > 0) {
-            stepTimeHistory.value.push(timePerStep);
-            // Keep only the last 5 steps for a rolling average
-            if (stepTimeHistory.value.length > 5) {
-              stepTimeHistory.value.shift();
-            }
-          }
-          
-          lastStepTime.value = data.time;
-          lastStepIndex.value = data.step;
-        } else if (data.step < lastStepIndex.value) {
-          // New sub-batch or reset
-          lastStepTime.value = data.time;
-          lastStepIndex.value = data.step;
-        }
-
-        progressStep.value = data.step;
-        progressSteps.value = data.steps;
-        progressTime.value = data.time;
-        progressMessage.value = data.message || '';
-      } catch (e) {
-        console.error('Error parsing progress stream data:', event.data, e);
-      }
-    };
-
-    progressSource.onerror = (err) => {
-      console.error('Progress stream error:', err);
-    };
-  }
-
-  function stopStreamingProgress() {
-    if (progressSource) {
-      progressSource.close();
-      progressSource = null;
-    }
-    progressStep.value = 0;
-    progressSteps.value = 0;
-    progressTime.value = 0;
-    progressPhase.value = '';
-    progressMessage.value = '';
-  }
 
   async function fetchModels() {
     isModelsLoading.value = true
@@ -659,7 +652,8 @@ export const useGenerationStore = defineStore('generation', () => {
     error.value = null
     const startTime = Date.now();
     lastParams.value = { ...params }
-    startStreamingProgress();
+    
+    // Progress is now handled automatically via WebSocket
 
     try {
       imageUrls.value = await requestImage(params);
@@ -670,7 +664,6 @@ export const useGenerationStore = defineStore('generation', () => {
       console.error(e)
     } finally {
       isGenerating.value = false
-      stopStreamingProgress();
     }
   }
 
@@ -684,7 +677,7 @@ export const useGenerationStore = defineStore('generation', () => {
     models, currentModel, currentLlmModel, upscaleModel, upscaleFactor, vramInfo,
     isModelsLoading, fetchModels, loadModel, loadLlmModel, unloadLlmModel, loadUpscaleModel, testLlmCompletion, enhancePrompt,
     progressStep, progressSteps, progressTime, progressPhase, progressMessage, eta, 
-    startStreamingProgress, stopStreamingProgress, lastParams, outputDir, modelDir, isLlmThinking,
+    lastParams, outputDir, modelDir, isLlmThinking,
     updateConfig, reuseLastSeed, randomizeSeed, swapDimensions 
   }
 })

@@ -51,7 +51,8 @@ void handle_get_progress(const httplib::Request&, httplib::Response& res) {
     res.set_content(r.dump(), "application/json");
 }
 
-void handle_stream_progress(const httplib::Request&, httplib::Response& res) {
+void handle_stream_progress(const httplib::Request& req, httplib::Response& res) {
+    LOG_INFO("New progress stream subscription from %s", req.remote_addr.c_str());
     res.set_header("Cache-Control", "no-cache");
     res.set_header("Connection", "keep-alive");
     res.set_header("X-Accel-Buffering", "no"); // Disable proxy buffering
