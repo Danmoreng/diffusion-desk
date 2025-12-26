@@ -51,6 +51,15 @@ const galleryRef = ref<any>(null)
             </div>
           </template>
 
+          <!-- Tag Filter -->
+          <div class="d-flex align-items-center gap-2">
+            <span class="small text-muted text-uppercase fw-bold" style="font-size: 0.7rem;">Tag:</span>
+            <select v-model="galleryRef.selectedTag" class="form-select form-select-sm border-0 bg-body shadow-none" style="width: auto; min-width: 120px;" v-if="galleryRef">
+              <option value="all">All Tags</option>
+              <option v-for="tag in galleryRef.availableTags" :key="tag" :value="tag">{{ tag }}</option>
+            </select>
+          </div>
+
           <div class="vr mx-1 d-none d-lg-block"></div>
 
           <!-- Grid Size slider -->

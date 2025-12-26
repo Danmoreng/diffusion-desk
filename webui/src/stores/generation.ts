@@ -244,9 +244,18 @@ export const useGenerationStore = defineStore('generation', () => {
       const response = await fetch('/v1/models')
       const data = await response.json()
       models.value = data.data
-      const activeModel = models.value.find(m => m.active)
-      if (activeModel) {
-        currentModel.value = activeModel.id
+      
+      // Find active SD model
+      const activeSdModel = models.value.find(m => (m.type === 'stable-diffusion' || m.type === 'root') && m.active)
+      if (activeSdModel) {
+        currentModel.value = activeSdModel.id
+      }
+
+      // Find active LLM model
+      const activeLlmModel = models.value.find(m => m.type === 'llm' && m.active)
+      if (activeLlmModel) {
+        currentLlmModel.value = activeLlmModel.id
+        isLlmLoaded.value = !!activeLlmModel.loaded
       }
     } catch (e) {
       console.error('Failed to fetch models:', e)

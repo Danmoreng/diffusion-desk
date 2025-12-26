@@ -564,10 +564,12 @@ void handle_generate_image(const httplib::Request& req, httplib::Response& res, 
             output_compression = 0;
         }
 
+        double total_generation_time = 0;
         mysti::json out;
         out["created"]       = iso_timestamp_now();
         out["data"]          = mysti::json::array();
         out["output_format"] = output_format;
+        out["generation_time"] = total_generation_time;
 
         SDGenerationParams gen_params = ctx.default_gen_params;
         gen_params.prompt             = prompt;
@@ -686,7 +688,6 @@ void handle_generate_image(const httplib::Request& req, httplib::Response& res, 
 
         sd_image_t* results = nullptr;
         int num_results     = 0;
-        double total_generation_time = 0;
 
         {
             auto start_time = std::chrono::high_resolution_clock::now();
@@ -868,6 +869,11 @@ void handle_generate_image(const httplib::Request& req, httplib::Response& res, 
                 continue;
             }
 
+            std::string b64 = base64_encode(image_bytes);
+            mysti::json item;
+            item["b64_json"] = b64;
+            item["seed"] = gen_params.seed;
+
             if (save_image) {
                 try {
                     const std::string output_dir = ctx.svr_params.output_dir;
@@ -889,18 +895,19 @@ void handle_generate_image(const httplib::Request& req, httplib::Response& res, 
                     txt_file << params_txt;
                     LOG_INFO("saved parameters to %s", txt_filename.c_str());
 
+                    // Add file info to response
+                    item["url"] = "/outputs/" + base_filename + ".png";
+                    item["name"] = base_filename + ".png";
+
                 } catch (const std::exception& e) {
                     LOG_ERROR("failed to save image or metadata: %s", e.what());
                 }
             }
 
-            std::string b64 = base64_encode(image_bytes);
-            mysti::json item;
-            item["b64_json"] = b64;
-            item["seed"] = gen_params.seed;
             out["data"].push_back(item);
         }
 
+        out["generation_time"] = total_generation_time;
         res.set_content(out.dump(), "application/json");
         res.status = 200;
 
