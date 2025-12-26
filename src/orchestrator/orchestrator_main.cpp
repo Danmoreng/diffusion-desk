@@ -495,7 +495,14 @@ int run_orchestrator(int argc, const char** argv, SDSvrParams& svr_params) {
                 std::string neg_prompt = req_json.value("negative_prompt", "");
                 int width = req_json.value("width", 512);
                 int height = req_json.value("height", 512);
-                int steps = req_json.value("steps", 20);
+                
+                int steps = 20;
+                if (req_json.contains("sample_steps")) {
+                    steps = req_json.value("sample_steps", 20);
+                } else if (req_json.contains("steps")) {
+                    steps = req_json.value("steps", 20);
+                }
+
                 float cfg = req_json.value("cfg_scale", 7.0f);
                 long long seed = req_json.value("seed", -1LL);
                 double generation_time = res_json.value("generation_time", 0.0);
