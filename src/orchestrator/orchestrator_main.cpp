@@ -401,6 +401,9 @@ int run_orchestrator(int argc, const char** argv, SDSvrParams& svr_params) {
             
             float sd_vram = 0;
             float llm_vram = 0;
+            std::string sd_model = "";
+            std::string llm_model = "";
+            bool llm_loaded = false;
             
             httplib::Headers headers;
             if (!g_internal_token.empty()) {
@@ -422,13 +425,37 @@ int run_orchestrator(int argc, const char** argv, SDSvrParams& svr_params) {
                     try {
                         auto j = mysti::json::parse(res->body);
                         llm_vram = j.value("vram_gb", 0.0f);
+                        llm_model = j.value("model_path", "");
+                        llm_loaded = j.value("loaded", false);
+                        
+                        // Strip base dir if present
+                        if (!llm_model.empty()) {
+                            fs::path mp(llm_model);
+                            if (mp.is_absolute()) {
+                                // Try to make relative to model_dir
+                                try {
+                                    llm_model = fs::relative(mp, svr_params.model_dir).string();
+                                } catch(...) {
+                                    llm_model = mp.filename().string();
+                                }
+                            }
+                        }
                     } catch(...){}
                 }
             }
 
+            // Sync LLM status to SD worker so handle_get_models is accurate
+            {
+                httplib::Client cli("127.0.0.1", sd_port);
+                mysti::json status_msg;
+                status_msg["path"] = llm_model;
+                status_msg["loaded"] = llm_loaded;
+                cli.Post("/internal/llm_status", headers, status_msg.dump(), "application/json");
+            }
+
             msg["workers"] = {
                 {"sd", {{"vram_gb", sd_vram}}},
-                {"llm", {{"vram_gb", llm_vram}}}
+                {"llm", {{"vram_gb", llm_vram}, {"model", llm_model}, {"loaded", llm_loaded}}}
             };
 
             ws_mgr.broadcast(msg);

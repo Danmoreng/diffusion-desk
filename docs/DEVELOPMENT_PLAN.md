@@ -31,7 +31,7 @@ To provide a high-performance, private, and local AI creative suite that seamles
     - Replace SSE (`/stream/progress`) with a robust WebSocket implementation.
     - Unified stream for generation progress, VRAM metrics, and system alerts.
 - [ ] **2.2 Bidirectional Control**
-    - Implement **Request Cancellation**: Stop a 100-step generation mid-way via WS signal.
+    - ~~Implement **Request Cancellation**: Stop a 100-step generation mid-way via WS signal.~~ (Blocked: `stable-diffusion.cpp` API does not support interruption via callback yet)
     - Dynamic Parameter Updates: Update CFG or Guidance scales while the LLM is "thinking."
 - [ ] **2.3 UI Cleanup**
     - Remove legacy "Manual Load" buttons.

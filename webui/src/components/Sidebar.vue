@@ -6,9 +6,16 @@ import Tooltip from 'bootstrap/js/dist/tooltip'
 const store = useGenerationStore()
 const miniModelBtn = ref<HTMLElement | null>(null)
 const isModelMenuOpen = ref(false)
+const isLlmMenuOpen = ref(false)
 
 const toggleModelMenu = () => {
   isModelMenuOpen.value = !isModelMenuOpen.value
+  isLlmMenuOpen.value = false
+}
+
+const toggleLlmMenu = () => {
+  isLlmMenuOpen.value = !isLlmMenuOpen.value
+  isModelMenuOpen.value = false
 }
 
 const selectModel = (id: string) => {
@@ -16,10 +23,18 @@ const selectModel = (id: string) => {
   isModelMenuOpen.value = false
 }
 
+const selectLlmModel = (id: string) => {
+  store.loadLlmModel(id)
+  isLlmMenuOpen.value = false
+}
+
 // Close menu when clicking outside
 const closeMenu = (e: MouseEvent) => {
   if (isModelMenuOpen.value && !(e.target as HTMLElement).closest('.model-dropdown-container')) {
     isModelMenuOpen.value = false
+  }
+  if (isLlmMenuOpen.value && !(e.target as HTMLElement).closest('.llm-dropdown-container')) {
+    isLlmMenuOpen.value = false
   }
 }
 
@@ -77,8 +92,13 @@ const menuItems = [
 <template>
   <div class="sidebar-inner p-2 d-flex flex-column h-100 pt-5">
     <!-- Model Section -->
-    <div class="mb-4 px-1" v-if="!store.isSidebarCollapsed">
-      <h6 class="mb-2 x-small text-uppercase fw-bold text-muted">Model</h6>
+    <div class="mb-2 px-1" v-if="!store.isSidebarCollapsed">
+      <div class="d-flex justify-content-between align-items-center mb-1">
+        <h6 class="x-small text-uppercase fw-bold text-muted mb-0">Model</h6>
+        <div v-if="store.isModelSwitching || store.isModelsLoading" class="spinner-border spinner-border-sm text-primary" style="width: 0.7rem; height: 0.7rem;" role="status">
+          <span class="visually-hidden">Loading...</span>
+        </div>
+      </div>
       <select 
         class="form-select form-select-sm mb-2" 
         :value="store.currentModel" 
@@ -93,36 +113,100 @@ const menuItems = [
         </template>
       </select>
     </div>
-    
-    <!-- Mini Model Icon (for collapsed state) -->
-    <div class="mb-4 text-center model-dropdown-container" v-else>
-      <button 
-        class="btn btn-link p-0 border-0 fs-4 cursor-pointer text-decoration-none" 
-        type="button" 
-        @click.stop="toggleModelMenu"
-        title="Switch Model"
+
+    <!-- LLM Section -->
+    <div class="mb-4 px-1" v-if="!store.isSidebarCollapsed">
+      <div class="d-flex justify-content-between align-items-center mb-1">
+        <h6 class="x-small text-uppercase fw-bold text-muted mb-0">Intelligence</h6>
+        <div v-if="store.isLlmLoading" class="spinner-border spinner-border-sm text-success" style="width: 0.7rem; height: 0.7rem;" role="status">
+          <span class="visually-hidden">Loading...</span>
+        </div>
+        <span v-else-if="store.currentLlmModel" class="badge rounded-pill x-small py-1" :class="store.isLlmLoaded ? 'text-bg-success' : 'text-bg-secondary'" :title="store.isLlmLoaded ? 'Loaded in VRAM' : 'Standby (on disk)'">
+          {{ store.isLlmLoaded ? 'VRAM' : 'STANDBY' }}
+        </span>
+      </div>
+      <select 
+        class="form-select form-select-sm mb-1" 
+        :value="store.currentLlmModel" 
+        @change="(e) => store.loadLlmModel((e.target as HTMLSelectElement).value)"
+        :disabled="store.isLlmLoading || store.isGenerating"
       >
-        📦
-      </button>
-      
-      <!-- Custom Absolute Dropdown -->
-      <div v-if="isModelMenuOpen" class="custom-dropdown shadow border rounded bg-body">
-        <div class="dropdown-header border-bottom py-2 px-3 fw-bold small text-uppercase">Select Model</div>
-        <div class="dropdown-list">
-          <div v-if="store.isModelsLoading" class="p-3 text-muted small text-center italic">Loading...</div>
-          <template v-else>
+        <option value="">None</option>
+        <option v-for="m in store.models.filter(m => m.type === 'llm')" :key="m.id" :value="m.id">
+          {{ m.name }}
+        </option>
+      </select>
+    </div>
+    
+    <!-- Mini Model Icons (for collapsed state) -->
+    <div class="mb-4 text-center d-flex flex-column gap-3" v-else>
+      <div class="model-dropdown-container">
+        <button 
+          class="btn btn-link p-0 border-0 fs-4 cursor-pointer text-decoration-none" 
+          :class="{ 'pulse-animation': store.isModelSwitching || store.isModelsLoading }"
+          type="button" 
+          @click.stop="toggleModelMenu"
+          title="Switch SD Model"
+        >
+          🖼️
+        </button>
+        
+        <!-- SD Custom Dropdown -->
+        <div v-if="isModelMenuOpen" class="custom-dropdown shadow border rounded bg-body">
+          <div class="dropdown-header border-bottom py-2 px-3 fw-bold small text-uppercase">Stable Diffusion Model</div>
+          <div class="dropdown-list">
+            <div v-if="store.isModelsLoading" class="p-3 text-muted small text-center italic">Loading...</div>
+            <template v-else>
+              <button 
+                v-for="model in store.models.filter(m => m.type === 'stable-diffusion' || m.type === 'root')" 
+                :key="model.id"
+                class="dropdown-item-btn w-100 text-start border-0 bg-transparent py-2 px-3 small d-flex justify-content-between align-items-center"
+                :class="{ 'active-model': model.id === store.currentModel }"
+                @click="selectModel(model.id)"
+                :disabled="store.isModelSwitching || store.isGenerating"
+              >
+                <span class="text-truncate">{{ model.name }}</span>
+                <span v-if="model.id === store.currentModel" class="ms-2">✅</span>
+              </button>
+            </template>
+          </div>
+        </div>
+      </div>
+
+      <div class="llm-dropdown-container">
+        <button 
+          class="btn btn-link p-0 border-0 fs-4 cursor-pointer text-decoration-none position-relative" 
+          :class="{ 'pulse-animation': store.isLlmLoading }"
+          type="button" 
+          @click.stop="toggleLlmMenu"
+          title="Switch Intelligence Model"
+        >
+          🧠
+          <span v-if="store.currentLlmModel" class="position-absolute bottom-0 end-0 translate-middle-x p-1 border border-light rounded-circle" :class="store.isLlmLoaded ? 'bg-success' : 'bg-secondary'" style="width: 8px; height: 8px;"></span>
+        </button>
+
+        <!-- LLM Custom Dropdown -->
+        <div v-if="isLlmMenuOpen" class="custom-dropdown shadow border rounded bg-body">
+          <div class="dropdown-header border-bottom py-2 px-3 fw-bold small text-uppercase">Intelligence Model</div>
+          <div class="dropdown-list">
             <button 
-              v-for="model in store.models.filter(m => m.type === 'stable-diffusion' || m.type === 'root')" 
+                class="dropdown-item-btn w-100 text-start border-0 bg-transparent py-2 px-3 small"
+                @click="selectLlmModel('')"
+            >
+              None
+            </button>
+            <button 
+              v-for="model in store.models.filter(m => m.type === 'llm')" 
               :key="model.id"
               class="dropdown-item-btn w-100 text-start border-0 bg-transparent py-2 px-3 small d-flex justify-content-between align-items-center"
-              :class="{ 'active-model': model.id === store.currentModel }"
-              @click="selectModel(model.id)"
-              :disabled="store.isModelSwitching || store.isGenerating"
+              :class="{ 'active-model-llm': model.id === store.currentLlmModel }"
+              @click="selectLlmModel(model.id)"
+              :disabled="store.isLlmLoading || store.isGenerating"
             >
               <span class="text-truncate">{{ model.name }}</span>
-              <span v-if="model.id === store.currentModel" class="ms-2">✅</span>
+              <span v-if="model.id === store.currentLlmModel" class="ms-2">✅</span>
             </button>
-          </template>
+          </div>
         </div>
       </div>
     </div>
@@ -220,7 +304,7 @@ const menuItems = [
   overflow: visible !important;
 }
 
-.model-dropdown-container {
+.model-dropdown-container, .llm-dropdown-container {
   position: relative;
 }
 
@@ -253,9 +337,25 @@ const menuItems = [
   font-weight: 600;
 }
 
+.dropdown-item-btn.active-model-llm {
+  background-color: var(--bs-success) !important;
+  color: white !important;
+  font-weight: 600;
+}
+
 .dropdown-item-btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+.pulse-animation {
+  animation: pulse 1.5s infinite ease-in-out;
+}
+
+@keyframes pulse {
+  0% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.2); opacity: 0.7; }
+  100% { transform: scale(1); opacity: 1; }
 }
 
 .x-small {

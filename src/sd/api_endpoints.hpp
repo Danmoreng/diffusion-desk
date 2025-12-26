@@ -18,6 +18,8 @@ struct ServerContext {
     std::mutex& sd_ctx_mutex;
     upscaler_ctx_t*& upscaler_ctx;
     std::string& current_upscale_model_path;
+    std::string active_llm_model_path;
+    bool active_llm_model_loaded = false;
 };
 
 // Endpoint handlers
