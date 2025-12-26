@@ -18,6 +18,8 @@
 #include <shellapi.h>
 #include <dxgi1_4.h>
 #pragma comment(lib, "dxgi.lib")
+#else
+#include <unistd.h>
 #endif
 
 #define STB_IMAGE_IMPLEMENTATION
