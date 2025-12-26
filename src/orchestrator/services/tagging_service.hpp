@@ -5,6 +5,9 @@
 #include <string>
 #include <memory>
 #include <thread>
+#include <condition_variable>
+#include <mutex>
+#include <functional>
 
 namespace mysti {
 
@@ -18,6 +21,12 @@ public:
 
     // To pause tagging while generating images (VRAM priority)
     void set_generation_active(bool active);
+    
+    // Trigger immediate tagging check
+    void notify_new_generation();
+
+    // Set callback to get the last loaded LLM model configuration
+    void set_model_provider(std::function<std::string()> provider);
 
 private:
     void loop();
@@ -29,6 +38,11 @@ private:
     std::atomic<bool> m_running{false};
     std::atomic<bool> m_generation_active{false};
     std::thread m_thread;
+    
+    std::condition_variable m_cv;
+    std::mutex m_cv_mutex;
+    
+    std::function<std::string()> m_model_provider;
 
     // Helper to extract JSON from LLM response
     std::string extract_json(const std::string& content);

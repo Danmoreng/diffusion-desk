@@ -23,6 +23,7 @@ void TaggingService::start() {
 void TaggingService::stop() {
     if (!m_running) return;
     m_running = false;
+    notify_new_generation(); // Wake up thread to exit
     if (m_thread.joinable()) {
         m_thread.join();
     }
@@ -31,6 +32,15 @@ void TaggingService::stop() {
 
 void TaggingService::set_generation_active(bool active) {
     m_generation_active = active;
+}
+
+void TaggingService::set_model_provider(std::function<std::string()> provider) {
+    m_model_provider = provider;
+}
+
+void TaggingService::notify_new_generation() {
+    std::unique_lock<std::mutex> lock(m_cv_mutex);
+    m_cv.notify_one();
 }
 
 std::string TaggingService::extract_json(const std::string& content) {
@@ -49,7 +59,13 @@ std::string TaggingService::extract_json(const std::string& content) {
 
 void TaggingService::loop() {
     while (m_running) {
-        std::this_thread::sleep_for(std::chrono::seconds(10));
+        // Wait for notification or timeout (10 seconds)
+        {
+            std::unique_lock<std::mutex> lock(m_cv_mutex);
+            m_cv.wait_for(lock, std::chrono::seconds(10), [this] { return !m_running; });
+        }
+
+        if (!m_running) break;
         
         if (m_generation_active) {
             // std::cout << "[Tagging Service] SD is generating, skipping..." << std::endl;
@@ -76,11 +92,29 @@ void TaggingService::loop() {
         }
 
         if (!loaded) {
-            // Logic to auto-load LLM could go here if we had access to the last requested model
-            // For now, we just skip if LLM isn't ready.
-             std::cout << "[Tagging Service] LLM not loaded, skipping." << std::endl;
-             std::this_thread::sleep_for(std::chrono::seconds(10));
-             continue; 
+            bool reloaded = false;
+            if (m_model_provider) {
+                std::string model_body = m_model_provider();
+                if (!model_body.empty()) {
+                    std::cout << "[Tagging Service] Auto-loading LLM..." << std::endl;
+                    cli.set_read_timeout(600);
+                    auto res = cli.Post("/v1/llm/load", h, model_body, "application/json");
+                    if (res && res->status == 200) {
+                         loaded = true;
+                         reloaded = true;
+                    } else {
+                         std::cout << "[Tagging Service] Failed to load LLM." << std::endl;
+                    }
+                } else {
+                    std::cout << "[Tagging Service] No LLM model configured for auto-load." << std::endl;
+                }
+            }
+            
+            if (!reloaded) {
+                 // std::cout << "[Tagging Service] LLM not loaded, skipping." << std::endl;
+                 std::this_thread::sleep_for(std::chrono::seconds(5));
+                 continue; 
+            }
         }
 
         // Process Batch
