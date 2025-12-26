@@ -34,3 +34,8 @@ libs/stable-diffusion.cpp/*
 outputs/
 models/
 public/app/
+
+# Database
+*.db
+*.db-shm
+*.db-wal
