@@ -33,3 +33,4 @@ libs/stable-diffusion.cpp/*
 # Generated outputs
 outputs/
 models/
+public/app/
