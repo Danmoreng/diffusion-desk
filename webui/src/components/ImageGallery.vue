@@ -1,26 +1,32 @@
 <script setup lang="ts">
-import { ref, onMounted, nextTick, computed } from 'vue'
+import { ref, onMounted, nextTick, computed, watch } from 'vue'
 import { Modal, Carousel } from 'bootstrap'
 import { useGenerationStore } from '@/stores/generation'
 import { useRouter } from 'vue-router'
 
 interface HistoryItem {
+  id: string
   name: string
   params?: any
+  tags?: string[]
 }
 
 const store = useGenerationStore()
 const router = useRouter()
 
 const images = ref<HistoryItem[]>([])
+const allTags = ref<any[]>([])
 const isLoading = ref(true)
 const error = ref<string | null>(null)
 
 // Filtering State
 const selectedModel = ref('all')
 const selectedDateRange = ref('all') // all, today, yesterday, week, month, custom
+const selectedTag = ref('all')
 const startDate = ref('')
 const endDate = ref('')
+
+const newTagInput = ref('')
 
 const availableModels = computed(() => {
   const models = new Set<string>()
@@ -29,6 +35,55 @@ const availableModels = computed(() => {
   })
   return Array.from(models).sort()
 })
+
+const availableTags = computed(() => {
+  return allTags.value.map(t => t.name).sort()
+})
+
+async function addTag(uuid: string) {
+  if (!newTagInput.value.trim()) return
+  try {
+    const response = await fetch('/v1/history/tags', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ uuid, tag: newTagInput.value.trim() })
+    })
+    if (response.ok) {
+      // Update local state
+      const img = images.value.find(i => i.id === uuid)
+      if (img) {
+        if (!img.tags) img.tags = []
+        if (!img.tags.includes(newTagInput.value.trim())) {
+          img.tags.push(newTagInput.value.trim())
+        }
+      }
+      newTagInput.value = ''
+      // Refresh global tag list
+      const tagsRes = await fetch('/v1/history/tags')
+      if (tagsRes.ok) allTags.value = await tagsRes.json()
+    }
+  } catch (e) { console.error('Failed to add tag:', e) }
+}
+
+async function removeTag(uuid: string, tag: string) {
+  try {
+    const response = await fetch('/v1/history/tags', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ uuid, tag })
+    })
+    if (response.ok) {
+      // Update local state
+      const img = images.value.find(i => i.id === uuid)
+      if (img && img.tags) {
+        img.tags = img.tags.filter(t => t !== tag)
+      }
+      // Refresh global tag list
+      const tagsRes = await fetch('/v1/history/tags')
+      if (tagsRes.ok) allTags.value = await tagsRes.json()
+    }
+  } catch (e) { console.error('Failed to remove tag:', e) }
+}
 
 const getTimestamp = (filename: string) => {
   try {
@@ -121,23 +176,37 @@ defineExpose({
   setColumns, 
   selectedModel, 
   selectedDateRange, 
+  selectedTag,
   startDate, 
   endDate, 
   availableModels,
+  availableTags,
   filteredCount: computed(() => filteredImages.value.length),
   totalCount: computed(() => images.value.length)
 })
+
+watch(selectedTag, fetchImages)
 
 async function fetchImages() {
   isLoading.value = true
   error.value = null
   try {
-    const response = await fetch('/v1/history/images')
+    let url = '/v1/history/images?limit=200'
+    if (selectedTag.value !== 'all') {
+      url += `&tag=${encodeURIComponent(selectedTag.value)}`
+    }
+    const response = await fetch(url)
     if (!response.ok) {
       throw new Error('Failed to fetch image history from the server.')
     }
     const data = await response.json()
     images.value = data
+
+    // Fetch all available tags for the filter
+    const tagsRes = await fetch('/v1/history/tags')
+    if (tagsRes.ok) {
+      allTags.value = await tagsRes.json()
+    }
 
     // Wait for the DOM to update with the new images
     await nextTick()
@@ -379,20 +448,40 @@ onMounted(() => {
                 </button>
               </div>
             </div>
-            <div class="modal-footer justify-content-start" v-if="filteredImages[activeIndex]?.params">
-               <div class="small w-100 text-muted overflow-auto" style="max-height: 150px;">
+            <div class="modal-footer justify-content-start" v-if="filteredImages[activeIndex]">
+               <div class="small w-100 text-muted overflow-auto" style="max-height: 250px;">
                   <div class="d-flex justify-content-between align-items-start">
-                    <div>
+                    <div v-if="filteredImages[activeIndex].params">
                       <strong>Prompt:</strong> {{ filteredImages[activeIndex].params.prompt }}<br>
                       <strong>Seed:</strong> {{ filteredImages[activeIndex].params.seed }} |
                       <strong>Steps:</strong> {{ filteredImages[activeIndex].params.sample_steps }} |
                       <strong>CFG:</strong> {{ filteredImages[activeIndex].params.cfg_scale }} |
-                      <strong>Sampler:</strong> {{ filteredImages[activeIndex].params.sampling_method }} |
                       <strong>Size:</strong> {{ filteredImages[activeIndex].params.width }}x{{ filteredImages[activeIndex].params.height }}
                       <span v-if="filteredImages[activeIndex].params.Time"> | <strong>Time:</strong> {{ filteredImages[activeIndex].params.Time }}</span>
                     </div>
                   </div>
+
+                  <!-- Tags Section -->
                   <div class="mt-2 pt-2 border-top">
+                    <div class="d-flex justify-content-between align-items-center mb-1">
+                      <strong>Tags:</strong>
+                      <div class="input-group input-group-sm" style="width: 150px;">
+                        <input type="text" v-model="newTagInput" class="form-control form-control-sm" placeholder="Add tag..." @keyup.enter="addTag(filteredImages[activeIndex].id)">
+                        <button class="btn btn-outline-secondary btn-sm" type="button" @click="addTag(filteredImages[activeIndex].id)">+</button>
+                      </div>
+                    </div>
+                    <div class="d-flex flex-wrap gap-1 mt-1">
+                      <span v-for="tag in filteredImages[activeIndex].tags" :key="tag" 
+                        class="badge bg-primary bg-opacity-10 text-primary border border-primary border-opacity-25 fw-normal d-flex align-items-center gap-1"
+                      >
+                        <span @click="selectedTag = tag; modalInstance?.hide()" style="cursor: pointer;">{{ tag }}</span>
+                        <span @click.stop="removeTag(filteredImages[activeIndex].id, tag)" class="text-danger ms-1" style="cursor: pointer; font-size: 0.8rem;">&times;</span>
+                      </span>
+                      <span v-if="!filteredImages[activeIndex].tags?.length" class="text-muted italic small">No tags yet.</span>
+                    </div>
+                  </div>
+
+                  <div v-if="filteredImages[activeIndex].params" class="mt-2 pt-2 border-top">
                     <div class="d-flex justify-content-between align-items-center mb-1">
                       <strong>Forge Format:</strong>
                       <button class="btn btn-link btn-sm p-0 text-decoration-none x-small" @click="copyToClipboard(getFormattedParams(filteredImages[activeIndex]))">

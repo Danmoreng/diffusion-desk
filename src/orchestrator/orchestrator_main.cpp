@@ -2,6 +2,7 @@
 #include "process_manager.hpp"
 #include "proxy.hpp"
 #include "ws_manager.hpp"
+#include "database.hpp"
 #include "httplib.h"
 #include <iostream>
 #include <fstream>
@@ -16,11 +17,14 @@ static ProcessManager::ProcessInfo llm_process;
 static int sd_port = 0;
 static int llm_port = 0;
 
+static std::unique_ptr<mysti::Database> g_db;
+
 static std::string sd_exe_path;
 static std::string llm_exe_path;
 static std::vector<std::string> sd_args;
 static std::vector<std::string> llm_args;
 static std::string g_internal_token;
+static std::atomic<bool> g_is_generating{false};
 
 // State tracking for recovery
 static std::string last_sd_model_req_body;
@@ -270,6 +274,283 @@ void health_check_loop(const std::string& sd_host, int sd_p, const std::string& 
     }
 }
 
+void auto_import_outputs(const std::string& output_dir) {
+    if (!g_db) return;
+    LOG_INFO("Scanning %s for images to import to DB...", output_dir.c_str());
+    try {
+        fs::path out_path_abs = fs::absolute(output_dir);
+        if (!fs::exists(out_path_abs) || !fs::is_directory(out_path_abs)) {
+            LOG_WARN("Output directory %s does not exist or is not a directory.", out_path_abs.string().c_str());
+            return;
+        }
+
+        int imported = 0;
+        int checked = 0;
+        for (const auto& entry : fs::directory_iterator(out_path_abs)) {
+            if (entry.is_regular_file()) {
+                auto path = entry.path();
+                auto ext = path.extension().string();
+                if (ext == ".png" || ext == ".jpg" || ext == ".jpeg") {
+                    checked++;
+                    std::string filename = path.filename().string();
+                    std::string file_url = "/outputs/" + filename;
+
+                    // Check if already in DB
+                    SQLite::Statement check(g_db->get_db(), "SELECT id FROM generations WHERE file_path = ?");
+                    check.bind(1, file_url);
+                    if (!check.executeStep()) {
+                        std::string prompt = "";
+                        std::string neg_prompt = "";
+                        int width = 512, height = 512, steps = 20;
+                        float cfg = 7.0f;
+                        long long seed = 0;
+                        double gen_time = 0.0;
+
+                        auto json_path = path;
+                        json_path.replace_extension(".json");
+                        if (fs::exists(json_path)) {
+                            try {
+                                std::ifstream f(json_path);
+                                auto j = mysti::json::parse(f);
+                                prompt = j.value("prompt", "");
+                                neg_prompt = j.value("negative_prompt", "");
+                                seed = j.value("seed", 0LL);
+                                width = j.value("width", 512);
+                                height = j.value("height", 512);
+                                steps = j.value("steps", 20);
+                                cfg = j.value("cfg_scale", 7.0f);
+                                gen_time = j.value("generation_time", 0.0);
+                            } catch(...) {}
+                        } else {
+                            auto txt_path = path;
+                            txt_path.replace_extension(".txt");
+                            if (fs::exists(txt_path)) {
+                                try {
+                                    std::ifstream f(txt_path);
+                                    std::string content((std::istreambuf_iterator<char>(f)), (std::istreambuf_iterator<char>()));
+                                    // Basic regex extraction for legacy .txt
+                                    std::regex time_re(R"(Time:\s*([\d\.]+))");
+                                    std::smatch match;
+                                    if (std::regex_search(content, match, time_re)) {
+                                        gen_time = std::stod(match[1]);
+                                    }
+                                    // For simplicity, we just take the first line as prompt if it doesn't start with "Negative"
+                                    std::stringstream ss(content);
+                                    std::string line;
+                                    if (std::getline(ss, line) && line.find("Negative prompt:") != 0) {
+                                        prompt = line;
+                                    }
+                                } catch(...) {}
+                            }
+                        }
+
+                        // Generate a UUID if missing (use filename as seed for deterministic UUID or just random)
+                        std::string uuid = "legacy-" + filename;
+
+                        SQLite::Statement ins(g_db->get_db(), "INSERT INTO generations (uuid, file_path, prompt, negative_prompt, seed, width, height, steps, cfg_scale, generation_time) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+                        ins.bind(1, uuid);
+                        ins.bind(2, file_url);
+                        ins.bind(3, prompt);
+                        ins.bind(4, neg_prompt);
+                        ins.bind(5, seed);
+                        ins.bind(6, width);
+                        ins.bind(7, height);
+                        ins.bind(8, steps);
+                        ins.bind(9, cfg);
+                        ins.bind(10, gen_time);
+                        ins.exec();
+                        imported++;
+                    }
+                }
+            }
+        }
+        LOG_INFO("Migration: Checked %d files, imported %d new records.", checked, imported);
+    } catch (const std::exception& e) {
+        LOG_ERROR("Auto-import failed: %s", e.what());
+    }
+}
+
+void tagging_service() {
+    std::cout << "[Tagging Service] Thread started." << std::endl;
+    while (!is_shutting_down) {
+        std::this_thread::sleep_for(std::chrono::seconds(10));
+        
+        if (g_is_generating) {
+            std::cout << "[Tagging Service] SD is generating, skipping..." << std::endl;
+            continue; 
+        }
+        if (!g_db) continue;
+
+        auto pending = g_db->get_untagged_generations(5); 
+        if (pending.empty()) {
+            // std::cout << "[Tagging Service] No pending images." << std::endl;
+            continue;
+        }
+
+        std::cout << "[Tagging Service] Found " << pending.size() << " images to tag." << std::endl;
+
+        // Check LLM
+        httplib::Client cli("127.0.0.1", llm_port);
+        httplib::Headers h;
+        if (!g_internal_token.empty()) h.emplace("X-Internal-Token", g_internal_token);
+        
+        bool loaded = false;
+        if (auto res = cli.Get("/internal/health", h)) {
+             try {
+                 auto j = mysti::json::parse(res->body);
+                 loaded = j.value("loaded", false);
+             } catch(...) {}
+        }
+
+        if (!loaded) {
+            std::string model_body;
+            {
+                std::lock_guard<std::mutex> lock(state_mtx);
+                model_body = last_llm_model_req_body;
+            }
+            
+            if (!model_body.empty()) {
+                std::cout << "[Tagging Service] Auto-loading LLM..." << std::endl;
+                cli.set_read_timeout(600);
+                auto res = cli.Post("/v1/llm/load", h, model_body, "application/json");
+                if (!res || res->status != 200) {
+                    std::cout << "[Tagging Service] Failed to load LLM." << std::endl;
+                    std::this_thread::sleep_for(std::chrono::seconds(30));
+                    continue;
+                }
+                loaded = true;
+            } else {
+                std::cout << "[Tagging Service] No LLM model configured for auto-load." << std::endl;
+                continue; 
+            }
+        }
+
+        // Process Batch
+        for (const auto& item : pending) {
+            if (g_is_generating) break;
+
+            int id = item.first;
+            std::string prompt = item.second;
+            
+            mysti::json chat_req;
+            chat_req["messages"] = mysti::json::array({
+                {{"role", "system"}, {"content", "You are a specialized image tagging engine. Output a JSON object with a 'tags' key containing an array of 5-8 descriptive tags (Subject, Style, Mood). Example: {\"tags\": [\"cat\", \"forest\", \"ethereal\"]}. Output ONLY valid JSON."}},
+                {{"role", "user"}, {"content", prompt}}
+            });
+            chat_req["temperature"] = 0.1;
+            chat_req["response_format"] = {{"type", "json_object"}};
+            
+            std::cout << "[Tagging Service] Tagging image ID " << id << "..." << std::endl;
+            cli.set_read_timeout(120);
+            if (auto chat_res = cli.Post("/v1/chat/completions", h, chat_req.dump(), "application/json")) {
+                if (chat_res->status == 200) {
+                    try {
+                        auto rj = mysti::json::parse(chat_res->body);
+                        if (!rj.contains("choices") || rj["choices"].empty()) {
+                            std::cout << "[Tagging Service] ID " << id << ": Empty response." << std::endl;
+                            continue;
+                        }
+                        
+                        auto& msg_obj = rj["choices"][0]["message"];
+                        std::string content = "";
+                        if (msg_obj.contains("content") && !msg_obj["content"].is_null()) {
+                            content = msg_obj["content"].get<std::string>();
+                        }
+                        
+                        if (content.empty() && msg_obj.contains("reasoning_content") && !msg_obj["reasoning_content"].is_null()) {
+                            content = msg_obj["reasoning_content"].get<std::string>();
+                        }
+
+                        if (content.empty()) {
+                            std::cout << "[Tagging Service] ID " << id << ": No content." << std::endl;
+                            g_db->mark_as_tagged(id);
+                            continue;
+                        }
+
+                        std::cout << "[Tagging Service] ID " << id << " LLM Response: " << content << std::endl;
+                        
+                        // Try to find the JSON part (object or array)
+                        size_t obj_start = content.find("{");
+                        size_t obj_end = content.rfind("}");
+                        size_t arr_start = content.find("[");
+                        size_t arr_end = content.rfind("]");
+                        
+                        std::string json_part = "";
+                        if (obj_start != std::string::npos && (arr_start == std::string::npos || obj_start < arr_start)) {
+                            json_part = content.substr(obj_start, obj_end - obj_start + 1);
+                        } else if (arr_start != std::string::npos) {
+                            json_part = content.substr(arr_start, arr_end - arr_start + 1);
+                        }
+
+                        if (!json_part.empty()) {
+                            try {
+                                auto tags_json = mysti::json::parse(json_part);
+                                mysti::json tags_arr = mysti::json::array();
+
+                                if (tags_json.is_array()) {
+                                    tags_arr = tags_json;
+                                } else if (tags_json.is_object()) {
+                                    if (tags_json.contains("tags") && tags_json["tags"].is_array()) {
+                                        tags_arr = tags_json["tags"];
+                                    } else {
+                                        // Take first array found in object
+                                        for (auto& el : tags_json.items()) {
+                                            if (el.value().is_array()) {
+                                                tags_arr = el.value();
+                                                break;
+                                            }
+                                        }
+                                    }
+                                }
+
+                                if (tags_arr.is_array() && !tags_arr.empty()) {
+                                    SQLite::Transaction transaction(g_db->get_db());
+                                    int count = 0;
+                                    for (const auto& tag_val : tags_arr) {
+                                        if (!tag_val.is_string()) continue;
+                                        std::string tag = tag_val.get<std::string>();
+                                        if (tag.length() < 2) continue;
+                                        
+                                        SQLite::Statement ins_tag(g_db->get_db(), "INSERT OR IGNORE INTO tags (name) VALUES (?)");
+                                        ins_tag.bind(1, tag);
+                                        ins_tag.exec();
+                                        
+                                        SQLite::Statement get_tag_id(g_db->get_db(), "SELECT id FROM tags WHERE name = ?");
+                                        get_tag_id.bind(1, tag);
+                                        if (get_tag_id.executeStep()) {
+                                            int tag_id = get_tag_id.getColumn(0);
+                                            SQLite::Statement link(g_db->get_db(), "INSERT OR IGNORE INTO image_tags (generation_id, tag_id, source) VALUES (?, ?, 'llm_auto')");
+                                            link.bind(1, id);
+                                            link.bind(2, tag_id);
+                                            link.exec();
+                                            count++;
+                                        }
+                                    }
+                                    transaction.commit();
+                                    std::cout << "[Tagging Service] ID " << id << ": Saved " << count << " tags." << std::endl;
+                                } else {
+                                    std::cout << "[Tagging Service] ID " << id << ": No tags found in JSON." << std::endl;
+                                }
+                            } catch (const std::exception& je) {
+                                std::cout << "[Tagging Service] ID " << id << ": JSON Parse error: " << je.what() << std::endl;
+                            }
+                        } else {
+                            std::cout << "[Tagging Service] ID " << id << ": No JSON found." << std::endl;
+                        }
+                        
+                        g_db->mark_as_tagged(id);
+                        
+                    } catch (const std::exception& e) {
+                        std::cerr << "[Tagging Service] Error processing ID " << id << ": " << e.what() << std::endl;
+                    }
+                } else {
+                    std::cout << "[Tagging Service] ID " << id << ": LLM Error " << chat_res->status << std::endl;
+                }
+            }
+        }
+    }
+}
+
 int run_orchestrator(int argc, const char** argv, SDSvrParams& svr_params) {
     LOG_INFO("Starting Orchestrator on port %d...", svr_params.listen_port);
 
@@ -287,6 +568,16 @@ int run_orchestrator(int argc, const char** argv, SDSvrParams& svr_params) {
     sigaction(SIGINT, &sa, NULL);
     sigaction(SIGTERM, &sa, NULL);
 #endif
+
+    // Initialize Database
+    try {
+        g_db = std::make_unique<mysti::Database>("mysti.db");
+        g_db->init_schema();
+        auto_import_outputs(svr_params.output_dir);
+    } catch (const std::exception& e) {
+        LOG_ERROR("Failed to initialize database: %s", e.what());
+        return 1;
+    }
     
     // 1. Determine Ports and Paths
     sd_port = svr_params.listen_port + 1;
@@ -435,6 +726,7 @@ int run_orchestrator(int argc, const char** argv, SDSvrParams& svr_params) {
                                 // Try to make relative to model_dir
                                 try {
                                     llm_model = fs::relative(mp, svr_params.model_dir).string();
+                                    std::replace(llm_model.begin(), llm_model.end(), '\\', '/');
                                 } catch(...) {
                                     llm_model = mp.filename().string();
                                 }
@@ -590,6 +882,7 @@ int run_orchestrator(int argc, const char** argv, SDSvrParams& svr_params) {
     };
 
     auto intercept_sd_generate = [&](const httplib::Request& req, httplib::Response& res) {
+        // 1. VRAM Arbitration
         float free_vram = get_free_vram_gb();
         LOG_INFO("VRAM Arbitration: Current free VRAM = %.2f GB", free_vram);
 
@@ -603,8 +896,10 @@ int run_orchestrator(int argc, const char** argv, SDSvrParams& svr_params) {
             httplib::Client cli("127.0.0.1", llm_port);
             if (auto hres = cli.Get("/internal/health", headers)) {
                 if (hres->status == 200) {
-                    auto j = mysti::json::parse(hres->body);
-                    llm_loaded = j.value("loaded", false);
+                    try {
+                        auto j = mysti::json::parse(hres->body);
+                        llm_loaded = j.value("loaded", false);
+                    } catch (...) {}
                 }
             }
         }
@@ -621,7 +916,68 @@ int run_orchestrator(int argc, const char** argv, SDSvrParams& svr_params) {
             }
         }
 
+        // 2. Forward Request
+        g_is_generating = true;
         Proxy::forward_request(req, res, "127.0.0.1", sd_port, "", g_internal_token);
+        g_is_generating = false;
+
+        // 3. DB Persistence & Auto-Tagging
+        if (res.status == 200 && g_db) {
+            try {
+                // Parse Request & Response
+                auto req_json = mysti::json::parse(req.body);
+                auto res_json = mysti::json::parse(res.body);
+
+                std::string prompt = req_json.value("prompt", "");
+                std::string neg_prompt = req_json.value("negative_prompt", "");
+                int width = req_json.value("width", 512);
+                int height = req_json.value("height", 512);
+                int steps = req_json.value("steps", 20);
+                float cfg = req_json.value("cfg_scale", 7.0f);
+                long long seed = req_json.value("seed", -1LL);
+                double generation_time = res_json.value("generation_time", 0.0);
+                
+                std::string uuid = res_json.value("id", ""); 
+                std::string file_path = "";
+                
+                if (res_json.contains("data") && res_json["data"].is_array() && !res_json["data"].empty()) {
+                    file_path = res_json["data"][0].value("url", "");
+                    if (seed == -1LL) {
+                        seed = res_json["data"][0].value("seed", seed);
+                    }
+                }
+
+                // Fallback UUID generation if missing
+                if (uuid.empty() && !file_path.empty()) {
+                    size_t last_slash = file_path.find_last_of('/');
+                    if (last_slash != std::string::npos) {
+                        uuid = file_path.substr(last_slash + 1);
+                    } else {
+                        uuid = file_path;
+                    }
+                }
+
+                if (!uuid.empty() && !file_path.empty()) {
+                    // Insert into DB
+                    SQLite::Statement query(g_db->get_db(), "INSERT INTO generations (uuid, file_path, prompt, negative_prompt, seed, width, height, steps, cfg_scale, generation_time) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+                    query.bind(1, uuid);
+                    query.bind(2, file_path);
+                    query.bind(3, prompt);
+                    query.bind(4, neg_prompt);
+                    query.bind(5, (long long)seed);
+                    query.bind(6, width);
+                    query.bind(7, height);
+                    query.bind(8, steps);
+                    query.bind(9, cfg);
+                    query.bind(10, generation_time);
+                    query.exec();
+                    std::cout << "[Orchestrator] Saved generation " << uuid << " to DB." << std::endl;
+                }
+
+            } catch (const std::exception& e) {
+                std::cerr << "[Orchestrator] Error processing result: " << e.what() << std::endl;
+            }
+        }
     };
 
     // SD Routes
@@ -629,7 +985,58 @@ int run_orchestrator(int argc, const char** argv, SDSvrParams& svr_params) {
     svr.Post("/v1/models/load", intercept_sd_load); 
     svr.Post("/v1/upscale/load", proxy_sd);
     svr.Post("/v1/images/upscale", proxy_sd);
-    svr.Get("/v1/history/images", proxy_sd);
+    
+    // DB-backed History
+    svr.Get("/v1/history/images", [&](const httplib::Request& req, httplib::Response& res) {
+        if (!g_db) {
+            Proxy::forward_request(req, res, "127.0.0.1", sd_port, "", g_internal_token);
+            return;
+        }
+        int limit = 50;
+        int offset = 0;
+        std::string tag = "";
+        
+        if (req.has_param("limit")) limit = std::stoi(req.get_param_value("limit"));
+        if (req.has_param("offset")) offset = std::stoi(req.get_param_value("offset"));
+        if (req.has_param("tag")) tag = req.get_param_value("tag");
+
+        auto results = g_db->get_generations(limit, offset, tag);
+        res.set_content(results.dump(), "application/json");
+    });
+
+    svr.Get("/v1/history/tags", [&](const httplib::Request& req, httplib::Response& res) {
+        if (!g_db) {
+            res.set_content("[]", "application/json");
+            return;
+        }
+        auto results = g_db->get_tags();
+        res.set_content(results.dump(), "application/json");
+    });
+
+    svr.Post("/v1/history/tags", [&](const httplib::Request& req, httplib::Response& res) {
+        if (!g_db) { res.status = 500; return; }
+        try {
+            auto j = mysti::json::parse(req.body);
+            std::string uuid = j.value("uuid", "");
+            std::string tag = j.value("tag", "");
+            if (uuid.empty() || tag.empty()) { res.status = 400; return; }
+            g_db->add_tag(uuid, tag, "user");
+            res.set_content(R"({"status":"success"})", "application/json");
+        } catch(...) { res.status = 400; }
+    });
+
+    svr.Delete("/v1/history/tags", [&](const httplib::Request& req, httplib::Response& res) {
+        if (!g_db) { res.status = 500; return; }
+        try {
+            auto j = mysti::json::parse(req.body);
+            std::string uuid = j.value("uuid", "");
+            std::string tag = j.value("tag", "");
+            if (uuid.empty() || tag.empty()) { res.status = 400; return; }
+            g_db->remove_tag(uuid, tag);
+            res.set_content(R"({"status":"success"})", "application/json");
+        } catch(...) { res.status = 400; }
+    });
+
     svr.Post("/v1/images/generations", intercept_sd_generate);
     svr.Post("/v1/images/edits", proxy_sd);
     svr.Get("/v1/progress", proxy_sd);
@@ -692,6 +1099,9 @@ int run_orchestrator(int argc, const char** argv, SDSvrParams& svr_params) {
 
     std::thread health_thread(health_check_loop, "127.0.0.1", sd_port, "127.0.0.1", llm_port);
     health_thread.detach();
+
+    std::thread tag_thread(tagging_service);
+    tag_thread.detach();
 
     LOG_INFO("Orchestrator listening on %s:%d", svr_params.listen_ip.c_str(), svr_params.listen_port);
     svr.listen(svr_params.listen_ip, svr_params.listen_port);

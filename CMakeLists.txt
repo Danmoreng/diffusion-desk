@@ -28,10 +28,16 @@ set(SD_CUDA ON CACHE BOOL "" FORCE)
 set(USE_TLS OFF CACHE BOOL "" FORCE)
 set(USE_ZLIB OFF CACHE BOOL "" FORCE)
 
+# SQLiteCpp options
+set(SQLITECPP_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+set(SQLITECPP_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+set(SQLITECPP_INTERNAL_SQLITE ON CACHE BOOL "" FORCE)
+
 # Add subdirectories
 add_subdirectory(libs/llama.cpp)
 add_subdirectory(libs/stable-diffusion.cpp)
 add_subdirectory(libs/ixwebsocket)
+add_subdirectory(libs/SQLiteCpp)
 
 # Optimization: Exclude unnecessary llama.cpp tools from default build
 # We need LLAMA_BUILD_TOOLS=ON to get 'server-context', but we don't want the CLI tools.
@@ -72,6 +78,7 @@ add_executable(mysti_server
     src/orchestrator/proxy.cpp
     src/orchestrator/orchestrator_main.cpp
     src/orchestrator/ws_manager.cpp
+    src/orchestrator/database.cpp
     ${COMMON_SOURCES}
 )
 
@@ -85,13 +92,14 @@ target_include_directories(mysti_server PRIVATE
     libs/llama.cpp/vendor/nlohmann
     libs/llama.cpp/vendor/cpp-httplib
     libs/ixwebsocket
+    libs/SQLiteCpp/include
 )
 
 # Only link system libs, no SD/LLM libs - wait, we need SD for common.cpp symbols
 if(WIN32)
-    target_link_libraries(mysti_server PRIVATE stable-diffusion ixwebsocket ws2_32 shell32)
+    target_link_libraries(mysti_server PRIVATE stable-diffusion ixwebsocket SQLiteCpp ws2_32 shell32)
 else()
-    target_link_libraries(mysti_server PRIVATE stable-diffusion ixwebsocket)
+    target_link_libraries(mysti_server PRIVATE stable-diffusion ixwebsocket SQLiteCpp)
 endif()
 
 # Copy WebUI assets to build directory

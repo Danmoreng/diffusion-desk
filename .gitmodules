@@ -7,3 +7,6 @@
 [submodule "libs/ixwebsocket"]
 	path = libs/ixwebsocket
 	url = https://github.com/machinezone/IXWebSocket
+[submodule "libs/SQLiteCpp"]
+	path = libs/SQLiteCpp
+	url = https://github.com/SRombauts/SQLiteCpp.git
