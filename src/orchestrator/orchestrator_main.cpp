@@ -198,6 +198,11 @@ int run_orchestrator(int argc, const char** argv, SDSvrParams& svr_params) {
     );
 
     g_health_svc->start();
+    
+    g_tagging_svc->set_model_provider([]() {
+        std::lock_guard<std::mutex> lock(state_mtx);
+        return last_llm_model_req_body;
+    });
     g_tagging_svc->start();
 
     // Auto-load LLM Logic
@@ -529,6 +534,10 @@ int run_orchestrator(int argc, const char** argv, SDSvrParams& svr_params) {
                     
                     g_db->insert_generation(gen);
                     std::cout << "[Orchestrator] Saved generation " << uuid << " to DB." << std::endl;
+                    
+                    if (g_tagging_svc) {
+                         g_tagging_svc->notify_new_generation();
+                    }
                 }
 
             } catch (const std::exception& e) {
