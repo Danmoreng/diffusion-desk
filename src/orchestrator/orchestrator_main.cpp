@@ -352,7 +352,7 @@ void auto_import_outputs(const std::string& output_dir) {
                         ins.bind(2, file_url);
                         ins.bind(3, prompt);
                         ins.bind(4, neg_prompt);
-                        ins.bind(5, seed);
+                        ins.bind(5, (int64_t)seed);
                         ins.bind(6, width);
                         ins.bind(7, height);
                         ins.bind(8, steps);
@@ -964,7 +964,7 @@ int run_orchestrator(int argc, const char** argv, SDSvrParams& svr_params) {
                     query.bind(2, file_path);
                     query.bind(3, prompt);
                     query.bind(4, neg_prompt);
-                    query.bind(5, (long long)seed);
+                    query.bind(5, (int64_t)seed);
                     query.bind(6, width);
                     query.bind(7, height);
                     query.bind(8, steps);
