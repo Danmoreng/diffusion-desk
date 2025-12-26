@@ -42,7 +42,9 @@ int run_sd_worker(SDSvrParams& svr_params, SDContextParams& ctx_params, SDGenera
         sd_ctx,
         sd_ctx_mutex,
         upscaler_ctx,
-        current_upscale_model_path
+        current_upscale_model_path,
+        "",    // active_llm_model_path
+        false  // active_llm_model_loaded
     };
 
     httplib::Server svr;
@@ -66,6 +68,18 @@ int run_sd_worker(SDSvrParams& svr_params, SDContextParams& ctx_params, SDGenera
 
     svr.Get(R"(/outputs/(.*))", [&](const httplib::Request& req, httplib::Response& res) {
         handle_get_outputs(req, res, ctx);
+    });
+    
+    // Internal endpoint for Orchestrator to update LLM status for handle_get_models
+    svr.Post("/internal/llm_status", [&](const httplib::Request& req, httplib::Response& res) {
+        try {
+            auto j = mysti::json::parse(req.body);
+            ctx.active_llm_model_path = j.value("path", "");
+            ctx.active_llm_model_loaded = j.value("loaded", false);
+            res.set_content("{\"status\":\"ok\"}", "application/json");
+        } catch (...) {
+            res.status = 400;
+        }
     });
     
     // Mount public for convenience if needed, but Orchestrator handles it usually.

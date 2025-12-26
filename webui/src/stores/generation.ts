@@ -69,6 +69,7 @@ export const useGenerationStore = defineStore('generation', () => {
   const currentLlmModel = ref<string>('')
   const isModelsLoading = ref(false)
   const isLlmLoading = ref(false)
+  const isLlmLoaded = ref(false)
   const isLlmThinking = ref(false)
 
   // VRAM State
@@ -122,6 +123,12 @@ export const useGenerationStore = defineStore('generation', () => {
             free: msg.vram_free_gb || 0,
             sd: msg.workers?.sd?.vram_gb || 0,
             llm: msg.workers?.llm?.vram_gb || 0
+          }
+          if (msg.workers?.llm) {
+            isLlmLoaded.value = !!msg.workers.llm.loaded;
+            if (msg.workers.llm.model) {
+                currentLlmModel.value = msg.workers.llm.model;
+            }
           }
         } else if (msg.type === 'progress') {
           handleProgressUpdate(msg.data);
@@ -668,7 +675,7 @@ export const useGenerationStore = defineStore('generation', () => {
   }
 
   return { 
-    isGenerating, isUpscaling, isModelSwitching, isLlmLoading,
+    isGenerating, isUpscaling, isModelSwitching, isLlmLoading, isLlmLoaded,
     imageUrls, error, 
     generateImage, requestImage, upscaleImage, parseA1111Parameters, 
     prompt, negativePrompt, steps, seed, cfgScale, strength, batchCount, sampler, samplers, width, height, 

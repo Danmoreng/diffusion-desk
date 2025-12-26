@@ -166,7 +166,22 @@ void handle_get_models(const httplib::Request&, httplib::Response& res, ServerCo
                         model["type"] = sub_dir;
                         model["object"] = "model";
                         model["owned_by"] = "local";
-                        model["active"] = (model["name"] == current_model_name || rel_path == ctx.current_upscale_model_path);
+                        
+                        bool isActive = false;
+                        bool isLoaded = false;
+                        if (sub_dir == "llm") {
+                            isActive = (rel_path == ctx.active_llm_model_path);
+                            isLoaded = isActive && ctx.active_llm_model_loaded;
+                        } else if (sub_dir == "esrgan") {
+                            isActive = (rel_path == ctx.current_upscale_model_path);
+                            isLoaded = isActive; // Assuming for now
+                        } else {
+                            isActive = (model["name"] == current_model_name);
+                            isLoaded = isActive; // SD models are loaded if active in this context
+                        }
+
+                        model["active"] = isActive;
+                        model["loaded"] = isLoaded;
                         r["data"].push_back(model);
                     }
                 }
@@ -179,6 +194,7 @@ void handle_get_models(const httplib::Request&, httplib::Response& res, ServerCo
         scan_dir("lora");
         scan_dir("vae");
         scan_dir("text-encoder");
+        scan_dir("llm");
         scan_dir("esrgan");
         
         // Also scan root of model_dir for convenience
