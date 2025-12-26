@@ -33,9 +33,9 @@ To provide a high-performance, private, and local AI creative suite that seamles
 - [ ] **2.2 Bidirectional Control**
     - ~~Implement **Request Cancellation**: Stop a 100-step generation mid-way via WS signal.~~ (Blocked: `stable-diffusion.cpp` API does not support interruption via callback yet)
     - Dynamic Parameter Updates: Update CFG or Guidance scales while the LLM is "thinking."
-- [ ] **2.3 UI Cleanup**
+- [x] **2.3 UI Cleanup**
     - Remove legacy "Manual Load" buttons.
-    - Implement "Model Hot-Swap" indicator.
+    - Implement "Model Hot-Swap" indicator. (Completed: LLM and SD model selection integrated into Sidebar with VRAM status)
 
 ## 💾 Milestone 3: Persistence & Context Management
 *Focus: Solving the "Undo" problem and managing user history.*
@@ -57,7 +57,7 @@ To provide a high-performance, private, and local AI creative suite that seamles
     - Automated pipeline: Image -> Prompt -> LLM -> "Art Style Keywords."
     - Ability to "Save Style" into a local library.
 - [ ] **4.2 Smart Prompt Expansion**
-    - Context-aware enhancement based on the selected model (e.g., specific tags for Flux vs. SDXL).
+    - Context-aware enhancement based on the selected model (e.g., specific tags for Flux vs. SDXL). (In-progress: Basic "🪄 Enhance" feature implemented)
 - [ ] **4.3 Aspect Ratio Intelligence**
     - Auto-suggest optimal resolutions based on the loaded model's training bucket.
 
@@ -89,8 +89,8 @@ To provide a high-performance, private, and local AI creative suite that seamles
 
 ---
 
-## ✅ Current Status: Milestone 2 (In Progress)
-*Last Updated: 2025-12-25*
+## ✅ Current Status: Milestone 3 (In Progress)
+*Last Updated: 2025-12-26*
 - [x] Milestone 1: Architectural Hardening & Security completed.
-- [x] Milestone 2.1: Unified WebSocket Integration implemented.
-- [ ] Next: Bidirectional Control (Request Cancellation).
+- [x] Milestone 2: Real-time Interactive Experience completed (Cancellation blocked).
+- [ ] Next: SQLite Persistence Layer.
