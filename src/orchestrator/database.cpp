@@ -83,6 +83,18 @@ void Database::init_schema() {
             );
         )");
 
+        // Table: model_metadata
+        m_db.exec(R"(
+            CREATE TABLE IF NOT EXISTS model_metadata (
+                model_hash TEXT PRIMARY KEY,
+                name TEXT,
+                description TEXT,
+                trigger_words TEXT,
+                preferred_params TEXT,
+                last_used DATETIME DEFAULT CURRENT_TIMESTAMP
+            );
+        )");
+
         // Create indexes for performance
         m_db.exec("CREATE INDEX IF NOT EXISTS idx_generations_timestamp ON generations(timestamp DESC);");
         m_db.exec("CREATE INDEX IF NOT EXISTS idx_tags_name ON tags(name);");
@@ -96,21 +108,145 @@ void Database::init_schema() {
     }
 }
 
-mysti::json Database::get_generations(int limit, int offset, const std::string& tag) {
+void Database::save_generation(const mysti::json& j) {
+    try {
+        std::string uuid = j.value("uuid", "");
+        std::string file_path = j.value("file_path", "");
+        if (uuid.empty() || file_path.empty()) return;
+
+        SQLite::Statement query(m_db, R"(
+            INSERT OR REPLACE INTO generations (
+                uuid, file_path, prompt, negative_prompt, seed, 
+                width, height, steps, cfg_scale, model_hash, 
+                generation_time, parent_uuid
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        )");
+
+        query.bind(1, uuid);
+        query.bind(2, file_path);
+        query.bind(3, j.value("prompt", ""));
+        query.bind(4, j.value("negative_prompt", ""));
+        query.bind(5, (long long)j.value("seed", -1LL));
+        query.bind(6, j.value("width", 512));
+        query.bind(7, j.value("height", 512));
+        query.bind(8, j.value("steps", 20));
+        query.bind(9, j.value("cfg_scale", 7.0));
+        query.bind(10, j.value("model_hash", ""));
+        query.bind(11, j.value("generation_time", 0.0));
+        
+        if (j.contains("parent_uuid") && !j["parent_uuid"].is_null()) {
+            query.bind(12, j["parent_uuid"].get<std::string>());
+        } else {
+            query.bind(12); // NULL
+        }
+
+        query.exec();
+        // std::cout << "[Database] Saved generation " << uuid << std::endl;
+    } catch (const std::exception& e) {
+        std::cerr << "[Database] save_generation failed: " << e.what() << std::endl;
+    }
+}
+
+void Database::set_favorite(const std::string& uuid, bool favorite) {
+    try {
+        SQLite::Statement query(m_db, "UPDATE generations SET is_favorite = ? WHERE uuid = ?");
+        query.bind(1, favorite ? 1 : 0);
+        query.bind(2, uuid);
+        query.exec();
+    } catch (const std::exception& e) {
+        std::cerr << "[Database] set_favorite failed: " << e.what() << std::endl;
+    }
+}
+
+void Database::remove_generation(const std::string& uuid) {
+    try {
+        SQLite::Statement query(m_db, "DELETE FROM generations WHERE uuid = ?");
+        query.bind(1, uuid);
+        query.exec();
+    } catch (const std::exception& e) {
+        std::cerr << "[Database] remove_generation failed: " << e.what() << std::endl;
+    }
+}
+
+std::string Database::get_generation_filepath(const std::string& uuid) {
+    try {
+        SQLite::Statement query(m_db, "SELECT file_path FROM generations WHERE uuid = ?");
+        query.bind(1, uuid);
+        if (query.executeStep()) {
+            return query.getColumn(0).getText();
+        }
+    } catch (const std::exception& e) {
+        std::cerr << "[Database] get_generation_filepath failed: " << e.what() << std::endl;
+    }
+    return "";
+}
+
+void Database::save_model_metadata(const std::string& model_hash, const mysti::json& metadata) {
+    try {
+        SQLite::Statement query(m_db, R"(
+            INSERT OR REPLACE INTO model_metadata (
+                model_hash, name, description, trigger_words, preferred_params, last_used
+            ) VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+        )");
+
+        query.bind(1, model_hash);
+        query.bind(2, metadata.value("name", ""));
+        query.bind(3, metadata.value("description", ""));
+        query.bind(4, metadata.value("trigger_words", ""));
+        query.bind(5, metadata.value("preferred_params", "{}"));
+
+        query.exec();
+    } catch (const std::exception& e) {
+        std::cerr << "[Database] save_model_metadata failed: " << e.what() << std::endl;
+    }
+}
+
+mysti::json Database::get_model_metadata(const std::string& model_hash) {
+    mysti::json result;
+    try {
+        SQLite::Statement query(m_db, "SELECT * FROM model_metadata WHERE model_hash = ?");
+        query.bind(1, model_hash);
+        if (query.executeStep()) {
+            result["model_hash"] = query.getColumn("model_hash").getText();
+            result["name"] = query.getColumn("name").getText();
+            result["description"] = query.getColumn("description").getText();
+            result["trigger_words"] = query.getColumn("trigger_words").getText();
+            result["preferred_params"] = mysti::json::parse(query.getColumn("preferred_params").getText());
+            result["last_used"] = query.getColumn("last_used").getText();
+        }
+    } catch (const std::exception& e) {
+        std::cerr << "[Database] get_model_metadata failed: " << e.what() << std::endl;
+    }
+    return result;
+}
+
+mysti::json Database::get_generations(int limit, int offset, const std::string& tag, const std::string& model) {
     mysti::json results = mysti::json::array();
     try {
         std::string sql = "SELECT g.* FROM generations g ";
+        bool has_where = false;
         if (!tag.empty()) {
             sql += "JOIN image_tags it ON g.id = it.generation_id ";
             sql += "JOIN tags t ON it.tag_id = t.id ";
             sql += "WHERE t.name = ? ";
+            has_where = true;
         }
+        
+        if (!model.empty()) {
+            sql += has_where ? "AND " : "WHERE ";
+            sql += "g.model_hash = ? ";
+            has_where = true;
+        }
+
         sql += "ORDER BY g.timestamp DESC LIMIT ? OFFSET ?";
 
         SQLite::Statement query(m_db, sql);
         int bind_idx = 1;
         if (!tag.empty()) {
             query.bind(bind_idx++, tag);
+        }
+        if (!model.empty()) {
+            query.bind(bind_idx++, model);
         }
         query.bind(bind_idx++, limit);
         query.bind(bind_idx++, offset);

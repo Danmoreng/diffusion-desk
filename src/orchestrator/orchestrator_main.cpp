@@ -347,18 +347,19 @@ void auto_import_outputs(const std::string& output_dir) {
                         // Generate a UUID if missing (use filename as seed for deterministic UUID or just random)
                         std::string uuid = "legacy-" + filename;
 
-                        SQLite::Statement ins(g_db->get_db(), "INSERT INTO generations (uuid, file_path, prompt, negative_prompt, seed, width, height, steps, cfg_scale, generation_time) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
-                        ins.bind(1, uuid);
-                        ins.bind(2, file_url);
-                        ins.bind(3, prompt);
-                        ins.bind(4, neg_prompt);
-                        ins.bind(5, seed);
-                        ins.bind(6, width);
-                        ins.bind(7, height);
-                        ins.bind(8, steps);
-                        ins.bind(9, cfg);
-                        ins.bind(10, gen_time);
-                        ins.exec();
+                        mysti::json gen_data;
+                        gen_data["uuid"] = uuid;
+                        gen_data["file_path"] = file_url;
+                        gen_data["prompt"] = prompt;
+                        gen_data["negative_prompt"] = neg_prompt;
+                        gen_data["seed"] = seed;
+                        gen_data["width"] = width;
+                        gen_data["height"] = height;
+                        gen_data["steps"] = steps;
+                        gen_data["cfg_scale"] = cfg;
+                        gen_data["generation_time"] = gen_time;
+
+                        g_db->save_generation(gen_data);
                         imported++;
                     }
                 }
@@ -958,19 +959,30 @@ int run_orchestrator(int argc, const char** argv, SDSvrParams& svr_params) {
                 }
 
                 if (!uuid.empty() && !file_path.empty()) {
-                    // Insert into DB
-                    SQLite::Statement query(g_db->get_db(), "INSERT INTO generations (uuid, file_path, prompt, negative_prompt, seed, width, height, steps, cfg_scale, generation_time) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
-                    query.bind(1, uuid);
-                    query.bind(2, file_path);
-                    query.bind(3, prompt);
-                    query.bind(4, neg_prompt);
-                    query.bind(5, (long long)seed);
-                    query.bind(6, width);
-                    query.bind(7, height);
-                    query.bind(8, steps);
-                    query.bind(9, cfg);
-                    query.bind(10, generation_time);
-                    query.exec();
+                    mysti::json gen_data;
+                    gen_data["uuid"] = uuid;
+                    gen_data["file_path"] = file_path;
+                    gen_data["prompt"] = prompt;
+                    gen_data["negative_prompt"] = neg_prompt;
+                    gen_data["seed"] = seed;
+                    gen_data["width"] = width;
+                    gen_data["height"] = height;
+                    gen_data["steps"] = steps;
+                    gen_data["cfg_scale"] = cfg;
+                    gen_data["generation_time"] = generation_time;
+                    
+                    // Extract model ID from last load request
+                    {
+                        std::lock_guard<std::mutex> lock(state_mtx);
+                        if (!last_sd_model_req_body.empty()) {
+                            try {
+                                auto load_j = mysti::json::parse(last_sd_model_req_body);
+                                gen_data["model_hash"] = load_j.value("model_id", "");
+                            } catch(...) {}
+                        }
+                    }
+
+                    g_db->save_generation(gen_data);
                     std::cout << "[Orchestrator] Saved generation " << uuid << " to DB." << std::endl;
                 }
 
@@ -995,12 +1007,14 @@ int run_orchestrator(int argc, const char** argv, SDSvrParams& svr_params) {
         int limit = 50;
         int offset = 0;
         std::string tag = "";
+        std::string model = "";
         
         if (req.has_param("limit")) limit = std::stoi(req.get_param_value("limit"));
         if (req.has_param("offset")) offset = std::stoi(req.get_param_value("offset"));
         if (req.has_param("tag")) tag = req.get_param_value("tag");
+        if (req.has_param("model")) model = req.get_param_value("model");
 
-        auto results = g_db->get_generations(limit, offset, tag);
+        auto results = g_db->get_generations(limit, offset, tag, model);
         res.set_content(results.dump(), "application/json");
     });
 
@@ -1035,6 +1049,56 @@ int run_orchestrator(int argc, const char** argv, SDSvrParams& svr_params) {
             g_db->remove_tag(uuid, tag);
             res.set_content(R"({"status":"success"})", "application/json");
         } catch(...) { res.status = 400; }
+    });
+
+    svr.Post("/v1/history/favorite", [&](const httplib::Request& req, httplib::Response& res) {
+        if (!g_db) { res.status = 500; return; }
+        try {
+            auto j = mysti::json::parse(req.body);
+            std::string uuid = j.value("uuid", "");
+            bool favorite = j.value("favorite", false);
+            if (uuid.empty()) { res.status = 400; return; }
+            g_db->set_favorite(uuid, favorite);
+            res.set_content(R"({"status":"success"})", "application/json");
+        } catch(...) { res.status = 400; }
+    });
+
+    svr.Delete(R"(/v1/history/images/([^/]+))", [&](const httplib::Request& req, httplib::Response& res) {
+        if (!g_db) { res.status = 500; return; }
+        std::string uuid = req.matches[1];
+        bool delete_file = req.has_param("delete_file") && req.get_param_value("delete_file") == "true";
+        
+        if (delete_file) {
+            std::string path_url = g_db->get_generation_filepath(uuid);
+            if (!path_url.empty()) {
+                // path_url is like "/outputs/img-....png"
+                // We need to resolve it relative to the output_dir
+                // Or just use the filename if output_dir is standard.
+                // Best is to resolve it properly.
+                
+                // Assuming standard layout where /outputs/ maps to svr_params.output_dir
+                if (path_url.find("/outputs/") == 0) {
+                    std::string filename = path_url.substr(9); // len("/outputs/")
+                    fs::path p = fs::path(svr_params.output_dir) / filename;
+                    try {
+                        if (fs::exists(p)) {
+                            fs::remove(p);
+                            // Also try to remove .txt or .json sidecar
+                            auto txt_p = p; txt_p.replace_extension(".txt");
+                            if (fs::exists(txt_p)) fs::remove(txt_p);
+                            auto json_p = p; json_p.replace_extension(".json");
+                            if (fs::exists(json_p)) fs::remove(json_p);
+                            LOG_INFO("Deleted file: %s", p.string().c_str());
+                        }
+                    } catch(const std::exception& e) {
+                        LOG_ERROR("Failed to delete file %s: %s", p.string().c_str(), e.what());
+                    }
+                }
+            }
+        }
+
+        g_db->remove_generation(uuid);
+        res.set_content(R"({"status":"success"})", "application/json");
     });
 
     svr.Post("/v1/images/generations", intercept_sd_generate);

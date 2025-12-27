@@ -3,6 +3,7 @@ declare module 'bootstrap' {
         constructor(element: HTMLElement, options?: any);
         show(): void;
         hide(): void;
+        dispose(): void;
         static getInstance(element: HTMLElement): Modal | null;
         static getOrCreateInstance(element: HTMLElement, options?: any): Modal;
     }

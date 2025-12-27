@@ -251,6 +251,28 @@ const clearInitImage = () => {
               <span v-if="store.isLlmThinking" class="spinner-border spinner-border-sm" style="width: 0.7rem; height: 0.7rem;"></span>
               <span v-else>🪄 Enhance</span>
             </button>
+            <div class="btn-group ms-1" role="group">
+              <button 
+                type="button" 
+                class="btn btn-outline-secondary btn-sm py-0" 
+                style="font-size: 0.7rem; height: 20px;"
+                @click="store.undoPrompt"
+                :disabled="!store.canUndo"
+                title="Undo"
+              >
+                ↩️
+              </button>
+              <button 
+                type="button" 
+                class="btn btn-outline-secondary btn-sm py-0" 
+                style="font-size: 0.7rem; height: 20px;"
+                @click="store.redoPrompt"
+                :disabled="!store.canRedo"
+                title="Redo"
+              >
+                ↪️
+              </button>
+            </div>
           </div>
           <button 
             v-if="store.prompt.includes('Steps: ')"
@@ -265,6 +287,7 @@ const clearInitImage = () => {
         <textarea
           id="prompt"
           v-model="store.prompt"
+          @blur="store.commitPrompt"
           rows="4"
           class="form-control"
           placeholder="A cinematic photograph of..."

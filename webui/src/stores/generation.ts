@@ -71,6 +71,39 @@ export const useGenerationStore = defineStore('generation', () => {
   const isLlmLoading = ref(false)
   const isLlmLoaded = ref(false)
   const isLlmThinking = ref(false)
+  
+  // Prompt History
+  const promptHistory = ref<string[]>([initialState.prompt])
+  const historyIndex = ref(0)
+  const canUndo = computed(() => historyIndex.value > 0)
+  const canRedo = computed(() => historyIndex.value < promptHistory.value.length - 1)
+
+  function commitPrompt() {
+    const current = prompt.value
+    // Only commit if different from *current* history pointer
+    if (current !== promptHistory.value[historyIndex.value]) {
+      // If we are in the middle of history, discard the "future"
+      if (historyIndex.value < promptHistory.value.length - 1) {
+        promptHistory.value = promptHistory.value.slice(0, historyIndex.value + 1)
+      }
+      promptHistory.value.push(current)
+      historyIndex.value = promptHistory.value.length - 1
+    }
+  }
+
+  function undoPrompt() {
+    if (canUndo.value) {
+      historyIndex.value--
+      prompt.value = promptHistory.value[historyIndex.value]
+    }
+  }
+
+  function redoPrompt() {
+    if (canRedo.value) {
+      historyIndex.value++
+      prompt.value = promptHistory.value[historyIndex.value]
+    }
+  }
 
   // VRAM State
   const vramInfo = ref({
@@ -311,7 +344,12 @@ export const useGenerationStore = defineStore('generation', () => {
 
   async function enhancePrompt() {
     if (!prompt.value || isLlmThinking.value) return
+    
+    // Save current state before enhancing
+    commitPrompt()
+    
     isLlmThinking.value = true
+
     try {
       const response = await fetch('/v1/chat/completions', {
         method: 'POST',
@@ -340,6 +378,7 @@ export const useGenerationStore = defineStore('generation', () => {
 
       if (enhanced) {
         prompt.value = enhanced
+        commitPrompt()
       }
     } catch (e: any) {
       error.value = `Failed to enhance prompt: ${e.message}`
@@ -693,7 +732,8 @@ export const useGenerationStore = defineStore('generation', () => {
     models, currentModel, currentLlmModel, upscaleModel, upscaleFactor, vramInfo,
     isModelsLoading, fetchModels, loadModel, loadLlmModel, unloadLlmModel, loadUpscaleModel, testLlmCompletion, enhancePrompt,
     progressStep, progressSteps, progressTime, progressPhase, progressMessage, eta, 
-    lastParams, outputDir, modelDir, isLlmThinking,
+    lastParams, outputDir, modelDir, isLlmThinking, 
+    promptHistory, historyIndex, canUndo, canRedo, undoPrompt, redoPrompt, commitPrompt,
     updateConfig, reuseLastSeed, randomizeSeed, swapDimensions 
   }
 })

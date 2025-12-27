@@ -21,9 +21,17 @@ public:
     // Initialization
     void init_schema();
 
-    // Queries
-    mysti::json get_generations(int limit = 50, int offset = 0, const std::string& tag = "");
+    // Generations
+    void save_generation(const mysti::json& data);
+    void set_favorite(const std::string& uuid, bool favorite);
+    void remove_generation(const std::string& uuid);
+    std::string get_generation_filepath(const std::string& uuid);
+    mysti::json get_generations(int limit = 50, int offset = 0, const std::string& tag = "", const std::string& model = "");
     mysti::json get_tags();
+    
+    // Model Metadata
+    void save_model_metadata(const std::string& model_hash, const mysti::json& metadata);
+    mysti::json get_model_metadata(const std::string& model_hash);
     
     // Tag Management
     void add_tag(const std::string& uuid, const std::string& tag, const std::string& source = "user");
