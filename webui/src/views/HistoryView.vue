@@ -60,6 +60,14 @@ const galleryRef = ref<any>(null)
             </select>
           </div>
 
+          <!-- Favorites Toggle -->
+          <div class="ms-2 d-flex align-items-center gap-2">
+            <div class="form-check form-switch mb-0">
+              <input class="form-check-input shadow-none" type="checkbox" role="switch" id="favToggle" v-model="galleryRef.showFavoritesOnly" v-if="galleryRef">
+              <label class="form-check-label small text-muted text-uppercase fw-bold" for="favToggle" style="font-size: 0.7rem;">Favorites</label>
+            </div>
+          </div>
+
           <div class="vr mx-1 d-none d-lg-block"></div>
 
           <!-- Grid Size slider -->

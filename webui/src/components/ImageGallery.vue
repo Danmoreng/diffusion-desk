@@ -3,12 +3,14 @@ import { ref, onMounted, nextTick, computed, watch } from 'vue'
 import { Modal, Carousel } from 'bootstrap'
 import { useGenerationStore } from '@/stores/generation'
 import { useRouter } from 'vue-router'
+import DeleteConfirmationModal from './DeleteConfirmationModal.vue'
 
 interface HistoryItem {
   id: string
   name: string
   params?: any
   tags?: string[]
+  is_favorite?: boolean
 }
 
 const store = useGenerationStore()
@@ -19,9 +21,14 @@ const allTags = ref<any[]>([])
 const isLoading = ref(true)
 const error = ref<string | null>(null)
 
+// Deletion State
+const showDeleteModal = ref(false)
+const imageToDelete = ref<HistoryItem | null>(null)
+
 // Filtering State
 const selectedModel = ref('all')
 const selectedDateRange = ref('all') // all, today, yesterday, week, month, custom
+const showFavoritesOnly = ref(false)
 const selectedTag = ref('all')
 const startDate = ref('')
 const endDate = ref('')
@@ -85,6 +92,51 @@ async function removeTag(uuid: string, tag: string) {
   } catch (e) { console.error('Failed to remove tag:', e) }
 }
 
+async function toggleFavorite(uuid: string) {
+  const img = images.value.find(i => i.id === uuid)
+  if (!img) return
+  const newFavorite = !img.is_favorite
+  try {
+    const response = await fetch('/v1/history/favorite', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ uuid, favorite: newFavorite })
+    })
+    if (response.ok) {
+      img.is_favorite = newFavorite
+    }
+  } catch (e) { console.error('Failed to toggle favorite:', e) }
+}
+
+function deleteImage(uuid: string) {
+  const img = images.value.find(i => i.id === uuid)
+  if (img) {
+    imageToDelete.value = img
+    showDeleteModal.value = true
+  }
+}
+
+async function performDelete(payload: { deleteFile: boolean }) {
+  if (!imageToDelete.value) return
+  const uuid = imageToDelete.value.id
+  
+  try {
+    const url = `/v1/history/images/${uuid}` + (payload.deleteFile ? '?delete_file=true' : '')
+    const response = await fetch(url, {
+      method: 'DELETE'
+    })
+    if (response.ok) {
+      images.value = images.value.filter(i => i.id !== uuid)
+      if (modalInstance) modalInstance.hide()
+    }
+  } catch (e) { 
+    console.error('Failed to delete image:', e) 
+  } finally {
+    showDeleteModal.value = false
+    imageToDelete.value = null
+  }
+}
+
 const getTimestamp = (filename: string) => {
   try {
     const parts = filename.split('-')
@@ -97,6 +149,11 @@ const getTimestamp = (filename: string) => {
 
 const filteredImages = computed(() => {
   let result = images.value
+
+  // Filter by favorites
+  if (showFavoritesOnly.value) {
+    result = result.filter(img => img.is_favorite)
+  }
 
   // Filter by model
   if (selectedModel.value !== 'all') {
@@ -176,6 +233,7 @@ defineExpose({
   setColumns, 
   selectedModel, 
   selectedDateRange, 
+  showFavoritesOnly,
   selectedTag,
   startDate, 
   endDate, 
@@ -386,7 +444,7 @@ onMounted(() => {
       <div v-else class="text-center my-5 text-muted">
         🔍
         <p class="mt-2">No images match your current filters.</p>
-        <button class="btn btn-sm btn-link" @click="selectedModel = 'all'; selectedDateRange = 'all'; startDate = ''; endDate = ''">Reset Filters</button>
+        <button class="btn btn-sm btn-link" @click="selectedModel = 'all'; selectedDateRange = 'all'; startDate = ''; endDate = ''; showFavoritesOnly = false">Reset Filters</button>
       </div>
     </template>
 
@@ -397,12 +455,27 @@ onMounted(() => {
           <div class="modal-content shadow-lg">
             <div class="modal-header">
               <h5 class="modal-title" id="imageModalLabel">
+                <button 
+                  class="btn btn-link p-0 me-2 text-decoration-none fs-4" 
+                  :class="filteredImages[activeIndex]?.is_favorite ? 'text-warning' : 'text-muted'"
+                  @click="toggleFavorite(filteredImages[activeIndex]?.id)"
+                  title="Toggle Favorite"
+                >
+                  {{ filteredImages[activeIndex]?.is_favorite ? '★' : '☆' }}
+                </button>
                 {{ filteredImages[activeIndex]?.name || 'Image Viewer' }}
                 <small v-if="filteredImages[activeIndex]?.params?.model" class="text-muted ms-2 fs-6 fw-normal">
                   [{{ filteredImages[activeIndex].params.model }}]
                 </small>
               </h5>
               <div class="ms-auto me-2 d-flex gap-2">
+                <button 
+                  class="btn btn-outline-danger btn-sm"
+                  @click="deleteImage(filteredImages[activeIndex]?.id)"
+                >
+                  🗑️ Delete
+                </button>
+                <div class="vr mx-1"></div>
                 <button 
                   v-if="store.upscaleModel"
                   class="btn btn-outline-info btn-sm"
@@ -496,6 +569,13 @@ onMounted(() => {
         </div>
       </div>
     </Teleport>
+
+    <DeleteConfirmationModal 
+      v-if="showDeleteModal" 
+      :image-url="imageToDelete ? '/outputs/' + imageToDelete.name : undefined"
+      @confirm="performDelete"
+      @cancel="showDeleteModal = false"
+    />
 
   </div>
 </template>
