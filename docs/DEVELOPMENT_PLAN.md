@@ -40,13 +40,13 @@ To provide a high-performance, private, and local AI creative suite that seamles
 ## 💾 Milestone 3: Persistence & Context Management
 *Focus: Solving the "Undo" problem and managing user history.*
 
-- [ ] **3.1 SQLite Persistence Layer**
+- [x] **3.1 SQLite Persistence Layer**
     - Schema for `Generations`, `Prompts`, and `ModelMetadata`.
     - Link every `.png` file to a database entry containing its full generation recipe (JSON).
-- [ ] **3.2 Infinite Prompt History**
+- [x] **3.2 Infinite Prompt History**
     - Custom history stack in Pinia.
     - "Snapshot" prompts before LLM enhancement to allow easy reversion.
-- [ ] **3.3 Enhanced Gallery**
+- [x] **3.3 Enhanced Gallery**
     - Searchable gallery by tag, model, or date.
     - "One-click" parameter injection from any historical image.
 
@@ -89,8 +89,9 @@ To provide a high-performance, private, and local AI creative suite that seamles
 
 ---
 
-## ✅ Current Status: Milestone 3 (In Progress)
-*Last Updated: 2025-12-26*
+## ✅ Current Status: Milestone 4 (Ready to Start)
+*Last Updated: 2025-12-27*
 - [x] Milestone 1: Architectural Hardening & Security completed.
-- [x] Milestone 2: Real-time Interactive Experience completed (Cancellation blocked).
-- [ ] Next: SQLite Persistence Layer.
+- [x] Milestone 2: Real-time Interactive Experience completed.
+- [x] Milestone 3: Persistence & Context Management completed.
+- [ ] Next: Milestone 4 - Intelligence & Style Workflows.
