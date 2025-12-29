@@ -15,6 +15,10 @@ interface HistoryItem {
   rating?: number
 }
 
+const props = defineProps<{
+  initialTags?: string[]
+}>()
+
 const store = useGenerationStore()
 const router = useRouter()
 
@@ -35,12 +39,13 @@ const imagesToDelete = ref<HistoryItem[]>([])
 const selectedModel = ref('all')
 const selectedDateRange = ref('all') // all, today, yesterday, week, month, custom
 const minRating = ref(0)
-const showFavoritesOnly = ref(false) // Deprecated filter, mapping to minRating >= 1 conceptually if needed, but separate for now
-const selectedTag = ref('all')
+const showFavoritesOnly = ref(false) // Deprecated filter
+const selectedTags = ref<string[]>(props.initialTags || [])
 const startDate = ref('')
 const endDate = ref('')
 
 const newTagInput = ref('')
+let currentFetchId = 0
 
 const availableModels = computed(() => {
   const models = new Set<string>()
@@ -307,6 +312,14 @@ const setColumns = (count: number) => {
   localStorage.setItem('gallery-columns', String(columnsPerRow.value))
 }
 
+function toggleFilterTag(tag: string) {
+  if (selectedTags.value.includes(tag)) {
+    selectedTags.value = selectedTags.value.filter(t => t !== tag)
+  } else {
+    selectedTags.value.push(tag)
+  }
+}
+
 // Expose for parent component
 defineExpose({
   columnsPerRow,
@@ -314,7 +327,8 @@ defineExpose({
   selectedModel,
   selectedDateRange,
   minRating,
-  selectedTag,
+  selectedTags,
+  toggleFilterTag,
   startDate,
   endDate,
   availableModels,
@@ -330,16 +344,22 @@ defineExpose({
   deleteSelected
 })
 
-watch([selectedTag, minRating], fetchImages)
+watch([selectedTags, minRating], fetchImages, { deep: true })
 
 async function fetchImages() {
+  const fetchId = ++currentFetchId
   isLoading.value = true
   error.value = null
   try {
     let url = '/v1/history/images?limit=200'
-    if (selectedTag.value !== 'all') {
-      url += `&tag=${encodeURIComponent(selectedTag.value)}`
+    
+    // Add multiple tag parameters
+    if (selectedTags.value.length > 0) {
+      for (const tag of selectedTags.value) {
+        url += `&tag=${encodeURIComponent(tag)}`
+      }
     }
+    
     if (minRating.value > 0) {
       url += `&min_rating=${minRating.value}`
     }
@@ -348,12 +368,19 @@ async function fetchImages() {
       throw new Error('Failed to fetch image history from the server.')
     }
     const data = await response.json()
+    
+    // Check for race condition
+    if (fetchId !== currentFetchId) return
+
     images.value = data
 
     // Fetch all available tags for the filter
     const tagsRes = await fetch('/v1/history/tags')
     if (tagsRes.ok) {
-      allTags.value = await tagsRes.json()
+      // Tags update is less critical for race conditions but good to be consistent
+      if (fetchId === currentFetchId) {
+          allTags.value = await tagsRes.json()
+      }
     }
 
     // Wait for the DOM to update with the new images
@@ -374,9 +401,13 @@ async function fetchImages() {
     }
 
   } catch (e: any) {
-    error.value = e.message
+    if (fetchId === currentFetchId) {
+        error.value = e.message
+    }
   } finally {
-    isLoading.value = false
+    if (fetchId === currentFetchId) {
+        isLoading.value = false
+    }
   }
 }
 
@@ -682,7 +713,14 @@ onMounted(() => {
                           <span v-for="tag in filteredImages[activeIndex].tags" :key="tag" 
                             class="badge bg-primary bg-opacity-10 text-primary border border-primary border-opacity-25 fw-normal d-flex align-items-center gap-1"
                           >
-                            <span @click="selectedTag = tag; modalInstance?.hide()" style="cursor: pointer;">{{ tag }}</span>
+                            <span 
+                                @click="toggleFilterTag(tag); modalInstance?.hide()" 
+                                style="cursor: pointer;"
+                                :title="selectedTags.includes(tag) ? 'Remove from filter' : 'Filter by this tag'"
+                            >
+                                {{ tag }}
+                                <span v-if="selectedTags.includes(tag)" class="fw-bold ms-1 text-primary">✓</span>
+                            </span>
                             <span @click.stop="removeTag(filteredImages[activeIndex].id, tag)" class="text-danger ms-1" style="cursor: pointer; font-size: 0.8rem;">&times;</span>
                           </span>
                           <span v-if="!filteredImages[activeIndex].tags?.length" class="text-muted italic small">No tags yet.</span>

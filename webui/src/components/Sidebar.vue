@@ -86,6 +86,7 @@ const menuItems = [
   { path: '/upscale', label: 'Upscale', icon: '✨' },
   { path: '/exploration', label: 'Dynamic Exploration', icon: '🔍' },
   { path: '/history', label: 'History', icon: '📜' },
+  { path: '/manager', label: 'Library', icon: '📚' },
 ]
 </script>
 
