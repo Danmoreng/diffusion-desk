@@ -50,6 +50,23 @@ To provide a high-performance, private, and local AI creative suite that seamles
     - Searchable gallery by tag, model, or date.
     - "One-click" parameter injection from any historical image.
 
+## 🗄️ Milestone 3.5: Database Hardening & Schema Evolution
+*Focus: Implementing professional database practices for scalability and performance.*
+
+- [ ] **3.5.1 Schema Flexibility**
+    - Add `params_json` column to `generations` table to store future-proof settings (LoRA, ControlNet, etc.) without schema migrations.
+- [ ] **3.5.2 Performance & Indexing**
+    - Implement optimized indexes (`idx_generations_timestamp`, `idx_tags_name`, etc.).
+    - Transition to **Keyset Pagination** for instant gallery loading at scale.
+- [ ] **3.5.3 Advanced Search (FTS5)**
+    - Implement SQLite FTS5 virtual table for instant full-text search of prompts and notes.
+- [ ] **3.5.4 Asset Management**
+    - Create `generation_files` table to handle multiple artifacts per generation (thumbnails, previews, masks).
+- [ ] **3.5.5 Tagging Improvements**
+    - Add `normalized_name` to tags and a `tag_aliases` table to resolve synonyms (e.g., "cat" vs "feline").
+- [ ] **3.5.6 Job Queue**
+    - Implement a DB-backed `jobs` table to manage background tasks (auto-tagging, thumbnail generation) robustly.
+
 ## 🎨 Milestone 4: Intelligence & Style Workflows
 *Focus: Leveraging the LLM to assist the creative process.*
 
@@ -89,9 +106,9 @@ To provide a high-performance, private, and local AI creative suite that seamles
 
 ---
 
-## ✅ Current Status: Milestone 4 (Ready to Start)
-*Last Updated: 2025-12-27*
+## ✅ Current Status: Milestone 3.5 (Ready to Start)
+*Last Updated: 2025-12-29*
 - [x] Milestone 1: Architectural Hardening & Security completed.
 - [x] Milestone 2: Real-time Interactive Experience completed.
 - [x] Milestone 3: Persistence & Context Management completed.
-- [ ] Next: Milestone 4 - Intelligence & Style Workflows.
+- [ ] Next: Milestone 3.5 - Database Hardening & Schema Evolution.
