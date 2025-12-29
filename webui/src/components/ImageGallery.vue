@@ -526,6 +526,13 @@ onMounted(() => {
                     >
                       ♻️ Reuse
                     </button>
+                    <button 
+                      v-if="filteredImages[activeIndex]"
+                      class="btn btn-outline-danger btn-sm flex-grow-1"
+                      @click="deleteImage(filteredImages[activeIndex].id)"
+                    >
+                      🗑️ Delete
+                    </button>
                 </div>
 
                 <!-- Metadata Scrollable Area -->
