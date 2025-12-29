@@ -84,9 +84,13 @@ void Database::init_schema() {
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 name TEXT UNIQUE NOT NULL,
                 prompt TEXT NOT NULL,
-                negative_prompt TEXT
+                negative_prompt TEXT,
+                preview_path TEXT
             );
         )");
+
+        // Column check for migrations
+        try { m_db.exec("ALTER TABLE styles ADD COLUMN preview_path TEXT;"); } catch (...) {}
 
         // Table: prompt_templates
         m_db.exec(R"(
@@ -372,10 +376,11 @@ mysti::json Database::get_tags() {
 void Database::save_style(const Style& style) {
     std::lock_guard<std::mutex> lock(m_mutex);
     try {
-        SQLite::Statement query(m_db, "INSERT OR REPLACE INTO styles (name, prompt, negative_prompt) VALUES (?, ?, ?)");
+        SQLite::Statement query(m_db, "INSERT OR REPLACE INTO styles (name, prompt, negative_prompt, preview_path) VALUES (?, ?, ?, ?)");
         query.bind(1, style.name);
         query.bind(2, style.prompt);
         query.bind(3, style.negative_prompt);
+        query.bind(4, style.preview_path);
         query.exec();
     } catch (const std::exception& e) {
         std::cerr << "[Database] save_style failed: " << e.what() << std::endl;
@@ -386,12 +391,13 @@ mysti::json Database::get_styles() {
     std::lock_guard<std::mutex> lock(m_mutex);
     mysti::json results = mysti::json::array();
     try {
-        SQLite::Statement query(m_db, "SELECT name, prompt, negative_prompt FROM styles ORDER BY name ASC");
+        SQLite::Statement query(m_db, "SELECT name, prompt, negative_prompt, preview_path FROM styles ORDER BY name ASC");
         while (query.executeStep()) {
             mysti::json s;
             s["name"] = query.getColumn(0).getText();
             s["prompt"] = query.getColumn(1).getText();
             s["negative_prompt"] = query.getColumn(2).getText();
+            s["preview_path"] = query.getColumn(3).getText();
             results.push_back(s);
         }
     } catch (const std::exception& e) {
