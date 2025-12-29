@@ -68,6 +68,7 @@ export const useGenerationStore = defineStore('generation', () => {
     name: string
     prompt: string
     negative_prompt: string
+    preview_path?: string
   }
   const styles = ref<Style[]>([])
   const activeStyleNames = ref<string[]>([])

@@ -132,6 +132,29 @@ async function saveStyle() {
   styleModalInstance?.hide()
 }
 
+async function regeneratePreview(style: any) {
+  // Clear path and save to trigger background generation
+  const updated = { ...style, preview_path: '' }
+  await store.saveStyle(updated)
+}
+
+async function generateMissingPreviews() {
+  isLoading.value = true
+  try {
+    const res = await fetch('/v1/styles/previews/fix', { method: 'POST' })
+    if (res.ok) {
+      const data = await res.json()
+      console.log(`Triggered generation for ${data.count} styles`)
+      // Previews happen in background, but we refresh list to see progress if any finished instantly
+      await store.fetchStyles()
+    }
+  } catch (e) {
+    console.error('Failed to fix previews:', e)
+  } finally {
+    isLoading.value = false
+  }
+}
+
 function confirmDeleteStyle(name: string) {
   styleToDelete.value = name
   if (styleDeleteModalRef.value) {
@@ -249,6 +272,9 @@ onUnmounted(() => {
         <button class="btn btn-sm btn-outline-success" @click="openExtractModal()">
           🪄 Extract from Prompt
         </button>
+        <button class="btn btn-sm btn-outline-info" @click="generateMissingPreviews()" :disabled="isLoading">
+          🖼️ Generate Missing
+        </button>
         <button class="btn btn-sm btn-outline-secondary ms-auto" @click="store.fetchStyles()" :disabled="isLoading">
           🔄 Refresh
         </button>
@@ -258,7 +284,19 @@ onUnmounted(() => {
       <div class="flex-grow-1 overflow-auto">
         <div class="row g-3">
           <div v-for="style in filteredStyles" :key="style.name" class="col-md-6 col-xl-4">
-            <div class="card h-100 shadow-sm border-0">
+            <div class="card h-100 shadow-sm border-0 overflow-hidden">
+              <div class="style-preview-container position-relative bg-dark bg-opacity-10 d-flex align-items-center justify-content-center" style="height: 180px;">
+                <img v-if="style.preview_path" :src="style.preview_path" class="w-100 h-100 object-fit-cover" alt="Style Preview">
+                <div v-else class="text-center text-muted">
+                  <div class="fs-1 opacity-25">🎨</div>
+                  <div class="x-small">No preview yet</div>
+                </div>
+                <div class="position-absolute top-0 end-0 m-2">
+                   <button class="btn btn-xs btn-dark bg-opacity-50 border-0 rounded-circle p-1" @click="regeneratePreview(style)" title="Regenerate Preview">
+                     🔄
+                   </button>
+                </div>
+              </div>
               <div class="card-body">
                 <div class="d-flex justify-content-between align-items-start mb-2">
                   <h5 class="card-title mb-0">{{ style.name }}</h5>
@@ -405,5 +443,17 @@ onUnmounted(() => {
 }
 .italic {
   font-style: italic;
+}
+.btn-xs {
+  padding: 0.1rem 0.25rem;
+  font-size: 0.65rem;
+  line-height: 1;
+}
+.style-preview-container .btn-xs {
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+.style-preview-container:hover .btn-xs {
+  opacity: 1;
 }
 </style>

@@ -50,6 +50,83 @@ static std::mutex state_mtx;
 
 static std::atomic<bool> is_shutting_down{false};
 
+static std::string base64_decode(const std::string& in) {
+    std::string out;
+    std::vector<int> T(256, -1);
+    for (int i = 0; i < 64; i++) T["ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"[i]] = i;
+    int val = 0, valb = -8;
+    for (unsigned char c : in) {
+        if (T[c] == -1) break;
+        val = (val << 6) + T[c];
+        valb += 6;
+        if (valb >= 0) {
+            out.push_back(char((val >> valb) & 0xFF));
+            valb -= 8;
+        }
+    }
+    return out;
+}
+
+void generate_style_preview(mysti::Style style, std::string output_dir) {
+    if (style.prompt.empty()) return;
+
+    // Subject for the preview
+    std::string subject = "a simple glass sphere on a minimalist stone pedestal, studio lighting";
+    std::string final_prompt = style.prompt;
+    if (final_prompt.find("{prompt}") != std::string::npos) {
+        final_prompt = std::regex_replace(final_prompt, std::regex("\\{prompt\\}"), subject);
+    } else {
+        final_prompt = subject + ", " + final_prompt;
+    }
+
+    LOG_INFO("[Style Preview] Generating for style: %s", style.name.c_str());
+
+    try {
+        httplib::Client cli("127.0.0.1", sd_port);
+        cli.set_read_timeout(120);
+        
+        mysti::json req;
+        req["prompt"] = final_prompt;
+        req["negative_prompt"] = style.negative_prompt;
+        req["width"] = 512;
+        req["height"] = 512;
+        req["sample_steps"] = 15; // Low steps for speed
+        req["cfg_scale"] = 7.0;
+        req["n"] = 1;
+        req["save_image"] = false; 
+
+        httplib::Headers h;
+        if (!g_internal_token.empty()) h.emplace("X-Internal-Token", g_internal_token);
+
+        auto res = cli.Post("/v1/images/generations", h, req.dump(), "application/json");
+        if (res && res->status == 200) {
+            auto j = mysti::json::parse(res->body);
+            if (j.contains("data") && !j["data"].empty()) {
+                std::string b64 = j["data"][0].value("b64_json", "");
+                if (!b64.empty()) {
+                    fs::path preview_dir = fs::path(output_dir) / "previews";
+                    if (!fs::exists(preview_dir)) fs::create_directories(preview_dir);
+
+                    std::string filename = "style_" + style.name + ".png";
+                    std::replace(filename.begin(), filename.end(), ' ', '_');
+                    fs::path filepath = preview_dir / filename;
+
+                    std::string decoded = base64_decode(b64);
+                    std::ofstream out(filepath, std::ios::binary);
+                    out.write(decoded.data(), decoded.size());
+                    out.close();
+
+                    style.preview_path = "/outputs/previews/" + filepath.filename().string();
+                    if (g_db) g_db->save_style(style);
+                    LOG_INFO("[Style Preview] Saved to %s", style.preview_path.c_str());
+                }
+            }
+        }
+    } catch (const std::exception& e) {
+        LOG_ERROR("[Style Preview] Failed for %s: %s", style.name.c_str(), e.what());
+    }
+}
+
 #ifdef _WIN32
 BOOL WINAPI ConsoleCtrlHandler(DWORD dwCtrlType) {
     switch (dwCtrlType) {
@@ -644,8 +721,15 @@ int run_orchestrator(int argc, const char** argv, SDSvrParams& svr_params) {
             s.name = j.value("name", "");
             s.prompt = j.value("prompt", "");
             s.negative_prompt = j.value("negative_prompt", "");
+            s.preview_path = j.value("preview_path", "");
             if (s.name.empty()) { res.status = 400; return; }
             g_db->save_style(s);
+            
+            // Trigger preview generation in background
+            std::thread([s, out_dir = svr_params.output_dir]() {
+                generate_style_preview(s, out_dir);
+            }).detach();
+
             res.set_content(R"({"status":"success"})", "application/json");
         } catch(...) { res.status = 400; }
     });
@@ -700,6 +784,7 @@ int run_orchestrator(int argc, const char** argv, SDSvrParams& svr_params) {
                          }
 
                          int saved_count = 0;
+                         std::vector<mysti::Style> new_styles;
                          for (const auto& s_obj : styles_arr) {
                              if (!s_obj.is_object()) continue;
                              mysti::Style s;
@@ -712,8 +797,18 @@ int run_orchestrator(int argc, const char** argv, SDSvrParams& svr_params) {
                                      s.prompt = "{prompt}, " + s.prompt;
                                  }
                                  g_db->save_style(s);
+                                 new_styles.push_back(s);
                                  saved_count++;
                              }
+                         }
+
+                         // Trigger preview generation for each new style in background
+                         if (!new_styles.empty()) {
+                             std::thread([new_styles, out_dir = svr_params.output_dir]() {
+                                 for (const auto& s : new_styles) {
+                                     generate_style_preview(s, out_dir);
+                                 }
+                             }).detach();
                          }
                          
                          // Return updated styles list
@@ -732,6 +827,31 @@ int run_orchestrator(int argc, const char** argv, SDSvrParams& svr_params) {
             mysti::json err; err["error"] = e.what();
             res.set_content(err.dump(), "application/json");
         }
+    });
+
+    svr.Post("/v1/styles/previews/fix", [&](const httplib::Request& req, httplib::Response& res) {
+        if (!g_db) { res.status = 500; return; }
+        auto all_styles_json = g_db->get_styles();
+        std::vector<mysti::Style> missing;
+        for (auto& sj : all_styles_json) {
+            if (sj.value("preview_path", "").empty()) {
+                mysti::Style s;
+                s.name = sj["name"];
+                s.prompt = sj["prompt"];
+                s.negative_prompt = sj.value("negative_prompt", "");
+                missing.push_back(s);
+            }
+        }
+
+        if (!missing.empty()) {
+            std::thread([missing, out_dir = svr_params.output_dir]() {
+                for (const auto& s : missing) {
+                    generate_style_preview(s, out_dir);
+                }
+            }).detach();
+        }
+
+        res.set_content(mysti::json({{"count", missing.size()}}).dump(), "application/json");
     });
 
     svr.Delete("/v1/styles", [&](const httplib::Request& req, httplib::Response& res) {
@@ -845,6 +965,22 @@ int run_orchestrator(int argc, const char** argv, SDSvrParams& svr_params) {
     svr.Get("/v1/config", proxy_sd);
     svr.Post("/v1/config", proxy_sd);
     svr.Get("/v1/stream/progress", proxy_sd); 
+    
+    svr.Get("/outputs/previews/(.*)", [&](const httplib::Request& req, httplib::Response& res) {
+        std::string filename = req.matches[1];
+        fs::path p = fs::path(svr_params.output_dir) / "previews" / filename;
+        if (fs::exists(p) && fs::is_regular_file(p)) {
+            std::ifstream ifs(p.string(), std::ios::binary);
+            std::string content((std::istreambuf_iterator<char>(ifs)), (std::istreambuf_iterator<char>()));
+            std::string ext = p.extension().string();
+            std::string mime = "image/png";
+            if (ext == ".jpg" || ext == ".jpeg") mime = "image/jpeg";
+            res.set_content(content, mime);
+        } else {
+            res.status = 404;
+        }
+    });
+
     svr.Get("/outputs/(.*)", proxy_sd);
 
     // LLM Routes

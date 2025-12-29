@@ -37,6 +37,7 @@ struct Style {
     std::string name;
     std::string prompt;
     std::string negative_prompt;
+    std::string preview_path;
 };
 
 class Database {
