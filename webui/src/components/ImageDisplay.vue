@@ -119,42 +119,13 @@ function sendToImg2Img(url: string) {
 
       <!-- Metadata Section -->
       <div v-if="store.imageUrls.length > 0 && !store.isGenerating && store.lastParams" class="metadata-pane p-3 rounded bg-body-secondary small">
-        <div class="mb-2">
-          <span class="fw-bold text-muted text-uppercase x-small d-block mb-1">Prompt</span>
-          <div class="prompt-text">{{ store.lastParams.prompt }}</div>
+        <div class="d-flex justify-content-between align-items-center mb-1">
+          <span class="fw-bold text-muted text-uppercase x-small">Generation Parameters</span>
+          <button class="btn btn-link btn-sm p-0 text-decoration-none x-small" @click="copyParameters">
+            📋 Copy
+          </button>
         </div>
-        <div class="row g-3">
-          <div class="col-6 col-md-3">
-            <span class="fw-bold text-muted text-uppercase x-small d-block mb-1">Dimensions</span>
-            {{ store.lastParams.width }} x {{ store.lastParams.height }}
-          </div>
-          <div class="col-6 col-md-3">
-            <span class="fw-bold text-muted text-uppercase x-small d-block mb-1">Steps</span>
-            {{ store.lastParams.steps }}
-          </div>
-          <div class="col-6 col-md-3">
-            <span class="fw-bold text-muted text-uppercase x-small d-block mb-1">CFG Scale</span>
-            {{ store.lastParams.cfgScale }}
-          </div>
-          <div class="col-6 col-md-3">
-            <span class="fw-bold text-muted text-uppercase x-small d-block mb-1">Sampler</span>
-            {{ store.lastParams.sampler }}
-          </div>
-          <div v-if="store.lastParams.total_generation_time" class="col-6 col-md-3">
-            <span class="fw-bold text-muted text-uppercase x-small d-block mb-1">Time</span>
-            {{ store.lastParams.total_generation_time.toFixed(2) }}s
-          </div>
-        </div>
-        
-        <div class="mt-3 pt-3 border-top">
-          <div class="d-flex justify-content-between align-items-center mb-1">
-            <span class="fw-bold text-muted text-uppercase x-small">A1111 / Forge Format</span>
-            <button class="btn btn-link btn-sm p-0 text-decoration-none x-small" @click="copyParameters">
-              📋 Copy
-            </button>
-          </div>
-          <pre class="bg-dark bg-opacity-25 p-2 rounded x-small mb-0 text-break-all white-space-pre-wrap">{{ parametersString }}</pre>
-        </div>
+        <pre class="bg-body-tertiary p-2 rounded x-small mb-0 text-break-all white-space-pre-wrap border">{{ parametersString }}</pre>
       </div>
     </div>
   </div>
