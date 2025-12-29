@@ -25,6 +25,8 @@ namespace fs = std::filesystem;
 
 #if defined(_WIN32)
 #define NOMINMAX
+#include <winsock2.h>
+#include <ws2tcpip.h>
 #include <windows.h>
 #endif  // _WIN32
 
@@ -1051,10 +1053,10 @@ struct SDGenerationParams {
                 if (!item.empty()) {
                     try {
                         custom_sigmas.push_back(std::stof(item));
-                    } catch (const std::invalid_argument& e) {
+                    } catch (const std::invalid_argument&) {
                         LOG_ERROR("error: invalid float value '%s' in --sigmas", item.c_str());
                         return -1;
-                    } catch (const std::out_of_range& e) {
+                    } catch (const std::out_of_range&) {
                         LOG_ERROR("error: float value '%s' out of range in --sigmas", item.c_str());
                         return -1;
                     }

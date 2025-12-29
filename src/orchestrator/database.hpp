@@ -72,6 +72,8 @@ public:
     // Returns list of (id, uuid, prompt)
     std::vector<std::tuple<int, std::string, std::string>> get_untagged_generations(int limit = 10);
     void mark_as_tagged(int id);
+    // Accessor
+    SQLite::Database& get_db() { return m_db; }
 
 private:
     SQLite::Database m_db;
