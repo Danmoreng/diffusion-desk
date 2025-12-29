@@ -12,7 +12,12 @@ interface TagInfo {
 
 const router = useRouter()
 const store = useGenerationStore()
-const activeTab = ref('tags')
+const activeTab = computed(() => {
+  const path = router.currentRoute.value.path
+  if (path.includes('/manager/styles')) return 'styles'
+  if (path.includes('/manager/models')) return 'models'
+  return 'tags'
+})
 const tags = ref<TagInfo[]>([])
 const isLoading = ref(false)
 const searchQuery = ref('')
@@ -292,13 +297,13 @@ onUnmounted(() => {
     <!-- Tabs -->
     <ul class="nav nav-tabs mb-3">
       <li class="nav-item">
-        <a class="nav-link" :class="{ active: activeTab === 'tags' }" href="#" @click.prevent="activeTab = 'tags'">Tags</a>
+        <router-link class="nav-link" :class="{ active: activeTab === 'tags' }" to="/manager/tags">Tags</router-link>
       </li>
       <li class="nav-item">
-        <a class="nav-link" :class="{ active: activeTab === 'styles' }" href="#" @click.prevent="activeTab = 'styles'">Styles</a>
+        <router-link class="nav-link" :class="{ active: activeTab === 'styles' }" to="/manager/styles">Styles</router-link>
       </li>
       <li class="nav-item">
-        <a class="nav-link" :class="{ active: activeTab === 'models' }" href="#" @click.prevent="activeTab = 'models'">Models</a>
+        <router-link class="nav-link" :class="{ active: activeTab === 'models' }" to="/manager/models">Models</router-link>
       </li>
       <li class="nav-item">
         <a class="nav-link disabled" href="#" title="Coming soon">LoRAs</a>

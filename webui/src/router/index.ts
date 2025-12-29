@@ -39,7 +39,13 @@ const router = createRouter({
     {
       path: '/manager',
       name: 'Manager',
-      component: ManagerView
+      component: ManagerView,
+      children: [
+        { path: '', redirect: '/manager/tags' },
+        { path: 'tags', name: 'Manager-Tags', component: ManagerView },
+        { path: 'styles', name: 'Manager-Styles', component: ManagerView },
+        { path: 'models', name: 'Manager-Models', component: ManagerView }
+      ]
     },
     {
       path: '/settings',
