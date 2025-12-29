@@ -76,6 +76,7 @@ export const useGenerationStore = defineStore('generation', () => {
   // Model Management State
   const models = ref<any[]>([])
   const currentModel = ref<string>('')
+  const currentModelMetadata = ref<any>(null)
   const currentLlmModel = ref<string>('')
   const isModelsLoading = ref(false)
   const isLlmLoading = ref(false)
@@ -292,6 +293,7 @@ export const useGenerationStore = defineStore('generation', () => {
       const activeSdModel = models.value.find(m => (m.type === 'stable-diffusion' || m.type === 'root') && m.active)
       if (activeSdModel) {
         currentModel.value = activeSdModel.id
+        await fetchCurrentModelMetadata(activeSdModel.id)
       }
 
       // Find active LLM model
@@ -307,6 +309,33 @@ export const useGenerationStore = defineStore('generation', () => {
     }
   }
 
+  async function fetchCurrentModelMetadata(modelId: string) {
+    try {
+      const res = await fetch(`/v1/models/metadata/${encodeURIComponent(modelId)}`)
+      if (res.ok) {
+        currentModelMetadata.value = await res.json()
+      } else {
+        currentModelMetadata.value = null
+      }
+    } catch (e) {
+      console.error('Failed to fetch current model metadata', e)
+      currentModelMetadata.value = null
+    }
+  }
+
+  function resetToModelDefaults() {
+    if (!currentModelMetadata.value || Object.keys(currentModelMetadata.value).length === 0) return
+    
+    const meta = currentModelMetadata.value
+    if (meta.width) width.value = meta.width
+    if (meta.height) height.value = meta.height
+    if (meta.sample_steps) steps.value = meta.sample_steps
+    if (meta.cfg_scale) cfgScale.value = meta.cfg_scale
+    if (meta.sampling_method && samplers.value.includes(meta.sampling_method)) {
+      sampler.value = meta.sampling_method
+    }
+  }
+
   async function loadModel(modelId: string) {
     isModelSwitching.value = true
     try {
@@ -317,6 +346,7 @@ export const useGenerationStore = defineStore('generation', () => {
       })
       if (!response.ok) throw new Error('Failed to load model')
       currentModel.value = modelId
+      await fetchCurrentModelMetadata(modelId)
       // Refresh models list to update active status
       await fetchModels()
     } catch (e: any) {
@@ -839,6 +869,7 @@ export const useGenerationStore = defineStore('generation', () => {
     lastParams, outputDir, modelDir, isLlmThinking, 
     promptHistory, historyIndex, canUndo, canRedo, undoPrompt, redoPrompt, commitPrompt,
     updateConfig, reuseLastSeed, randomizeSeed, swapDimensions,
-    styles, activeStyleNames, fetchStyles, saveStyle, deleteStyle, applyStyle, extractStylesFromPrompt
+    styles, activeStyleNames, fetchStyles, saveStyle, deleteStyle, applyStyle, extractStylesFromPrompt,
+    currentModelMetadata, resetToModelDefaults
   }
 })

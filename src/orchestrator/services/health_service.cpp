@@ -12,11 +12,13 @@ HealthService::HealthService(ProcessManager& pm,
              int sd_port, int llm_port,
              const std::string& sd_exe, const std::string& llm_exe,
              const std::vector<std::string>& sd_args, const std::vector<std::string>& llm_args,
+             const std::string& sd_log, const std::string& llm_log,
              const std::string& token)
     : m_pm(pm), m_sd_proc(sd_proc), m_llm_proc(llm_proc),
       m_sd_port(sd_port), m_llm_port(llm_port),
       m_sd_exe(sd_exe), m_llm_exe(llm_exe),
       m_sd_args(sd_args), m_llm_args(llm_args),
+      m_sd_log(sd_log), m_llm_log(llm_log),
       m_token(token)
 {}
 
@@ -103,7 +105,7 @@ void HealthService::restart_sd_worker() {
     {
         std::lock_guard<std::mutex> lock(m_proc_mutex);
         m_pm.terminate(m_sd_proc);
-        if (!m_pm.spawn(m_sd_exe, current_sd_args, m_sd_proc)) {
+        if (!m_pm.spawn(m_sd_exe, current_sd_args, m_sd_proc, m_sd_log)) {
             LOG_ERROR("Failed to respawn SD Worker!");
             return;
         }
@@ -141,7 +143,7 @@ void HealthService::restart_llm_worker() {
     {
         std::lock_guard<std::mutex> lock(m_proc_mutex);
         m_pm.terminate(m_llm_proc);
-        if (!m_pm.spawn(m_llm_exe, m_llm_args, m_llm_proc)) {
+        if (!m_pm.spawn(m_llm_exe, m_llm_args, m_llm_proc, m_llm_log)) {
             LOG_ERROR("Failed to respawn LLM Worker!");
             return;
         }

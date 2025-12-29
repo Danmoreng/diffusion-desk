@@ -71,7 +71,7 @@ void generate_style_preview(mysti::Style style, std::string output_dir) {
     if (style.prompt.empty()) return;
 
     // Subject for the preview
-    std::string subject = "a simple glass sphere on a minimalist stone pedestal, studio lighting";
+    std::string subject = "a generic test subject";
     std::string final_prompt = style.prompt;
     if (final_prompt.find("{prompt}") != std::string::npos) {
         final_prompt = std::regex_replace(final_prompt, std::regex("\\{prompt\\}"), subject);
@@ -79,24 +79,56 @@ void generate_style_preview(mysti::Style style, std::string output_dir) {
         final_prompt = subject + ", " + final_prompt;
     }
 
-    LOG_INFO("[Style Preview] Generating for style: %s", style.name.c_str());
+    std::cout << "[Style Preview] Starting generation for style: " << style.name << std::endl;
 
     try {
         httplib::Client cli("127.0.0.1", sd_port);
         cli.set_read_timeout(120);
+
+        httplib::Headers h;
+        if (!g_internal_token.empty()) h.emplace("X-Internal-Token", g_internal_token);
+
+        // 1. Determine active model and its defaults
+        int preview_steps = 15;
+        float preview_cfg = 7.0f;
+
+        if (auto c_res = cli.Get("/v1/config", h)) {
+            auto c_j = mysti::json::parse(c_res->body);
+            std::string model_path = c_j.value("model", "");
+            if (!model_path.empty() && g_db) {
+                // get_model_metadata now handles path matching (exact and suffix)
+                auto meta = g_db->get_model_metadata(model_path);
+
+                if (!meta.empty()) {
+                    // Force cast to correct types if they exist
+                    if (meta.contains("sample_steps") && meta["sample_steps"].is_number()) {
+                        preview_steps = meta["sample_steps"].get<int>();
+                    }
+                    if (meta.contains("cfg_scale") && meta["cfg_scale"].is_number()) {
+                        preview_cfg = meta["cfg_scale"].get<float>();
+                    }
+                    std::cout << "[Style Preview] Applied model defaults for " << fs::path(model_path).filename().string() << ": steps=" << preview_steps << ", cfg=" << preview_cfg << std::endl;
+                } else {
+                    std::cout << "[Style Preview] No metadata found for model " << fs::path(model_path).filename().string() << " in DB." << std::endl;
+                }
+            }
+        } else {
+            std::cout << "[Style Preview] WARN: Could not fetch active model config from SD worker." << std::endl;
+        }
         
         mysti::json req;
         req["prompt"] = final_prompt;
         req["negative_prompt"] = style.negative_prompt;
         req["width"] = 512;
         req["height"] = 512;
-        req["sample_steps"] = 15; // Low steps for speed
-        req["cfg_scale"] = 7.0;
+        req["sample_steps"] = preview_steps;
+        req["cfg_scale"] = preview_cfg;
         req["n"] = 1;
         req["save_image"] = false; 
 
-        httplib::Headers h;
-        if (!g_internal_token.empty()) h.emplace("X-Internal-Token", g_internal_token);
+        std::cout << "[Style Preview] Requesting generation: Steps=" << (int)req["sample_steps"] 
+                  << ", CFG=" << (float)req["cfg_scale"] 
+                  << ", Prompt=" << req["prompt"].get<std::string>().substr(0, 60) << "..." << std::endl;
 
         auto res = cli.Post("/v1/images/generations", h, req.dump(), "application/json");
         if (res && res->status == 200) {
@@ -265,14 +297,17 @@ int run_orchestrator(int argc, const char** argv, SDSvrParams& svr_params) {
     }
 
     // 3. Initial Spawn
-    LOG_INFO("Spawning SD Worker (%s) on port %d", sd_exe_path.c_str(), sd_port);
-    if (!pm.spawn(sd_exe_path, sd_args, sd_process)) {
+    std::string sd_log = "sd_worker.log";
+    std::string llm_log = "llm_worker.log";
+
+    LOG_INFO("Spawning SD Worker (%s) on port %d (Logs: %s)", sd_exe_path.c_str(), sd_port, sd_log.c_str());
+    if (!pm.spawn(sd_exe_path, sd_args, sd_process, sd_log)) {
         LOG_ERROR("Failed to spawn SD Worker");
         return 1;
     }
 
-    LOG_INFO("Spawning LLM Worker (%s) on port %d", llm_exe_path.c_str(), llm_port);
-    if (!pm.spawn(llm_exe_path, llm_args, llm_process)) {
+    LOG_INFO("Spawning LLM Worker (%s) on port %d (Logs: %s)", llm_exe_path.c_str(), llm_port, llm_log.c_str());
+    if (!pm.spawn(llm_exe_path, llm_args, llm_process, llm_log)) {
         LOG_ERROR("Failed to spawn LLM Worker");
         pm.terminate(sd_process);
         return 1;
@@ -285,6 +320,7 @@ int run_orchestrator(int argc, const char** argv, SDSvrParams& svr_params) {
         sd_port, llm_port,
         sd_exe_path, llm_exe_path,
         sd_args, llm_args,
+        sd_log, llm_log,
         g_internal_token
     );
 
@@ -301,6 +337,23 @@ int run_orchestrator(int argc, const char** argv, SDSvrParams& svr_params) {
         return last_llm_model_req_body;
     });
     g_tagging_svc->start();
+
+    // Auto-initialize SD Model State from Args if present
+    std::string initial_sd_model;
+    for (int i = 1; i < argc; ++i) {
+        std::string arg = argv[i];
+        if ((arg == "--model" || arg == "-m" || arg == "--diffusion-model") && i + 1 < argc) {
+            initial_sd_model = argv[i + 1];
+            break;
+        }
+    }
+    if (!initial_sd_model.empty()) {
+        std::lock_guard<std::mutex> lock(state_mtx);
+        mysti::json initial_load;
+        initial_load["model_id"] = initial_sd_model;
+        last_sd_model_req_body = initial_load.dump();
+        LOG_INFO("Initialized SD model state from args: %s", initial_sd_model.c_str());
+    }
 
     // Auto-load LLM Logic
     std::string preload_llm_model;
@@ -479,6 +532,12 @@ int run_orchestrator(int argc, const char** argv, SDSvrParams& svr_params) {
     // 6. Start Proxy Server
     httplib::Server svr;
 
+    svr.set_logger([](const httplib::Request& req, const httplib::Response& res) {
+        // Filter out noisy polling
+        if (req.path == "/v1/progress" || req.path == "/v1/config" || req.path == "/v1/models" || req.path == "/v1/stream/progress") return;
+        std::cout << "[Orchestrator] API: " << req.method << " " << req.path << " -> " << res.status << std::endl;
+    });
+
     if (!svr.set_mount_point("/app", svr_params.app_dir)) {
         LOG_WARN("failed to mount %s directory", svr_params.app_dir.c_str());
     }
@@ -521,11 +580,35 @@ int run_orchestrator(int argc, const char** argv, SDSvrParams& svr_params) {
 
     // State Interceptors
     auto intercept_sd_load = [&](const httplib::Request& req, httplib::Response& res) {
-        Proxy::forward_request(req, res, "127.0.0.1", sd_port, "", g_internal_token);
+        std::string modified_body = req.body;
+        if (g_db) {
+            try {
+                auto j = mysti::json::parse(req.body);
+                std::string model_id = j.value("model_id", "");
+                if (!model_id.empty()) {
+                    auto meta = g_db->get_model_metadata(model_id);
+                    if (!meta.empty()) {
+                        // Apply specific VAE and LLM if configured
+                        if (meta.contains("vae") && !meta["vae"].get<std::string>().empty()) {
+                            j["vae"] = meta["vae"];
+                        }
+                        if (meta.contains("llm") && !meta["llm"].get<std::string>().empty()) {
+                            j["llm"] = meta["llm"];
+                        }
+                        modified_body = j.dump();
+                    }
+                }
+            } catch(...) {}
+        }
+
+        httplib::Request mod_req = req;
+        mod_req.body = modified_body;
+
+        Proxy::forward_request(mod_req, res, "127.0.0.1", sd_port, "", g_internal_token);
         if (res.status == 200) {
             std::lock_guard<std::mutex> lock(state_mtx);
-            last_sd_model_req_body = req.body;
-            LOG_INFO("Saved SD model state for auto-recovery.");
+            last_sd_model_req_body = modified_body;
+            LOG_INFO("Saved enriched SD model state for auto-recovery.");
         }
     };
 
@@ -577,10 +660,75 @@ int run_orchestrator(int argc, const char** argv, SDSvrParams& svr_params) {
         g_is_generating = true;
         if (g_tagging_svc) g_tagging_svc->set_generation_active(true);
 
-        // 3. Forward Request
-        Proxy::forward_request(req, res, "127.0.0.1", sd_port, "", g_internal_token);
+        // 3. Model Default Parameters Injection
+        std::string modified_body = req.body;
+        std::string active_model_id = "unknown";
+        if (g_db) {
+            try {
+                auto req_j = mysti::json::parse(req.body);
+                // Get current model from SD worker
+                httplib::Client cli("127.0.0.1", sd_port);
+                if (auto c_res = cli.Get("/v1/config", headers)) {
+                    auto c_j = mysti::json::parse(c_res->body);
+                    active_model_id = c_j.value("model", "");
+                    if (!active_model_id.empty()) {
+                        auto meta = g_db->get_model_metadata(active_model_id);
+                        if (!meta.empty()) {
+                            // Inject defaults if not present or match "generic" UI defaults
+                            // Width/Height
+                            if (!req_j.contains("width") || req_j["width"] == 512) {
+                                if (meta.contains("width")) req_j["width"] = meta["width"];
+                            }
+                            if (!req_j.contains("height") || req_j["height"] == 512) {
+                                if (meta.contains("height")) req_j["height"] = meta["height"];
+                            }
+                            
+                            // Steps (handle both keys)
+                            int current_steps = 0;
+                            if (req_j.contains("sample_steps")) current_steps = req_j["sample_steps"];
+                            else if (req_j.contains("steps")) current_steps = req_j["steps"];
+
+                            if (current_steps == 0 || current_steps == 20 || current_steps == 15) {
+                                if (meta.contains("sample_steps")) {
+                                    req_j["sample_steps"] = meta["sample_steps"];
+                                    req_j["steps"] = meta["sample_steps"]; // sync both
+                                }
+                            }
+                            
+                            // CFG
+                            if (!req_j.contains("cfg_scale") || req_j["cfg_scale"] == 7.0) {
+                                if (meta.contains("cfg_scale")) req_j["cfg_scale"] = meta["cfg_scale"];
+                            }
+                            
+                            modified_body = req_j.dump();
+                        }
+                    }
+                }
+
+                // --- NEW LOGGING ---
+                auto log_j = mysti::json::parse(modified_body);
+                std::string p = log_j.value("prompt", "");
+                if (p.length() > 60) p = p.substr(0, 57) + "...";
+                
+                int steps_logged = 20;
+                if (log_j.contains("sample_steps")) steps_logged = log_j["sample_steps"];
+                else if (log_j.contains("steps")) steps_logged = log_j["steps"];
+
+                std::cout << "[Generation] Model: " << fs::path(active_model_id).filename().string() 
+                          << " | Steps: " << steps_logged
+                          << " | CFG: " << log_j.value("cfg_scale", 7.0)
+                          << " | Prompt: " << p << std::endl;
+                // -------------------
+
+            } catch(...) {}
+        }
+
+        // 4. Forward Request (with potentially modified body)
+        httplib::Request mod_req = req;
+        mod_req.body = modified_body;
+        Proxy::forward_request(mod_req, res, "127.0.0.1", sd_port, "", g_internal_token);
         
-        // 4. Resume Tagging
+        // 5. Resume Tagging
         g_is_generating = false;
         if (g_tagging_svc) g_tagging_svc->set_generation_active(false);
 
@@ -644,7 +792,7 @@ int run_orchestrator(int argc, const char** argv, SDSvrParams& svr_params) {
                         if (!last_sd_model_req_body.empty()) {
                             try {
                                 auto load_j = mysti::json::parse(last_sd_model_req_body);
-                                gen.model_hash = load_j.value("model_id", "");
+                                gen.model_id = load_j.value("model_id", "");
                             } catch(...) {}
                         }
                     }
@@ -706,6 +854,32 @@ int run_orchestrator(int argc, const char** argv, SDSvrParams& svr_params) {
         res.set_content(results.dump(), "application/json");
     });
 
+    // Models Metadata API
+    svr.Get("/v1/models/metadata", [&](const httplib::Request& req, httplib::Response& res) {
+        if (!g_db) { res.set_content("[]", "application/json"); return; }
+        auto results = g_db->get_all_models_metadata();
+        res.set_content(results.dump(), "application/json");
+    });
+
+    svr.Get(R"(/v1/models/metadata/(.*))", [&](const httplib::Request& req, httplib::Response& res) {
+        if (!g_db) { res.status = 500; return; }
+        std::string model_id = req.matches[1];
+        // URL decode model_id if needed? httplib might have already done some.
+        auto meta = g_db->get_model_metadata(model_id);
+        res.set_content(meta.dump(), "application/json");
+    });
+
+    svr.Post("/v1/models/metadata", [&](const httplib::Request& req, httplib::Response& res) {
+        if (!g_db) { res.status = 500; return; }
+        try {
+            auto j = mysti::json::parse(req.body);
+            std::string model_id = j.value("id", "");
+            if (model_id.empty()) { res.status = 400; return; }
+            g_db->save_model_metadata(model_id, j["metadata"]);
+            res.set_content(R"({"status":"success"})", "application/json");
+        } catch(...) { res.status = 400; }
+    });
+
     // Styles API
     svr.Get("/v1/styles", [&](const httplib::Request& req, httplib::Response& res) {
         if (!g_db) { res.set_content("[]", "application/json"); return; }
@@ -726,6 +900,7 @@ int run_orchestrator(int argc, const char** argv, SDSvrParams& svr_params) {
             g_db->save_style(s);
             
             // Trigger preview generation in background
+            std::cout << "[Orchestrator] Queuing background preview generation for style: " << s.name << std::endl;
             std::thread([s, out_dir = svr_params.output_dir]() {
                 generate_style_preview(s, out_dir);
             }).detach();
@@ -804,6 +979,7 @@ int run_orchestrator(int argc, const char** argv, SDSvrParams& svr_params) {
 
                          // Trigger preview generation for each new style in background
                          if (!new_styles.empty()) {
+                             std::cout << "[Orchestrator] Queuing background preview generation for " << new_styles.size() << " extracted styles." << std::endl;
                              std::thread([new_styles, out_dir = svr_params.output_dir]() {
                                  for (const auto& s : new_styles) {
                                      generate_style_preview(s, out_dir);

@@ -47,9 +47,15 @@ void Database::init_schema() {
                 parent_uuid TEXT,
                 generation_time REAL,
                 auto_tagged BOOLEAN DEFAULT 0,
+                model_id TEXT,
                 FOREIGN KEY(parent_uuid) REFERENCES generations(uuid)
             );
         )");
+
+        // Migrations
+        try { m_db.exec("ALTER TABLE generations ADD COLUMN model_id TEXT;"); } catch (...) {}
+        try { m_db.exec("ALTER TABLE generations ADD COLUMN rating INTEGER DEFAULT 0;"); } catch (...) {}
+        try { m_db.exec("ALTER TABLE generations ADD COLUMN auto_tagged BOOLEAN DEFAULT 0;"); } catch (...) {}
 
         // Check if columns exist (migrations)
         try { m_db.exec("ALTER TABLE generations ADD COLUMN generation_time REAL;"); } catch (...) {}
@@ -91,6 +97,16 @@ void Database::init_schema() {
 
         // Column check for migrations
         try { m_db.exec("ALTER TABLE styles ADD COLUMN preview_path TEXT;"); } catch (...) {}
+
+        // Table: models
+        m_db.exec(R"(
+            CREATE TABLE IF NOT EXISTS models (
+                id TEXT PRIMARY KEY, -- model id (usually filename or relative path)
+                metadata TEXT NOT NULL, -- JSON blob of parameters
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            );
+        )");
 
         // Table: prompt_templates
         m_db.exec(R"(
@@ -218,45 +234,6 @@ std::string Database::get_generation_filepath(const std::string& uuid) {
     return "";
 }
 
-void Database::save_model_metadata(const std::string& model_hash, const mysti::json& metadata) {
-    try {
-        SQLite::Statement query(m_db, R"(
-            INSERT OR REPLACE INTO model_metadata (
-                model_hash, name, description, trigger_words, preferred_params, last_used
-            ) VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-        )");
-
-        query.bind(1, model_hash);
-        query.bind(2, metadata.value("name", ""));
-        query.bind(3, metadata.value("description", ""));
-        query.bind(4, metadata.value("trigger_words", ""));
-        query.bind(5, metadata.value("preferred_params", "{}"));
-
-        query.exec();
-    } catch (const std::exception& e) {
-        std::cerr << "[Database] save_model_metadata failed: " << e.what() << std::endl;
-    }
-}
-
-mysti::json Database::get_model_metadata(const std::string& model_hash) {
-    mysti::json result;
-    try {
-        SQLite::Statement query(m_db, "SELECT * FROM model_metadata WHERE model_hash = ?");
-        query.bind(1, model_hash);
-        if (query.executeStep()) {
-            result["model_hash"] = query.getColumn("model_hash").getText();
-            result["name"] = query.getColumn("name").getText();
-            result["description"] = query.getColumn("description").getText();
-            result["trigger_words"] = query.getColumn("trigger_words").getText();
-            result["preferred_params"] = mysti::json::parse(query.getColumn("preferred_params").getText());
-            result["last_used"] = query.getColumn("last_used").getText();
-        }
-    } catch (const std::exception& e) {
-        std::cerr << "[Database] get_model_metadata failed: " << e.what() << std::endl;
-    }
-    return result;
-}
-
 mysti::json Database::get_generations(int limit, int offset, const std::vector<std::string>& tags, const std::string& model, int min_rating) {
     std::lock_guard<std::mutex> lock(m_mutex);
     mysti::json results = mysti::json::array();
@@ -273,7 +250,7 @@ mysti::json Database::get_generations(int limit, int offset, const std::vector<s
         }
         
         if (!model.empty()) {
-            sql += "AND g.model_hash = ? ";
+            sql += "AND g.model_id = ? ";
         }
 
         if (min_rating > 0) {
@@ -326,7 +303,8 @@ mysti::json Database::get_generations(int limit, int offset, const std::vector<s
             params["steps"] = query.getColumn("steps").getInt();
             params["sample_steps"] = query.getColumn("steps").getInt(); // Alias for compat
             params["cfg_scale"] = query.getColumn("cfg_scale").getDouble();
-            params["model"] = query.getColumn("model_hash").getText(); // Alias for compat
+            params["model"] = query.getColumn("model_id").getText(); // Alias for compat
+            params["model_id"] = query.getColumn("model_id").getText();
             params["model_hash"] = query.getColumn("model_hash").getText();
             
             double gen_time = query.getColumn("generation_time").getDouble();
@@ -417,6 +395,68 @@ void Database::delete_style(const std::string& name) {
     }
 }
 
+void Database::save_model_metadata(const std::string& model_id, const mysti::json& metadata) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    try {
+        SQLite::Statement query(m_db, "INSERT OR REPLACE INTO models (id, metadata, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)");
+        query.bind(1, model_id);
+        query.bind(2, metadata.dump());
+        query.exec();
+    } catch (const std::exception& e) {
+        std::cerr << "[Database] save_model_metadata failed: " << e.what() << std::endl;
+    }
+}
+
+mysti::json Database::get_model_metadata(const std::string& model_id) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    try {
+        // 1. Try exact match
+        SQLite::Statement query(m_db, "SELECT metadata FROM models WHERE id = ?");
+        query.bind(1, model_id);
+        if (query.executeStep()) {
+            return mysti::json::parse(query.getColumn(0).getText());
+        }
+
+        // 2. Try suffix match (handle absolute vs relative paths)
+        // We fetch all IDs and check if the requested model_id ends with any of them
+        SQLite::Statement all_ids(m_db, "SELECT id, metadata FROM models");
+        std::string normalized_id = model_id;
+        std::replace(normalized_id.begin(), normalized_id.end(), '\\', '/');
+
+        while (all_ids.executeStep()) {
+            std::string stored_id = all_ids.getColumn(0).getText();
+            std::string normalized_stored = stored_id;
+            std::replace(normalized_stored.begin(), normalized_stored.end(), '\\', '/');
+
+            if (normalized_id.length() >= normalized_stored.length()) {
+                if (normalized_id.substr(normalized_id.length() - normalized_stored.length()) == normalized_stored) {
+                    return mysti::json::parse(all_ids.getColumn(1).getText());
+                }
+            }
+        }
+    } catch (const std::exception& e) {
+        std::cerr << "[Database] get_model_metadata failed: " << e.what() << std::endl;
+    }
+    return mysti::json::object();
+}
+
+mysti::json Database::get_all_models_metadata() {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    mysti::json results = mysti::json::array();
+    try {
+        SQLite::Statement query(m_db, "SELECT id, metadata FROM models ORDER BY id ASC");
+        while (query.executeStep()) {
+            mysti::json m;
+            m["id"] = query.getColumn(0).getText();
+            m["metadata"] = mysti::json::parse(query.getColumn(1).getText());
+            results.push_back(m);
+        }
+    } catch (const std::exception& e) {
+        std::cerr << "[Database] get_all_models_metadata failed: " << e.what() << std::endl;
+    }
+    return results;
+}
+
 bool Database::generation_exists(const std::string& file_path) {
     std::lock_guard<std::mutex> lock(m_mutex);
     try {
@@ -432,7 +472,7 @@ bool Database::generation_exists(const std::string& file_path) {
 void Database::insert_generation(const Generation& gen) {
     std::lock_guard<std::mutex> lock(m_mutex);
     try {
-        SQLite::Statement ins(m_db, "INSERT INTO generations (uuid, file_path, prompt, negative_prompt, seed, width, height, steps, cfg_scale, generation_time, model_hash, is_favorite, auto_tagged, rating) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+        SQLite::Statement ins(m_db, "INSERT INTO generations (uuid, file_path, prompt, negative_prompt, seed, width, height, steps, cfg_scale, generation_time, model_hash, is_favorite, auto_tagged, rating, model_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
         ins.bind(1, gen.uuid);
         ins.bind(2, gen.file_path);
         ins.bind(3, gen.prompt);
@@ -447,6 +487,7 @@ void Database::insert_generation(const Generation& gen) {
         ins.bind(12, gen.is_favorite ? 1 : 0);
         ins.bind(13, gen.auto_tagged ? 1 : 0);
         ins.bind(14, gen.rating);
+        ins.bind(15, gen.model_id);
         ins.exec();
     } catch (const std::exception& e) {
         std::cerr << "[Database] insert_generation failed: " << e.what() << std::endl;

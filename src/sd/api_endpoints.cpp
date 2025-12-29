@@ -18,6 +18,12 @@ void handle_get_config(const httplib::Request&, httplib::Response& res, ServerCo
     mysti::json c;
     c["output_dir"] = ctx.svr_params.output_dir;
     c["model_dir"] = ctx.svr_params.model_dir;
+    
+    // Use standalone diffusion model if set, otherwise full model path
+    std::string current_model = ctx.ctx_params.diffusion_model_path;
+    if (current_model.empty()) current_model = ctx.ctx_params.model_path;
+    c["model"] = current_model;
+    
     res.set_content(c.dump(), "application/json");
 }
 
