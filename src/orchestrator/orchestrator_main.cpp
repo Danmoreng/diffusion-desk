@@ -1,4 +1,22 @@
+#ifdef _WIN32
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#include <windows.h>
+#endif
+
 #include "orchestrator_main.hpp"
+
+#include <iostream>
+#include <fstream>
+#include <thread>
+#include <chrono>
+#include <mutex>
+#include <atomic>
+#include <cstring>
+
 #include "process_manager.hpp"
 #include "proxy.hpp"
 #include "ws_manager.hpp"
@@ -7,13 +25,6 @@
 #include "services/tagging_service.hpp"
 #include "services/import_service.hpp"
 #include "services/health_service.hpp"
-
-#include <iostream>
-#include <fstream>
-#include <thread>
-#include <chrono>
-#include <mutex>
-#include <atomic>
 
 // Globals
 static ProcessManager pm;
@@ -28,6 +39,16 @@ static std::unique_ptr<mysti::HealthService> g_health_svc;
 static std::unique_ptr<mysti::ImportService> g_import_svc;
 
 static std::string g_internal_token;
+
+// New globals restored for health check and recovery
+static std::mutex process_mtx;
+static std::string sd_exe_path;
+static std::string llm_exe_path;
+static std::vector<std::string> sd_args;
+static std::vector<std::string> llm_args;
+static int max_sd_crashes = 3;
+static int sd_crash_count = 0;
+static std::atomic<bool> g_is_generating{false};
 
 // State tracking for recovery (Accessed by HealthService callbacks)
 static std::string last_sd_model_req_body;
@@ -79,7 +100,6 @@ void signal_handler(int sig) {
 }
 #endif
 
-// Helper for initial health check (simple version, not the service loop)
 bool wait_for_health_simple(int port, const std::string& token, int timeout_sec = 30) {
     httplib::Client cli("127.0.0.1", port);
     cli.set_connection_timeout(1);
@@ -97,7 +117,12 @@ bool wait_for_health_simple(int port, const std::string& token, int timeout_sec 
     return false;
 }
 
+// Internal helper for worker recovery
+bool wait_for_health(int port, const std::string& token) {
+    return wait_for_health_simple(port, token, 30);
+}
 
+void restart_sd_worker() {
     if (is_shutting_down) return;
     LOG_WARN("Detected SD Worker failure. Restarting...");
     
@@ -426,8 +451,8 @@ void tagging_service() {
         for (const auto& item : pending) {
             if (g_is_generating) break;
 
-            int id = item.first;
-            std::string prompt = item.second;
+            int id = std::get<0>(item);
+            std::string prompt = std::get<2>(item);
             
             mysti::json chat_req;
             chat_req["messages"] = mysti::json::array({
@@ -584,7 +609,6 @@ int run_orchestrator(int argc, const char** argv, SDSvrParams& svr_params) {
     g_internal_token = svr_params.internal_token;
     
     fs::path bin_dir = fs::path(argv[0]).parent_path();
-    std::string sd_exe_path, llm_exe_path;
 #ifdef _WIN32
     sd_exe_path = (bin_dir / "mysti_sd_worker.exe").string();
     llm_exe_path = (bin_dir / "mysti_llm_worker.exe").string();
@@ -604,11 +628,11 @@ int run_orchestrator(int argc, const char** argv, SDSvrParams& svr_params) {
         common_args.push_back(arg);
     }
 
-    std::vector<std::string> sd_args = common_args;
+    sd_args = common_args;
     sd_args.push_back("--listen-port"); sd_args.push_back(std::to_string(sd_port));
     sd_args.push_back("--listen-ip"); sd_args.push_back("127.0.0.1");
     
-    std::vector<std::string> llm_args = common_args;
+    llm_args = common_args;
     llm_args.push_back("--listen-port"); llm_args.push_back(std::to_string(llm_port));
     llm_args.push_back("--listen-ip"); llm_args.push_back("127.0.0.1");
 
@@ -929,12 +953,14 @@ int run_orchestrator(int argc, const char** argv, SDSvrParams& svr_params) {
         }
 
         // 2. Pause Tagging
+        g_is_generating = true;
         if (g_tagging_svc) g_tagging_svc->set_generation_active(true);
 
         // 3. Forward Request
         Proxy::forward_request(req, res, "127.0.0.1", sd_port, "", g_internal_token);
         
         // 4. Resume Tagging
+        g_is_generating = false;
         if (g_tagging_svc) g_tagging_svc->set_generation_active(false);
 
         // 5. DB Persistence & Auto-Tagging
