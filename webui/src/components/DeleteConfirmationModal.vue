@@ -4,6 +4,7 @@ import { Modal } from 'bootstrap'
 
 const props = defineProps<{
   imageUrl?: string
+  count?: number
 }>()
 
 const emit = defineEmits<{
@@ -43,20 +44,24 @@ function cancel() {
       <div class="modal-dialog modal-dialog-centered">
         <div class="modal-content">
           <div class="modal-header border-bottom-0">
-            <h5 class="modal-title text-danger">🗑️ Delete Image</h5>
+            <h5 class="modal-title text-danger">🗑️ Delete {{ count && count > 1 ? `${count} Images` : 'Image' }}</h5>
             <button type="button" class="btn-close" @click="cancel"></button>
           </div>
           <div class="modal-body text-center">
-            <p class="mb-3">Are you sure you want to delete this image from your history?</p>
+            <p class="mb-3">
+              Are you sure you want to delete 
+              {{ count && count > 1 ? `these ${count} images` : 'this image' }} 
+              from your history?
+            </p>
             
-            <div v-if="imageUrl" class="mb-3">
+            <div v-if="imageUrl && (!count || count <= 1)" class="mb-3">
               <img :src="imageUrl" class="img-fluid rounded shadow-sm" style="max-height: 150px; opacity: 0.8;" />
             </div>
 
             <div class="form-check form-switch d-inline-block text-start bg-body-tertiary px-4 py-2 rounded border">
               <input class="form-check-input" type="checkbox" role="switch" id="deleteFileSwitch" v-model="deleteFile">
               <label class="form-check-label ms-2" for="deleteFileSwitch">
-                Also delete file from disk
+                Also delete {{ count && count > 1 ? 'files' : 'file' }} from disk
                 <div class="x-small text-muted">Cannot be undone.</div>
               </label>
             </div>

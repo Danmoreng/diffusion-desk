@@ -15,9 +15,30 @@ const galleryRef = ref<any>(null)
         </div>
       </div>
       
-      <!-- Filters -->
+      <!-- Filters & Actions -->
       <div class="col-12 col-xl flex-grow-1">
         <div class="d-flex flex-wrap gap-2 align-items-center bg-body-secondary p-2 px-3 rounded shadow-sm">
+          
+          <!-- Selection Mode Controls -->
+          <template v-if="galleryRef?.isSelectionMode">
+             <button class="btn btn-sm btn-outline-secondary" @click="galleryRef.toggleSelectionMode()">Cancel</button>
+             <button class="btn btn-sm btn-outline-primary" @click="galleryRef.selectAll()">Select All</button>
+             <button 
+                class="btn btn-sm btn-danger d-flex align-items-center gap-2" 
+                :disabled="galleryRef.selectedCount === 0"
+                @click="galleryRef.deleteSelected()"
+             >
+                <span>🗑️ Delete</span>
+                <span class="badge bg-white text-danger rounded-pill">{{ galleryRef.selectedCount }}</span>
+             </button>
+             <div class="vr mx-1"></div>
+          </template>
+          
+          <template v-else>
+             <button class="btn btn-sm btn-outline-secondary" @click="galleryRef?.toggleSelectionMode()">Select</button>
+             <div class="vr mx-1"></div>
+          </template>
+
           <!-- Model Filter -->
           <div class="d-flex align-items-center gap-2">
             <span class="small text-muted text-uppercase fw-bold" style="font-size: 0.7rem;">Model:</span>

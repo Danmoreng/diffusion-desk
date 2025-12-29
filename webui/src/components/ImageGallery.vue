@@ -21,9 +21,13 @@ const allTags = ref<any[]>([])
 const isLoading = ref(true)
 const error = ref<string | null>(null)
 
+// Selection State
+const isSelectionMode = ref(false)
+const selectedImages = ref<string[]>([])
+
 // Deletion State
 const showDeleteModal = ref(false)
-const imageToDelete = ref<HistoryItem | null>(null)
+const imagesToDelete = ref<HistoryItem[]>([])
 
 // Filtering State
 const selectedModel = ref('all')
@@ -46,6 +50,39 @@ const availableModels = computed(() => {
 const availableTags = computed(() => {
   return allTags.value.map(t => t.name).sort()
 })
+
+// --- Selection Methods ---
+
+function toggleSelectionMode() {
+  isSelectionMode.value = !isSelectionMode.value
+  selectedImages.value = []
+}
+
+function toggleSelection(uuid: string) {
+  if (selectedImages.value.includes(uuid)) {
+    selectedImages.value = selectedImages.value.filter(id => id !== uuid)
+  } else {
+    selectedImages.value.push(uuid)
+  }
+}
+
+function selectAll() {
+  selectedImages.value = filteredImages.value.map(i => i.id)
+}
+
+function deselectAll() {
+  selectedImages.value = []
+}
+
+function deleteSelected() {
+  const items = images.value.filter(i => selectedImages.value.includes(i.id))
+  if (items.length > 0) {
+    imagesToDelete.value = items
+    showDeleteModal.value = true
+  }
+}
+
+// --- Tag & Favorite Methods ---
 
 async function addTag(uuid: string) {
   if (!newTagInput.value.trim()) return
@@ -108,32 +145,71 @@ async function toggleFavorite(uuid: string) {
   } catch (e) { console.error('Failed to toggle favorite:', e) }
 }
 
+// --- Deletion Logic ---
+
 function deleteImage(uuid: string) {
   const img = images.value.find(i => i.id === uuid)
   if (img) {
-    imageToDelete.value = img
+    imagesToDelete.value = [img]
     showDeleteModal.value = true
   }
 }
 
 async function performDelete(payload: { deleteFile: boolean }) {
-  if (!imageToDelete.value) return
-  const uuid = imageToDelete.value.id
-  
+  const items = imagesToDelete.value
+  if (!items.length) return
+
+  // Check if we are in modal view (and strictly in modal view, not selection mode batch delete)
+  // We use the modalElement visibility check.
+  const isModalOpen = modalInstance && modalElement.value?.classList.contains('show') && !isSelectionMode.value
+
   try {
-    const url = `/v1/history/images/${uuid}` + (payload.deleteFile ? '?delete_file=true' : '')
-    const response = await fetch(url, {
-      method: 'DELETE'
+    // Perform deletions in parallel
+    const promises = items.map(async (item) => {
+        const url = `/v1/history/images/${item.id}` + (payload.deleteFile ? '?delete_file=true' : '')
+        const res = await fetch(url, { method: 'DELETE' })
+        return { id: item.id, ok: res.ok }
     })
-    if (response.ok) {
-      images.value = images.value.filter(i => i.id !== uuid)
-      if (modalInstance) modalInstance.hide()
+    
+    const results = await Promise.all(promises)
+    const successIds = new Set(results.filter(r => r.ok).map(r => r.id))
+    
+    // Update local state
+    images.value = images.value.filter(i => !successIds.has(i.id))
+    selectedImages.value = selectedImages.value.filter(id => !successIds.has(id))
+
+    // Handle Modal Logic (Keep Open)
+    if (isModalOpen) {
+        await nextTick() // Wait for filteredImages to update
+        
+        if (filteredImages.value.length === 0) {
+            modalInstance?.hide()
+        } else {
+            // Adjust activeIndex if out of bounds
+            if (activeIndex.value >= filteredImages.value.length) {
+                activeIndex.value = Math.max(0, filteredImages.value.length - 1)
+            }
+            // Sync carousel
+            // .to() usually works if the index is valid. 
+            // Since elements are reactive, the carousel might need a moment or a forced update.
+            // But Bootstrap 5 carousel with Vue is tricky. 
+            // If the active item was deleted, the carousel has no 'active' item in DOM initially.
+            // We might need to manually set the class 'active' on the new item if Bootstrap fails.
+            // Let's rely on .to() first.
+            carouselInstance?.to(activeIndex.value)
+        }
     }
+
   } catch (e) { 
-    console.error('Failed to delete image:', e) 
+    console.error('Failed to delete image(s):', e) 
   } finally {
     showDeleteModal.value = false
-    imageToDelete.value = null
+    imagesToDelete.value = []
+    
+    // If list is empty, exit selection mode
+    if (images.value.length === 0) {
+        isSelectionMode.value = false
+    }
   }
 }
 
@@ -240,7 +316,14 @@ defineExpose({
   availableModels,
   availableTags,
   filteredCount: computed(() => filteredImages.value.length),
-  totalCount: computed(() => images.value.length)
+  totalCount: computed(() => images.value.length),
+  // Selection Exports
+  isSelectionMode,
+  selectedCount: computed(() => selectedImages.value.length),
+  toggleSelectionMode,
+  selectAll,
+  deselectAll,
+  deleteSelected
 })
 
 watch(selectedTag, fetchImages)
@@ -291,6 +374,8 @@ async function fetchImages() {
 }
 
 function openModal(index: number) {
+  if (isSelectionMode.value) return // Disable modal in selection mode
+  
   if (carouselInstance && modalInstance) {
     activeIndex.value = index
     carouselInstance.to(index)
@@ -424,8 +509,20 @@ onMounted(() => {
       <!-- Image Grid (Custom CSS Grid) -->
       <div v-if="filteredImages.length > 0" class="custom-gallery-grid" :style="{ '--cols': columnsPerRow }">
         <div v-for="(image, index) in filteredImages" :key="image.name" class="gallery-item">
-          <div class="card card-clickable shadow-sm h-100 border-0 bg-dark bg-opacity-10" @click="openModal(index)">
+          <div 
+            class="card card-clickable shadow-sm h-100 border-0 bg-dark bg-opacity-10 position-relative overflow-hidden"
+            :class="{ 'border border-primary border-2 bg-primary bg-opacity-10': selectedImages.includes(image.id) }"
+            @click="isSelectionMode ? toggleSelection(image.id) : openModal(index)"
+          >
+            <!-- Checkbox Overlay for Selection Mode -->
+            <div v-if="isSelectionMode" class="position-absolute top-0 end-0 p-2" style="z-index: 5;">
+               <div class="form-check">
+                  <input class="form-check-input shadow-none" type="checkbox" :checked="selectedImages.includes(image.id)" style="transform: scale(1.3);">
+               </div>
+            </div>
+
             <img :src="'/outputs/' + image.name" class="card-img-top" :alt="image.name" loading="lazy" />
+            
             <div class="card-footer p-2 x-small border-0 bg-transparent">
               <div class="d-flex justify-content-between text-muted mb-1">
                 <span class="text-truncate me-1" :title="image.name">{{ formatDate(image.name) }}</span>
@@ -608,7 +705,8 @@ onMounted(() => {
 
     <DeleteConfirmationModal 
       v-if="showDeleteModal" 
-      :image-url="imageToDelete ? '/outputs/' + imageToDelete.name : undefined"
+      :image-url="imagesToDelete.length === 1 ? '/outputs/' + imagesToDelete[0].name : undefined"
+      :count="imagesToDelete.length"
       @confirm="performDelete"
       @cancel="showDeleteModal = false"
     />
