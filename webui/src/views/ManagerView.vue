@@ -61,7 +61,7 @@ async function confirmCleanup() {
 }
 
 function navigateToTag(tagName: string) {
-  router.push({ path: '/history', query: { tag: tagName } })
+  router.push({ path: '/gallery', query: { tags: tagName } })
 }
 
 onMounted(() => {
