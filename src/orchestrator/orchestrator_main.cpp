@@ -600,6 +600,7 @@ int run_orchestrator(int argc, const char** argv, SDSvrParams& svr_params) {
         }
         int limit = 50;
         int offset = 0;
+        int min_rating = 0;
         std::string tag = "";
         std::string model = "";
         
@@ -607,8 +608,9 @@ int run_orchestrator(int argc, const char** argv, SDSvrParams& svr_params) {
         if (req.has_param("offset")) offset = std::stoi(req.get_param_value("offset"));
         if (req.has_param("tag")) tag = req.get_param_value("tag");
         if (req.has_param("model")) model = req.get_param_value("model");
+        if (req.has_param("min_rating")) min_rating = std::stoi(req.get_param_value("min_rating"));
 
-        auto results = g_db->get_generations(limit, offset, tag, model);
+        auto results = g_db->get_generations(limit, offset, tag, model, min_rating);
         res.set_content(results.dump(), "application/json");
     });
 
@@ -653,6 +655,18 @@ int run_orchestrator(int argc, const char** argv, SDSvrParams& svr_params) {
             bool favorite = j.value("favorite", false);
             if (uuid.empty()) { res.status = 400; return; }
             g_db->set_favorite(uuid, favorite);
+            res.set_content(R"({"status":"success"})", "application/json");
+        } catch(...) { res.status = 400; }
+    });
+
+    svr.Post("/v1/history/rating", [&](const httplib::Request& req, httplib::Response& res) {
+        if (!g_db) { res.status = 500; return; }
+        try {
+            auto j = mysti::json::parse(req.body);
+            std::string uuid = j.value("uuid", "");
+            int rating = j.value("rating", 0);
+            if (uuid.empty()) { res.status = 400; return; }
+            g_db->set_rating(uuid, rating);
             res.set_content(R"({"status":"success"})", "application/json");
         } catch(...) { res.status = 400; }
     });
