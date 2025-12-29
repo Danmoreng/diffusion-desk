@@ -4,6 +4,10 @@
 #include "ws_manager.hpp"
 #include "database.hpp"
 #include "httplib.h"
+#include "services/tagging_service.hpp"
+#include "services/import_service.hpp"
+#include "services/health_service.hpp"
+
 #include <iostream>
 #include <fstream>
 #include <thread>
@@ -11,30 +15,26 @@
 #include <mutex>
 #include <atomic>
 
+// Globals
 static ProcessManager pm;
 static ProcessManager::ProcessInfo sd_process;
 static ProcessManager::ProcessInfo llm_process;
 static int sd_port = 0;
 static int llm_port = 0;
 
-static std::unique_ptr<mysti::Database> g_db;
+static std::shared_ptr<mysti::Database> g_db;
+static std::unique_ptr<mysti::TaggingService> g_tagging_svc;
+static std::unique_ptr<mysti::HealthService> g_health_svc;
+static std::unique_ptr<mysti::ImportService> g_import_svc;
 
-static std::string sd_exe_path;
-static std::string llm_exe_path;
-static std::vector<std::string> sd_args;
-static std::vector<std::string> llm_args;
 static std::string g_internal_token;
-static std::atomic<bool> g_is_generating{false};
 
-// State tracking for recovery
+// State tracking for recovery (Accessed by HealthService callbacks)
 static std::string last_sd_model_req_body;
 static std::string last_llm_model_req_body;
 static std::mutex state_mtx;
-static std::mutex process_mtx; // Protects access to ProcessManager
 
 static std::atomic<bool> is_shutting_down{false};
-static int sd_crash_count = 0;
-static int max_sd_crashes = 2; // Will be set from svr_params
 
 #ifdef _WIN32
 BOOL WINAPI ConsoleCtrlHandler(DWORD dwCtrlType) {
@@ -47,12 +47,12 @@ BOOL WINAPI ConsoleCtrlHandler(DWORD dwCtrlType) {
         std::cout << "\n[Orchestrator] Shutdown signal received. Cleaning up...\n";
         is_shutting_down = true;
         
-        {
-            std::lock_guard<std::mutex> lock(process_mtx);
-            // Terminate workers
-            if (pm.is_running(sd_process)) pm.terminate(sd_process);
-            if (pm.is_running(llm_process)) pm.terminate(llm_process);
-        }
+        if (g_tagging_svc) g_tagging_svc->stop();
+        if (g_health_svc) g_health_svc->stop();
+        
+        // Terminate workers via PM directly for safety
+        if (pm.is_running(sd_process)) pm.terminate(sd_process);
+        if (pm.is_running(llm_process)) pm.terminate(llm_process);
         
         std::cout << "[Orchestrator] Workers terminated. Exiting.\n";
         exit(0);
@@ -68,23 +68,19 @@ void signal_handler(int sig) {
     std::cout << "\n[Orchestrator] Shutdown signal received (" << sig << "). Cleaning up...\n";
     is_shutting_down = true;
 
-    {
-        std::lock_guard<std::mutex> lock(process_mtx);
-        if (pm.is_running(sd_process)) pm.terminate(sd_process);
-        if (pm.is_running(llm_process)) pm.terminate(llm_process);
-    }
+    if (g_tagging_svc) g_tagging_svc->stop();
+    if (g_health_svc) g_health_svc->stop();
+
+    if (pm.is_running(sd_process)) pm.terminate(sd_process);
+    if (pm.is_running(llm_process)) pm.terminate(llm_process);
     
     std::cout << "[Orchestrator] Workers terminated. Exiting.\n";
     exit(0);
 }
 #endif
 
-std::string get_executable_path(const char* argv0) {
-    return argv0;
-}
-
-// Helper to wait for a port to be ready (health check)
-bool wait_for_health(int port, const std::string& token, int timeout_sec = 30) {
+// Helper for initial health check (simple version, not the service loop)
+bool wait_for_health_simple(int port, const std::string& token, int timeout_sec = 30) {
     httplib::Client cli("127.0.0.1", port);
     cli.set_connection_timeout(1);
     httplib::Headers headers;
@@ -101,7 +97,7 @@ bool wait_for_health(int port, const std::string& token, int timeout_sec = 30) {
     return false;
 }
 
-void restart_sd_worker() {
+
     if (is_shutting_down) return;
     LOG_WARN("Detected SD Worker failure. Restarting...");
     
@@ -552,6 +548,7 @@ void tagging_service() {
     }
 }
 
+
 int run_orchestrator(int argc, const char** argv, SDSvrParams& svr_params) {
     LOG_INFO("Starting Orchestrator on port %d...", svr_params.listen_port);
 
@@ -572,9 +569,10 @@ int run_orchestrator(int argc, const char** argv, SDSvrParams& svr_params) {
 
     // Initialize Database
     try {
-        g_db = std::make_unique<mysti::Database>("mysti.db");
+        g_db = std::make_shared<mysti::Database>("mysti.db");
         g_db->init_schema();
-        auto_import_outputs(svr_params.output_dir);
+        g_import_svc = std::make_unique<mysti::ImportService>(g_db);
+        g_import_svc->auto_import_outputs(svr_params.output_dir);
     } catch (const std::exception& e) {
         LOG_ERROR("Failed to initialize database: %s", e.what());
         return 1;
@@ -583,10 +581,10 @@ int run_orchestrator(int argc, const char** argv, SDSvrParams& svr_params) {
     // 1. Determine Ports and Paths
     sd_port = svr_params.listen_port + 1;
     llm_port = svr_params.listen_port + 2;
-    max_sd_crashes = svr_params.safe_mode_crashes;
     g_internal_token = svr_params.internal_token;
     
     fs::path bin_dir = fs::path(argv[0]).parent_path();
+    std::string sd_exe_path, llm_exe_path;
 #ifdef _WIN32
     sd_exe_path = (bin_dir / "mysti_sd_worker.exe").string();
     llm_exe_path = (bin_dir / "mysti_llm_worker.exe").string();
@@ -606,11 +604,11 @@ int run_orchestrator(int argc, const char** argv, SDSvrParams& svr_params) {
         common_args.push_back(arg);
     }
 
-    sd_args = common_args;
+    std::vector<std::string> sd_args = common_args;
     sd_args.push_back("--listen-port"); sd_args.push_back(std::to_string(sd_port));
     sd_args.push_back("--listen-ip"); sd_args.push_back("127.0.0.1");
     
-    llm_args = common_args;
+    std::vector<std::string> llm_args = common_args;
     llm_args.push_back("--listen-port"); llm_args.push_back(std::to_string(llm_port));
     llm_args.push_back("--listen-ip"); llm_args.push_back("127.0.0.1");
 
@@ -635,6 +633,30 @@ int run_orchestrator(int argc, const char** argv, SDSvrParams& svr_params) {
         return 1;
     }
 
+    // 4. Initialize Services
+    g_tagging_svc = std::make_unique<mysti::TaggingService>(g_db, llm_port, g_internal_token);
+    g_health_svc = std::make_unique<mysti::HealthService>(
+        pm, sd_process, llm_process, 
+        sd_port, llm_port,
+        sd_exe_path, llm_exe_path,
+        sd_args, llm_args,
+        g_internal_token
+    );
+
+    g_health_svc->set_max_sd_crashes(svr_params.safe_mode_crashes);
+    g_health_svc->set_model_state_callbacks(
+        []() { std::lock_guard<std::mutex> lock(state_mtx); return last_sd_model_req_body; },
+        []() { std::lock_guard<std::mutex> lock(state_mtx); return last_llm_model_req_body; }
+    );
+
+    g_health_svc->start();
+    
+    g_tagging_svc->set_model_provider([]() {
+        std::lock_guard<std::mutex> lock(state_mtx);
+        return last_llm_model_req_body;
+    });
+    g_tagging_svc->start();
+
     // Auto-load LLM Logic
     std::string preload_llm_model;
     for (int i = 1; i < argc; ++i) {
@@ -648,7 +670,7 @@ int run_orchestrator(int argc, const char** argv, SDSvrParams& svr_params) {
     if (!preload_llm_model.empty()) {
         std::thread([preload_llm_model]() {
             LOG_INFO("Waiting for LLM worker to be ready to load model: %s", preload_llm_model.c_str());
-            if (wait_for_health(llm_port, g_internal_token)) {
+            if (wait_for_health_simple(llm_port, g_internal_token)) {
                 mysti::json body;
                 body["model_id"] = preload_llm_model;
                 std::string body_str = body.dump();
@@ -675,7 +697,7 @@ int run_orchestrator(int argc, const char** argv, SDSvrParams& svr_params) {
         }).detach();
     }
 
-    // 4. Start WebSocket Server
+    // 5. Start WebSocket Server
     int ws_port = svr_params.listen_port + 3;
     mysti::WsManager ws_mgr(ws_port, "127.0.0.1"); 
     if (!ws_mgr.start()) {
@@ -724,7 +746,6 @@ int run_orchestrator(int argc, const char** argv, SDSvrParams& svr_params) {
                         if (!llm_model.empty()) {
                             fs::path mp(llm_model);
                             if (mp.is_absolute()) {
-                                // Try to make relative to model_dir
                                 try {
                                     llm_model = fs::relative(mp, svr_params.model_dir).string();
                                     std::replace(llm_model.begin(), llm_model.end(), '\\', '/');
@@ -737,7 +758,7 @@ int run_orchestrator(int argc, const char** argv, SDSvrParams& svr_params) {
                 }
             }
 
-            // Sync LLM status to SD worker so handle_get_models is accurate
+            // Sync LLM status to SD worker
             {
                 httplib::Client cli("127.0.0.1", sd_port);
                 mysti::json status_msg;
@@ -761,11 +782,11 @@ int run_orchestrator(int argc, const char** argv, SDSvrParams& svr_params) {
         std::cout << "[Orchestrator] PROXY: SD Progress Proxy Thread started. Target port: " << sd_port << std::endl;
         std::string sse_buffer;
         while (!is_shutting_down) {
-            if (wait_for_health(sd_port, g_internal_token, 5)) {
+            if (wait_for_health_simple(sd_port, g_internal_token, 5)) {
                 std::cout << "[Orchestrator] PROXY: Connecting to SD progress stream at 127.0.0.1:" << sd_port << std::endl;
                 httplib::Client cli("127.0.0.1", sd_port);
                 cli.set_connection_timeout(5);
-                cli.set_read_timeout(3600); // 1 hour timeout instead of 0
+                cli.set_read_timeout(3600); 
                 
                 httplib::Headers headers;
                 if (!g_internal_token.empty()) {
@@ -775,7 +796,6 @@ int run_orchestrator(int argc, const char** argv, SDSvrParams& svr_params) {
                 auto res = cli.Get("/v1/stream/progress", headers, 
                     [&](const httplib::Response& response) {
                         if (response.status != 200) {
-                            std::cout << "[Orchestrator] PROXY: Connection failed with status " << response.status << std::endl;
                             return false;
                         }
                         std::cout << "[Orchestrator] PROXY: Stream connected successfully." << std::endl;
@@ -805,30 +825,23 @@ int run_orchestrator(int argc, const char** argv, SDSvrParams& svr_params) {
                         return !is_shutting_down;
                     }
                 );
-
-                if (!res) {
-                    std::cout << "[Orchestrator] PROXY: Error: " << httplib::to_string(res.error()) << " (Reconnecting in 5s)" << std::endl;
-                }
             }
             std::this_thread::sleep_for(std::chrono::seconds(5));
         }
     });
     sd_progress_proxy_thread.detach();
 
-    // 5. Start Proxy Server
+    // 6. Start Proxy Server
     httplib::Server svr;
 
-    // Serve static files under /app
     if (!svr.set_mount_point("/app", svr_params.app_dir)) {
         LOG_WARN("failed to mount %s directory", svr_params.app_dir.c_str());
     }
 
-    // Redirect root to /app/
     svr.Get("/", [](const httplib::Request& req, httplib::Response& res) {
         res.set_redirect("/app/");
     });
 
-    // SPA Fallback for /app/*
     svr.set_error_handler([&svr_params](const httplib::Request& req, httplib::Response& res) {
         if (req.path.find("/app/") == 0 && res.status == 404) {
             std::string index_path = (fs::path(svr_params.app_dir) / "index.html").string();
@@ -842,7 +855,6 @@ int run_orchestrator(int argc, const char** argv, SDSvrParams& svr_params) {
         }
     });
 
-    // CORS
     svr.set_pre_routing_handler([](const httplib::Request& req, httplib::Response& res) {
         res.set_header("Access-Control-Allow-Origin", "*");
         res.set_header("Access-Control-Allow-Methods", "*");
@@ -854,7 +866,6 @@ int run_orchestrator(int argc, const char** argv, SDSvrParams& svr_params) {
         return httplib::Server::HandlerResponse::Unhandled;
     });
 
-    // Proxy Helpers
     auto proxy_sd = [&](const httplib::Request& req, httplib::Response& res) {
         Proxy::forward_request(req, res, "127.0.0.1", sd_port, "", g_internal_token);
     };
@@ -917,15 +928,18 @@ int run_orchestrator(int argc, const char** argv, SDSvrParams& svr_params) {
             }
         }
 
-        // 2. Forward Request
-        g_is_generating = true;
-        Proxy::forward_request(req, res, "127.0.0.1", sd_port, "", g_internal_token);
-        g_is_generating = false;
+        // 2. Pause Tagging
+        if (g_tagging_svc) g_tagging_svc->set_generation_active(true);
 
-        // 3. DB Persistence & Auto-Tagging
+        // 3. Forward Request
+        Proxy::forward_request(req, res, "127.0.0.1", sd_port, "", g_internal_token);
+        
+        // 4. Resume Tagging
+        if (g_tagging_svc) g_tagging_svc->set_generation_active(false);
+
+        // 5. DB Persistence & Auto-Tagging
         if (res.status == 200 && g_db) {
             try {
-                // Parse Request & Response
                 auto req_json = mysti::json::parse(req.body);
                 auto res_json = mysti::json::parse(res.body);
 
@@ -933,7 +947,14 @@ int run_orchestrator(int argc, const char** argv, SDSvrParams& svr_params) {
                 std::string neg_prompt = req_json.value("negative_prompt", "");
                 int width = req_json.value("width", 512);
                 int height = req_json.value("height", 512);
-                int steps = req_json.value("steps", 20);
+                
+                int steps = 20;
+                if (req_json.contains("sample_steps")) {
+                    steps = req_json.value("sample_steps", 20);
+                } else if (req_json.contains("steps")) {
+                    steps = req_json.value("steps", 20);
+                }
+
                 float cfg = req_json.value("cfg_scale", 7.0f);
                 long long seed = req_json.value("seed", -1LL);
                 double generation_time = res_json.value("generation_time", 0.0);
@@ -948,7 +969,6 @@ int run_orchestrator(int argc, const char** argv, SDSvrParams& svr_params) {
                     }
                 }
 
-                // Fallback UUID generation if missing
                 if (uuid.empty() && !file_path.empty()) {
                     size_t last_slash = file_path.find_last_of('/');
                     if (last_slash != std::string::npos) {
@@ -959,17 +979,17 @@ int run_orchestrator(int argc, const char** argv, SDSvrParams& svr_params) {
                 }
 
                 if (!uuid.empty() && !file_path.empty()) {
-                    mysti::json gen_data;
-                    gen_data["uuid"] = uuid;
-                    gen_data["file_path"] = file_path;
-                    gen_data["prompt"] = prompt;
-                    gen_data["negative_prompt"] = neg_prompt;
-                    gen_data["seed"] = seed;
-                    gen_data["width"] = width;
-                    gen_data["height"] = height;
-                    gen_data["steps"] = steps;
-                    gen_data["cfg_scale"] = cfg;
-                    gen_data["generation_time"] = generation_time;
+                    mysti::Generation gen;
+                    gen.uuid = uuid;
+                    gen.file_path = file_path;
+                    gen.prompt = prompt;
+                    gen.negative_prompt = neg_prompt;
+                    gen.seed = seed;
+                    gen.width = width;
+                    gen.height = height;
+                    gen.steps = steps;
+                    gen.cfg_scale = cfg;
+                    gen.generation_time = generation_time;
                     
                     // Extract model ID from last load request
                     {
@@ -977,13 +997,17 @@ int run_orchestrator(int argc, const char** argv, SDSvrParams& svr_params) {
                         if (!last_sd_model_req_body.empty()) {
                             try {
                                 auto load_j = mysti::json::parse(last_sd_model_req_body);
-                                gen_data["model_hash"] = load_j.value("model_id", "");
+                                gen.model_hash = load_j.value("model_id", "");
                             } catch(...) {}
                         }
                     }
 
-                    g_db->save_generation(gen_data);
+                    g_db->insert_generation(gen);
                     std::cout << "[Orchestrator] Saved generation " << uuid << " to DB." << std::endl;
+                    
+                    if (g_tagging_svc) {
+                         g_tagging_svc->notify_new_generation();
+                    }
                 }
 
             } catch (const std::exception& e) {
@@ -1120,8 +1144,12 @@ int run_orchestrator(int argc, const char** argv, SDSvrParams& svr_params) {
     svr.Post("/v1/llm/unload", proxy_llm);
 
     svr.Get("/health", [&](const httplib::Request& req, httplib::Response& res) {
-        bool sd_ok = pm.is_running(sd_process);
-        bool llm_ok = pm.is_running(llm_process);
+        bool sd_ok = false;
+        bool llm_ok = false;
+        if (g_health_svc) {
+            sd_ok = g_health_svc->is_sd_alive();
+            llm_ok = g_health_svc->is_llm_alive();
+        }
         
         float sd_vram = 0;
         float llm_vram = 0;
@@ -1161,16 +1189,14 @@ int run_orchestrator(int argc, const char** argv, SDSvrParams& svr_params) {
         res.set_content(j.dump(), "application/json");
     });
 
-    std::thread health_thread(health_check_loop, "127.0.0.1", sd_port, "127.0.0.1", llm_port);
-    health_thread.detach();
-
-    std::thread tag_thread(tagging_service);
-    tag_thread.detach();
-
     LOG_INFO("Orchestrator listening on %s:%d", svr_params.listen_ip.c_str(), svr_params.listen_port);
     svr.listen(svr_params.listen_ip, svr_params.listen_port);
 
+    // Shutdown
     is_shutting_down = true;
+    if (g_tagging_svc) g_tagging_svc->stop();
+    if (g_health_svc) g_health_svc->stop();
+    
     pm.terminate(sd_process);
     pm.terminate(llm_process);
 

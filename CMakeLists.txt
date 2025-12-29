@@ -79,6 +79,9 @@ add_executable(mysti_server
     src/orchestrator/orchestrator_main.cpp
     src/orchestrator/ws_manager.cpp
     src/orchestrator/database.cpp
+    src/orchestrator/services/tagging_service.cpp
+    src/orchestrator/services/import_service.cpp
+    src/orchestrator/services/health_service.cpp
     ${COMMON_SOURCES}
 )
 
@@ -87,6 +90,7 @@ target_include_directories(mysti_server PRIVATE
     src
     src/utils
     src/orchestrator
+    src/orchestrator/services
     libs/stable-diffusion.cpp # For types in common.hpp
     libs/stable-diffusion.cpp/thirdparty # For stb_image.h
     libs/llama.cpp/vendor/nlohmann

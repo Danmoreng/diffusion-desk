@@ -8,6 +8,9 @@ Database::Database(const std::string& db_path)
 {
     // Enable Write-Ahead Logging (WAL) for concurrency
     try {
+        // No mutex needed in constructor if single threaded startup, 
+        // but good practice to lock if we ever init dynamically.
+        // Assuming construction happens before sharing.
         m_db.exec("PRAGMA journal_mode=WAL;");
         m_db.exec("PRAGMA synchronous=NORMAL;"); // Good balance for WAL
         m_db.exec("PRAGMA foreign_keys=ON;");    // Enforce foreign keys
@@ -21,6 +24,7 @@ Database::~Database() {
 }
 
 void Database::init_schema() {
+    std::lock_guard<std::mutex> lock(m_mutex);
     try {
         SQLite::Transaction transaction(m_db);
 
@@ -221,6 +225,7 @@ mysti::json Database::get_model_metadata(const std::string& model_hash) {
 }
 
 mysti::json Database::get_generations(int limit, int offset, const std::string& tag, const std::string& model) {
+    std::lock_guard<std::mutex> lock(m_mutex);
     mysti::json results = mysti::json::array();
     try {
         std::string sql = "SELECT g.* FROM generations g ";
@@ -305,6 +310,7 @@ mysti::json Database::get_generations(int limit, int offset, const std::string& 
 }
 
 mysti::json Database::get_tags() {
+    std::lock_guard<std::mutex> lock(m_mutex);
     mysti::json results = mysti::json::array();
     try {
         SQLite::Statement query(m_db, "SELECT name, category, COUNT(it.tag_id) as count FROM tags t LEFT JOIN image_tags it ON t.id = it.tag_id GROUP BY t.id ORDER BY count DESC");
@@ -321,7 +327,43 @@ mysti::json Database::get_tags() {
     return results;
 }
 
+bool Database::generation_exists(const std::string& file_path) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    try {
+        SQLite::Statement check(m_db, "SELECT id FROM generations WHERE file_path = ?");
+        check.bind(1, file_path);
+        return check.executeStep();
+    } catch (const std::exception& e) {
+        std::cerr << "[Database] generation_exists failed: " << e.what() << std::endl;
+        return false;
+    }
+}
+
+void Database::insert_generation(const Generation& gen) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    try {
+        SQLite::Statement ins(m_db, "INSERT INTO generations (uuid, file_path, prompt, negative_prompt, seed, width, height, steps, cfg_scale, generation_time, model_hash, is_favorite, auto_tagged) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+        ins.bind(1, gen.uuid);
+        ins.bind(2, gen.file_path);
+        ins.bind(3, gen.prompt);
+        ins.bind(4, gen.negative_prompt);
+        ins.bind(5, (int64_t)gen.seed);
+        ins.bind(6, gen.width);
+        ins.bind(7, gen.height);
+        ins.bind(8, gen.steps);
+        ins.bind(9, gen.cfg_scale);
+        ins.bind(10, gen.generation_time);
+        ins.bind(11, gen.model_hash);
+        ins.bind(12, gen.is_favorite ? 1 : 0);
+        ins.bind(13, gen.auto_tagged ? 1 : 0);
+        ins.exec();
+    } catch (const std::exception& e) {
+        std::cerr << "[Database] insert_generation failed: " << e.what() << std::endl;
+    }
+}
+
 void Database::add_tag(const std::string& uuid, const std::string& tag, const std::string& source) {
+    std::lock_guard<std::mutex> lock(m_mutex);
     try {
         SQLite::Transaction transaction(m_db);
         
@@ -353,7 +395,35 @@ void Database::add_tag(const std::string& uuid, const std::string& tag, const st
     }
 }
 
+void Database::add_tag_by_id(int generation_id, const std::string& tag, const std::string& source) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    try {
+        SQLite::Transaction transaction(m_db);
+        
+        // Insert Tag
+        SQLite::Statement ins_tag(m_db, "INSERT OR IGNORE INTO tags (name) VALUES (?)");
+        ins_tag.bind(1, tag);
+        ins_tag.exec();
+
+        // Get Tag ID
+        SQLite::Statement get_tag_id(m_db, "SELECT id FROM tags WHERE name = ?");
+        get_tag_id.bind(1, tag);
+        if (get_tag_id.executeStep()) {
+            int tag_id = get_tag_id.getColumn(0);
+            SQLite::Statement link(m_db, "INSERT OR IGNORE INTO image_tags (generation_id, tag_id, source) VALUES (?, ?, ?)");
+            link.bind(1, generation_id);
+            link.bind(2, tag_id);
+            link.bind(3, source);
+            link.exec();
+        }
+        transaction.commit();
+    } catch (const std::exception& e) {
+        std::cerr << "[Database] add_tag_by_id failed: " << e.what() << std::endl;
+    }
+}
+
 void Database::remove_tag(const std::string& uuid, const std::string& tag) {
+    std::lock_guard<std::mutex> lock(m_mutex);
     try {
         SQLite::Statement query(m_db, "DELETE FROM image_tags WHERE generation_id = (SELECT id FROM generations WHERE uuid = ?) AND tag_id = (SELECT id FROM tags WHERE name = ?)");
         query.bind(1, uuid);
@@ -364,14 +434,19 @@ void Database::remove_tag(const std::string& uuid, const std::string& tag) {
     }
 }
 
-std::vector<std::pair<int, std::string>> Database::get_untagged_generations(int limit) {
-    std::vector<std::pair<int, std::string>> results;
+std::vector<std::tuple<int, std::string, std::string>> Database::get_untagged_generations(int limit) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    std::vector<std::tuple<int, std::string, std::string>> results;
     try {
         // Find generations that haven't been auto-tagged yet AND have a prompt
-        SQLite::Statement query(m_db, "SELECT id, prompt FROM generations WHERE auto_tagged = 0 AND prompt IS NOT NULL AND prompt != '' LIMIT ?");
+        SQLite::Statement query(m_db, "SELECT id, uuid, prompt FROM generations WHERE auto_tagged = 0 AND prompt IS NOT NULL AND prompt != '' LIMIT ?");
         query.bind(1, limit);
         while (query.executeStep()) {
-            results.emplace_back(query.getColumn(0).getInt(), query.getColumn(1).getText());
+            results.emplace_back(
+                query.getColumn(0).getInt(),
+                query.getColumn(1).getText(),
+                query.getColumn(2).getText()
+            );
         }
     } catch (const std::exception& e) {
         std::cerr << "[Database] get_untagged_generations failed: " << e.what() << std::endl;
@@ -380,6 +455,7 @@ std::vector<std::pair<int, std::string>> Database::get_untagged_generations(int 
 }
 
 void Database::mark_as_tagged(int id) {
+    std::lock_guard<std::mutex> lock(m_mutex);
     try {
         SQLite::Statement query(m_db, "UPDATE generations SET auto_tagged = 1 WHERE id = ?");
         query.bind(1, id);
