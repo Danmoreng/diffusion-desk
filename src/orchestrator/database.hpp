@@ -22,6 +22,7 @@ struct Generation {
     float cfg_scale = 7.0f;
     double generation_time = 0.0;
     std::string model_hash;
+    std::string model_id;
     bool is_favorite = false;
     int rating = 0;
     bool auto_tagged = false;
@@ -67,8 +68,9 @@ public:
     void delete_style(const std::string& name);
     
     // Model Metadata
-    void save_model_metadata(const std::string& model_hash, const mysti::json& metadata);
-    mysti::json get_model_metadata(const std::string& model_hash);
+    void save_model_metadata(const std::string& model_id, const mysti::json& metadata);
+    mysti::json get_model_metadata(const std::string& model_id);
+    mysti::json get_all_models_metadata();
     
     // Existence Check
     bool generation_exists(const std::string& file_path);

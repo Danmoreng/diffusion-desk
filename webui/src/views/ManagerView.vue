@@ -76,6 +76,99 @@ const filteredStyles = computed(() => {
   return store.styles.filter(s => s.name.toLowerCase().includes(query))
 })
 
+// Model management logic
+interface ModelMetadataEntry {
+  id: string
+  metadata: any
+}
+const modelMetadataList = ref<ModelMetadataEntry[]>([])
+const modelEditModalRef = ref<HTMLElement | null>(null)
+let modelEditModalInstance: Modal | null = null
+const editingModelMetadata = ref<ModelMetadataEntry>({ id: '', metadata: {} })
+
+const filteredModelMetadata = computed(() => {
+  if (!searchQuery.value) return modelMetadataList.value
+  const query = searchQuery.value.toLowerCase()
+  return modelMetadataList.value.filter(m => 
+    m.id.toLowerCase().includes(query) || 
+    (m.metadata.name && m.metadata.name.toLowerCase().includes(query))
+  )
+})
+
+async function fetchModelMetadata() {
+  try {
+    const res = await fetch('/v1/models/metadata')
+    if (res.ok) {
+      modelMetadataList.value = await res.json()
+    }
+  } catch (e) {
+    console.error('Failed to fetch model metadata', e)
+  }
+}
+
+async function syncModels() {
+  isLoading.value = true
+  try {
+    // 1. Fetch current models from SD worker via orchestrator
+    await store.fetchModels()
+    
+    // 2. For each model, ensure it has an entry in our metadata DB
+    for (const m of store.models) {
+      console.log(`Checking metadata for model: ${m.id} (${m.name})`)
+      const existing = modelMetadataList.value.find(entry => entry.id === m.id)
+      if (!existing) {
+        // Create default metadata if missing
+        const defaultMeta = {
+          name: m.name,
+          type: m.type,
+          base: 'SD1.5',
+          vae: '',
+          llm: '',
+          cfg_scale: 7.0,
+          sample_steps: 20,
+          width: 512,
+          height: 512,
+          sampling_method: 'euler_a'
+        }
+        await fetch('/v1/models/metadata', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id: m.id, metadata: defaultMeta })
+        })
+      }
+    }
+    await fetchModelMetadata()
+  } catch (e) {
+    console.error('Failed to sync models', e)
+  } finally {
+    isLoading.value = false
+  }
+}
+
+function openModelEditModal(model: ModelMetadataEntry) {
+  editingModelMetadata.value = JSON.parse(JSON.stringify(model))
+  if (modelEditModalRef.value) {
+    modelEditModalInstance = new Modal(modelEditModalRef.value)
+    modelEditModalInstance.show()
+  }
+}
+
+async function saveModelMetadata() {
+  try {
+    const res = await fetch('/v1/models/metadata', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(editingModelMetadata.value)
+    })
+    if (res.ok) {
+      await fetchModelMetadata()
+      modelEditModalInstance?.hide()
+    }
+  } catch (e) {
+    console.error('Failed to save model metadata', e)
+  }
+}
+
 async function fetchTags() {
   isLoading.value = true
   try {
@@ -178,6 +271,7 @@ function navigateToTag(tagName: string) {
 onMounted(() => {
   fetchTags()
   store.fetchStyles()
+  fetchModelMetadata()
 })
 
 onUnmounted(() => {
@@ -185,6 +279,7 @@ onUnmounted(() => {
   styleModalInstance?.dispose()
   styleDeleteModalInstance?.dispose()
   extractModalInstance?.dispose()
+  modelEditModalInstance?.dispose()
 })
 </script>
 
@@ -201,6 +296,9 @@ onUnmounted(() => {
       </li>
       <li class="nav-item">
         <a class="nav-link" :class="{ active: activeTab === 'styles' }" href="#" @click.prevent="activeTab = 'styles'">Styles</a>
+      </li>
+      <li class="nav-item">
+        <a class="nav-link" :class="{ active: activeTab === 'models' }" href="#" @click.prevent="activeTab = 'models'">Models</a>
       </li>
       <li class="nav-item">
         <a class="nav-link disabled" href="#" title="Coming soon">LoRAs</a>
@@ -323,6 +421,75 @@ onUnmounted(() => {
       </div>
     </div>
 
+    <!-- Models Content -->
+    <div v-else-if="activeTab === 'models'" class="flex-grow-1 d-flex flex-column overflow-hidden">
+      <!-- Toolbar -->
+      <div class="d-flex gap-2 mb-3 bg-body-secondary p-2 rounded">
+        <input type="text" v-model="searchQuery" class="form-control form-control-sm" placeholder="Search models..." style="max-width: 250px;">
+        <button class="btn btn-sm btn-outline-primary" @click="syncModels()" :disabled="isLoading">
+          🔄 Sync Models from Disk
+        </button>
+      </div>
+
+      <!-- Models Table -->
+      <div class="flex-grow-1 overflow-auto bg-body rounded shadow-sm">
+        <table class="table table-hover mb-0 align-middle">
+          <thead class="table-light sticky-top">
+            <tr>
+              <th>Model ID</th>
+              <th>Type</th>
+              <th>Base</th>
+              <th>Components</th>
+              <th>Default Params</th>
+              <th class="text-end">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="model in filteredModelMetadata" :key="model.id">
+              <td>
+                <div class="fw-bold">{{ model.id }}</div>
+                <div class="x-small text-muted" v-if="model.metadata.name">{{ model.metadata.name }}</div>
+              </td>
+              <td>
+                <span class="badge bg-secondary opacity-75">{{ model.metadata.type || 'unknown' }}</span>
+              </td>
+              <td>
+                <span class="badge bg-info bg-opacity-10 text-info border border-info border-opacity-25">{{ model.metadata.base || 'N/A' }}</span>
+              </td>
+              <td>
+                <div class="x-small" v-if="model.metadata.vae">
+                  <span class="text-muted text-uppercase fw-bold" style="font-size: 0.6rem;">VAE:</span> 
+                  <span class="text-truncate d-inline-block align-middle ms-1" style="max-width: 120px;" :title="model.metadata.vae">{{ model.metadata.vae.split('/').pop() }}</span>
+                </div>
+                <div class="x-small" v-if="model.metadata.llm">
+                  <span class="text-muted text-uppercase fw-bold" style="font-size: 0.6rem;">LLM:</span> 
+                  <span class="text-truncate d-inline-block align-middle ms-1" style="max-width: 120px;" :title="model.metadata.llm">{{ model.metadata.llm.split('/').pop() }}</span>
+                </div>
+                <div class="x-small text-muted italic" v-if="!model.metadata.vae && !model.metadata.llm">Standard</div>
+              </td>
+              <td>
+                <div class="x-small">
+                  <span class="me-2" title="CFG Scale">⚖️ {{ model.metadata.cfg_scale || '7.0' }}</span>
+                  <span class="me-2" title="Steps">👣 {{ model.metadata.sample_steps || '20' }}</span>
+                  <span class="me-2" title="Resolution">📐 {{ model.metadata.width || '512' }}x{{ model.metadata.height || '512' }}</span>
+                </div>
+              </td>
+              <td class="text-end">
+                <button class="btn btn-sm btn-outline-secondary" @click="openModelEditModal(model)">
+                  ✏️ Edit
+                </button>
+              </td>
+            </tr>
+            <tr v-if="filteredModelMetadata.length === 0">
+              <td colspan="5" class="text-center py-5 text-muted">
+                No models found in database. Try syncing from disk.
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
     <!-- Placeholders for other tabs -->
     <div v-else class="flex-grow-1 d-flex align-items-center justify-content-center text-muted">
       <div class="text-center">
@@ -408,6 +575,83 @@ onUnmounted(() => {
           <div class="modal-footer">
             <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
             <button type="button" class="btn btn-primary" @click="saveStyle" :disabled="!editingStyle.name">Save Style</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    </Teleport>
+
+    <!-- Model Edit Modal -->
+    <Teleport to="body">
+    <div class="modal fade" ref="modelEditModalRef" tabindex="-1" aria-hidden="true">
+      <div class="modal-dialog modal-lg modal-dialog-centered">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title">Edit Model: {{ editingModelMetadata.id }}</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+          </div>
+          <div class="modal-body">
+            <div class="row g-3">
+              <div class="col-md-12">
+                <label class="form-label fw-bold">Display Name</label>
+                <input type="text" v-model="editingModelMetadata.metadata.name" class="form-control" placeholder="Friendly name for the model">
+              </div>
+              <div class="col-md-6">
+                <label class="form-label fw-bold small text-uppercase">Type</label>
+                <select v-model="editingModelMetadata.metadata.type" class="form-select">
+                  <option value="stable-diffusion">Stable Diffusion (Standard)</option>
+                  <option value="flux">Flux (GGUF)</option>
+                  <option value="sd3">SD3 (GGUF)</option>
+                  <option value="upscaler">Upscaler (ESRGAN)</option>
+                </select>
+              </div>
+              <div class="col-md-6">
+                <label class="form-label fw-bold small text-uppercase">Base Model</label>
+                <select v-model="editingModelMetadata.metadata.base" class="form-select">
+                  <option value="SD1.5">SD 1.5</option>
+                  <option value="SDXL">SDXL</option>
+                  <option value="SD3">SD 3.x</option>
+                  <option value="Flux">Flux.1</option>
+                  <option value="Other">Other</option>
+                </select>
+              </div>
+              <div class="col-12"><hr class="my-2"></div>
+              <div class="col-md-6">
+                <label class="form-label fw-bold small text-uppercase">VAE Path</label>
+                <input type="text" v-model="editingModelMetadata.metadata.vae" class="form-control" placeholder="e.g. vae/ae.safetensors">
+              </div>
+              <div class="col-md-6">
+                <label class="form-label fw-bold small text-uppercase">Text Encoder / LLM Path</label>
+                <input type="text" v-model="editingModelMetadata.metadata.llm" class="form-control" placeholder="e.g. text-encoder/Qwen.gguf">
+              </div>
+              <div class="col-12"><hr class="my-2"></div>
+              <div class="col-md-4">
+                <label class="form-label fw-bold small text-uppercase">Default CFG</label>
+                <input type="number" v-model.number="editingModelMetadata.metadata.cfg_scale" class="form-control" step="0.5">
+              </div>
+              <div class="col-md-4">
+                <label class="form-label fw-bold small text-uppercase">Default Steps</label>
+                <input type="number" v-model.number="editingModelMetadata.metadata.sample_steps" class="form-control">
+              </div>
+              <div class="col-md-4">
+                <label class="form-label fw-bold small text-uppercase">Default Sampler</label>
+                <select v-model="editingModelMetadata.metadata.sampling_method" class="form-select">
+                  <option v-for="s in store.samplers" :key="s" :value="s">{{ s }}</option>
+                </select>
+              </div>
+              <div class="col-md-6">
+                <label class="form-label fw-bold small text-uppercase">Default Width</label>
+                <input type="number" v-model.number="editingModelMetadata.metadata.width" class="form-control" step="64">
+              </div>
+              <div class="col-md-6">
+                <label class="form-label fw-bold small text-uppercase">Default Height</label>
+                <input type="number" v-model.number="editingModelMetadata.metadata.height" class="form-control" step="64">
+              </div>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+            <button type="button" class="btn btn-primary" @click="saveModelMetadata">Save Parameters</button>
           </div>
         </div>
       </div>

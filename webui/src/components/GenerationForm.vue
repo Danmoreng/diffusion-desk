@@ -307,6 +307,17 @@ const clearInitImage = () => {
         ></textarea>
       </div>
 
+      <div class="d-flex justify-content-between align-items-end mb-1" v-if="store.currentModelMetadata">
+        <label class="x-small text-muted text-uppercase fw-bold mb-0">Parameters</label>
+        <button 
+          type="button" 
+          class="btn btn-link btn-xs p-0 text-decoration-none text-muted opacity-75 hover-opacity-100"
+          @click="store.resetToModelDefaults()"
+        >
+          <span class="small">🔄 Reset to Model Defaults</span>
+        </button>
+      </div>
+
       <div class="row g-2 mb-3">
         <div class="col-md-4">
           <div class="input-group input-group-sm">
@@ -568,13 +579,25 @@ const clearInitImage = () => {
 
 .hires-fix-container {
   background-color: #f8f9fa;
+  border: 1px solid #dee2e6;
 }
 
 [data-bs-theme="dark"] .hires-fix-container {
-  background-color: #2b3035 !important;
+  background-color: #212529;
+  border-color: #373b3e;
 }
 
 .x-small {
+  font-size: 0.7rem;
+}
+
+.btn-xs {
+  padding: 0.1rem 0.25rem;
   font-size: 0.65rem;
+  line-height: 1;
+}
+
+.hover-opacity-100:hover {
+  opacity: 1 !important;
 }
 </style>

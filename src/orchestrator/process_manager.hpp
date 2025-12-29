@@ -29,7 +29,7 @@ public:
 
     // Spawns a new process with the given command and arguments.
     // Returns true if successful.
-    bool spawn(const std::string& command, const std::vector<std::string>& args, ProcessInfo& info);
+    bool spawn(const std::string& command, const std::vector<std::string>& args, ProcessInfo& info, const std::string& log_file = "");
 
     // Checks if a process is still running.
     bool is_running(const ProcessInfo& info);

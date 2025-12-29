@@ -10,7 +10,7 @@ ProcessManager::~ProcessManager() {}
 #include <windows.h>
 #include <strsafe.h>
 
-bool ProcessManager::spawn(const std::string& command, const std::vector<std::string>& args, ProcessInfo& info) {
+bool ProcessManager::spawn(const std::string& command, const std::vector<std::string>& args, ProcessInfo& info, const std::string& log_file) {
     std::stringstream cmd_ss;
     cmd_ss << "\"" << command << "\"";
     for (const auto& arg : args) {
@@ -25,11 +25,29 @@ bool ProcessManager::spawn(const std::string& command, const std::vector<std::st
     STARTUPINFOW si;
     ZeroMemory(&si, sizeof(si));
     si.cb = sizeof(si);
-    // Inherit std handles so output goes to the same console
     si.dwFlags |= STARTF_USESTDHANDLES;
     si.hStdInput = GetStdHandle(STD_INPUT_HANDLE);
     si.hStdOutput = GetStdHandle(STD_OUTPUT_HANDLE);
     si.hStdError = GetStdHandle(STD_ERROR_HANDLE);
+
+    HANDLE hLog = INVALID_HANDLE_VALUE;
+    if (!log_file.empty()) {
+        std::vector<wchar_t> log_vec(log_file.length() + 1);
+        MultiByteToWideChar(CP_UTF8, 0, log_file.c_str(), -1, log_vec.data(), (int)log_vec.size());
+
+        SECURITY_ATTRIBUTES sa;
+        sa.nLength = sizeof(sa);
+        sa.lpSecurityDescriptor = NULL;
+        sa.bInheritHandle = TRUE;
+
+        hLog = CreateFileW(log_vec.data(), FILE_APPEND_DATA, FILE_SHARE_READ | FILE_SHARE_WRITE, &sa, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+        if (hLog != INVALID_HANDLE_VALUE) {
+            si.hStdOutput = hLog;
+            si.hStdError = hLog;
+        } else {
+            std::cerr << "Failed to open log file: " << log_file << " (Error " << GetLastError() << ")\n";
+        }
+    }
 
     ZeroMemory(&info.pi, sizeof(info.pi));
 
@@ -46,8 +64,11 @@ bool ProcessManager::spawn(const std::string& command, const std::vector<std::st
         &info.pi)       // Pointer to PROCESS_INFORMATION structure
     ) {
         std::cerr << "CreateProcess failed (" << GetLastError() << ").\n";
+        if (hLog != INVALID_HANDLE_VALUE) CloseHandle(hLog);
         return false;
     }
+
+    if (hLog != INVALID_HANDLE_VALUE) CloseHandle(hLog);
 
     info.valid = true;
     return true;
@@ -87,13 +108,22 @@ void ProcessManager::wait(ProcessInfo& info) {
 #include <cstring>
 
 // POSIX implementation
-bool ProcessManager::spawn(const std::string& command, const std::vector<std::string>& args, ProcessInfo& info) {
+bool ProcessManager::spawn(const std::string& command, const std::vector<std::string>& args, ProcessInfo& info, const std::string& log_file) {
     pid_t pid = fork();
     if (pid < 0) {
         perror("fork");
         return false;
     } else if (pid == 0) {
         // Child process
+        if (!log_file.empty()) {
+            int fd = open(log_file.c_str(), O_WRONLY | O_CREAT | O_APPEND, 0644);
+            if (fd >= 0) {
+                dup2(fd, STDOUT_FILENO);
+                dup2(fd, STDERR_FILENO);
+                close(fd);
+            }
+        }
+
         std::vector<char*> c_args;
         c_args.push_back(strdup(command.c_str()));
         for (const auto& arg : args) {
