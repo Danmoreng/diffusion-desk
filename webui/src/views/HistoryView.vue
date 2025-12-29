@@ -81,12 +81,17 @@ const galleryRef = ref<any>(null)
             </select>
           </div>
 
-          <!-- Favorites Toggle -->
-          <div class="ms-2 d-flex align-items-center gap-2">
-            <div class="form-check form-switch mb-0">
-              <input class="form-check-input shadow-none" type="checkbox" role="switch" id="favToggle" v-model="galleryRef.showFavoritesOnly" v-if="galleryRef">
-              <label class="form-check-label small text-muted text-uppercase fw-bold" for="favToggle" style="font-size: 0.7rem;">Favorites</label>
-            </div>
+          <!-- Rating Filter -->
+          <div class="d-flex align-items-center gap-2">
+            <span class="small text-muted text-uppercase fw-bold" style="font-size: 0.7rem;">Rating:</span>
+            <select v-model="galleryRef.minRating" class="form-select form-select-sm border-0 bg-body shadow-none" style="width: auto;" v-if="galleryRef">
+              <option :value="0">All</option>
+              <option :value="1">1+ Stars</option>
+              <option :value="2">2+ Stars</option>
+              <option :value="3">3+ Stars</option>
+              <option :value="4">4+ Stars</option>
+              <option :value="5">5 Stars</option>
+            </select>
           </div>
 
           <div class="vr mx-1 d-none d-lg-block"></div>

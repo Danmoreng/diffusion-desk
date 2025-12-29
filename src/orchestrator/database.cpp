@@ -54,6 +54,7 @@ void Database::init_schema() {
         // Check if columns exist (migrations)
         try { m_db.exec("ALTER TABLE generations ADD COLUMN generation_time REAL;"); } catch (...) {}
         try { m_db.exec("ALTER TABLE generations ADD COLUMN auto_tagged BOOLEAN DEFAULT 0;"); } catch (...) {}
+        try { m_db.exec("ALTER TABLE generations ADD COLUMN rating INTEGER DEFAULT 0;"); } catch (...) {}
 
         // Table: tags
         m_db.exec(R"(
@@ -162,6 +163,17 @@ void Database::set_favorite(const std::string& uuid, bool favorite) {
     }
 }
 
+void Database::set_rating(const std::string& uuid, int rating) {
+    try {
+        SQLite::Statement query(m_db, "UPDATE generations SET rating = ? WHERE uuid = ?");
+        query.bind(1, std::max(0, std::min(5, rating)));
+        query.bind(2, uuid);
+        query.exec();
+    } catch (const std::exception& e) {
+        std::cerr << "[Database] set_rating failed: " << e.what() << std::endl;
+    }
+}
+
 void Database::remove_generation(const std::string& uuid) {
     try {
         SQLite::Statement query(m_db, "DELETE FROM generations WHERE uuid = ?");
@@ -224,7 +236,7 @@ mysti::json Database::get_model_metadata(const std::string& model_hash) {
     return result;
 }
 
-mysti::json Database::get_generations(int limit, int offset, const std::string& tag, const std::string& model) {
+mysti::json Database::get_generations(int limit, int offset, const std::string& tag, const std::string& model, int min_rating) {
     std::lock_guard<std::mutex> lock(m_mutex);
     mysti::json results = mysti::json::array();
     try {
@@ -243,6 +255,12 @@ mysti::json Database::get_generations(int limit, int offset, const std::string& 
             has_where = true;
         }
 
+        if (min_rating > 0) {
+            sql += has_where ? "AND " : "WHERE ";
+            sql += "g.rating >= ? ";
+            has_where = true;
+        }
+
         sql += "ORDER BY g.timestamp DESC LIMIT ? OFFSET ?";
 
         SQLite::Statement query(m_db, sql);
@@ -252,6 +270,9 @@ mysti::json Database::get_generations(int limit, int offset, const std::string& 
         }
         if (!model.empty()) {
             query.bind(bind_idx++, model);
+        }
+        if (min_rating > 0) {
+            query.bind(bind_idx++, min_rating);
         }
         query.bind(bind_idx++, limit);
         query.bind(bind_idx++, offset);
@@ -291,6 +312,7 @@ mysti::json Database::get_generations(int limit, int offset, const std::string& 
             
             gen["params"] = params;
             gen["is_favorite"] = query.getColumn("is_favorite").getInt() != 0;
+            try { gen["rating"] = query.getColumn("rating").getInt(); } catch (...) { gen["rating"] = 0; }
             
             // Fetch tags for this generation
             mysti::json tags = mysti::json::array();
@@ -342,7 +364,7 @@ bool Database::generation_exists(const std::string& file_path) {
 void Database::insert_generation(const Generation& gen) {
     std::lock_guard<std::mutex> lock(m_mutex);
     try {
-        SQLite::Statement ins(m_db, "INSERT INTO generations (uuid, file_path, prompt, negative_prompt, seed, width, height, steps, cfg_scale, generation_time, model_hash, is_favorite, auto_tagged) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+        SQLite::Statement ins(m_db, "INSERT INTO generations (uuid, file_path, prompt, negative_prompt, seed, width, height, steps, cfg_scale, generation_time, model_hash, is_favorite, auto_tagged, rating) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
         ins.bind(1, gen.uuid);
         ins.bind(2, gen.file_path);
         ins.bind(3, gen.prompt);
@@ -356,6 +378,7 @@ void Database::insert_generation(const Generation& gen) {
         ins.bind(11, gen.model_hash);
         ins.bind(12, gen.is_favorite ? 1 : 0);
         ins.bind(13, gen.auto_tagged ? 1 : 0);
+        ins.bind(14, gen.rating);
         ins.exec();
     } catch (const std::exception& e) {
         std::cerr << "[Database] insert_generation failed: " << e.what() << std::endl;

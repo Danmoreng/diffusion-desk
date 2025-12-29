@@ -4,6 +4,7 @@ import { Modal, Carousel } from 'bootstrap'
 import { useGenerationStore } from '@/stores/generation'
 import { useRouter } from 'vue-router'
 import DeleteConfirmationModal from './DeleteConfirmationModal.vue'
+import RatingInput from './RatingInput.vue'
 
 interface HistoryItem {
   id: string
@@ -11,6 +12,7 @@ interface HistoryItem {
   params?: any
   tags?: string[]
   is_favorite?: boolean
+  rating?: number
 }
 
 const store = useGenerationStore()
@@ -32,7 +34,8 @@ const imagesToDelete = ref<HistoryItem[]>([])
 // Filtering State
 const selectedModel = ref('all')
 const selectedDateRange = ref('all') // all, today, yesterday, week, month, custom
-const showFavoritesOnly = ref(false)
+const minRating = ref(0)
+const showFavoritesOnly = ref(false) // Deprecated filter, mapping to minRating >= 1 conceptually if needed, but separate for now
 const selectedTag = ref('all')
 const startDate = ref('')
 const endDate = ref('')
@@ -82,7 +85,7 @@ function deleteSelected() {
   }
 }
 
-// --- Tag & Favorite Methods ---
+// --- Tag & Rating Methods ---
 
 async function addTag(uuid: string) {
   if (!newTagInput.value.trim()) return
@@ -129,20 +132,19 @@ async function removeTag(uuid: string, tag: string) {
   } catch (e) { console.error('Failed to remove tag:', e) }
 }
 
-async function toggleFavorite(uuid: string) {
+async function setRating(uuid: string, rating: number) {
   const img = images.value.find(i => i.id === uuid)
   if (!img) return
-  const newFavorite = !img.is_favorite
   try {
-    const response = await fetch('/v1/history/favorite', {
+    const response = await fetch('/v1/history/rating', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ uuid, favorite: newFavorite })
+      body: JSON.stringify({ uuid, rating })
     })
     if (response.ok) {
-      img.is_favorite = newFavorite
+      img.rating = rating
     }
-  } catch (e) { console.error('Failed to toggle favorite:', e) }
+  } catch (e) { console.error('Failed to set rating:', e) }
 }
 
 // --- Deletion Logic ---
@@ -226,9 +228,11 @@ const getTimestamp = (filename: string) => {
 const filteredImages = computed(() => {
   let result = images.value
 
-  // Filter by favorites
-  if (showFavoritesOnly.value) {
-    result = result.filter(img => img.is_favorite)
+  // Filter by min rating (client-side filter for immediate response, though we also fetch with it)
+  // Note: Since we fetch with min_rating, this is just a secondary filter if we change filters without refetching everything
+  // But we watch filters and refetch, so this might be redundant but safe.
+  if (minRating.value > 0) {
+    result = result.filter(img => (img.rating || 0) >= minRating.value)
   }
 
   // Filter by model
@@ -309,7 +313,7 @@ defineExpose({
   setColumns,
   selectedModel,
   selectedDateRange,
-  showFavoritesOnly,
+  minRating,
   selectedTag,
   startDate,
   endDate,
@@ -326,7 +330,7 @@ defineExpose({
   deleteSelected
 })
 
-watch(selectedTag, fetchImages)
+watch([selectedTag, minRating], fetchImages)
 
 async function fetchImages() {
   isLoading.value = true
@@ -335,6 +339,9 @@ async function fetchImages() {
     let url = '/v1/history/images?limit=200'
     if (selectedTag.value !== 'all') {
       url += `&tag=${encodeURIComponent(selectedTag.value)}`
+    }
+    if (minRating.value > 0) {
+      url += `&min_rating=${minRating.value}`
     }
     const response = await fetch(url)
     if (!response.ok) {
@@ -526,7 +533,7 @@ onMounted(() => {
             <div class="card-footer p-2 x-small border-0 bg-transparent">
               <div class="d-flex justify-content-between text-muted mb-1">
                 <span class="text-truncate me-1" :title="image.name">{{ formatDate(image.name) }}</span>
-                <span class="fw-bold text-primary">#{{ image.params?.seed || '?' }}</span>
+                <span v-if="image.rating && image.rating > 0" class="text-warning small" title="Rating">★ {{ image.rating }}</span>
               </div>
               <div v-if="image.params?.model" class="d-flex justify-content-between text-secondary opacity-75 mt-1">
                 <span class="text-truncate" :title="image.params.model">📦 {{ image.params.model }}</span>
@@ -541,7 +548,7 @@ onMounted(() => {
       <div v-else class="text-center my-5 text-muted">
         🔍
         <p class="mt-2">No images match your current filters.</p>
-        <button class="btn btn-sm btn-link" @click="selectedModel = 'all'; selectedDateRange = 'all'; startDate = ''; endDate = ''; showFavoritesOnly = false">Reset Filters</button>
+        <button class="btn btn-sm btn-link" @click="selectedModel = 'all'; selectedDateRange = 'all'; minRating = 0; startDate = ''; endDate = '';">Reset Filters</button>
       </div>
     </template>
 
@@ -578,16 +585,15 @@ onMounted(() => {
                 <!-- Header -->
                 <div class="p-3 border-bottom d-flex justify-content-between align-items-start">
                   <div>
-                    <div class="d-flex align-items-center">
-                        <button 
-                          class="btn btn-link p-0 me-2 text-decoration-none fs-4"
-                          :class="filteredImages[activeIndex]?.is_favorite ? 'text-warning' : 'text-muted'"
-                          @click="toggleFavorite(filteredImages[activeIndex]?.id)"
-                          title="Toggle Favorite"
-                        >
-                          {{ filteredImages[activeIndex]?.is_favorite ? '★' : '☆' }}
-                        </button>
-                        <h6 class="mb-0 text-break fw-bold">
+                    <div class="d-flex align-items-center mb-1">
+                        <!-- Rating Input Component -->
+                        <RatingInput 
+                          v-if="filteredImages[activeIndex]"
+                          :model-value="filteredImages[activeIndex].rating || 0" 
+                          @update:model-value="(val) => setRating(filteredImages[activeIndex].id, val)"
+                          class="me-2"
+                        />
+                        <h6 class="mb-0 text-break fw-bold text-truncate" style="max-width: 200px;" :title="filteredImages[activeIndex]?.name">
                           {{ filteredImages[activeIndex]?.name || 'Image Viewer' }}
                         </h6>
                     </div>

@@ -23,6 +23,7 @@ struct Generation {
     double generation_time = 0.0;
     std::string model_hash;
     bool is_favorite = false;
+    int rating = 0;
     bool auto_tagged = false;
 };
 
@@ -47,9 +48,10 @@ public:
     // Generations
     void save_generation(const mysti::json& data);
     void set_favorite(const std::string& uuid, bool favorite);
+    void set_rating(const std::string& uuid, int rating);
     void remove_generation(const std::string& uuid);
     std::string get_generation_filepath(const std::string& uuid);
-    mysti::json get_generations(int limit = 50, int offset = 0, const std::string& tag = "", const std::string& model = "");
+    mysti::json get_generations(int limit = 50, int offset = 0, const std::string& tag = "", const std::string& model = "", int min_rating = 0);
     mysti::json get_tags();
     
     // Model Metadata
