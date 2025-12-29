@@ -82,21 +82,28 @@ std::string argv_to_utf8(int index, const char** argv) {
 
 std::string extract_json_block(const std::string& content) {
     size_t obj_start = content.find("{");
-    size_t obj_end = content.rfind("}");
     size_t arr_start = content.find("[");
+    
+    if (obj_start == std::string::npos && arr_start == std::string::npos) {
+        return "";
+    }
+
+    bool is_array = (arr_start != std::string::npos && (obj_start == std::string::npos || arr_start < obj_start));
+    size_t start = is_array ? arr_start : obj_start;
+    
+    size_t obj_end = content.rfind("}");
     size_t arr_end = content.rfind("]");
-    
-    // Prefer array if starts earlier or no object
-    if (arr_start != std::string::npos && (obj_start == std::string::npos || arr_start < obj_start)) {
-         return content.substr(arr_start, arr_end - arr_start + 1);
+    size_t end = is_array ? arr_end : obj_end;
+
+    if (end == std::string::npos || end < start) {
+        // If no closing marker found, or it's before the start, 
+        // we might have a truncated JSON. Let's try to return what we have
+        // so the parser can at least try, though it will likely fail.
+        // Better: try to find the last possible closing marker.
+        return content.substr(start);
     }
     
-    if (obj_start != std::string::npos && (arr_start == std::string::npos || obj_start < arr_start)) {
-        return content.substr(obj_start, obj_end - obj_start + 1);
-    } else if (arr_start != std::string::npos) {
-        return content.substr(arr_start, arr_end - arr_start + 1);
-    }
-    return "";
+    return content.substr(start, end - start + 1);
 }
 
 static void print_utf8(FILE* stream, const char* utf8) {
