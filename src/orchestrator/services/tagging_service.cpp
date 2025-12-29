@@ -43,20 +43,6 @@ void TaggingService::notify_new_generation() {
     m_cv.notify_one();
 }
 
-std::string TaggingService::extract_json(const std::string& content) {
-    size_t obj_start = content.find("{");
-    size_t obj_end = content.rfind("}");
-    size_t arr_start = content.find("[");
-    size_t arr_end = content.rfind("]");
-    
-    if (obj_start != std::string::npos && (arr_start == std::string::npos || obj_start < arr_start)) {
-        return content.substr(obj_start, obj_end - obj_start + 1);
-    } else if (arr_start != std::string::npos) {
-        return content.substr(arr_start, arr_end - arr_start + 1);
-    }
-    return "";
-}
-
 void TaggingService::loop() {
     while (m_running) {
         // Wait for notification or timeout (10 seconds)
@@ -151,7 +137,7 @@ void TaggingService::loop() {
                         content = msg_obj["content"].get<std::string>();
                     }
                     
-                    std::string json_part = extract_json(content);
+                    std::string json_part = extract_json_block(content);
 
                     if (!json_part.empty()) {
                         auto tags_json = mysti::json::parse(json_part);

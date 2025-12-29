@@ -629,6 +629,122 @@ int run_orchestrator(int argc, const char** argv, SDSvrParams& svr_params) {
         res.set_content(results.dump(), "application/json");
     });
 
+    // Styles API
+    svr.Get("/v1/styles", [&](const httplib::Request& req, httplib::Response& res) {
+        if (!g_db) { res.set_content("[]", "application/json"); return; }
+        auto results = g_db->get_styles();
+        res.set_content(results.dump(), "application/json");
+    });
+
+    svr.Post("/v1/styles", [&](const httplib::Request& req, httplib::Response& res) {
+        if (!g_db) { res.status = 500; return; }
+        try {
+            auto j = mysti::json::parse(req.body);
+            mysti::Style s;
+            s.name = j.value("name", "");
+            s.prompt = j.value("prompt", "");
+            s.negative_prompt = j.value("negative_prompt", "");
+            if (s.name.empty()) { res.status = 400; return; }
+            g_db->save_style(s);
+            res.set_content(R"({"status":"success"})", "application/json");
+        } catch(...) { res.status = 400; }
+    });
+
+    svr.Post("/v1/styles/extract", [&](const httplib::Request& req, httplib::Response& res) {
+        if (!g_db) { res.status = 500; return; }
+        try {
+            auto j = mysti::json::parse(req.body);
+            std::string input_prompt = j.value("prompt", "");
+            if (input_prompt.empty()) {
+                res.status = 400;
+                res.set_content(R"({"error":"Prompt is required"})", "application/json");
+                return;
+            }
+
+            // check health
+             httplib::Client cli("127.0.0.1", llm_port);
+             cli.set_connection_timeout(2);
+             httplib::Headers h;
+             if (!g_internal_token.empty()) h.emplace("X-Internal-Token", g_internal_token);
+
+             // Construct LLM Request
+             mysti::json chat_req;
+             chat_req["messages"] = mysti::json::array({
+                 {{"role", "system"}, {"content", "You are an expert art style analyzer. Analyze the given image prompt and extract distinct art styles, artists, or aesthetic descriptors. Return a JSON array of objects, where each object has 'name' (concise style name), 'prompt' (the specific style keywords to append, MUST include '{prompt}' placeholder), and 'negative_prompt' (optional tags to avoid). Make sure 'name' is unique and descriptive. Example: [{\"name\": \"Cyberpunk\", \"prompt\": \"{prompt}, cyberpunk, neon lights, high tech\", \"negative_prompt\": \"organic, natural\"}]"}},
+                 {{"role", "user"}, {"content", input_prompt}}
+             });
+             chat_req["temperature"] = 0.3;
+             chat_req["response_format"] = {{"type", "json_object"}};
+
+             cli.set_read_timeout(120);
+             auto chat_res = cli.Post("/v1/chat/completions", h, chat_req.dump(), "application/json");
+
+             if (chat_res && chat_res->status == 200) {
+                 auto rj = mysti::json::parse(chat_res->body);
+                 if (rj.contains("choices") && !rj["choices"].empty()) {
+                     std::string content = rj["choices"][0]["message"].value("content", "");
+                     std::string json_part = extract_json_block(content);
+                     
+                     if (!json_part.empty()) {
+                         auto styles_json = mysti::json::parse(json_part);
+                         mysti::json styles_arr = mysti::json::array();
+                         
+                         if (styles_json.is_array()) {
+                             styles_arr = styles_json;
+                         } else if (styles_json.is_object()) {
+                             if (styles_json.contains("styles")) {
+                                 styles_arr = styles_json["styles"];
+                             } else if (styles_json.contains("name")) {
+                                 styles_arr.push_back(styles_json);
+                             }
+                         }
+
+                         int saved_count = 0;
+                         for (const auto& s_obj : styles_arr) {
+                             if (!s_obj.is_object()) continue;
+                             mysti::Style s;
+                             s.name = s_obj.value("name", "");
+                             s.prompt = s_obj.value("prompt", "");
+                             s.negative_prompt = s_obj.value("negative_prompt", "");
+                             
+                             if (!s.name.empty() && !s.prompt.empty()) {
+                                 if (s.prompt.find("{prompt}") == std::string::npos) {
+                                     s.prompt = "{prompt}, " + s.prompt;
+                                 }
+                                 g_db->save_style(s);
+                                 saved_count++;
+                             }
+                         }
+                         
+                         // Return updated styles list
+                         auto all_styles = g_db->get_styles();
+                         res.set_content(all_styles.dump(), "application/json");
+                         return;
+                     }
+                 }
+             }
+             
+             res.status = 500;
+             res.set_content(R"({"error":"Failed to extract styles from LLM"})", "application/json");
+
+        } catch(const std::exception& e) {
+            res.status = 500; 
+            mysti::json err; err["error"] = e.what();
+            res.set_content(err.dump(), "application/json");
+        }
+    });
+
+    svr.Delete("/v1/styles", [&](const httplib::Request& req, httplib::Response& res) {
+        if (!g_db) { res.status = 500; return; }
+        try {
+            auto j = mysti::json::parse(req.body);
+            std::string name = j.value("name", "");
+            if (name.empty()) { res.status = 400; return; }
+            g_db->delete_style(name);
+            res.set_content(R"({"status":"success"})", "application/json");
+        } catch(...) { res.status = 400; }
+    });
+
     svr.Post("/v1/history/tags", [&](const httplib::Request& req, httplib::Response& res) {
         if (!g_db) { res.status = 500; return; }
         try {

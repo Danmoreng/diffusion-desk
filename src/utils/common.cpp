@@ -80,6 +80,25 @@ std::string argv_to_utf8(int index, const char** argv) {
 }
 #endif
 
+std::string extract_json_block(const std::string& content) {
+    size_t obj_start = content.find("{");
+    size_t obj_end = content.rfind("}");
+    size_t arr_start = content.find("[");
+    size_t arr_end = content.rfind("]");
+    
+    // Prefer array if starts earlier or no object
+    if (arr_start != std::string::npos && (obj_start == std::string::npos || arr_start < obj_start)) {
+         return content.substr(arr_start, arr_end - arr_start + 1);
+    }
+    
+    if (obj_start != std::string::npos && (arr_start == std::string::npos || obj_start < arr_start)) {
+        return content.substr(obj_start, obj_end - obj_start + 1);
+    } else if (arr_start != std::string::npos) {
+        return content.substr(arr_start, arr_end - arr_start + 1);
+    }
+    return "";
+}
+
 static void print_utf8(FILE* stream, const char* utf8) {
     if (!utf8)
         return;

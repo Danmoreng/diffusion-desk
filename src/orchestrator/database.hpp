@@ -33,6 +33,12 @@ struct TagInfo {
     int count;
 };
 
+struct Style {
+    std::string name;
+    std::string prompt;
+    std::string negative_prompt;
+};
+
 class Database {
 public:
     explicit Database(const std::string& db_path);
@@ -53,6 +59,11 @@ public:
     std::string get_generation_filepath(const std::string& uuid);
     mysti::json get_generations(int limit = 50, int offset = 0, const std::vector<std::string>& tags = {}, const std::string& model = "", int min_rating = 0);
     mysti::json get_tags();
+    
+    // Styles
+    void save_style(const Style& style);
+    mysti::json get_styles();
+    void delete_style(const std::string& name);
     
     // Model Metadata
     void save_model_metadata(const std::string& model_hash, const mysti::json& metadata);

@@ -43,9 +43,6 @@ private:
     std::mutex m_cv_mutex;
     
     std::function<std::string()> m_model_provider;
-
-    // Helper to extract JSON from LLM response
-    std::string extract_json(const std::string& content);
 };
 
 } // namespace mysti

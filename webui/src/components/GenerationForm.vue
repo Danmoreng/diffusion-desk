@@ -137,6 +137,7 @@ watch(scaleFactor, () => {
 // Initialize range
 onMounted(() => {
   updateStepRange()
+  store.fetchStyles()
 })
 
 // When width or height change manually, recalculate our steps
@@ -488,6 +489,42 @@ const clearInitImage = () => {
             </div>
           </div>
         </div>
+      </div>
+
+      <!-- Style Selection -->
+      <div class="mb-4">
+        <label class="x-small text-muted mb-1 d-block text-uppercase fw-bold">Generation Style(s):</label>
+        
+        <div class="d-flex flex-wrap gap-1 mb-2" v-if="store.activeStyleNames.length > 0">
+          <span 
+            v-for="styleName in store.activeStyleNames" 
+            :key="styleName" 
+            class="badge bg-primary bg-opacity-10 text-primary border border-primary border-opacity-25 d-flex align-items-center gap-1"
+          >
+            {{ styleName }}
+            <span role="button" @click="store.activeStyleNames = store.activeStyleNames.filter(s => s !== styleName)" class="text-danger small" style="cursor: pointer;">&times;</span>
+          </span>
+        </div>
+
+        <select 
+          class="form-select form-select-sm border-0 bg-body-secondary shadow-none" 
+          @change="(e) => {
+            const val = (e.target as HTMLSelectElement).value;
+            if (val && !store.activeStyleNames.includes(val)) {
+              store.activeStyleNames.push(val);
+            }
+            (e.target as HTMLSelectElement).value = '';
+          }"
+        >
+          <option value="" selected disabled>+ Add Style...</option>
+          <option 
+            v-for="style in store.styles.filter(s => !store.activeStyleNames.includes(s.name))" 
+            :key="style.name" 
+            :value="style.name"
+          >
+            {{ style.name }}
+          </option>
+        </select>
       </div>
 
       <div class="d-grid">
