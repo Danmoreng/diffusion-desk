@@ -929,13 +929,14 @@ int run_orchestrator(int argc, const char** argv, SDSvrParams& svr_params) {
              // Construct LLM Request
              mysti::json chat_req;
              chat_req["messages"] = mysti::json::array({
-                 {{"role", "system"}, {"content", "You are an expert art style analyzer. Analyze the given image prompt and extract distinct art styles, artists, or aesthetic descriptors. Return a JSON array of objects, where each object has 'name' (concise style name), 'prompt' (the specific style keywords to append, MUST include '{prompt}' placeholder), and 'negative_prompt' (optional tags to avoid). Make sure 'name' is unique and descriptive. Example: [{\"name\": \"Cyberpunk\", \"prompt\": \"{prompt}, cyberpunk, neon lights, high tech\", \"negative_prompt\": \"organic, natural\"}]"}},
+                 {{"role", "system"}, {"content", "You are an expert art style analyzer. Analyze the given image prompt and extract distinct art styles, artists, or aesthetic descriptors. Return a JSON object with a 'styles' key containing an array of objects. Each style object must have 'name' (concise style name), 'prompt' (keywords to append, MUST include '{prompt}' placeholder), and 'negative_prompt' (optional tags to avoid). Example: {\"styles\": [{\"name\": \"Cyberpunk\", \"prompt\": \"{prompt}, cyberpunk, neon lights\", \"negative_prompt\": \"organic\"}]}"}},
                  {{"role", "user"}, {"content", input_prompt}}
              });
-             chat_req["temperature"] = 0.3;
+             chat_req["temperature"] = 0.2;
+             chat_req["max_tokens"] = 1024;
              chat_req["response_format"] = {{"type", "json_object"}};
 
-             cli.set_read_timeout(120);
+             cli.set_read_timeout(180);
              auto chat_res = cli.Post("/v1/chat/completions", h, chat_req.dump(), "application/json");
 
              if (chat_res && chat_res->status == 200) {
@@ -945,17 +946,22 @@ int run_orchestrator(int argc, const char** argv, SDSvrParams& svr_params) {
                      std::string json_part = extract_json_block(content);
                      
                      if (!json_part.empty()) {
-                         auto styles_json = mysti::json::parse(json_part);
                          mysti::json styles_arr = mysti::json::array();
-                         
-                         if (styles_json.is_array()) {
-                             styles_arr = styles_json;
-                         } else if (styles_json.is_object()) {
-                             if (styles_json.contains("styles")) {
-                                 styles_arr = styles_json["styles"];
-                             } else if (styles_json.contains("name")) {
-                                 styles_arr.push_back(styles_json);
+                         try {
+                             auto styles_json = mysti::json::parse(json_part);
+                             if (styles_json.is_array()) {
+                                 styles_arr = styles_json;
+                             } else if (styles_json.is_object()) {
+                                 if (styles_json.contains("styles")) {
+                                     styles_arr = styles_json["styles"];
+                                 } else if (styles_json.contains("name")) {
+                                     styles_arr.push_back(styles_json);
+                                 }
                              }
+                         } catch (const std::exception& parse_err) {
+                             std::cerr << "[Style Extraction] JSON parse error: " << parse_err.what() << std::endl;
+                             std::cerr << "[Style Extraction] Raw content: " << content << std::endl;
+                             throw; // Re-throw to be caught by outer catch
                          }
 
                          int saved_count = 0;

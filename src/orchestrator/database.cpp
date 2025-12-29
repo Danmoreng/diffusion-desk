@@ -161,13 +161,13 @@ void Database::save_generation(const mysti::json& j) {
         query.bind(2, file_path);
         query.bind(3, j.value("prompt", ""));
         query.bind(4, j.value("negative_prompt", ""));
-        query.bind(5, (long long)j.value("seed", -1LL));
+        query.bind(5, (int64_t)j.value("seed", -1LL));
         query.bind(6, j.value("width", 512));
         query.bind(7, j.value("height", 512));
-        query.bind(8, j.value("steps", 20));
-        query.bind(9, j.value("cfg_scale", 7.0));
+        query.bind(8, (int)j.value("steps", 20));
+        query.bind(9, (double)j.value("cfg_scale", 7.0));
         query.bind(10, j.value("model_hash", ""));
-        query.bind(11, j.value("generation_time", 0.0));
+        query.bind(11, (double)j.value("generation_time", 0.0));
         
         if (j.contains("parent_uuid") && !j["parent_uuid"].is_null()) {
             query.bind(12, j["parent_uuid"].get<std::string>());
