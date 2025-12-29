@@ -601,16 +601,22 @@ int run_orchestrator(int argc, const char** argv, SDSvrParams& svr_params) {
         int limit = 50;
         int offset = 0;
         int min_rating = 0;
-        std::string tag = "";
+        std::vector<std::string> tags;
         std::string model = "";
         
         if (req.has_param("limit")) limit = std::stoi(req.get_param_value("limit"));
         if (req.has_param("offset")) offset = std::stoi(req.get_param_value("offset"));
-        if (req.has_param("tag")) tag = req.get_param_value("tag");
+        
+        // Handle multiple tags
+        auto count = req.get_param_value_count("tag");
+        for (size_t i = 0; i < count; ++i) {
+            tags.push_back(req.get_param_value("tag", i));
+        }
+
         if (req.has_param("model")) model = req.get_param_value("model");
         if (req.has_param("min_rating")) min_rating = std::stoi(req.get_param_value("min_rating"));
 
-        auto results = g_db->get_generations(limit, offset, tag, model, min_rating);
+        auto results = g_db->get_generations(limit, offset, tags, model, min_rating);
         res.set_content(results.dump(), "application/json");
     });
 
@@ -643,8 +649,16 @@ int run_orchestrator(int argc, const char** argv, SDSvrParams& svr_params) {
             std::string tag = j.value("tag", "");
             if (uuid.empty() || tag.empty()) { res.status = 400; return; }
             g_db->remove_tag(uuid, tag);
+            // Auto-cleanup unused tags
+            g_db->delete_unused_tags();
             res.set_content(R"({"status":"success"})", "application/json");
         } catch(...) { res.status = 400; }
+    });
+
+    svr.Post("/v1/history/tags/cleanup", [&](const httplib::Request& req, httplib::Response& res) {
+        if (!g_db) { res.status = 500; return; }
+        g_db->delete_unused_tags();
+        res.set_content(R"({"status":"success"})", "application/json");
     });
 
     svr.Post("/v1/history/favorite", [&](const httplib::Request& req, httplib::Response& res) {

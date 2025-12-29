@@ -179,6 +179,13 @@ void Database::remove_generation(const std::string& uuid) {
         SQLite::Statement query(m_db, "DELETE FROM generations WHERE uuid = ?");
         query.bind(1, uuid);
         query.exec();
+        
+        // Auto-cleanup unused tags
+        // Note: We don't need lock here because delete_unused_tags handles its own lock,
+        // BUT remove_generation is currently lock-free in this implementation (relies on WAL/SQLite thread safety for single statement).
+        // However, delete_unused_tags USES a lock. Mixing locked and non-locked is fine if they are independent transactions.
+        // Ideally, remove_generation should also be locked if it were complex.
+        delete_unused_tags(); 
     } catch (const std::exception& e) {
         std::cerr << "[Database] remove_generation failed: " << e.what() << std::endl;
     }
@@ -236,38 +243,41 @@ mysti::json Database::get_model_metadata(const std::string& model_hash) {
     return result;
 }
 
-mysti::json Database::get_generations(int limit, int offset, const std::string& tag, const std::string& model, int min_rating) {
+mysti::json Database::get_generations(int limit, int offset, const std::vector<std::string>& tags, const std::string& model, int min_rating) {
     std::lock_guard<std::mutex> lock(m_mutex);
     mysti::json results = mysti::json::array();
     try {
-        std::string sql = "SELECT g.* FROM generations g ";
-        bool has_where = false;
-        if (!tag.empty()) {
-            sql += "JOIN image_tags it ON g.id = it.generation_id ";
-            sql += "JOIN tags t ON it.tag_id = t.id ";
-            sql += "WHERE t.name = ? ";
-            has_where = true;
+        std::string sql = "SELECT g.* FROM generations g WHERE 1=1 ";
+        
+        // Tags Filter (AND logic)
+        if (!tags.empty()) {
+            sql += "AND g.id IN (SELECT it.generation_id FROM image_tags it JOIN tags t ON it.tag_id = t.id WHERE t.name IN (";
+            for (size_t i = 0; i < tags.size(); ++i) {
+                sql += (i == 0 ? "?" : ", ?");
+            }
+            sql += ") GROUP BY it.generation_id HAVING COUNT(DISTINCT t.id) = ?) ";
         }
         
         if (!model.empty()) {
-            sql += has_where ? "AND " : "WHERE ";
-            sql += "g.model_hash = ? ";
-            has_where = true;
+            sql += "AND g.model_hash = ? ";
         }
 
         if (min_rating > 0) {
-            sql += has_where ? "AND " : "WHERE ";
-            sql += "g.rating >= ? ";
-            has_where = true;
+            sql += "AND g.rating >= ? ";
         }
 
         sql += "ORDER BY g.timestamp DESC LIMIT ? OFFSET ?";
 
         SQLite::Statement query(m_db, sql);
         int bind_idx = 1;
-        if (!tag.empty()) {
-            query.bind(bind_idx++, tag);
+        
+        if (!tags.empty()) {
+            for (const auto& tag : tags) {
+                query.bind(bind_idx++, tag);
+            }
+            query.bind(bind_idx++, (int)tags.size());
         }
+
         if (!model.empty()) {
             query.bind(bind_idx++, model);
         }
@@ -454,6 +464,16 @@ void Database::remove_tag(const std::string& uuid, const std::string& tag) {
         query.exec();
     } catch (const std::exception& e) {
         std::cerr << "[Database] remove_tag failed: " << e.what() << std::endl;
+    }
+}
+
+void Database::delete_unused_tags() {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    try {
+        // Delete tags that have no entries in image_tags
+        m_db.exec("DELETE FROM tags WHERE id NOT IN (SELECT DISTINCT tag_id FROM image_tags)");
+    } catch (const std::exception& e) {
+        std::cerr << "[Database] delete_unused_tags failed: " << e.what() << std::endl;
     }
 }
 

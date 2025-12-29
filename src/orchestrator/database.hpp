@@ -51,7 +51,7 @@ public:
     void set_rating(const std::string& uuid, int rating);
     void remove_generation(const std::string& uuid);
     std::string get_generation_filepath(const std::string& uuid);
-    mysti::json get_generations(int limit = 50, int offset = 0, const std::string& tag = "", const std::string& model = "", int min_rating = 0);
+    mysti::json get_generations(int limit = 50, int offset = 0, const std::vector<std::string>& tags = {}, const std::string& model = "", int min_rating = 0);
     mysti::json get_tags();
     
     // Model Metadata
@@ -69,6 +69,7 @@ public:
     void add_tag_by_id(int generation_id, const std::string& tag, const std::string& source = "user");
     
     void remove_tag(const std::string& uuid, const std::string& tag);
+    void delete_unused_tags();
     
     // Internal / Services
     // Returns list of (id, uuid, prompt)

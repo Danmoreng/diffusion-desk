@@ -6,6 +6,7 @@ import UpscaleView from '../views/UpscaleView.vue'
 import ExplorationView from '../views/ExplorationView.vue'
 import SettingsView from '../views/SettingsView.vue'
 import HistoryView from '../views/HistoryView.vue'
+import ManagerView from '../views/ManagerView.vue'
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -34,6 +35,11 @@ const router = createRouter({
       path: '/upscale',
       name: 'Upscale',
       component: UpscaleView
+    },
+    {
+      path: '/manager',
+      name: 'Manager',
+      component: ManagerView
     },
     {
       path: '/settings',
