@@ -63,6 +63,15 @@ export const useGenerationStore = defineStore('generation', () => {
   const outputDir = ref('outputs')
   const modelDir = ref('models')
 
+  // Style Management
+  interface Style {
+    name: string
+    prompt: string
+    negative_prompt: string
+  }
+  const styles = ref<Style[]>([])
+  const activeStyleNames = ref<string[]>([])
+
   // Model Management State
   const models = ref<any[]>([])
   const currentModel = ref<string>('')
@@ -543,9 +552,32 @@ export const useGenerationStore = defineStore('generation', () => {
   }
 
   async function requestImage(params: GenerationParams, signal?: AbortSignal): Promise<string[]> {
+    let finalPrompt = params.prompt
+    let finalNegativePrompt = params.negative_prompt
+
+    if (activeStyleNames.value.length > 0) {
+      for (const styleName of activeStyleNames.value) {
+          const style = styles.value.find(s => s.name === styleName)
+          if (style) {
+            // Apply positive prompt style
+            if (style.prompt) {
+              if (style.prompt.includes('{prompt}')) {
+                finalPrompt = style.prompt.replace('{prompt}', finalPrompt)
+              } else {
+                finalPrompt = finalPrompt + (finalPrompt ? ', ' : '') + style.prompt
+              }
+            }
+            // Apply negative prompt style
+            if (style.negative_prompt) {
+              finalNegativePrompt = finalNegativePrompt + (finalNegativePrompt ? ', ' : '') + style.negative_prompt
+            }
+          }
+      }
+    }
+
     const body: any = {
-      prompt: params.prompt,
-      negative_prompt: params.negative_prompt,
+      prompt: finalPrompt,
+      negative_prompt: finalNegativePrompt,
       sample_steps: params.steps,
       cfg_scale: params.cfgScale,
       strength: params.strength,
@@ -620,6 +652,77 @@ export const useGenerationStore = defineStore('generation', () => {
     const temp = width.value
     width.value = height.value
     height.value = temp
+  }
+
+  async function fetchStyles() {
+    try {
+      const response = await fetch('/v1/styles')
+      if (response.ok) {
+        styles.value = await response.json()
+      }
+    } catch (e) {
+      console.error('Failed to fetch styles:', e)
+    }
+  }
+
+  async function saveStyle(style: Style) {
+    try {
+      const response = await fetch('/v1/styles', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(style)
+      })
+      if (response.ok) {
+        await fetchStyles()
+      }
+    } catch (e) {
+      console.error('Failed to save style:', e)
+    }
+  }
+
+  async function deleteStyle(name: string) {
+    try {
+      const response = await fetch('/v1/styles', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name })
+      })
+      if (response.ok) {
+        await fetchStyles()
+      }
+    } catch (e) {
+      console.error('Failed to delete style:', e)
+    }
+  }
+
+  function applyStyle(styleName: string) {
+    if (activeStyleNames.value.includes(styleName)) {
+        activeStyleNames.value = activeStyleNames.value.filter(s => s !== styleName)
+    } else {
+        activeStyleNames.value.push(styleName)
+    }
+  }
+
+  async function extractStylesFromPrompt(promptText: string) {
+      if (!promptText) return;
+      isLlmThinking.value = true;
+      try {
+          const response = await fetch('/v1/styles/extract', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ prompt: promptText })
+          })
+          if (response.ok) {
+            styles.value = await response.json()
+          } else {
+              const err = await response.json()
+              throw new Error(err.error || 'Extraction failed')
+          }
+      } catch(e: any) {
+          error.value = e.message
+      } finally {
+          isLlmThinking.value = false;
+      }
   }
 
   function parseA1111Parameters(text: string) {
@@ -734,6 +837,7 @@ export const useGenerationStore = defineStore('generation', () => {
     progressStep, progressSteps, progressTime, progressPhase, progressMessage, eta, 
     lastParams, outputDir, modelDir, isLlmThinking, 
     promptHistory, historyIndex, canUndo, canRedo, undoPrompt, redoPrompt, commitPrompt,
-    updateConfig, reuseLastSeed, randomizeSeed, swapDimensions 
+    updateConfig, reuseLastSeed, randomizeSeed, swapDimensions,
+    styles, activeStyleNames, fetchStyles, saveStyle, deleteStyle, applyStyle, extractStylesFromPrompt
   }
 })

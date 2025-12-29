@@ -65,6 +65,7 @@ void set_log_verbose(bool verbose);
 void set_log_color(bool color);
 
 std::string generate_random_token(size_t length = 32);
+std::string extract_json_block(const std::string& content);
 
 
 struct StringOption {

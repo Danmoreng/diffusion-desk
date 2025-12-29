@@ -78,6 +78,16 @@ void Database::init_schema() {
             );
         )");
 
+        // Table: styles
+        m_db.exec(R"(
+            CREATE TABLE IF NOT EXISTS styles (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT UNIQUE NOT NULL,
+                prompt TEXT NOT NULL,
+                negative_prompt TEXT
+            );
+        )");
+
         // Table: prompt_templates
         m_db.exec(R"(
             CREATE TABLE IF NOT EXISTS prompt_templates (
@@ -357,6 +367,48 @@ mysti::json Database::get_tags() {
         std::cerr << "[Database] get_tags failed: " << e.what() << std::endl;
     }
     return results;
+}
+
+void Database::save_style(const Style& style) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    try {
+        SQLite::Statement query(m_db, "INSERT OR REPLACE INTO styles (name, prompt, negative_prompt) VALUES (?, ?, ?)");
+        query.bind(1, style.name);
+        query.bind(2, style.prompt);
+        query.bind(3, style.negative_prompt);
+        query.exec();
+    } catch (const std::exception& e) {
+        std::cerr << "[Database] save_style failed: " << e.what() << std::endl;
+    }
+}
+
+mysti::json Database::get_styles() {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    mysti::json results = mysti::json::array();
+    try {
+        SQLite::Statement query(m_db, "SELECT name, prompt, negative_prompt FROM styles ORDER BY name ASC");
+        while (query.executeStep()) {
+            mysti::json s;
+            s["name"] = query.getColumn(0).getText();
+            s["prompt"] = query.getColumn(1).getText();
+            s["negative_prompt"] = query.getColumn(2).getText();
+            results.push_back(s);
+        }
+    } catch (const std::exception& e) {
+        std::cerr << "[Database] get_styles failed: " << e.what() << std::endl;
+    }
+    return results;
+}
+
+void Database::delete_style(const std::string& name) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    try {
+        SQLite::Statement query(m_db, "DELETE FROM styles WHERE name = ?");
+        query.bind(1, name);
+        query.exec();
+    } catch (const std::exception& e) {
+        std::cerr << "[Database] delete_style failed: " << e.what() << std::endl;
+    }
 }
 
 bool Database::generation_exists(const std::string& file_path) {

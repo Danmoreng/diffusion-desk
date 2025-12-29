@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, nextTick, computed, watch } from 'vue'
+import { ref, onMounted, nextTick, computed, watch, onUnmounted } from 'vue'
 import { Modal, Carousel } from 'bootstrap'
 import { useGenerationStore } from '@/stores/generation'
 import { useRouter } from 'vue-router'
@@ -324,6 +324,41 @@ function toggleFilterTag(tag: string) {
   }
 }
 
+// Extract Modal State
+const extractModalRef = ref<HTMLElement | null>(null)
+let extractModalInstance: Modal | null = null
+const extractionPrompt = ref('')
+const isExtracting = ref(false)
+const extractionResult = ref('')
+
+function openExtractModalFromImage() {
+    const item = filteredImages.value[activeIndex.value]
+    if (item && item.params && item.params.prompt) {
+        extractionPrompt.value = item.params.prompt
+    } else {
+        extractionPrompt.value = ''
+    }
+    extractionResult.value = ''
+    
+    if (extractModalRef.value) {
+        extractModalInstance = new Modal(extractModalRef.value)
+        extractModalInstance.show()
+    }
+}
+
+async function doExtract() {
+    if (!extractionPrompt.value) return;
+    isExtracting.value = true;
+    try {
+        await store.extractStylesFromPrompt(extractionPrompt.value)
+        extractModalInstance?.hide()
+    } catch(e: any) {
+        extractionResult.value = e.message || 'Extraction failed'
+    } finally {
+        isExtracting.value = false;
+    }
+}
+
 // Expose for parent component
 defineExpose({
   columnsPerRow,
@@ -528,6 +563,10 @@ async function upscaleActiveImage() {
 onMounted(() => {
   fetchImages()
 })
+
+onUnmounted(() => {
+  extractModalInstance?.dispose()
+})
 </script>
 
 <template>
@@ -665,6 +704,13 @@ onMounted(() => {
                       ♻️ Reuse
                     </button>
                     <button 
+                      v-if="filteredImages[activeIndex]?.params?.prompt" 
+                      class="btn btn-outline-secondary btn-sm flex-grow-1"
+                      @click="openExtractModalFromImage()"
+                    >
+                      🪄 Extract
+                    </button>
+                    <button 
                       v-if="filteredImages[activeIndex]"
                       class="btn btn-outline-danger btn-sm flex-grow-1"
                       @click="deleteImage(filteredImages[activeIndex].id)"
@@ -749,6 +795,35 @@ onMounted(() => {
           </div>
         </div>
       </div>
+    </Teleport>
+
+    <!-- Extract Style Modal -->
+    <Teleport to="body">
+    <div class="modal fade" ref="extractModalRef" tabindex="-1" aria-hidden="true">
+      <div class="modal-dialog modal-lg modal-dialog-centered">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title">🪄 Extract Styles from Prompt</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+          </div>
+          <div class="modal-body">
+            <p class="text-muted small">The LLM will analyze the prompt below to extract reusable art styles, artists, or aesthetics.</p>
+            <div class="mb-3">
+              <label class="form-label fw-bold small">Source Prompt</label>
+              <textarea v-model="extractionPrompt" class="form-control" rows="5"></textarea>
+            </div>
+            <div v-if="extractionResult" class="alert alert-danger">{{ extractionResult }}</div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+            <button type="button" class="btn btn-success" @click="doExtract" :disabled="!extractionPrompt || isExtracting">
+                <span v-if="isExtracting" class="spinner-border spinner-border-sm me-1"></span>
+                Extract & Save
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
     </Teleport>
 
     <DeleteConfirmationModal 
