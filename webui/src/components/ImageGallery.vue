@@ -19,6 +19,10 @@ const props = defineProps<{
   initialTags?: string[]
 }>()
 
+const emit = defineEmits<{
+  (e: 'tag-click', tag: string): void
+}>()
+
 const store = useGenerationStore()
 const router = useRouter()
 
@@ -714,7 +718,7 @@ onMounted(() => {
                             class="badge bg-primary bg-opacity-10 text-primary border border-primary border-opacity-25 fw-normal d-flex align-items-center gap-1"
                           >
                             <span 
-                                @click="toggleFilterTag(tag); modalInstance?.hide()" 
+                                @click="emit('tag-click', tag); modalInstance?.hide()" 
                                 style="cursor: pointer;"
                                 :title="selectedTags.includes(tag) ? 'Remove from filter' : 'Filter by this tag'"
                             >

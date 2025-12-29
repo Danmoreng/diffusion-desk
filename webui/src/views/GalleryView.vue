@@ -65,10 +65,10 @@ function removeTagFilter(tag: string) {
 </script>
 
 <template>
-  <div class="history-view h-100 d-flex flex-column">
+  <div class="gallery-view h-100 d-flex flex-column">
     <div class="row mb-3 align-items-end g-3">
       <div class="col-12 col-xl-auto">
-        <h3 class="mb-0">Image History</h3>
+        <h3 class="mb-0">Gallery</h3>
         <div class="x-small text-muted mt-1" v-if="galleryRef">
           Showing {{ galleryRef.filteredCount }} of {{ galleryRef.totalCount }} images
         </div>
@@ -196,7 +196,11 @@ function removeTagFilter(tag: string) {
     </div>
     <hr class="mt-0 mb-4 opacity-10">
     <div class="flex-grow-1 overflow-auto">
-      <ImageGallery ref="galleryRef" :initial-tags="Array.isArray(route.query.tags) ? (route.query.tags as string[]) : (route.query.tags ? [route.query.tags as string] : [])" />
+      <ImageGallery 
+        ref="galleryRef" 
+        :initial-tags="Array.isArray(route.query.tags) ? (route.query.tags as string[]) : (route.query.tags ? [route.query.tags as string] : [])" 
+        @tag-click="(tag) => galleryRef?.toggleFilterTag(tag)"
+      />
     </div>
   </div>
 </template>

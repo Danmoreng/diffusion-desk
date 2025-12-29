@@ -5,7 +5,7 @@ import InpaintingView from '../views/InpaintingView.vue'
 import UpscaleView from '../views/UpscaleView.vue'
 import ExplorationView from '../views/ExplorationView.vue'
 import SettingsView from '../views/SettingsView.vue'
-import HistoryView from '../views/HistoryView.vue'
+import GalleryView from '../views/GalleryView.vue'
 import ManagerView from '../views/ManagerView.vue'
 
 const router = createRouter({
@@ -47,9 +47,9 @@ const router = createRouter({
       component: SettingsView
     },
     {
-      path: '/history',
-      name: 'History',
-      component: HistoryView
+      path: '/gallery',
+      name: 'Gallery',
+      component: GalleryView
     }
   ]
 })
