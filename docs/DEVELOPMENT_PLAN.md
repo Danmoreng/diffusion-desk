@@ -12,7 +12,7 @@ This document outlines the roadmap for MystiCanvas, merging original milestones 
 1.  **Stability through Isolation:** Orchestrator + specialized workers remains the default architecture.
 2.  **Predictability before Intelligence:** Solidify the substrate (DB, VRAM prediction) before adding "smart" agentic features.
 3.  **HTTP for IPC:** Keep HTTP for internal communication for debuggability; optimize only if proven bottleneck.
-4.  **Database as Memory:** All state (presets, styles, search, jobs) must be durable.
+4.  **Database as Memory:** All state (presets, prompt libraries, search, jobs) must be durable.
 
 ---
 
@@ -20,7 +20,10 @@ This document outlines the roadmap for MystiCanvas, merging original milestones 
 
 **Goal:** Make every core subsystem *inspectable*, *restartable*, and *consistent*.
 
-*   [x] **A1. Standardize Contracts:** `internal/health` endpoints, consistent error shapes, internal token auth. (Completed in Refactor)
+*   [ ] **A1. Standardize Contracts (Verify):**
+    *   [ ] Ensure all workers return standard health object: `{ ok, service, version, model_loaded, vram_allocated_mb, vram_free_mb }`.
+    *   [ ] Ensure all endpoints use standard error envelope.
+    *   [ ] Verify internal token auth on *all* routes (including proxy).
 *   [ ] **A2. Worker Lifecycle Resilience:**
     *   Orchestrator monitors worker health.
     *   Automatic restart on crash.
@@ -28,6 +31,26 @@ This document outlines the roadmap for MystiCanvas, merging original milestones 
 *   [ ] **A3. Structured Logs & Correlation:**
     *   Add request IDs to logs.
     *   Structured JSON logging for easy parsing.
+*   [ ] **A4. UI Modularity & Stores:**
+    *   Extract `Sidebar.vue` sub-components (e.g., `VramIndicator.vue`, `ModelSelector.vue`).
+    *   Move business rules (validation, generation logic) from components into Pinia store actions.
+*   [ ] **A5. Config Hygiene:**
+    *   Move hardcoded system prompts (Assistant, Tagger) to `config.json`.
+    *   Externalize tool schemas/descriptions.
+
+**Definition of Done:**
+*   `curl /internal/health` works uniformly across all services.
+*   UI components do not contain generation logic; they only invoke Store actions.
+*   No prompt text exists in `.cpp` or `.ts` files; all are loaded from config.
+
+---
+
+## Release B0 — "Stop the Bleeding" (Immediate Reliability)
+
+**Goal:** Prevent silent failures and improve error visibility before full VRAM system is ready.
+
+*   [ ] **B0.1. Fail Loudly:** Detect "blank output" or generation failure and return hard error to UI.
+*   [ ] **B0.2. Conservative Retry:** Implement single retry with conservative settings on OOM/failure.
 
 ---
 
@@ -41,13 +64,21 @@ This document outlines the roadmap for MystiCanvas, merging original milestones 
 *   [ ] **B2. Predictive Arbitration (Orchestrator):**
     *   Compute expected VRAM (Weights + Compute + Safety).
     *   Logic: Proceed vs. Soft Unload (KV) vs. Hard Unload.
+*   [ ] **B2.5. Latency-Optimized State Transitions:**
+    *   LRU / Idle unload policy (e.g., "unload after 10m idle").
+    *   Pre-warm models when resources allow.
 *   [ ] **B3. Surgical Worker-Level Mitigations:**
     *   Dynamic VAE tiling based on resolution.
     *   Auto VAE-on-CPU fallback if VRAM is tight.
-    *   OOM retry path (re-init with conservative settings).
+    *   **B3.4 Text Encoder Offload:** Enable `clip_on_cpu` for massive encoders (e.g., T5XXL) per preset.
 *   [ ] **B4. UI Feedback:**
     *   Indicate "Projected vs Actual" VRAM.
     *   Notifications for "VAE moved to CPU" or "LLM Unloaded".
+
+**Definition of Done:**
+*   Zero "silent crashes" or blank images due to VRAM.
+*   System creates specific log entry when falling back to CPU or unloading.
+*   Idle models unload automatically after configured timeout.
 
 ---
 
@@ -73,6 +104,14 @@ This document outlines the roadmap for MystiCanvas, merging original milestones 
 *   [ ] **C6. Job Queue:**
     *   `jobs` table for background tasks (Auto-tagging, Thumbnails).
     *   Job runner service in Orchestrator.
+*   [ ] **C7. Prompt Library (Generalized Styles):**
+    *   `prompt_library` table: `id`, `label`, `content`, `category`, `created_at`.
+    *   Categories: "Style", "Character", "Lighting", "Negative", etc.
+
+**Definition of Done:**
+*   Database upgrades automatically without data loss.
+*   Gallery pagination remains instant (>50fps equivalent) with 50k items.
+*   Jobs persist across application restarts.
 
 ---
 
@@ -81,14 +120,19 @@ This document outlines the roadmap for MystiCanvas, merging original milestones 
 **Goal:** Formalize model stacks to enable reliable VRAM prediction and user convenience.
 
 *   [ ] **D1. Preset Schema:**
-    *   `image_presets` table: `unet`, `vae`, `clip`, `vram_weights_mb`, `default_params`.
-    *   `llm_presets` table: `model`, `mmproj`, `n_ctx`, `capabilities`.
+    *   `image_presets` table: `unet`, `vae`, `clip`, `vram_weights_mb_estimate`, `vram_weights_mb_measured`, `default_params`, `preferred_params`.
+    *   `llm_presets` table: `model`, `mmproj`, `n_ctx`, `capabilities`, `role` (e.g., "Vision", "Assistant").
 *   [ ] **D2. Preset Manager UI:**
     *   Interface to assemble/edit presets.
-    *   Auto-calculate VRAM estimates from file sizes.
+    *   Auto-calculate VRAM estimates from file sizes (heuristic).
+    *   Update `vram_weights_mb_measured` from actual usage reports.
 *   [ ] **D3. Runtime Integration:**
     *   Orchestrator loads by Preset ID.
     *   VRAM Arbiter uses preset metadata for predictions.
+
+**Definition of Done:**
+*   User can switch between "SDXL High Quality" and "Flux Fast" with one click.
+*   VRAM prediction accuracy improves over time (using measured vs. estimated).
 
 ---
 
@@ -98,13 +142,16 @@ This document outlines the roadmap for MystiCanvas, merging original milestones 
 
 *   [ ] **E1. Assistant UI:** Persistent sidebar chat drawer.
 *   [ ] **E2. Tool Definition:**
-    *   `get_styles()`, `apply_style()`, `enhance_prompt()`, `search_history()`.
+    *   `get_library_items(category)`, `apply_style()`, `enhance_prompt()`, `search_history()` (Depends on C4).
 *   [ ] **E3. Safety Rails:**
     *   Orchestrator executes tools (not the LLM worker directly).
     *   Permission checks and loop prevention.
-*   [ ] **E4. Style Library:**
-    *   `styles` table (Completed).
-    *   UI to save/apply styles.
+*   [ ] **E4. Integration:**
+    *   Connect `prompt_library` (C7) to Assistant context.
+
+**Definition of Done:**
+*   Assistant can "Find that blue robot image I made yesterday" (FTS + History).
+*   Assistant can "Apply the 'Cinematic' style" (Library Tool).
 
 ---
 
@@ -112,10 +159,22 @@ This document outlines the roadmap for MystiCanvas, merging original milestones 
 
 **Goal:** Image-grounded intelligence.
 
-*   [ ] **F1. Vision Presets:** Support `mmproj` in LLM presets.
+*   [ ] **F1. Vision Presets:** Support `mmproj` in LLM presets (Depends on D1).
 *   [ ] **F2. Image Handoff:** Mechanism to pass image paths to LLM worker.
-*   [ ] **F3. Vision Tagging Job:** Background job to tag images based on visual content.
+*   [ ] **F3. Vision Tagging Job:** Background job to tag images based on visual content (Depends on C6 + D1).
 *   [ ] **F4. Feedback Loop:** "Analyze last image and suggest improvements."
+
+---
+
+## Release H — Real-time Control
+
+**Goal:** Responsive user experience and dynamic interaction.
+
+*   [ ] **H1. Request Cancellation:**
+    *   Support canceling pending/active generation requests.
+    *   (Blocked by upstream `stable-diffusion.cpp` support, implement signaling first).
+*   [ ] **H2. Dynamic Updates:**
+    *   Allow parameter updates (e.g., guidance scale) during generation if supported.
 
 ---
 
@@ -125,12 +184,26 @@ This document outlines the roadmap for MystiCanvas, merging original milestones 
 
 *   [ ] **G1. Build Automation:** One-command release build.
 *   [ ] **G2. Installer:** Inno Setup / NSIS.
+*   [ ] **G2.1. First-Run Wizard:**
+    *   Set model paths.
+    *   Download curated baseline models.
+    *   Validate GPU capability + VRAM.
+    *   Write initial `config.json`.
 *   [ ] **G3. IPC Hardening:** Optional Named Pipes support (if needed).
 
 ---
 
+## Cross-Cutting & Maintainability
+
+*   **Safety:** Ensure stable-diffusion "blank output" is treated as an error (Release B0).
+*   **Refactoring:** Continue RAII adoption (SD context, Upscaler context).
+*   **Dependencies:**
+    *   E2 (`search_history`) depends on C4 (FTS5).
+    *   F3 (Vision Tagging) depends on C6 (Jobs) + D1 (Vision Presets).
+
 ## Priority Order (Next Steps)
 
-1.  **Release C (DB Hardening):** Unlocks safe schema evolution for Presets/Jobs.
-2.  **Release B (VRAM v2):** Fixes reliability/OOM issues.
-3.  **Release D (Presets):** Improves UX and enables accurate VRAM prediction.
+1.  **Release B0 (Stop the Bleeding):** Immediate reliability fixes.
+2.  **Release C (DB Hardening):** Unlocks safe schema evolution for Presets/Jobs.
+3.  **Release B (VRAM v2):** Fixes reliability/OOM issues comprehensively.
+4.  **Release D (Presets):** Improves UX and enables accurate VRAM prediction.
