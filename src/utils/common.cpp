@@ -201,6 +201,11 @@ void set_log_color(bool color) {
     log_color = color;
 }
 
+void sd_log_cb(enum sd_log_level_t level, const char* log, void* data) {
+    SDSvrParams* svr_params = (SDSvrParams*)data;
+    log_print(level, log, svr_params->verbose, svr_params->color);
+}
+
 std::string generate_random_token(size_t length) {
     static const char charset[] =
         "0123456789"

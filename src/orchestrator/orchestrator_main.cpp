@@ -76,6 +76,7 @@ int run_orchestrator(int argc, const char** argv, SDSvrParams& svr_params) {
 #ifdef _WIN32
     SetConsoleCtrlHandler(ConsoleCtrlHandler, TRUE);
 #endif
+    sd_set_log_callback(sd_log_cb, (void*)&svr_params);
     try {
         g_db = std::make_shared<mysti::Database>("mysti.db");
         g_db->init_schema();

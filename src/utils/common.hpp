@@ -62,6 +62,7 @@ std::map<int, float> get_vram_usage_map();
 
 // Logging
 void log_print(enum sd_log_level_t level, const char* log, bool verbose, bool color);
+void sd_log_cb(enum sd_log_level_t level, const char* log, void* data);
 void set_log_verbose(bool verbose);
 void set_log_color(bool color);
 
