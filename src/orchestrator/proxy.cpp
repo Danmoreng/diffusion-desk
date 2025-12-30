@@ -1,4 +1,5 @@
 #include "proxy.hpp"
+#include "utils/common.hpp"
 #include <iostream>
 #include <thread>
 #include <queue>
@@ -46,6 +47,7 @@ private:
 
 void Proxy::forward_request(const httplib::Request& req, httplib::Response& res, const std::string& host, int port, const std::string& target_path, const std::string& internal_token) {
     std::string path = target_path.empty() ? req.path : target_path;
+    LOG_DEBUG("Forwarding %s %s -> %s:%d", req.method.c_str(), path.c_str(), host.c_str(), port);
     
     // Copy headers and remove hop-by-hop
     httplib::Headers headers = req.headers;
@@ -64,6 +66,7 @@ void Proxy::forward_request(const httplib::Request& req, httplib::Response& res,
                          path.find("/llm/load") != std::string::npos;
     
     if (is_completion) {
+        LOG_DEBUG("Using streaming proxy for %s", path.c_str());
         auto queue = std::make_shared<ChunkQueue>();
         auto status = std::make_shared<std::atomic<int>>(0);
         auto content_type = std::make_shared<std::string>("application/json");
@@ -77,7 +80,7 @@ void Proxy::forward_request(const httplib::Request& req, httplib::Response& res,
             cli.set_write_timeout(300, 0);
 
             // Define lambdas with explicit types to help overload resolution
-            httplib::ContentReceiver content_receiver = [queue](const char *data, size_t data_length) {
+            httplib::ContentReceiver content_receiver = [queue, path](const char *data, size_t data_length) {
                 queue->push(std::string(data, data_length));
                 return true;
             };
@@ -131,6 +134,7 @@ void Proxy::forward_request(const httplib::Request& req, httplib::Response& res,
         }
 
         if (*status == 0) {
+            LOG_ERROR("Proxy timeout waiting for headers from %s:%d%s", host.c_str(), port, path.c_str());
             res.status = 504;
             res.set_content("{\"error\":\"Worker timeout during header wait\"}", "application/json");
             return;
@@ -168,6 +172,7 @@ void Proxy::forward_request(const httplib::Request& req, httplib::Response& res,
         }
         
         if (result) {
+            LOG_DEBUG("Forward response: %d", result->status);
             res.status = result->status;
             res.set_content(result->body, result->get_header_value("Content-Type"));
             for (const auto& h : result->headers) {
@@ -176,6 +181,7 @@ void Proxy::forward_request(const httplib::Request& req, httplib::Response& res,
                 }
             }
         } else {
+            LOG_ERROR("Proxy failed to connect to worker at %s:%d", host.c_str(), port);
             res.status = 502;
             res.set_content("{\"error\":\"Proxy failed to connect to worker\"}", "application/json");
         }
