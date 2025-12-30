@@ -143,6 +143,7 @@ void ServiceController::register_routes(httplib::Server& svr, const SDSvrParams&
     };
 
     svr.Post("/v1/models/load", [this](const httplib::Request& req, httplib::Response& res) {
+        LOG_INFO("Request: POST /v1/models/load, Body: %s", req.body.c_str());
         std::string modified_body = req.body;
         if (m_db) {
             try {
@@ -154,6 +155,7 @@ void ServiceController::register_routes(httplib::Server& svr, const SDSvrParams&
                         if (meta.contains("vae") && !meta["vae"].get<std::string>().empty()) j["vae"] = meta["vae"];
                         if (meta.contains("llm") && !meta["llm"].get<std::string>().empty()) j["llm"] = meta["llm"];
                         modified_body = j.dump();
+                        LOG_DEBUG("Model metadata applied. Modified body: %s", modified_body.c_str());
                     }
                 }
             } catch(...) {}
@@ -162,20 +164,28 @@ void ServiceController::register_routes(httplib::Server& svr, const SDSvrParams&
         mod_req.body = modified_body;
         Proxy::forward_request(mod_req, res, "127.0.0.1", m_sd_port, "", m_token);
         if (res.status == 200) {
+            LOG_INFO("Model loaded successfully: %s", modified_body.c_str());
             std::lock_guard<std::mutex> lock(m_state_mutex);
             m_last_sd_model_req_body = modified_body;
+        } else {
+            LOG_ERROR("Failed to load model. Status: %d", res.status);
         }
     });
 
     svr.Post("/v1/llm/load", [this](const httplib::Request& req, httplib::Response& res) {
+        LOG_INFO("Request: POST /v1/llm/load, Body: %s", req.body.c_str());
         Proxy::forward_request(req, res, "127.0.0.1", m_llm_port, "", m_token);
         if (res.status == 200) {
+            LOG_INFO("LLM model loaded successfully.");
             std::lock_guard<std::mutex> lock(m_state_mutex);
             m_last_llm_model_req_body = req.body;
+        } else {
+            LOG_ERROR("Failed to load LLM model. Status: %d", res.status);
         }
     });
 
     svr.Post("/v1/images/generations", [this, params](const httplib::Request& req, httplib::Response& res) {
+        LOG_INFO("Request: POST /v1/images/generations");
         m_res_mgr->prepare_for_sd_generation(4.0f);
         std::string modified_body = req.body;
         httplib::Headers h;
@@ -184,6 +194,7 @@ void ServiceController::register_routes(httplib::Server& svr, const SDSvrParams&
         if (m_db) {
             try {
                 auto req_j = mysti::json::parse(req.body);
+                LOG_DEBUG("Generation params: %s", req_j.dump(2).c_str());
                 httplib::Client cli("127.0.0.1", m_sd_port);
                 if (auto c_res = cli.Get("/v1/config", h)) {
                     auto c_j = mysti::json::parse(c_res->body);
@@ -202,6 +213,7 @@ void ServiceController::register_routes(httplib::Server& svr, const SDSvrParams&
                             }
                             if (!req_j.contains("cfg_scale") || req_j["cfg_scale"] == 7.0) { if (meta.contains("cfg_scale")) req_j["cfg_scale"] = meta["cfg_scale"]; }
                             modified_body = req_j.dump();
+                            LOG_DEBUG("Applied model defaults for generation.");
                         }
                     }
                 }
@@ -213,7 +225,9 @@ void ServiceController::register_routes(httplib::Server& svr, const SDSvrParams&
         Proxy::forward_request(mod_req, res, "127.0.0.1", m_sd_port, "", m_token);
         
         if (res.status == 200 && m_db) {
+            LOG_INFO("Image generation request completed successfully.");
             try {
+
                 auto req_json = mysti::json::parse(modified_body);
                 auto res_json = mysti::json::parse(res.body);
                 std::string uuid = res_json.value("id", ""); 
