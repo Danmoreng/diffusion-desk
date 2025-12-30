@@ -87,7 +87,7 @@ function removeTagFilter(tag: string) {
                 :disabled="galleryRef.selectedCount === 0"
                 @click="galleryRef.deleteSelected()"
              >
-                <span>🗑️ Delete</span>
+                <span><i class="bi bi-trash"></i> Delete</span>
                 <span class="badge bg-white text-danger rounded-pill">{{ galleryRef.selectedCount }}</span>
              </button>
              <div class="vr mx-1"></div>
@@ -121,7 +121,7 @@ function removeTagFilter(tag: string) {
                  class="badge bg-primary bg-opacity-10 text-primary border border-primary border-opacity-25 d-flex align-items-center gap-1"
                >
                  {{ tag }}
-                 <span role="button" @click="removeTagFilter(tag)" class="text-danger small" style="cursor: pointer;">&times;</span>
+                 <span role="button" @click="removeTagFilter(tag)" class="text-danger small" style="cursor: pointer;"><i class="bi bi-x"></i></span>
                </span>
             </div>
 

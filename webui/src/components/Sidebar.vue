@@ -80,13 +80,13 @@ const handleModelChange = (event: Event) => {
 }
 
 const menuItems = [
-  { path: '/', label: 'Text-to-Image', icon: '🎨' },
-  { path: '/img2img', label: 'Image-to-Image', icon: '🖼️' },
-  { path: '/inpainting', label: 'Inpainting', icon: '🖌️' },
-  { path: '/upscale', label: 'Upscale', icon: '✨' },
-  { path: '/exploration', label: 'Dynamic Exploration', icon: '🔍' },
-  { path: '/gallery', label: 'Gallery', icon: '🖼️' },
-  { path: '/manager', label: 'Library', icon: '📚' },
+  { path: '/', label: 'Text-to-Image', icon: 'bi-palette' },
+  { path: '/img2img', label: 'Image-to-Image', icon: 'bi-image' },
+  { path: '/inpainting', label: 'Inpainting', icon: 'bi-brush' },
+  { path: '/upscale', label: 'Upscale', icon: 'bi-stars' },
+  { path: '/exploration', label: 'Dynamic Exploration', icon: 'bi-search' },
+  { path: '/gallery', label: 'Gallery', icon: 'bi-images' },
+  { path: '/manager', label: 'Library', icon: 'bi-collection' },
 ]
 </script>
 
@@ -149,7 +149,7 @@ const menuItems = [
           @click.stop="toggleModelMenu"
           title="Switch SD Model"
         >
-          🖼️
+          <i class="bi bi-image"></i>
         </button>
         
         <!-- SD Custom Dropdown -->
@@ -167,7 +167,7 @@ const menuItems = [
                 :disabled="store.isModelSwitching || store.isGenerating"
               >
                 <span class="text-truncate">{{ model.name }}</span>
-                <span v-if="model.id === store.currentModel" class="ms-2">✅</span>
+                <i v-if="model.id === store.currentModel" class="bi bi-check-lg ms-2"></i>
               </button>
             </template>
           </div>
@@ -182,7 +182,7 @@ const menuItems = [
           @click.stop="toggleLlmMenu"
           title="Switch Intelligence Model"
         >
-          🧠
+          <i class="bi bi-cpu"></i>
           <span v-if="store.currentLlmModel" class="position-absolute bottom-0 end-0 translate-middle-x p-1 border border-light rounded-circle" :class="store.isLlmLoaded ? 'bg-success' : 'bg-secondary'" style="width: 8px; height: 8px;"></span>
         </button>
 
@@ -205,7 +205,7 @@ const menuItems = [
               :disabled="store.isLlmLoading || store.isGenerating"
             >
               <span class="text-truncate">{{ model.name }}</span>
-              <span v-if="model.id === store.currentLlmModel" class="ms-2">✅</span>
+              <i v-if="model.id === store.currentLlmModel" class="bi bi-check-lg ms-2"></i>
             </button>
           </div>
         </div>
@@ -225,7 +225,7 @@ const menuItems = [
             data-bs-toggle="tooltip"
             data-bs-placement="right"
           >
-            <span class="fs-5 me-2" :class="{ 'me-0': store.isSidebarCollapsed }">{{ item.icon }}</span>
+            <i class="fs-5 me-2 bi" :class="[item.icon, { 'me-0': store.isSidebarCollapsed }]"></i>
             <span v-if="!store.isSidebarCollapsed" class="text-truncate">{{ item.label }}</span>
           </router-link>
         </li>
@@ -293,7 +293,7 @@ const menuItems = [
         data-bs-toggle="tooltip"
         data-bs-placement="right"
       >
-        <span class="fs-5 me-2" :class="{ 'me-0': store.isSidebarCollapsed }">⚙️</span>
+        <i class="fs-5 me-2 bi bi-gear" :class="{ 'me-0': store.isSidebarCollapsed }"></i>
         <span v-if="!store.isSidebarCollapsed">Settings</span>
       </router-link>
     </div>

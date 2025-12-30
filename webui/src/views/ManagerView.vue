@@ -321,10 +321,10 @@ onUnmounted(() => {
         <input type="text" v-model="searchQuery" class="form-control form-control-sm" placeholder="Search tags..." style="max-width: 250px;">
         <div class="vr mx-1"></div>
         <button class="btn btn-sm btn-outline-danger" @click="showCleanupModal" :disabled="isLoading">
-          🧹 Cleanup Unused Tags
+          <i class="bi bi-eraser"></i> Cleanup Unused Tags
         </button>
         <button class="btn btn-sm btn-outline-secondary ms-auto" @click="fetchTags" :disabled="isLoading">
-          🔄 Refresh
+          <i class="bi bi-arrow-repeat"></i> Refresh
         </button>
       </div>
 
@@ -349,7 +349,7 @@ onUnmounted(() => {
               <td class="fw-medium">
                 <a href="#" @click.prevent="navigateToTag(tag.name)" class="text-decoration-none text-body">
                    {{ tag.name }}
-                   <span class="ms-1 small text-primary opacity-50">↗</span>
+                   <span class="ms-1 small text-primary opacity-50"><i class="bi bi-box-arrow-up-right"></i></span>
                 </a>
               </td>
               <td><span class="badge bg-secondary bg-opacity-25 text-body-emphasis border">{{ tag.category }}</span></td>
@@ -370,16 +370,16 @@ onUnmounted(() => {
       <div class="d-flex gap-2 mb-3 bg-body-secondary p-2 rounded">
         <input type="text" v-model="searchQuery" class="form-control form-control-sm" placeholder="Search styles..." style="max-width: 250px;">
         <button class="btn btn-sm btn-primary" @click="openStyleModal()">
-          ➕ Add New Style
+          <i class="bi bi-plus-lg"></i> Add New Style
         </button>
         <button class="btn btn-sm btn-outline-success" @click="openExtractModal()">
-          🪄 Extract from Prompt
+          <i class="bi bi-magic"></i> Extract from Prompt
         </button>
         <button class="btn btn-sm btn-outline-info" @click="generateMissingPreviews()" :disabled="isLoading">
-          🖼️ Generate Missing
+          <i class="bi bi-image"></i> Generate Missing
         </button>
         <button class="btn btn-sm btn-outline-secondary ms-auto" @click="store.fetchStyles()" :disabled="isLoading">
-          🔄 Refresh
+          <i class="bi bi-arrow-repeat"></i> Refresh
         </button>
       </div>
 
@@ -391,12 +391,12 @@ onUnmounted(() => {
               <div class="style-preview-container position-relative bg-dark bg-opacity-10 d-flex align-items-center justify-content-center" style="height: 180px;">
                 <img v-if="style.preview_path" :src="style.preview_path" class="w-100 h-100 object-fit-cover" alt="Style Preview">
                 <div v-else class="text-center text-muted">
-                  <div class="fs-1 opacity-25">🎨</div>
+                  <div class="fs-1 opacity-25"><i class="bi bi-palette"></i></div>
                   <div class="x-small">No preview yet</div>
                 </div>
                 <div class="position-absolute top-0 end-0 m-2">
                    <button class="btn btn-xs btn-dark bg-opacity-50 border-0 rounded-circle p-1" @click="regeneratePreview(style)" title="Regenerate Preview">
-                     🔄
+                     <i class="bi bi-arrow-repeat"></i>
                    </button>
                 </div>
               </div>
@@ -404,8 +404,8 @@ onUnmounted(() => {
                 <div class="d-flex justify-content-between align-items-start mb-2">
                   <h5 class="card-title mb-0">{{ style.name }}</h5>
                   <div class="btn-group">
-                    <button class="btn btn-sm btn-outline-secondary" @click="openStyleModal(style)">✏️</button>
-                    <button class="btn btn-sm btn-outline-danger" @click="confirmDeleteStyle(style.name)">🗑️</button>
+                    <button class="btn btn-sm btn-outline-secondary" @click="openStyleModal(style)"><i class="bi bi-pencil"></i></button>
+                    <button class="btn btn-sm btn-outline-danger" @click="confirmDeleteStyle(style.name)"><i class="bi bi-trash"></i></button>
                   </div>
                 </div>
                 <div class="mb-2">
@@ -432,7 +432,7 @@ onUnmounted(() => {
       <div class="d-flex gap-2 mb-3 bg-body-secondary p-2 rounded">
         <input type="text" v-model="searchQuery" class="form-control form-control-sm" placeholder="Search models..." style="max-width: 250px;">
         <button class="btn btn-sm btn-outline-primary" @click="syncModels()" :disabled="isLoading">
-          🔄 Sync Models from Disk
+          <i class="bi bi-arrow-repeat"></i> Sync Models from Disk
         </button>
       </div>
 
@@ -474,14 +474,14 @@ onUnmounted(() => {
               </td>
               <td>
                 <div class="x-small">
-                  <span class="me-2" title="CFG Scale">⚖️ {{ model.metadata.cfg_scale || '7.0' }}</span>
-                  <span class="me-2" title="Steps">👣 {{ model.metadata.sample_steps || '20' }}</span>
-                  <span class="me-2" title="Resolution">📐 {{ model.metadata.width || '512' }}x{{ model.metadata.height || '512' }}</span>
+                  <span class="me-2" title="CFG Scale"><i class="bi bi-sliders"></i> {{ model.metadata.cfg_scale || '7.0' }}</span>
+                  <span class="me-2" title="Steps"><i class="bi bi-bar-chart-steps"></i> {{ model.metadata.sample_steps || '20' }}</span>
+                  <span class="me-2" title="Resolution"><i class="bi bi-aspect-ratio"></i> {{ model.metadata.width || '512' }}x{{ model.metadata.height || '512' }}</span>
                 </div>
               </td>
               <td class="text-end">
                 <button class="btn btn-sm btn-outline-secondary" @click="openModelEditModal(model)">
-                  ✏️ Edit
+                  <i class="bi bi-pencil"></i> Edit
                 </button>
               </td>
             </tr>
@@ -498,7 +498,7 @@ onUnmounted(() => {
     <!-- Placeholders for other tabs -->
     <div v-else class="flex-grow-1 d-flex align-items-center justify-content-center text-muted">
       <div class="text-center">
-        <h4>🚧 Work in Progress</h4>
+        <h4><i class="bi bi-cone-striped"></i> Work in Progress</h4>
         <p>This section is coming soon.</p>
       </div>
     </div>
@@ -509,11 +509,11 @@ onUnmounted(() => {
       <div class="modal-dialog modal-dialog-centered">
         <div class="modal-content">
           <div class="modal-header border-bottom-0">
-            <h5 class="modal-title text-danger">🧹 Cleanup Tags</h5>
+            <h5 class="modal-title text-danger"><i class="bi bi-eraser"></i> Cleanup Tags</h5>
             <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
           </div>
           <div class="modal-body text-center py-4">
-            <div class="fs-1 mb-3">🗑️</div>
+            <div class="fs-1 mb-3"><i class="bi bi-trash"></i></div>
             <p class="mb-0">Are you sure you want to delete all tags that are not assigned to any image?</p>
             <p class="text-muted small mt-2">This action cannot be undone.</p>
           </div>

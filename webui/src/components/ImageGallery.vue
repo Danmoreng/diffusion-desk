@@ -581,7 +581,7 @@ onUnmounted(() => {
       {{ error }}
     </div>
     <div v-else-if="images.length === 0" class="text-center text-muted my-5">
-      🖼️
+      <i class="bi bi-images display-1"></i>
       <p class="mt-3">No images found in history.</p>
       <p>Generate some images with the "Save Images Automatically" setting enabled.</p>
     </div>
@@ -607,11 +607,11 @@ onUnmounted(() => {
             <div class="card-footer p-2 x-small border-0 bg-transparent">
               <div class="d-flex justify-content-between text-muted mb-1">
                 <span class="text-truncate me-1" :title="image.name">{{ formatDate(image.name) }}</span>
-                <span v-if="image.rating && image.rating > 0" class="text-warning small" title="Rating">★ {{ image.rating }}</span>
+                <span v-if="image.rating && image.rating > 0" class="text-warning small" title="Rating"><i class="bi bi-star-fill"></i> {{ image.rating }}</span>
               </div>
               <div v-if="image.params?.model" class="d-flex justify-content-between text-secondary opacity-75 mt-1">
-                <span class="text-truncate" :title="image.params.model">📦 {{ image.params.model }}</span>
-                <span v-if="image.params.Time" class="text-nowrap ml-1">⏱️ {{ image.params.Time }}</span>
+                <span class="text-truncate" :title="image.params.model"><i class="bi bi-box-seam"></i> {{ image.params.model }}</span>
+                <span v-if="image.params.Time" class="text-nowrap ml-1"><i class="bi bi-clock"></i> {{ image.params.Time }}</span>
               </div>
             </div>
           </div>
@@ -620,7 +620,7 @@ onUnmounted(() => {
       
       <!-- No Results -->
       <div v-else class="text-center my-5 text-muted">
-        🔍
+        <i class="bi bi-search display-1"></i>
         <p class="mt-2">No images match your current filters.</p>
         <button class="btn btn-sm btn-link" @click="selectedModel = 'all'; selectedDateRange = 'all'; minRating = 0; startDate = ''; endDate = '';">Reset Filters</button>
       </div>
@@ -687,35 +687,35 @@ onUnmounted(() => {
                       :disabled="store.isUpscaling"
                     >
                       <i v-if="store.isUpscaling" class="spinner-border spinner-border-sm me-1"></i>
-                      <span v-else>⬆️</span>
+                      <span v-else><i class="bi bi-box-arrow-in-up-right"></i></span>
                       Upscale
                     </button>
                     <button 
                       class="btn btn-outline-success btn-sm flex-grow-1"
                       @click="sendToImg2Img"
                     >
-                      🖼️ Img2Img
+                      <i class="bi bi-image"></i> Img2Img
                     </button>
                     <button 
                       v-if="filteredImages[activeIndex]?.params" 
                       class="btn btn-outline-primary btn-sm flex-grow-1"
                       @click="reuseParameters(true)"
                     >
-                      ♻️ Reuse
+                      <i class="bi bi-recycle"></i> Reuse
                     </button>
                     <button 
                       v-if="filteredImages[activeIndex]?.params?.prompt" 
                       class="btn btn-outline-secondary btn-sm flex-grow-1"
                       @click="openExtractModalFromImage()"
                     >
-                      🪄 Extract
+                      <i class="bi bi-magic"></i> Extract
                     </button>
                     <button 
                       v-if="filteredImages[activeIndex]"
                       class="btn btn-outline-danger btn-sm flex-grow-1"
                       @click="deleteImage(filteredImages[activeIndex].id)"
                     >
-                      🗑️ Delete
+                      <i class="bi bi-trash"></i> Delete
                     </button>
                 </div>
 
@@ -769,9 +769,9 @@ onUnmounted(() => {
                                 :title="selectedTags.includes(tag) ? 'Remove from filter' : 'Filter by this tag'"
                             >
                                 {{ tag }}
-                                <span v-if="selectedTags.includes(tag)" class="fw-bold ms-1 text-primary">✓</span>
+                                <i v-if="selectedTags.includes(tag)" class="bi bi-check fw-bold ms-1 text-primary"></i>
                             </span>
-                            <span @click.stop="removeTag(filteredImages[activeIndex].id, tag)" class="text-danger ms-1" style="cursor: pointer; font-size: 0.8rem;">&times;</span>
+                            <span @click.stop="removeTag(filteredImages[activeIndex].id, tag)" class="text-danger ms-1" style="cursor: pointer; font-size: 0.8rem;"><i class="bi bi-x"></i></span>
                           </span>
                           <span v-if="!filteredImages[activeIndex].tags?.length" class="text-muted italic small">No tags yet.</span>
                         </div>
@@ -782,7 +782,7 @@ onUnmounted(() => {
                         <div class="d-flex justify-content-between align-items-center mb-2">
                           <span class="fw-bold text-uppercase x-small text-secondary">Generation Parameters</span>
                           <button class="btn btn-link btn-sm p-0 text-decoration-none x-small" @click="copyToClipboard(getFormattedParams(filteredImages[activeIndex]))">
-                            📋 Copy
+                            <i class="bi bi-clipboard"></i> Copy
                           </button>
                         </div>
                         <pre class="bg-dark bg-opacity-10 p-2 rounded x-small mb-0 text-break-all white-space-pre-wrap" style="max-height: 200px; overflow-y: auto;">{{ getFormattedParams(filteredImages[activeIndex]) }}</pre>

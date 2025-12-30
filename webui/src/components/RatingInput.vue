@@ -31,10 +31,10 @@ function onLeave() {
 
 <template>
   <div class="rating-input d-inline-flex align-items-center" @mouseleave="onLeave">
-    <span 
+    <i 
       v-for="star in 5" 
       :key="star"
-      class="star"
+      class="star bi bi-star-fill"
       :class="[
         { 'active': (hoverValue || modelValue) >= star },
         { 'hover': hoverValue >= star },
@@ -43,9 +43,7 @@ function onLeave() {
       ]"
       @click="setRating(star)"
       @mouseenter="onHover(star)"
-    >
-      ★
-    </span>
+    ></i>
   </div>
 </template>
 

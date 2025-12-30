@@ -14,7 +14,7 @@ const store = useGenerationStore()
         :style="{ left: store.isSidebarCollapsed ? '54px' : '230px' }"
         @click="store.toggleSidebar"
       >
-        <span class="chevron">{{ store.isSidebarCollapsed ? '›' : '‹' }}</span>
+        <i :class="store.isSidebarCollapsed ? 'bi bi-chevron-right' : 'bi bi-chevron-left'"></i>
       </button>
 
       <aside class="sidebar border-end position-relative bg-body d-flex flex-column" 
@@ -63,10 +63,6 @@ const store = useGenerationStore()
   background-color: var(--bs-primary);
   color: white;
   border-color: var(--bs-primary);
-}
-
-.chevron {
-  margin-top: -2px; /* Visual centering adjustment */
 }
 
 .main-content {

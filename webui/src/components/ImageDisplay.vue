@@ -74,7 +74,7 @@ function sendToImg2Img(url: string) {
             <div class="d-flex justify-content-between x-small fw-bold">
               <span>Step {{ store.progressStep }} / {{ store.progressSteps }}</span>
               <span>
-                <span class="me-3">⏱ {{ store.progressTime.toFixed(1) }}s</span>
+                <span class="me-3"><i class="bi bi-clock"></i> {{ store.progressTime.toFixed(1) }}s</span>
                 <span v-if="store.eta > 0">Remaining: ~{{ store.eta }}s</span>
               </span>
             </div>
@@ -105,7 +105,7 @@ function sendToImg2Img(url: string) {
             </div>
             <div class="py-3 w-100 text-center border-top mt-3 bg-body-tertiary rounded-bottom">
               <button class="btn btn-sm btn-outline-success px-4" @click="sendToImg2Img(url)">
-                🖼️ Send to Img2Img
+                <i class="bi bi-image"></i> Send to Img2Img
               </button>
             </div>
           </div>
@@ -122,7 +122,7 @@ function sendToImg2Img(url: string) {
         <div class="d-flex justify-content-between align-items-center mb-1">
           <span class="fw-bold text-muted text-uppercase x-small">Generation Parameters</span>
           <button class="btn btn-link btn-sm p-0 text-decoration-none x-small" @click="copyParameters">
-            📋 Copy
+            <i class="bi bi-clipboard"></i> Copy
           </button>
         </div>
         <pre class="bg-body-tertiary p-2 rounded x-small mb-0 text-break-all white-space-pre-wrap border">{{ parametersString }}</pre>
