@@ -1,114 +1,136 @@
-# 🗺️ MystiCanvas Development Roadmap
+# MystiCanvas Development Plan (Consolidated)
 
-This document outlines the strategic milestones for evolving MystiCanvas from a source-built prototype into a professional, secure, and user-friendly Windows application.
+**Last Updated:** December 30, 2025
+**Status:** Active Development
 
----
-
-## 🎯 Project Vision
-To provide a high-performance, private, and local AI creative suite that seamlessly integrates Image Generation (Stable Diffusion) and Large Language Models (Llama), optimized for Windows systems with deep hardware integration.
+This document outlines the roadmap for MystiCanvas, merging original milestones with architectural review recommendations and the "Model Presets + Creative Assistant" vision.
 
 ---
 
-## 🏗️ Milestone 1: Architectural Hardening & Security
-*Focus: Move away from hardcoded configurations and secure the process boundaries.*
+## 0. Core Principles
 
-- [x] **1.1 Dynamic Configuration System**
-    - Implement a central `config.json` loader.
-    - Support for environment variables and `%APPDATA%` path resolution.
-    - Automatic directory discovery for `/models`, `/checkpoints`, and `/outputs`.
-- [x] **1.2 SPA Routing & Fallback**
-    - Update the Orchestrator to serve `index.html` for unknown routes.
-    - Fixes the "404 on refresh" bug in Vue Router.
-- [x] **1.3 Internal Security Layer**
-    - Restrict all worker subprocesses to `127.0.0.1`.
-    - Implement **Header-based Auth**: Orchestrator generates a transient API key on startup and passes it to workers.
-    - Workers reject any request lacking the valid internal token.
-
-## ⚡ Milestone 2: Real-time Interactive Experience
-*Focus: Transition from one-way status updates to a full-duplex interactive UI.*
-
-- [x] **2.1 WebSocket Integration**
-    - Replace SSE (`/stream/progress`) with a robust WebSocket implementation.
-    - Unified stream for generation progress, VRAM metrics, and system alerts.
-- [ ] **2.2 Bidirectional Control**
-    - ~~Implement **Request Cancellation**: Stop a 100-step generation mid-way via WS signal.~~ (Blocked: `stable-diffusion.cpp` API does not support interruption via callback yet)
-    - Dynamic Parameter Updates: Update CFG or Guidance scales while the LLM is "thinking."
-- [x] **2.3 UI Cleanup**
-    - Remove legacy "Manual Load" buttons.
-    - Implement "Model Hot-Swap" indicator. (Completed: LLM and SD model selection integrated into Sidebar with VRAM status)
-
-## 💾 Milestone 3: Persistence & Context Management
-*Focus: Solving the "Undo" problem and managing user history.*
-
-- [x] **3.1 SQLite Persistence Layer**
-    - Schema for `Generations`, `Prompts`, and `ModelMetadata`.
-    - Link every `.png` file to a database entry containing its full generation recipe (JSON).
-- [x] **3.2 Infinite Prompt History**
-    - Custom history stack in Pinia.
-    - "Snapshot" prompts before LLM enhancement to allow easy reversion.
-- [x] **3.3 Enhanced Gallery**
-    - Searchable gallery by tag, model, or date.
-    - "One-click" parameter injection from any historical image.
-
-## 🗄️ Milestone 3.5: Database Hardening & Schema Evolution
-*Focus: Implementing professional database practices for scalability and performance.*
-
-- [ ] **3.5.1 Schema Flexibility**
-    - Add `params_json` column to `generations` table to store future-proof settings (LoRA, ControlNet, etc.) without schema migrations.
-- [ ] **3.5.2 Performance & Indexing**
-    - Implement optimized indexes (`idx_generations_timestamp`, `idx_tags_name`, etc.).
-    - Transition to **Keyset Pagination** for instant gallery loading at scale.
-- [ ] **3.5.3 Advanced Search (FTS5)**
-    - Implement SQLite FTS5 virtual table for instant full-text search of prompts and notes.
-- [ ] **3.5.4 Asset Management**
-    - Create `generation_files` table to handle multiple artifacts per generation (thumbnails, previews, masks).
-- [ ] **3.5.5 Tagging Improvements**
-    - Add `normalized_name` to tags and a `tag_aliases` table to resolve synonyms (e.g., "cat" vs "feline").
-- [ ] **3.5.6 Job Queue**
-    - Implement a DB-backed `jobs` table to manage background tasks (auto-tagging, thumbnail generation) robustly.
-
-## 🎨 Milestone 4: Intelligence & Style Workflows
-*Focus: Leveraging the LLM to assist the creative process.*
-
-- [ ] **4.1 Style Extraction**
-    - Automated pipeline: Image -> Prompt -> LLM -> "Art Style Keywords."
-    - Ability to "Save Style" into a local library.
-- [ ] **4.2 Smart Prompt Expansion**
-    - Context-aware enhancement based on the selected model (e.g., specific tags for Flux vs. SDXL). (In-progress: Basic "🪄 Enhance" feature implemented)
-- [ ] **4.3 Aspect Ratio Intelligence**
-    - Auto-suggest optimal resolutions based on the loaded model's training bucket.
-
-## 📦 Milestone 5: Distribution & IPC Optimization
-*Focus: Performance tuning and the "One-Click" installation experience.*
-
-- [ ] **5.1 IPC Performance (Named Pipes)**
-    - Implement Windows Named Pipes for Orchestrator <-> Worker communication.
-    - Reduces TCP overhead and increases security via OS-level permissions.
-- [ ] **5.2 Release Build Automation**
-    - Multi-stage build script for Release binaries (MSVC).
-    - Resource embedding (icon, version info).
-- [ ] **5.3 Windows Installer**
-    - Create an Inno Setup or NSIS installer.
-    - Bundle the WebUI `dist`, C++ executables, and a "First Run" wizard to download base models.
+1.  **Stability through Isolation:** Orchestrator + specialized workers remains the default architecture.
+2.  **Predictability before Intelligence:** Solidify the substrate (DB, VRAM prediction) before adding "smart" agentic features.
+3.  **HTTP for IPC:** Keep HTTP for internal communication for debuggability; optimize only if proven bottleneck.
+4.  **Database as Memory:** All state (presets, styles, search, jobs) must be durable.
 
 ---
 
-## 🛠️ Technical Specifications
+## Release A — Platform Contracts & Observability (Foundation)
 
-| Component | Technology |
-| :--- | :--- |
-| **Orchestrator** | C++ (httplib, nlohmann/json, ixwebsocket) |
-| **Workers** | C++ (llama.cpp, stable-diffusion.cpp) |
-| **Frontend** | Vue 3 + Pinia + Vite |
-| **IPC** | HTTP/REST (Current) -> Named Pipes (Target) |
-| **Database** | SQLite 3 |
-| **Auth** | Random API Token (Transient) |
+**Goal:** Make every core subsystem *inspectable*, *restartable*, and *consistent*.
+
+*   [x] **A1. Standardize Contracts:** `internal/health` endpoints, consistent error shapes, internal token auth. (Completed in Refactor)
+*   [ ] **A2. Worker Lifecycle Resilience:**
+    *   Orchestrator monitors worker health.
+    *   Automatic restart on crash.
+    *   Broadcast "system alert" to UI via WebSockets.
+*   [ ] **A3. Structured Logs & Correlation:**
+    *   Add request IDs to logs.
+    *   Structured JSON logging for easy parsing.
 
 ---
 
-## ✅ Current Status: Milestone 3.5 (Ready to Start)
-*Last Updated: 2025-12-29*
-- [x] Milestone 1: Architectural Hardening & Security completed.
-- [x] Milestone 2: Real-time Interactive Experience completed.
-- [x] Milestone 3: Persistence & Context Management completed.
-- [ ] Next: Milestone 3.5 - Database Hardening & Schema Evolution.
+## Release B — VRAM Management v2 (Predictive + Surgical)
+
+**Goal:** Prevent OOM *without* brute-force unloading; explain behavior to the user.
+
+*   [ ] **B1. Health-Driven VRAM Registry:**
+    *   Workers report detailed memory usage.
+    *   Orchestrator tracks model footprints.
+*   [ ] **B2. Predictive Arbitration (Orchestrator):**
+    *   Compute expected VRAM (Weights + Compute + Safety).
+    *   Logic: Proceed vs. Soft Unload (KV) vs. Hard Unload.
+*   [ ] **B3. Surgical Worker-Level Mitigations:**
+    *   Dynamic VAE tiling based on resolution.
+    *   Auto VAE-on-CPU fallback if VRAM is tight.
+    *   OOM retry path (re-init with conservative settings).
+*   [ ] **B4. UI Feedback:**
+    *   Indicate "Projected vs Actual" VRAM.
+    *   Notifications for "VAE moved to CPU" or "LLM Unloaded".
+
+---
+
+## Release C — Database Hardening v2 (The "Memory" Layer)
+
+**Goal:** A robust persistence layer supporting advanced features (Search, Jobs, Presets).
+
+*   [ ] **C1. Schema Versioning & Migrations:**
+    *   Use `PRAGMA user_version`.
+    *   Implement idempotent migration system on startup.
+*   [ ] **C2. Performance Optimization:**
+    *   Keyset pagination for Gallery (cursor-based).
+    *   Verify/Add indexes.
+*   [ ] **C3. Asset Management:**
+    *   `generation_files` table (thumbnails, previews, masks).
+    *   Job for background thumbnail creation.
+*   [ ] **C4. FTS5 Search:**
+    *   Virtual table for prompt search.
+    *   Endpoints for full-text search query.
+*   [ ] **C5. Tag Normalization:**
+    *   `normalized_name` column.
+    *   `tag_aliases` table.
+*   [ ] **C6. Job Queue:**
+    *   `jobs` table for background tasks (Auto-tagging, Thumbnails).
+    *   Job runner service in Orchestrator.
+
+---
+
+## Release D — Model Presets System (The "Palette")
+
+**Goal:** Formalize model stacks to enable reliable VRAM prediction and user convenience.
+
+*   [ ] **D1. Preset Schema:**
+    *   `image_presets` table: `unet`, `vae`, `clip`, `vram_weights_mb`, `default_params`.
+    *   `llm_presets` table: `model`, `mmproj`, `n_ctx`, `capabilities`.
+*   [ ] **D2. Preset Manager UI:**
+    *   Interface to assemble/edit presets.
+    *   Auto-calculate VRAM estimates from file sizes.
+*   [ ] **D3. Runtime Integration:**
+    *   Orchestrator loads by Preset ID.
+    *   VRAM Arbiter uses preset metadata for predictions.
+
+---
+
+## Release E — Creative Assistant v1 (Tool Use)
+
+**Goal:** An integrated Chat Agent that can control the application.
+
+*   [ ] **E1. Assistant UI:** Persistent sidebar chat drawer.
+*   [ ] **E2. Tool Definition:**
+    *   `get_styles()`, `apply_style()`, `enhance_prompt()`, `search_history()`.
+*   [ ] **E3. Safety Rails:**
+    *   Orchestrator executes tools (not the LLM worker directly).
+    *   Permission checks and loop prevention.
+*   [ ] **E4. Style Library:**
+    *   `styles` table (Completed).
+    *   UI to save/apply styles.
+
+---
+
+## Release F — Vision & Auto-Tagging v2
+
+**Goal:** Image-grounded intelligence.
+
+*   [ ] **F1. Vision Presets:** Support `mmproj` in LLM presets.
+*   [ ] **F2. Image Handoff:** Mechanism to pass image paths to LLM worker.
+*   [ ] **F3. Vision Tagging Job:** Background job to tag images based on visual content.
+*   [ ] **F4. Feedback Loop:** "Analyze last image and suggest improvements."
+
+---
+
+## Release G — Distribution & Packaging
+
+**Goal:** Installer-grade polish.
+
+*   [ ] **G1. Build Automation:** One-command release build.
+*   [ ] **G2. Installer:** Inno Setup / NSIS.
+*   [ ] **G3. IPC Hardening:** Optional Named Pipes support (if needed).
+
+---
+
+## Priority Order (Next Steps)
+
+1.  **Release C (DB Hardening):** Unlocks safe schema evolution for Presets/Jobs.
+2.  **Release B (VRAM v2):** Fixes reliability/OOM issues.
+3.  **Release D (Presets):** Improves UX and enables accurate VRAM prediction.
