@@ -193,16 +193,6 @@ std::vector<uint8_t> write_image_to_vector(ImageFormat format, const uint8_t* im
     return buffer;
 }
 
-void sd_log_cb(enum sd_log_level_t level, const char* log, void* data) {
-
-    SDSvrParams* svr_params = (SDSvrParams*)data;
-
-    log_print(level, log, svr_params->verbose, svr_params->color);
-
-}
-
-
-
 void free_sd_images(sd_image_t* images, int n) {
 
     if (images) {
