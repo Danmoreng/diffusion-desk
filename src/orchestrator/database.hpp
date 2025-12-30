@@ -42,6 +42,49 @@ struct Style {
     std::string preview_path;
 };
 
+struct LibraryItem {
+    int id = 0;
+    std::string label;
+    std::string content;
+    std::string category;
+    std::string preview_path;
+    int usage_count = 0;
+};
+
+struct Job {
+    int id = 0;
+    std::string type;
+    mysti::json payload;
+    std::string status;
+    std::string error;
+    int priority = 0;
+    std::string created_at;
+};
+
+struct ImagePreset {
+    int id = 0;
+    std::string name;
+    std::string unet_path;
+    std::string vae_path;
+    std::string clip_l_path;
+    std::string clip_g_path;
+    std::string t5xxl_path;
+    int vram_weights_mb_estimate = 0;
+    int vram_weights_mb_measured = 0;
+    mysti::json default_params;
+    mysti::json preferred_params;
+};
+
+struct LlmPreset {
+    int id = 0;
+    std::string name;
+    std::string model_path;
+    std::string mmproj_path;
+    int n_ctx = 2048;
+    std::vector<std::string> capabilities;
+    std::string role;
+};
+
 class Database {
 public:
     explicit Database(const std::string& db_path);
@@ -67,6 +110,30 @@ public:
     void save_style(const Style& style);
     mysti::json get_styles();
     void delete_style(const std::string& name);
+
+    // Prompt Library
+    void add_library_item(const LibraryItem& item);
+    mysti::json get_library_items(const std::string& category = "");
+    void delete_library_item(int id);
+    void increment_library_usage(int id);
+
+    // Job Queue
+    int add_job(const std::string& type, const mysti::json& payload, int priority = 0);
+    std::optional<Job> get_next_job();
+    void update_job_status(int id, const std::string& status, const std::string& error = "");
+
+    // Asset Management
+    void add_generation_file(int generation_id, const std::string& type, const std::string& path);
+    std::vector<std::string> get_generation_files(int generation_id, const std::string& type = "");
+
+    // Presets
+    void save_image_preset(const ImagePreset& preset);
+    mysti::json get_image_presets();
+    void delete_image_preset(int id);
+
+    void save_llm_preset(const LlmPreset& preset);
+    mysti::json get_llm_presets();
+    void delete_llm_preset(int id);
     
     // Model Metadata
     void save_model_metadata(const std::string& model_id, const mysti::json& metadata);
@@ -96,6 +163,14 @@ public:
     SQLite::Database& get_db() { return m_db; }
 
 private:
+    int get_schema_version();
+    void set_schema_version(int version);
+
+    // Migration steps
+    void migrate_to_v1();
+    void migrate_to_v2();
+    void migrate_to_v3();
+
     SQLite::Database m_db;
     std::mutex m_mutex; // Protects access to m_db
 };

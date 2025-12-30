@@ -61,4 +61,19 @@ mysti::json ResourceManager::get_vram_status() {
     return status;
 }
 
+void ResourceManager::update_model_footprint(const std::string& model_id, float vram_gb) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    if (vram_gb > 0.05f) {
+        m_model_footprints[model_id] = vram_gb;
+    }
+}
+
+float ResourceManager::get_model_footprint(const std::string& model_id) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    if (m_model_footprints.count(model_id)) {
+        return m_model_footprints[model_id];
+    }
+    return 0.0f;
+}
+
 } // namespace mysti

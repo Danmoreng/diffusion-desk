@@ -21,11 +21,16 @@ public:
     // Statistics
     mysti::json get_vram_status();
 
+    // Track actual measured usage
+    void update_model_footprint(const std::string& model_id, float vram_gb);
+    float get_model_footprint(const std::string& model_id);
+
 private:
     int m_sd_port;
     int m_llm_port;
     std::string m_token;
     std::mutex m_mutex;
+    std::map<std::string, float> m_model_footprints;
 };
 
 } // namespace mysti

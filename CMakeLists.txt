@@ -79,12 +79,14 @@ add_executable(mysti_server
     src/orchestrator/orchestrator_main.cpp
     src/orchestrator/ws_manager.cpp
     src/orchestrator/database.cpp
-    src/orchestrator/services/tagging_service.cpp
-    src/orchestrator/services/import_service.cpp
     src/orchestrator/services/health_service.cpp
     src/orchestrator/services/resource_manager.cpp
+    src/orchestrator/services/tagging_service.cpp
+    src/orchestrator/services/import_service.cpp
     src/orchestrator/services/service_controller.cpp
-    ${COMMON_SOURCES}
+    src/orchestrator/services/tool_service.cpp
+    src/utils/common.cpp
+
 )
 
 # Include paths for dependencies
