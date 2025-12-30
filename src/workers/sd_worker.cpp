@@ -21,13 +21,13 @@ int run_sd_worker(SDSvrParams& svr_params, SDContextParams& ctx_params, SDGenera
     }
 
     sd_ctx_params_t sd_ctx_params_raw = ctx_params.to_sd_ctx_params_t(false, false, false);
-    sd_ctx_t* sd_ctx              = nullptr;
-    upscaler_ctx_t* upscaler_ctx  = nullptr;
+    SdCtxPtr sd_ctx;
+    UpscalerCtxPtr upscaler_ctx;
     std::string current_upscale_model_path;
     
     if (!ctx_params.model_path.empty() || !ctx_params.diffusion_model_path.empty()) {
-        sd_ctx = new_sd_ctx(&sd_ctx_params_raw);
-        if (sd_ctx == nullptr) {
+        sd_ctx.reset(new_sd_ctx(&sd_ctx_params_raw));
+        if (!sd_ctx) {
             LOG_ERROR("new_sd_ctx failed for initial model - starting with empty context");
             // Do not exit, allow loading another model later
         }
@@ -114,8 +114,5 @@ int run_sd_worker(SDSvrParams& svr_params, SDContextParams& ctx_params, SDGenera
     LOG_INFO("SD Worker listening on: %s:%d\n", svr_params.listen_ip.c_str(), svr_params.listen_port);
     svr.listen(svr_params.listen_ip, svr_params.listen_port);
 
-    if (sd_ctx) free_sd_ctx(sd_ctx);
-    if (upscaler_ctx) free_upscaler_ctx(upscaler_ctx);
-    
     return 0;
 }
