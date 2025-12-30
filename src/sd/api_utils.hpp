@@ -4,6 +4,7 @@
 #include <vector>
 #include <cstdint>
 #include <json.hpp>
+#include "stable-diffusion.h"
 #include "utils/common.hpp"
 
 // Time utilities
@@ -34,4 +35,6 @@ std::vector<uint8_t> write_image_to_vector(
 );
 
 void sd_log_cb(enum sd_log_level_t level, const char* log, void* data);
+
+void free_sd_images(sd_image_t* images, int n);
 

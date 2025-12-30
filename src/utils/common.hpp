@@ -52,6 +52,7 @@ enum SDMode {
 
 // Utils
 std::string sd_basename(const std::string& path);
+uint64_t get_file_size(const std::string& path);
 std::string version_string();
 std::string argv_to_utf8(int index, const char** argv);
 float get_total_vram_gb();
@@ -1580,6 +1581,7 @@ struct SDSvrParams {
     std::string mode = "orchestrator"; // orchestrator, sd-worker, llm-worker
     int llm_threads = -1;
     int llm_idle_timeout = 300; // 5 minutes default
+    int sd_idle_timeout = 600; // 10 minutes default
     int safe_mode_crashes = 2;
     std::string internal_token;
     bool normal_exit      = false;

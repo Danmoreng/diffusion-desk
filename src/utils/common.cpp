@@ -45,6 +45,15 @@ const char* modes_str[] = {
     "upscale",
 };
 
+uint64_t get_file_size(const std::string& path) {
+    try {
+        if (!path.empty() && fs::exists(path) && fs::is_regular_file(path)) {
+            return fs::file_size(path);
+        }
+    } catch (...) {}
+    return 0;
+}
+
 #if defined(_WIN32)
 static std::string utf16_to_utf8(const std::wstring& wstr) {
     if (wstr.empty())
@@ -735,6 +744,11 @@ ArgOptions SDSvrParams::get_options() {
             "--llm-idle-timeout",
             "seconds of inactivity before unloading LLM (default: 300)",
             &llm_idle_timeout},
+        {
+            "",
+            "--sd-idle-timeout",
+            "seconds of inactivity before unloading SD (default: 600)",
+            &sd_idle_timeout},
         {
             "",
             "--safe-mode-crashes",

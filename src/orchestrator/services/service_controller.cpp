@@ -27,9 +27,10 @@ static std::string base64_decode_str(const std::string& in) {
 ServiceController::ServiceController(std::shared_ptr<Database> db, 
                                      std::shared_ptr<ResourceManager> res_mgr,
                                      std::shared_ptr<WsManager> ws_mgr,
+                                     std::shared_ptr<ToolService> tool_svc,
                                      int sd_port, int llm_port,
                                      const std::string& token)
-    : m_db(db), m_res_mgr(res_mgr), m_ws_mgr(ws_mgr), 
+    : m_db(db), m_res_mgr(res_mgr), m_ws_mgr(ws_mgr), m_tool_svc(tool_svc),
       m_sd_port(sd_port), m_llm_port(llm_port), m_token(token) {}
 
 void ServiceController::generate_style_preview(Style style, std::string output_dir) {
@@ -174,7 +175,7 @@ void ServiceController::register_routes(httplib::Server& svr, const SDSvrParams&
         }
     });
 
-    svr.Post("/v1/images/generations", [this](const httplib::Request& req, httplib::Response& res) {
+    svr.Post("/v1/images/generations", [this, params](const httplib::Request& req, httplib::Response& res) {
         m_res_mgr->prepare_for_sd_generation(4.0f);
         std::string modified_body = req.body;
         httplib::Headers h;
@@ -253,6 +254,8 @@ void ServiceController::register_routes(httplib::Server& svr, const SDSvrParams&
     });
 
     svr.Get("/v1/models", proxy_sd);
+    svr.Get("/v1/config", proxy_sd);
+    svr.Post("/v1/config", proxy_sd);
     svr.Post("/v1/upscale/load", proxy_sd);
     svr.Post("/v1/images/upscale", proxy_sd);
     
@@ -322,7 +325,7 @@ void ServiceController::register_routes(httplib::Server& svr, const SDSvrParams&
             std::string input_prompt = j.value("prompt", "");
             if (input_prompt.empty()) {
                 res.status = 400;
-                res.set_content(R"({"error":"Prompt is required"})", "application/json");
+                res.set_content(R"({\"error\":\"Prompt is required\"})", "application/json");
                 return;
             }
 
@@ -333,7 +336,7 @@ void ServiceController::register_routes(httplib::Server& svr, const SDSvrParams&
 
             mysti::json chat_req;
             chat_req["messages"] = mysti::json::array({
-                {{"role", "system"}, {"content", "You are an expert art style analyzer. Analyze the given image prompt and extract distinct art styles, artists, or aesthetic descriptors. Return a JSON object with a 'styles' key containing an array of objects. Each style object must have 'name' (concise style name), 'prompt' (keywords to append, MUST include '{prompt}' placeholder), and 'negative_prompt' (optional tags to avoid). Example: {\"styles\": [{\"name\": \"Cyberpunk\", \"prompt\": \"{prompt}, cyberpunk, neon lights\", \"negative_prompt\": \"organic\"}]}"}},
+                {{"role", "system"}, {"content", "You are an expert art style analyzer. Analyze the given image prompt and extract distinct art styles, artists, or aesthetic descriptors. Return a JSON object with a 'styles' key containing an array of objects. Each style object must have 'name' (concise style name), 'prompt' (keywords to append, MUST include '{prompt}' placeholder), and 'negative_prompt' (optional tags to avoid). Example: {\"styles\": [{\"name\": \"Cyberpunk\", \"prompt\": \"{prompt}\", \"cyberpunk, neon lights\", \"negative_prompt\": \"organic\"}]}"}},
                 {{"role", "user"}, {"content", input_prompt}}
             });
             chat_req["temperature"] = 0.2;
@@ -362,7 +365,7 @@ void ServiceController::register_routes(httplib::Server& svr, const SDSvrParams&
                                     styles_arr.push_back(styles_json);
                                 }
                             }
-                        } catch (...) { throw; }
+                        } catch (...) { throw; } 
 
                         std::vector<mysti::Style> new_styles;
                         for (const auto& s_obj : styles_arr) {
@@ -396,7 +399,7 @@ void ServiceController::register_routes(httplib::Server& svr, const SDSvrParams&
                 }
             }
             res.status = 500;
-            res.set_content(R"({"error":"Failed to extract styles from LLM"})", "application/json");
+            res.set_content(R"({\"error\":\"Failed to extract styles from LLM\"})", "application/json");
         } catch(const std::exception& e) {
             res.status = 500;
             mysti::json err; err["error"] = e.what();
@@ -434,7 +437,7 @@ void ServiceController::register_routes(httplib::Server& svr, const SDSvrParams&
             std::string name = j.value("name", "");
             if (name.empty()) { res.status = 400; return; }
             m_db->delete_style(name);
-            res.set_content(R"({"status":"success"})", "application/json");
+            res.set_content(R"({\"status\":\"success\"})", "application/json");
         } catch(...) { res.status = 400; }
     });
 
@@ -446,7 +449,7 @@ void ServiceController::register_routes(httplib::Server& svr, const SDSvrParams&
             std::string tag = j.value("tag", "");
             if (uuid.empty() || tag.empty()) { res.status = 400; return; }
             m_db->add_tag(uuid, tag, "user");
-            res.set_content(R"({"status":"success"})", "application/json");
+            res.set_content(R"({\"status\":\"success\"})", "application/json");
         } catch(...) { res.status = 400; }
     });
 
@@ -459,14 +462,14 @@ void ServiceController::register_routes(httplib::Server& svr, const SDSvrParams&
             if (uuid.empty() || tag.empty()) { res.status = 400; return; }
             m_db->remove_tag(uuid, tag);
             m_db->delete_unused_tags();
-            res.set_content(R"({"status":"success"})", "application/json");
+            res.set_content(R"({\"status\":\"success\"})", "application/json");
         } catch(...) { res.status = 400; }
     });
 
     svr.Post("/v1/history/tags/cleanup", [this](const httplib::Request&, httplib::Response& res) {
         if (!m_db) { res.status = 500; return; }
         m_db->delete_unused_tags();
-        res.set_content(R"({"status":"success"})", "application/json");
+        res.set_content(R"({\"status\":\"success\"})", "application/json");
     });
 
     svr.Post("/v1/history/favorite", [this](const httplib::Request& req, httplib::Response& res) {
@@ -477,7 +480,7 @@ void ServiceController::register_routes(httplib::Server& svr, const SDSvrParams&
             bool favorite = j.value("favorite", false);
             if (uuid.empty()) { res.status = 400; return; }
             m_db->set_favorite(uuid, favorite);
-            res.set_content(R"({"status":"success"})", "application/json");
+            res.set_content(R"({\"status\":\"success\"})", "application/json");
         } catch(...) { res.status = 400; }
     });
 
@@ -489,7 +492,7 @@ void ServiceController::register_routes(httplib::Server& svr, const SDSvrParams&
             int rating = j.value("rating", 0);
             if (uuid.empty()) { res.status = 400; return; }
             m_db->set_rating(uuid, rating);
-            res.set_content(R"({"status":"success"})", "application/json");
+            res.set_content(R"({\"status\":\"success\"})", "application/json");
         } catch(...) { res.status = 400; }
     });
 
@@ -515,16 +518,14 @@ void ServiceController::register_routes(httplib::Server& svr, const SDSvrParams&
             }
         }
         m_db->remove_generation(uuid);
-        res.set_content(R"({"status":"success"})", "application/json");
+        res.set_content(R"({\"status\":\"success\"})", "application/json");
     });
 
     svr.Post("/v1/images/edits", proxy_sd);
     svr.Get("/v1/progress", proxy_sd);
-    svr.Get("/v1/config", proxy_sd);
-    svr.Post("/v1/config", proxy_sd);
     svr.Get("/v1/stream/progress", proxy_sd); 
     
-    svr.Get("/outputs/previews/(.*)", [params](const httplib::Request& req, httplib::Response& res) {
+    svr.Get("/outputs/previews/([^/]+)", [params](const httplib::Request& req, httplib::Response& res) {
         fs::path p = fs::path(params.output_dir) / "previews" / std::string(req.matches[1]);
         if (fs::exists(p) && fs::is_regular_file(p)) {
             std::ifstream ifs(p.string(), std::ios::binary);
@@ -547,6 +548,135 @@ void ServiceController::register_routes(httplib::Server& svr, const SDSvrParams&
         auto status = m_res_mgr->get_vram_status();
         status["status"] = "ok";
         res.set_content(status.dump(), "application/json");
+    });
+
+    // --- Presets Endpoints ---
+
+    svr.Get("/v1/presets/image", [this](const httplib::Request&, httplib::Response& res) {
+        if (!m_db) { res.set_content("[]", "application/json"); return; }
+        res.set_content(m_db->get_image_presets().dump(), "application/json");
+    });
+
+    svr.Post("/v1/presets/image", [this, params](const httplib::Request& req, httplib::Response& res) {
+        if (!m_db) { res.status = 500; return; }
+        try {
+            auto j = mysti::json::parse(req.body);
+            ImagePreset p;
+            p.id = j.value("id", 0);
+            p.name = j.value("name", "");
+            p.unet_path = j.value("unet_path", "");
+            p.vae_path = j.value("vae_path", "");
+            p.clip_l_path = j.value("clip_l_path", "");
+            p.clip_g_path = j.value("clip_g_path", "");
+            p.t5xxl_path = j.value("t5xxl_path", "");
+            p.vram_weights_mb_estimate = j.value("vram_weights_mb_estimate", 0);
+            p.default_params = j.value("default_params", mysti::json::object());
+            p.preferred_params = j.value("preferred_params", mysti::json::object());
+            
+            if (p.name.empty()) { res.status = 400; return; }
+
+            if (p.vram_weights_mb_estimate <= 0) {
+                uint64_t total_bytes = 0;
+                auto check_size = [&](const std::string& rel_path) {
+                    if (rel_path.empty()) return;
+                    fs::path full_path = fs::path(params.model_dir) / rel_path;
+                    total_bytes += get_file_size(full_path.string());
+                };
+                check_size(p.unet_path);
+                check_size(p.vae_path);
+                check_size(p.clip_l_path);
+                check_size(p.clip_g_path);
+                check_size(p.t5xxl_path);
+                if (total_bytes > 0) p.vram_weights_mb_estimate = (int)((total_bytes * 1.05) / (1024 * 1024));
+            }
+            m_db->save_image_preset(p);
+            res.set_content(R"({\"status\":\"success\"})", "application/json");
+        } catch(...) { res.status = 400; }
+    });
+
+    svr.Delete(R"(/v1/presets/image/(\d+))", [this](const httplib::Request& req, httplib::Response& res) {
+        if (!m_db) { res.status = 500; return; }
+        int id = std::stoi(req.matches[1]);
+        m_db->delete_image_preset(id);
+        res.set_content(R"({\"status\":\"success\"})", "application/json");
+    });
+
+    svr.Get("/v1/presets/llm", [this](const httplib::Request&, httplib::Response& res) {
+        if (!m_db) { res.set_content("[]", "application/json"); return; }
+        res.set_content(m_db->get_llm_presets().dump(), "application/json");
+    });
+
+    svr.Post("/v1/presets/llm", [this](const httplib::Request& req, httplib::Response& res) {
+        if (!m_db) { res.status = 500; return; }
+        try {
+            auto j = mysti::json::parse(req.body);
+            LlmPreset p;
+            p.id = j.value("id", 0);
+            p.name = j.value("name", "");
+            p.model_path = j.value("model_path", "");
+            p.mmproj_path = j.value("mmproj_path", "");
+            p.n_ctx = j.value("n_ctx", 2048);
+            p.capabilities = j.value("capabilities", std::vector<std::string>());
+            p.role = j.value("role", "Assistant");
+            if (p.name.empty() || p.model_path.empty()) { res.status = 400; return; }
+            m_db->save_llm_preset(p);
+            res.set_content(R"({\"status\":\"success\"})", "application/json");
+        } catch(...) { res.status = 400; }
+    });
+
+    svr.Delete(R"(/v1/presets/llm/(\d+))", [this](const httplib::Request& req, httplib::Response& res) {
+        if (!m_db) { res.status = 500; return; }
+        int id = std::stoi(req.matches[1]);
+        m_db->delete_llm_preset(id);
+        res.set_content(R"({\"status\":\"success\"})", "application/json");
+    });
+
+    svr.Post("/v1/presets/image/load", [this](const httplib::Request& req, httplib::Response& res) {
+        if (!m_db) { res.status = 500; return; }
+        try {
+            auto j = mysti::json::parse(req.body);
+            int id = j.value("id", 0);
+            auto presets = m_db->get_image_presets();
+            mysti::json selected = nullptr;
+            for (auto& p : presets) { if (p["id"] == id) { selected = p; break; } }
+            if (selected == nullptr) {
+                res.status = 404;
+                res.set_content(R"({\"error\":\"preset not found\"})", "application/json");
+                return;
+            }
+            mysti::json load_req;
+            load_req["model_id"] = selected["unet_path"];
+            if (!selected["vae_path"].get<std::string>().empty()) load_req["vae"] = selected["vae_path"];
+            if (!selected["clip_l_path"].get<std::string>().empty()) load_req["clip_l"] = selected["clip_l_path"];
+            if (!selected["clip_g_path"].get<std::string>().empty()) load_req["clip_g"] = selected["clip_g_path"];
+            if (!selected["t5xxl_path"].get<std::string>().empty()) load_req["t5xxl"] = selected["t5xxl_path"];
+            httplib::Request mod_req = req;
+            mod_req.path = "/v1/models/load";
+            mod_req.body = load_req.dump();
+            Proxy::forward_request(mod_req, res, "127.0.0.1", m_sd_port, "", m_token);
+            if (res.status == 200) {
+                std::lock_guard<std::mutex> lock(m_state_mutex);
+                m_last_sd_model_req_body = mod_req.body;
+            }
+        } catch(...) { res.status = 400; }
+    });
+
+    svr.Post("/v1/tools/execute", [this](const httplib::Request& req, httplib::Response& res) {
+        if (!m_tool_svc) { 
+            res.status = 500; 
+            res.set_content(R"({\"error\":\"Tool service not available\"})", "application/json");
+            return; 
+        }
+        try {
+            auto j = mysti::json::parse(req.body);
+            std::string name = j.value("name", "");
+            auto args = j.value("arguments", mysti::json::object());
+            auto result = m_tool_svc->execute_tool(name, args);
+            res.set_content(result.dump(), "application/json");
+        } catch(...) { 
+            res.status = 400; 
+            res.set_content(R"({\"error\":\"Invalid JSON\"})", "application/json");
+        }
     });
 }
 

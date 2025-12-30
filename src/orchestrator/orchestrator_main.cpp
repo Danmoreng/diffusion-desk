@@ -33,6 +33,7 @@ static int sd_port = 0;
 static int llm_port = 0;
 static std::shared_ptr<mysti::Database> g_db;
 static std::shared_ptr<mysti::ResourceManager> g_res_mgr;
+static std::shared_ptr<mysti::ToolService> g_tool_svc;
 static std::shared_ptr<mysti::ServiceController> g_controller;
 static std::shared_ptr<mysti::WsManager> g_ws_mgr;
 static std::unique_ptr<mysti::TaggingService> g_tagging_svc;
@@ -83,7 +84,8 @@ int run_orchestrator(int argc, const char** argv, SDSvrParams& svr_params) {
         g_internal_token = svr_params.internal_token;
         g_res_mgr = std::make_shared<mysti::ResourceManager>(sd_port, llm_port, g_internal_token);
         g_ws_mgr = std::make_shared<mysti::WsManager>(svr_params.listen_port + 3, "127.0.0.1");
-        g_controller = std::make_shared<mysti::ServiceController>(g_db, g_res_mgr, g_ws_mgr, sd_port, llm_port, g_internal_token);
+        g_tool_svc = std::make_shared<mysti::ToolService>(g_db, sd_port, llm_port, g_internal_token);
+        g_controller = std::make_shared<mysti::ServiceController>(g_db, g_res_mgr, g_ws_mgr, g_tool_svc, sd_port, llm_port, g_internal_token);
         g_import_svc = std::make_unique<mysti::ImportService>(g_db);
         g_import_svc->auto_import_outputs(svr_params.output_dir);
     } catch (const std::exception& e) {
@@ -179,15 +181,18 @@ int run_orchestrator(int argc, const char** argv, SDSvrParams& svr_params) {
                 httplib::Client cli_sd("127.0.0.1", sd_port);
                 if (auto res = cli_sd.Get("/internal/health", h)) {
                     auto j = mysti::json::parse(res->body);
-                    sd_vram = j.value("vram_gb", 0.0f);
+                    sd_vram = j.value("vram_allocated_mb", 0.0f) / 1024.0f;
                 }
 
                 httplib::Client cli_llm("127.0.0.1", llm_port);
                 if (auto res = cli_llm.Get("/internal/health", h)) {
                     auto j = mysti::json::parse(res->body);
-                    llm_vram = j.value("vram_gb", 0.0f); 
+                    llm_vram = j.value("vram_allocated_mb", 0.0f) / 1024.0f; 
                     llm_model = j.value("model_path", ""); 
-                    llm_loaded = j.value("loaded", false);
+                    llm_loaded = j.value("model_loaded", false);
+                    if (llm_loaded && !llm_model.empty()) {
+                        g_res_mgr->update_model_footprint(llm_model, llm_vram);
+                    }
                     if (!llm_model.empty()) {
                         fs::path mp(llm_model);
                         if (mp.is_absolute()) {

@@ -49,8 +49,28 @@ int run_sd_worker(SDSvrParams& svr_params, SDContextParams& ctx_params, SDGenera
 
     httplib::Server svr;
 
+    // B2.5: Idle check loop
+    std::atomic<bool> worker_running{true};
+    std::thread idle_thread([&ctx, &worker_running]() {
+        while (worker_running) {
+            std::this_thread::sleep_for(std::chrono::seconds(10));
+            if (ctx.svr_params.sd_idle_timeout > 0) {
+                std::lock_guard<std::mutex> lock(ctx.sd_ctx_mutex);
+                if (ctx.sd_ctx) {
+                    auto now = std::chrono::steady_clock::now();
+                    auto duration = std::chrono::duration_cast<std::chrono::seconds>(now - ctx.last_access).count();
+                    if (duration > ctx.svr_params.sd_idle_timeout) {
+                        LOG_INFO("SD idle timeout reached (%d seconds). Unloading...", ctx.svr_params.sd_idle_timeout);
+                        ctx.sd_ctx.reset();
+                    }
+                }
+            }
+        }
+    });
+
     // Security: Check internal token
-    svr.set_pre_routing_handler([&svr_params](const httplib::Request& req, httplib::Response& res) {
+    svr.set_pre_routing_handler([&svr_params, &ctx](const httplib::Request& req, httplib::Response& res) {
+        ctx.update_last_access();
         if (!svr_params.internal_token.empty()) {
             std::string token = req.get_header_value("X-Internal-Token");
             if (token != svr_params.internal_token) {
@@ -88,31 +108,71 @@ int run_sd_worker(SDSvrParams& svr_params, SDContextParams& ctx_params, SDGenera
     svr.Get("/internal/health", [&](const httplib::Request&, httplib::Response& res) {
         mysti::json j;
         j["ok"] = true;
-        j["worker"] = "sd";
-        j["vram_gb"] = get_current_process_vram_usage_gb();
-        j["vram_free_gb"] = get_free_vram_gb();
+        j["service"] = "sd";
+        j["version"] = version_string();
+        j["model_loaded"] = (ctx.sd_ctx != nullptr);
+        j["vram_allocated_mb"] = (int)(get_current_process_vram_usage_gb() * 1024.0f);
+        j["vram_free_mb"] = (int)(get_free_vram_gb() * 1024.0f);
         res.set_content(j.dump(), "application/json");
     });
     
     svr.Post("/internal/shutdown", [&](const httplib::Request&, httplib::Response& res) {
         res.set_content(R"({\"status\":\"shutting_down\"})", "application/json");
+        worker_running = false;
         svr.stop();
     });
 
-    svr.Get("/v1/config", [&](const httplib::Request& req, httplib::Response& res) { handle_get_config(req, res, ctx); });
-    svr.Post("/v1/config", [&](const httplib::Request& req, httplib::Response& res) { handle_post_config(req, res, ctx); });
-    svr.Get("/v1/progress", handle_get_progress);
-    svr.Get("/v1/stream/progress", handle_stream_progress);
-    svr.Get("/v1/models", [&](const httplib::Request& req, httplib::Response& res) { handle_get_models(req, res, ctx); });
-    svr.Post("/v1/models/load", [&](const httplib::Request& req, httplib::Response& res) { handle_load_model(req, res, ctx); });
-    svr.Post("/v1/upscale/load", [&](const httplib::Request& req, httplib::Response& res) { handle_load_upscale_model(req, res, ctx); });
-    svr.Post("/v1/images/upscale", [&](const httplib::Request& req, httplib::Response& res) { handle_upscale_image(req, res, ctx); });
-    svr.Get("/v1/history/images", [&](const httplib::Request& req, httplib::Response& res) { handle_get_history(req, res, ctx); });
-    svr.Post("/v1/images/generations", [&](const httplib::Request& req, httplib::Response& res) { handle_generate_image(req, res, ctx); });
-    svr.Post("/v1/images/edits", [&](const httplib::Request& req, httplib::Response& res) { handle_edit_image(req, res, ctx); });
+    // API Routes
+    svr.Get("/v1/models", [&](const httplib::Request& req, httplib::Response& res) {
+        handle_get_models(req, res, ctx);
+    });
 
+    svr.Post("/v1/models/load", [&](const httplib::Request& req, httplib::Response& res) {
+        handle_load_model(req, res, ctx);
+    });
+
+    svr.Get("/v1/config", [&](const httplib::Request& req, httplib::Response& res) {
+        handle_get_config(req, res, ctx);
+    });
+
+    svr.Post("/v1/config", [&](const httplib::Request& req, httplib::Response& res) {
+        handle_post_config(req, res, ctx);
+    });
+
+    svr.Get("/v1/progress", [&](const httplib::Request& req, httplib::Response& res) {
+        handle_get_progress(req, res);
+    });
+
+    svr.Get("/v1/stream/progress", [&](const httplib::Request& req, httplib::Response& res) {
+        handle_stream_progress(req, res);
+    });
+
+    svr.Post("/v1/upscale/load", [&](const httplib::Request& req, httplib::Response& res) {
+        handle_load_upscale_model(req, res, ctx);
+    });
+
+    svr.Post("/v1/images/upscale", [&](const httplib::Request& req, httplib::Response& res) {
+        handle_upscale_image(req, res, ctx);
+    });
+
+    svr.Get("/v1/history/images", [&](const httplib::Request& req, httplib::Response& res) {
+        handle_get_history(req, res, ctx);
+    });
+
+    svr.Post("/v1/images/generations", [&](const httplib::Request& req, httplib::Response& res) {
+        handle_generate_image(req, res, ctx);
+    });
+
+    svr.Post("/v1/images/edits", [&](const httplib::Request& req, httplib::Response& res) {
+        handle_edit_image(req, res, ctx);
+    });
+
+// ...
     LOG_INFO("SD Worker listening on: %s:%d\n", svr_params.listen_ip.c_str(), svr_params.listen_port);
     svr.listen(svr_params.listen_ip, svr_params.listen_port);
+
+    worker_running = false;
+    if (idle_thread.joinable()) idle_thread.join();
 
     return 0;
 }

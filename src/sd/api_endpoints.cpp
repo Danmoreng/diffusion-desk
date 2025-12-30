@@ -731,6 +731,52 @@ void handle_generate_image(const httplib::Request& req, httplib::Response& res, 
             results     = generate_image(ctx.sd_ctx.get(), &img_gen_params);
             num_results = gen_params.batch_count;
 
+            // B0.1 & B0.2: Fail Loudly + Conservative Retry
+            bool first_pass_success = (results != nullptr);
+            if (first_pass_success) {
+                first_pass_success = false;
+                for (int i = 0; i < num_results; i++) {
+                    if (results[i].data != nullptr) {
+                        first_pass_success = true;
+                        break;
+                    }
+                }
+            }
+
+            if (!first_pass_success) {
+                LOG_WARN("First pass generation failed (empty results). Retrying with conservative settings (VAE tiling)...");
+                set_progress_message("Retrying with VAE tiling...");
+                
+                free_sd_images(results, num_results);
+                
+                img_gen_params.vae_tiling_params.enabled = true;
+                if (img_gen_params.vae_tiling_params.tile_size_x <= 0) {
+                    img_gen_params.vae_tiling_params.tile_size_x = 512;
+                    img_gen_params.vae_tiling_params.tile_size_y = 512;
+                }
+                
+                results = generate_image(ctx.sd_ctx.get(), &img_gen_params);
+                
+                first_pass_success = (results != nullptr);
+                if (first_pass_success) {
+                    first_pass_success = false;
+                    for (int i = 0; i < num_results; i++) {
+                        if (results[i].data != nullptr) {
+                            first_pass_success = true;
+                            break;
+                        }
+                    }
+                }
+                
+                if (!first_pass_success) {
+                    LOG_ERROR("Generation failed after retry.");
+                    res.status = 500;
+                    res.set_content(R"({\"error\":\"generation_failed\",\"message\":\"Stable diffusion generation failed even after retry with conservative settings.\"})", "application/json");
+                    free_sd_images(results, num_results);
+                    return;
+                }
+            }
+
             {
                 std::lock_guard<std::mutex> lock_prog(progress_state.mutex);
                 progress_state.base_step = gen_params.sample_params.sample_steps;
@@ -851,10 +897,13 @@ void handle_generate_image(const httplib::Request& req, httplib::Response& res, 
         }
 
         set_progress_phase("VAE Decoding...");
+        
+        int successful_generations = 0;
         for (int i = 0; i < num_results; i++) {
             if (results[i].data == nullptr) {
                 continue;
             }
+            successful_generations++;
             auto image_bytes = write_image_to_vector(output_format == "jpeg" ? ImageFormat::JPEG : ImageFormat::PNG,
                                                         results[i].data,
                                                         (int)results[i].width,
@@ -904,9 +953,19 @@ void handle_generate_image(const httplib::Request& req, httplib::Response& res, 
             out["data"].push_back(item);
         }
 
+        if (successful_generations == 0) {
+            LOG_ERROR("All generated images were null (VAE decoding pass).");
+            res.status = 500;
+            res.set_content(R"({\"error\":\"generation_failed\",\"message\":\"Stable diffusion returned only null images. This can happen if the VAE failed or the model is corrupted.\"})", "application/json");
+            free_sd_images(results, num_results);
+            return;
+        }
+
         out["generation_time"] = total_generation_time;
         res.set_content(out.dump(), "application/json");
         res.status = 200;
+
+        free_sd_images(results, num_results);
 
         if (init_image.data) {
             stbi_image_free(init_image.data);
@@ -1111,45 +1170,111 @@ void handle_edit_image(const httplib::Request& req, httplib::Response& res, Serv
                 res.set_content(R"({\"error\":\"no model loaded\"})", "application/json");
                 return;
             }
-            set_progress_phase("Sampling...");
-            results     = generate_image(ctx.sd_ctx.get(), &img_gen_params);
-            num_results = gen_params.batch_count;
+        set_progress_phase("Sampling...");
+        results     = generate_image(ctx.sd_ctx.get(), &img_gen_params);
+        num_results = gen_params.batch_count;
+
+        // B0.1 & B0.2: Fail Loudly + Conservative Retry
+        bool success = (results != nullptr);
+        if (success) {
+            success = false;
+            for (int i = 0; i < num_results; i++) {
+                if (results[i].data != nullptr) {
+                    success = true;
+                    break;
+                }
+            }
         }
 
-        set_progress_phase("VAE Decoding...");
-        mysti::json out;
-        out["created"]       = iso_timestamp_now();
-        out["data"]          = mysti::json::array();
-        out["output_format"] = output_format;
+        if (!success) {
+            LOG_WARN("Edit generation failed (empty results). Retrying with conservative settings (VAE tiling)...");
+            set_progress_message("Retrying with VAE tiling...");
+            
+            free_sd_images(results, num_results);
+            
+            img_gen_params.vae_tiling_params.enabled = true;
+            if (img_gen_params.vae_tiling_params.tile_size_x <= 0) {
+                img_gen_params.vae_tiling_params.tile_size_x = 512;
+                img_gen_params.vae_tiling_params.tile_size_y = 512;
+            }
+            
+            results = generate_image(ctx.sd_ctx.get(), &img_gen_params);
+            
+            success = (results != nullptr);
+            if (success) {
+                success = false;
+                for (int i = 0; i < num_results; i++) {
+                    if (results[i].data != nullptr) {
+                        success = true;
+                        break;
+                    }
+                }
+            }
+            
+            if (!success) {
+                LOG_ERROR("Edit generation failed after retry.");
+                res.status = 500;
+                res.set_content(R"({\"error\":\"generation_failed\",\"message\":\"Stable diffusion generation failed even after retry with conservative settings.\"})", "application/json");
+                free_sd_images(results, num_results);
+                
+                // Still need to free other resources
+                if (init_image.data) stbi_image_free(init_image.data);
+                if (mask_image.data) stbi_image_free(mask_image.data);
+                for (auto ref_image : ref_images) stbi_image_free(ref_image.data);
+                return;
+            }
+        }
+    }
 
-        for (int i = 0; i < num_results; i++) {
-            if (results[i].data == nullptr)
-                continue;
-            auto image_bytes = write_image_to_vector(output_format == "jpeg" ? ImageFormat::JPEG : ImageFormat::PNG,
-                                                        results[i].data,
-                                                        (int)results[i].width,
-                                                        (int)results[i].height,
-                                                        (int)results[i].channel,
-                                                        output_compression);
-            std::string b64 = base64_encode(image_bytes);
-            mysti::json item;
-            item["b64_json"] = b64;
-            item["seed"] = gen_params.seed;
-            out["data"].push_back(item);
-        }
+    set_progress_phase("VAE Decoding...");
+    mysti::json out;
+    out["created"]       = iso_timestamp_now();
+    out["data"]          = mysti::json::array();
+    out["output_format"] = output_format;
 
-        res.set_content(out.dump(), "application/json");
-        res.status = 200;
+    int successful_generations = 0;
+    for (int i = 0; i < num_results; i++) {
+        if (results[i].data == nullptr)
+            continue;
+        successful_generations++;
+        auto image_bytes = write_image_to_vector(output_format == "jpeg" ? ImageFormat::JPEG : ImageFormat::PNG,
+                                                    results[i].data,
+                                                    (int)results[i].width,
+                                                    (int)results[i].height,
+                                                    (int)results[i].channel,
+                                                    output_compression);
+        std::string b64 = base64_encode(image_bytes);
+        mysti::json item;
+        item["b64_json"] = b64;
+        item["seed"] = gen_params.seed;
+        out["data"].push_back(item);
+    }
 
-        if (init_image.data) {
-            stbi_image_free(init_image.data);
-        }
-        if (mask_image.data) {
-            stbi_image_free(mask_image.data);
-        }
-        for (auto ref_image : ref_images) {
-            stbi_image_free(ref_image.data);
-        }
+    if (successful_generations == 0) {
+        LOG_ERROR("All generated images were null (VAE decoding pass).");
+        res.status = 500;
+        res.set_content(R"({\"error\":\"generation_failed\",\"message\":\"Stable diffusion returned only null images.\"})", "application/json");
+        free_sd_images(results, num_results);
+        if (init_image.data) stbi_image_free(init_image.data);
+        if (mask_image.data) stbi_image_free(mask_image.data);
+        for (auto ref_image : ref_images) stbi_image_free(ref_image.data);
+        return;
+    }
+
+    res.set_content(out.dump(), "application/json");
+    res.status = 200;
+
+    free_sd_images(results, num_results);
+
+    if (init_image.data) {
+        stbi_image_free(init_image.data);
+    }
+    if (mask_image.data) {
+        stbi_image_free(mask_image.data);
+    }
+    for (auto ref_image : ref_images) {
+        stbi_image_free(ref_image.data);
+    }
     } catch (const std::exception& e) {
         res.status = 500;
         mysti::json err;

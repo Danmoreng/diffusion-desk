@@ -20,6 +20,10 @@ struct ServerContext {
     std::string& current_upscale_model_path;
     std::string active_llm_model_path;
     bool active_llm_model_loaded = false;
+    
+    // B2.5: Idle timeout tracking
+    std::chrono::steady_clock::time_point last_access = std::chrono::steady_clock::now();
+    void update_last_access() { last_access = std::chrono::steady_clock::now(); }
 };
 
 // Endpoint handlers
