@@ -38,7 +38,7 @@ const updateParams = () => {
           @click="explorationStore.toggleLock('prompt')"
           title="Unlock to allow AI prompt variations"
         >
-          {{ explorationStore.locks.prompt ? '🔒' : '🔓' }}
+          <i :class="explorationStore.locks.prompt ? 'bi bi-lock-fill' : 'bi bi-unlock-fill'"></i>
         </button>
       </div>
       <textarea 
@@ -69,7 +69,7 @@ const updateParams = () => {
             class="btn btn-xs p-0 border-0 shadow-none" 
             @click="explorationStore.toggleLock('steps')"
           >
-            {{ explorationStore.locks.steps ? '🔒' : '🔓' }}
+            <i :class="explorationStore.locks.steps ? 'bi bi-lock-fill' : 'bi bi-unlock-fill'"></i>
           </button>
         </div>
         <input 
@@ -88,7 +88,7 @@ const updateParams = () => {
             class="btn btn-xs p-0 border-0 shadow-none" 
             @click="explorationStore.toggleLock('guidance')"
           >
-            {{ explorationStore.locks.guidance ? '🔒' : '🔓' }}
+            <i :class="explorationStore.locks.guidance ? 'bi bi-lock-fill' : 'bi bi-unlock-fill'"></i>
           </button>
         </div>
         <input 
@@ -109,7 +109,7 @@ const updateParams = () => {
           class="btn btn-xs p-0 border-0 shadow-none" 
           @click="explorationStore.toggleLock('scheduler')"
         >
-          {{ explorationStore.locks.scheduler ? '🔒' : '🔓' }}
+          <i :class="explorationStore.locks.scheduler ? 'bi bi-lock-fill' : 'bi bi-unlock-fill'"></i>
         </button>
       </div>
       <select 
@@ -129,7 +129,7 @@ const updateParams = () => {
           class="btn btn-xs p-0 border-0 shadow-none" 
           @click="explorationStore.toggleLock('seed')"
         >
-          {{ explorationStore.locks.seed ? '🔒' : '🔓' }}
+          <i :class="explorationStore.locks.seed ? 'bi bi-lock-fill' : 'bi bi-unlock-fill'"></i>
         </button>
       </div>
       <input 

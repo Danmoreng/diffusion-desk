@@ -303,7 +303,7 @@ watch(maskBlur, () => {
     </div>
 
     <div v-if="!store.initImage" class="upload-zone border rounded p-5 text-center cursor-pointer" @click="($refs.fileInput as any).click()">
-      <div class="display-1 mb-3 text-muted">🎨</div>
+      <div class="display-1 mb-3 text-muted"><i class="bi bi-palette"></i></div>
       <h4>Upload an image to start inpainting</h4>
       <p class="text-muted">You will be able to paint over the areas you want to regenerate.</p>
       <input type="file" ref="fileInput" class="d-none" accept="image/*" @change="onFileChange" />

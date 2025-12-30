@@ -44,7 +44,7 @@ function cancel() {
       <div class="modal-dialog modal-dialog-centered">
         <div class="modal-content">
           <div class="modal-header border-bottom-0">
-            <h5 class="modal-title text-danger">🗑️ Delete {{ count && count > 1 ? `${count} Images` : 'Image' }}</h5>
+            <h5 class="modal-title text-danger"><i class="bi bi-trash"></i> Delete {{ count && count > 1 ? `${count} Images` : 'Image' }}</h5>
             <button type="button" class="btn-close" @click="cancel"></button>
           </div>
           <div class="modal-body text-center">

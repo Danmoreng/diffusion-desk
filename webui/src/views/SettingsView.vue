@@ -23,9 +23,9 @@ async function runTest() {
         <div class="d-flex justify-content-between align-items-center">
           <label for="themeSelect" class="form-label mb-0">Theme</label>
           <select id="themeSelect" class="form-select form-select-sm" v-model="store.theme" style="width: auto; min-width: 120px;">
-            <option value="system">🖥️ System</option>
-            <option value="light">☀️ Light</option>
-            <option value="dark">🌙 Dark</option>
+            <option value="system"><i class="bi bi-display"></i> System</option>
+            <option value="light"><i class="bi bi-sun"></i> Light</option>
+            <option value="dark"><i class="bi bi-moon"></i> Dark</option>
           </select>
         </div>
       </div>
@@ -41,7 +41,7 @@ async function runTest() {
                       <div class="input-group input-group-sm">
                         <input type="text" id="outputDir" class="form-control" v-model="store.outputDir" placeholder="./outputs">
                         <button class="btn btn-primary" type="button" @click="store.updateConfig">
-                          💾 Save Path
+                          <i class="bi bi-save"></i> Save Path
                         </button>
                       </div>
                       <div class="form-text x-small">Path on the server where images will be saved and loaded from.</div>
@@ -52,7 +52,7 @@ async function runTest() {
                       <div class="input-group input-group-sm">
                         <input type="text" id="modelDir" class="form-control" v-model="store.modelDir" placeholder="./models">
                         <button class="btn btn-primary" type="button" @click="store.updateConfig().then(() => store.fetchModels())">
-                          💾 Save & Scan
+                          <i class="bi bi-save"></i> Save & Scan
                         </button>
                       </div>
           <div class="form-text x-small">Root directory to scan for models.</div>

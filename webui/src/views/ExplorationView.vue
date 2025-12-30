@@ -52,7 +52,7 @@ const dynamicAspectRatio = computed(() => {
             <aside class="col-md-3 border-end h-100 d-flex flex-column bg-body-tertiary">
               <div class="p-3 flex-grow-1 overflow-y-auto">
                 <h5 class="mb-3 d-flex align-items-center">
-                  🎛️ Anchor Params
+                  <i class="bi bi-sliders me-2"></i> Anchor Params
                 </h5>
                 <CondensedGenerationForm />
                 <hr class="my-3">
@@ -65,7 +65,7 @@ const dynamicAspectRatio = computed(() => {
             :disabled="explorationStore.isGeneratingVariations"
           >
             <span v-if="explorationStore.isGeneratingVariations" class="spinner-border spinner-border-sm"></span>
-            <span v-else>🔄</span>
+            <span v-else><i class="bi bi-arrow-repeat"></i></span>
             Refresh Variations
           </button>
         </div>

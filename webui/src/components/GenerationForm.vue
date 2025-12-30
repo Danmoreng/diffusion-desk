@@ -190,7 +190,7 @@ const clearInitImage = () => {
         <div v-if="mode === 'img2img'">
           <label class="form-label">Initial Image:</label>
           <div v-if="!store.initImage" class="image-upload-dropzone border rounded p-4 text-center" @click="($refs.fileInput as any).click()">
-            <span class="display-6">📁</span>
+            <i class="bi bi-folder display-6"></i>
             <p class="mb-0 mt-2">Click to upload or drag & drop</p>
             <input type="file" ref="fileInput" class="d-none" accept="image/*" @change="onFileChange" />
           </div>
@@ -205,10 +205,10 @@ const clearInitImage = () => {
             </div>
             <div class="mt-2 d-flex justify-content-center flex-wrap gap-2">
               <button type="button" class="btn btn-outline-secondary btn-sm" @click="useImageSize">
-                📏 Apply Scale ({{ Math.round((uploadedImageWidth * scaleFactor) / 64) * 64 }}x{{ Math.round((uploadedImageHeight * scaleFactor) / 64) * 64 }})
+                <i class="bi bi-ruler"></i> Apply Scale ({{ Math.round((uploadedImageWidth * scaleFactor) / 64) * 64 }}x{{ Math.round((uploadedImageHeight * scaleFactor) / 64) * 64 }})
               </button>
               <button type="button" class="btn btn-danger btn-sm" @click="clearInitImage">
-                🗑️ Clear
+                <i class="bi bi-trash"></i> Clear
               </button>
             </div>
           </div>
@@ -223,7 +223,7 @@ const clearInitImage = () => {
               <input type="range" class="form-range" v-model.number="scaleFactor" min="1.0" max="2.0" step="0.1">
             </div>
             <button type="button" class="btn btn-outline-secondary btn-sm mt-1" @click="useImageSize">
-              📏 Apply Scale to Canvas
+              <i class="bi bi-ruler"></i> Apply Scale to Canvas
             </button>
         </div>
       </div>
@@ -250,7 +250,7 @@ const clearInitImage = () => {
               :disabled="store.isLlmThinking || !store.prompt"
             >
               <span v-if="store.isLlmThinking" class="spinner-border spinner-border-sm" style="width: 0.7rem; height: 0.7rem;"></span>
-              <span v-else>🪄 Enhance</span>
+              <span v-else><i class="bi bi-magic"></i> Enhance</span>
             </button>
             <div class="btn-group ms-1" role="group">
               <button 
@@ -261,7 +261,7 @@ const clearInitImage = () => {
                 :disabled="!store.canUndo"
                 title="Undo"
               >
-                ↩️
+                <i class="bi bi-arrow-counterclockwise"></i>
               </button>
               <button 
                 type="button" 
@@ -271,7 +271,7 @@ const clearInitImage = () => {
                 :disabled="!store.canRedo"
                 title="Redo"
               >
-                ↪️
+                <i class="bi bi-arrow-clockwise"></i>
               </button>
             </div>
           </div>
@@ -282,7 +282,7 @@ const clearInitImage = () => {
             style="font-size: 0.75rem;"
             @click="store.parseA1111Parameters(store.prompt)"
           >
-            ✨ Apply Forge Parameters
+            <i class="bi bi-stars"></i> Apply Forge Parameters
           </button>
         </div>
         <textarea
@@ -314,7 +314,7 @@ const clearInitImage = () => {
           class="btn btn-link btn-xs p-0 text-decoration-none text-muted opacity-75 hover-opacity-100"
           @click="store.resetToModelDefaults()"
         >
-          <span class="small">🔄 Reset to Model Defaults</span>
+          <span class="small"><i class="bi bi-arrow-clockwise"></i> Reset to Model Defaults</span>
         </button>
       </div>
 
@@ -352,10 +352,10 @@ const clearInitImage = () => {
                 class="form-control"
             />
             <button type="button" class="btn btn-outline-secondary" @click="store.reuseLastSeed" title="Reuse Last Seed" :disabled="!store.lastParams">
-                ♻️
+                <i class="bi bi-recycle"></i>
             </button>
             <button type="button" class="btn btn-outline-secondary" @click="store.randomizeSeed" title="Randomize Seed">
-                🎲
+                <i class="bi bi-dice-5"></i>
             </button>
           </div>
         </div>
@@ -377,7 +377,7 @@ const clearInitImage = () => {
               />
             </div>
             <button type="button" class="btn btn-outline-secondary btn-sm" @click="store.swapDimensions" title="Swap Dimensions">
-              ⇄
+              <i class="bi bi-arrow-left-right"></i>
             </button>
             <div class="input-group input-group-sm">
               <span class="input-group-text">Height</span>

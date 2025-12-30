@@ -69,7 +69,7 @@ const clearImage = () => {
         <div class="mb-4">
           <label class="form-label fw-bold small text-uppercase text-muted">1. Select Image</label>
           <div v-if="!selectedImage" class="upscale-upload-zone border rounded p-5 text-center cursor-pointer" @click="fileInput?.click()">
-            <div class="display-4 mb-2">🖼️</div>
+            <div class="display-4 mb-2"><i class="bi bi-image"></i></div>
             <p class="mb-0">Click to upload or drag & drop</p>
             <input type="file" ref="fileInput" class="d-none" accept="image/*" @change="onFileChange" />
           </div>
@@ -78,7 +78,7 @@ const clearImage = () => {
             <div class="mt-2 text-white-50 small">
               {{ uploadedImageWidth }}x{{ uploadedImageHeight }} ({{ aspectRatio }})
             </div>
-            <button class="btn btn-danger btn-sm position-absolute top-0 end-0 m-2" @click="clearImage">✕</button>
+            <button class="btn btn-danger btn-sm position-absolute top-0 end-0 m-2" @click="clearImage"><i class="bi bi-x-lg"></i></button>
           </div>
         </div>
 
@@ -131,7 +131,7 @@ const clearImage = () => {
         <div class="flex-grow-1 d-flex align-items-center justify-content-center border rounded bg-light overflow-hidden position-relative" style="min-height: 400px;">
            <ImageDisplay v-if="store.imageUrls.length > 0" />
            <div v-else class="text-muted text-center p-5">
-              <div class="display-1 opacity-25 mb-3">✨</div>
+              <div class="display-1 opacity-25 mb-3"><i class="bi bi-magic"></i></div>
               <p>Upscaled image will appear here</p>
            </div>
            
