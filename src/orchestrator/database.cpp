@@ -48,6 +48,8 @@ void Database::init_schema() {
                 generation_time REAL,
                 auto_tagged BOOLEAN DEFAULT 0,
                 model_id TEXT,
+                rating INTEGER DEFAULT 0,
+                params_json TEXT,
                 FOREIGN KEY(parent_uuid) REFERENCES generations(uuid)
             );
         )");
@@ -56,11 +58,10 @@ void Database::init_schema() {
         try { m_db.exec("ALTER TABLE generations ADD COLUMN model_id TEXT;"); } catch (...) {}
         try { m_db.exec("ALTER TABLE generations ADD COLUMN rating INTEGER DEFAULT 0;"); } catch (...) {}
         try { m_db.exec("ALTER TABLE generations ADD COLUMN auto_tagged BOOLEAN DEFAULT 0;"); } catch (...) {}
+        try { m_db.exec("ALTER TABLE generations ADD COLUMN params_json TEXT;"); } catch (...) {}
 
         // Check if columns exist (migrations)
         try { m_db.exec("ALTER TABLE generations ADD COLUMN generation_time REAL;"); } catch (...) {}
-        try { m_db.exec("ALTER TABLE generations ADD COLUMN auto_tagged BOOLEAN DEFAULT 0;"); } catch (...) {}
-        try { m_db.exec("ALTER TABLE generations ADD COLUMN rating INTEGER DEFAULT 0;"); } catch (...) {}
 
         // Table: tags
         m_db.exec(R"(
@@ -133,6 +134,8 @@ void Database::init_schema() {
         // Create indexes for performance
         m_db.exec("CREATE INDEX IF NOT EXISTS idx_generations_timestamp ON generations(timestamp DESC);");
         m_db.exec("CREATE INDEX IF NOT EXISTS idx_tags_name ON tags(name);");
+        m_db.exec("CREATE INDEX IF NOT EXISTS idx_generations_model_id ON generations(model_id);");
+        m_db.exec("CREATE INDEX IF NOT EXISTS idx_generations_rating ON generations(rating);");
 
         transaction.commit();
         std::cout << "[Database] Schema initialized successfully." << std::endl;
@@ -153,8 +156,8 @@ void Database::save_generation(const mysti::json& j) {
             INSERT OR REPLACE INTO generations (
                 uuid, file_path, prompt, negative_prompt, seed, 
                 width, height, steps, cfg_scale, model_hash, 
-                generation_time, parent_uuid
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                generation_time, parent_uuid, params_json, model_id
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         )");
 
         query.bind(1, uuid);
@@ -174,6 +177,9 @@ void Database::save_generation(const mysti::json& j) {
         } else {
             query.bind(12); // NULL
         }
+
+        query.bind(13, j.dump());
+        query.bind(14, j.value("model_id", ""));
 
         query.exec();
         // std::cout << "[Database] Saved generation " << uuid << std::endl;
@@ -295,6 +301,18 @@ mysti::json Database::get_generations(int limit, int offset, const std::vector<s
             gen["timestamp"] = query.getColumn("timestamp").getText();
             
             mysti::json params;
+            
+            // Try to load detailed params from JSON blob first
+            try {
+                std::string pjson = query.getColumn("params_json").getText();
+                if (!pjson.empty()) {
+                    params = mysti::json::parse(pjson);
+                }
+            } catch (...) {
+                // Ignore parsing errors or missing column
+            }
+
+            // Overlay core columns to ensure consistency
             params["prompt"] = query.getColumn("prompt").getText();
             params["negative_prompt"] = query.getColumn("negative_prompt").getText();
             params["seed"] = (long long)query.getColumn("seed").getInt64();
@@ -472,7 +490,7 @@ bool Database::generation_exists(const std::string& file_path) {
 void Database::insert_generation(const Generation& gen) {
     std::lock_guard<std::mutex> lock(m_mutex);
     try {
-        SQLite::Statement ins(m_db, "INSERT INTO generations (uuid, file_path, prompt, negative_prompt, seed, width, height, steps, cfg_scale, generation_time, model_hash, is_favorite, auto_tagged, rating, model_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+        SQLite::Statement ins(m_db, "INSERT INTO generations (uuid, file_path, prompt, negative_prompt, seed, width, height, steps, cfg_scale, generation_time, model_hash, is_favorite, auto_tagged, rating, model_id, params_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
         ins.bind(1, gen.uuid);
         ins.bind(2, gen.file_path);
         ins.bind(3, gen.prompt);
@@ -488,9 +506,61 @@ void Database::insert_generation(const Generation& gen) {
         ins.bind(13, gen.auto_tagged ? 1 : 0);
         ins.bind(14, gen.rating);
         ins.bind(15, gen.model_id);
+        ins.bind(16, gen.params_json);
         ins.exec();
     } catch (const std::exception& e) {
         std::cerr << "[Database] insert_generation failed: " << e.what() << std::endl;
+    }
+}
+
+void Database::insert_generation_with_tags(const Generation& gen, const std::vector<std::string>& tags) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    try {
+        SQLite::Transaction transaction(m_db);
+
+        // 1. Insert Generation
+        SQLite::Statement ins(m_db, "INSERT INTO generations (uuid, file_path, prompt, negative_prompt, seed, width, height, steps, cfg_scale, generation_time, model_hash, is_favorite, auto_tagged, rating, model_id, params_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+        ins.bind(1, gen.uuid);
+        ins.bind(2, gen.file_path);
+        ins.bind(3, gen.prompt);
+        ins.bind(4, gen.negative_prompt);
+        ins.bind(5, (int64_t)gen.seed);
+        ins.bind(6, gen.width);
+        ins.bind(7, gen.height);
+        ins.bind(8, gen.steps);
+        ins.bind(9, gen.cfg_scale);
+        ins.bind(10, gen.generation_time);
+        ins.bind(11, gen.model_hash);
+        ins.bind(12, gen.is_favorite ? 1 : 0);
+        ins.bind(13, gen.auto_tagged ? 1 : 0);
+        ins.bind(14, gen.rating);
+        ins.bind(15, gen.model_id);
+        ins.bind(16, gen.params_json);
+        ins.exec();
+
+        int64_t gen_id = m_db.getLastInsertRowid();
+
+        // 2. Insert and Link Tags
+        for (const auto& tag : tags) {
+            SQLite::Statement ins_tag(m_db, "INSERT OR IGNORE INTO tags (name) VALUES (?)");
+            ins_tag.bind(1, tag);
+            ins_tag.exec();
+
+            SQLite::Statement get_tag_id(m_db, "SELECT id FROM tags WHERE name = ?");
+            get_tag_id.bind(1, tag);
+            if (get_tag_id.executeStep()) {
+                int tag_id = get_tag_id.getColumn(0);
+                SQLite::Statement link(m_db, "INSERT OR IGNORE INTO image_tags (generation_id, tag_id, source) VALUES (?, ?, ?)");
+                link.bind(1, (int)gen_id);
+                link.bind(2, tag_id);
+                link.bind(3, "user");
+                link.exec();
+            }
+        }
+
+        transaction.commit();
+    } catch (const std::exception& e) {
+        std::cerr << "[Database] insert_generation_with_tags failed: " << e.what() << std::endl;
     }
 }
 

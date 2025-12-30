@@ -250,11 +250,8 @@ void handle_load_model(const httplib::Request& req, httplib::Response& res, Serv
         {
             std::lock_guard<std::mutex> lock(ctx.sd_ctx_mutex);
             
-            // Free old context
-            if (ctx.sd_ctx) {
-                free_sd_ctx(ctx.sd_ctx);
-                ctx.sd_ctx = nullptr;
-            }
+            // Smart pointer reset handles freeing old context
+            ctx.sd_ctx.reset();
 
             // Update params based on where it was found
             std::string rel_s = model_id;
@@ -284,7 +281,7 @@ void handle_load_model(const httplib::Request& req, httplib::Response& res, Serv
             }
 
             sd_ctx_params_t sd_ctx_p = ctx.ctx_params.to_sd_ctx_params_t(false, false, false);
-            ctx.sd_ctx = new_sd_ctx(&sd_ctx_p);
+            ctx.sd_ctx.reset(new_sd_ctx(&sd_ctx_p));
 
             if (!ctx.sd_ctx) {
                 throw std::runtime_error("failed to create new context with selected model");
@@ -321,16 +318,11 @@ void handle_load_upscale_model(const httplib::Request& req, httplib::Response& r
 
         {
             std::lock_guard<std::mutex> lock(ctx.sd_ctx_mutex);
-            if (ctx.upscaler_ctx) {
-                free_upscaler_ctx(ctx.upscaler_ctx);
-                ctx.upscaler_ctx = nullptr;
-            }
-
-            ctx.upscaler_ctx = new_upscaler_ctx(model_path.string().c_str(), 
+            ctx.upscaler_ctx.reset(new_upscaler_ctx(model_path.string().c_str(), 
                                             ctx.ctx_params.offload_params_to_cpu,
                                             false, // direct
                                             ctx.ctx_params.n_threads,
-                                            512); // tile_size
+                                            512)); // tile_size
 
             if (!ctx.upscaler_ctx) {
                 throw std::runtime_error("failed to create upscaler context");
@@ -408,11 +400,11 @@ void handle_upscale_image(const httplib::Request& req, httplib::Response& res, S
             }
             
             if (upscale_factor == 0) {
-                upscale_factor = get_upscale_factor(ctx.upscaler_ctx);
+                upscale_factor = get_upscale_factor(ctx.upscaler_ctx.get());
             }
 
             LOG_INFO("Upscaling image: %dx%d -> factor %d", input_image.width, input_image.height, upscale_factor);
-            upscaled_image = upscale(ctx.upscaler_ctx, input_image, upscale_factor);
+            upscaled_image = upscale(ctx.upscaler_ctx.get(), input_image, upscale_factor);
         }
 
         stbi_image_free(input_image.data);
@@ -736,7 +728,7 @@ void handle_generate_image(const httplib::Request& req, httplib::Response& res, 
             }
 
             set_progress_phase("Sampling...");
-            results     = generate_image(ctx.sd_ctx, &img_gen_params);
+            results     = generate_image(ctx.sd_ctx.get(), &img_gen_params);
             num_results = gen_params.batch_count;
 
             {
@@ -755,10 +747,9 @@ void handle_generate_image(const httplib::Request& req, httplib::Response& res, 
                     fs::path upscaler_path = fs::path(ctx.svr_params.model_dir) / gen_params.hires_upscale_model;
                     LOG_INFO("Attempting to load upscaler: %s", upscaler_path.string().c_str());
                     if (fs::exists(upscaler_path)) {
-                        if (ctx.upscaler_ctx) free_upscaler_ctx(ctx.upscaler_ctx);
-                        ctx.upscaler_ctx = new_upscaler_ctx(upscaler_path.string().c_str(), 
+                        ctx.upscaler_ctx.reset(new_upscaler_ctx(upscaler_path.string().c_str(), 
                                                         ctx.ctx_params.offload_params_to_cpu,
-                                                        false, ctx.ctx_params.n_threads, 512);
+                                                        false, ctx.ctx_params.n_threads, 512));
                         ctx.current_upscale_model_path = gen_params.hires_upscale_model;
                         LOG_INFO("Upscaler loaded successfully.");
                     } else {
@@ -774,7 +765,7 @@ void handle_generate_image(const httplib::Request& req, httplib::Response& res, 
 
                     if (ctx.upscaler_ctx) {
                         LOG_INFO("Upscaling for highres-fix (factor %.2f)...", gen_params.hires_upscale_factor);
-                        upscaled_img = upscale(ctx.upscaler_ctx, base_img, (uint32_t)gen_params.hires_upscale_factor);
+                        upscaled_img = upscale(ctx.upscaler_ctx.get(), base_img, (uint32_t)gen_params.hires_upscale_factor);
                     } else {
                         LOG_INFO("Resizing for highres-fix (factor %.2f) using simple resize...", gen_params.hires_upscale_factor);
                         upscaled_img.width = (uint32_t)(base_img.width * gen_params.hires_upscale_factor);
@@ -830,7 +821,7 @@ void handle_generate_image(const httplib::Request& req, httplib::Response& res, 
                                             (int)hires_params.control_image.channel);
                     }
 
-                    sd_image_t* second_pass_result = generate_image(ctx.sd_ctx, &hires_params);
+                    sd_image_t* second_pass_result = generate_image(ctx.sd_ctx.get(), &hires_params);
                     
                     if (second_pass_result && second_pass_result[0].data) {
                         hires_results[i] = second_pass_result[0];
@@ -1121,7 +1112,7 @@ void handle_edit_image(const httplib::Request& req, httplib::Response& res, Serv
                 return;
             }
             set_progress_phase("Sampling...");
-            results     = generate_image(ctx.sd_ctx, &img_gen_params);
+            results     = generate_image(ctx.sd_ctx.get(), &img_gen_params);
             num_results = gen_params.batch_count;
         }
 

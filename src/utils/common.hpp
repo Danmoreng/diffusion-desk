@@ -64,6 +64,36 @@ void log_print(enum sd_log_level_t level, const char* log, bool verbose, bool co
 void set_log_verbose(bool verbose);
 void set_log_color(bool color);
 
+// Resource Safety Wrappers
+struct SdCtxDeleter {
+    void operator()(sd_ctx_t* ptr) const {
+        if (ptr) free_sd_ctx(ptr);
+    }
+};
+struct UpscalerCtxDeleter {
+    void operator()(upscaler_ctx_t* ptr) const {
+        if (ptr) free_upscaler_ctx(ptr);
+    }
+};
+
+using SdCtxPtr = std::unique_ptr<sd_ctx_t, SdCtxDeleter>;
+using UpscalerCtxPtr = std::unique_ptr<upscaler_ctx_t, UpscalerCtxDeleter>;
+
+// Forward declarations for Llama Worker resources
+class LlamaServer;
+struct llama_server_context;
+
+// Resource Safety Wrappers for Llama
+struct LlamaServerDeleter {
+    void operator()(LlamaServer* ptr) const; 
+};
+struct LlamaServerContextDeleter {
+    void operator()(llama_server_context* ptr) const;
+};
+
+using LlamaServerPtr = std::unique_ptr<LlamaServer, LlamaServerDeleter>;
+using LlamaServerContextPtr = std::unique_ptr<llama_server_context, LlamaServerContextDeleter>;
+
 std::string generate_random_token(size_t length = 32);
 std::string extract_json_block(const std::string& content);
 

@@ -14,9 +14,9 @@ struct ServerContext {
     SDSvrParams& svr_params;
     SDContextParams& ctx_params;
     SDGenerationParams& default_gen_params;
-    sd_ctx_t*& sd_ctx;
+    SdCtxPtr& sd_ctx;
     std::mutex& sd_ctx_mutex;
-    upscaler_ctx_t*& upscaler_ctx;
+    UpscalerCtxPtr& upscaler_ctx;
     std::string& current_upscale_model_path;
     std::string active_llm_model_path;
     bool active_llm_model_loaded = false;

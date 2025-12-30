@@ -40,13 +40,15 @@ void ImportService::auto_import_outputs(const std::string& output_dir) {
                         float cfg = 7.0f;
                         long long seed = 0;
                         double gen_time = 0.0;
+                        std::string params_json = "";
 
                         auto json_path = path;
                         json_path.replace_extension(".json");
                         if (fs::exists(json_path)) {
                             try {
                                 std::ifstream f(json_path);
-                                auto j = mysti::json::parse(f);
+                                std::string raw_json((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+                                auto j = mysti::json::parse(raw_json);
                                 prompt = j.value("prompt", "");
                                 neg_prompt = j.value("negative_prompt", "");
                                 seed = j.value("seed", 0LL);
@@ -55,6 +57,7 @@ void ImportService::auto_import_outputs(const std::string& output_dir) {
                                 steps = j.value("steps", 20);
                                 cfg = j.value("cfg_scale", 7.0f);
                                 gen_time = j.value("generation_time", 0.0);
+                                params_json = raw_json;
                             } catch(...) {}
                         } else {
                             auto txt_path = path;
@@ -93,6 +96,7 @@ void ImportService::auto_import_outputs(const std::string& output_dir) {
                         gen.steps = steps;
                         gen.cfg_scale = cfg;
                         gen.generation_time = gen_time;
+                        gen.params_json = params_json;
                         
                         m_db->insert_generation(gen);
                         imported++;
