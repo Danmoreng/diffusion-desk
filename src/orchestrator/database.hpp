@@ -26,6 +26,7 @@ struct Generation {
     bool is_favorite = false;
     int rating = 0;
     bool auto_tagged = false;
+    std::string params_json;
 };
 
 struct TagInfo {
@@ -77,6 +78,8 @@ public:
 
     // Insertion
     void insert_generation(const Generation& gen);
+    void insert_generation_with_tags(const Generation& gen, const std::vector<std::string>& tags);
+    
     // Tag Management
     void add_tag(const std::string& uuid, const std::string& tag, const std::string& source = "user");
     // Overload for internal use when we already have the ID (avoids lookups if we trust the ID)

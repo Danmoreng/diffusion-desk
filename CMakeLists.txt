@@ -82,6 +82,8 @@ add_executable(mysti_server
     src/orchestrator/services/tagging_service.cpp
     src/orchestrator/services/import_service.cpp
     src/orchestrator/services/health_service.cpp
+    src/orchestrator/services/resource_manager.cpp
+    src/orchestrator/services/service_controller.cpp
     ${COMMON_SOURCES}
 )
 

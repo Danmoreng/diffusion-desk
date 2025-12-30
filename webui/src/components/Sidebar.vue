@@ -2,6 +2,7 @@
 import { onMounted, computed, watch, onUnmounted, ref } from 'vue'
 import { useGenerationStore } from '@/stores/generation'
 import Tooltip from 'bootstrap/js/dist/tooltip'
+import VramIndicator from './VramIndicator.vue'
 
 const store = useGenerationStore()
 const miniModelBtn = ref<HTMLElement | null>(null)
