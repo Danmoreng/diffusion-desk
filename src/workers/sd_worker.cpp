@@ -111,6 +111,9 @@ int run_sd_worker(SDSvrParams& svr_params, SDContextParams& ctx_params, SDGenera
         j["service"] = "sd";
         j["version"] = version_string();
         j["model_loaded"] = (ctx.sd_ctx != nullptr);
+        std::string mp = ctx.ctx_params.diffusion_model_path;
+        if (mp.empty()) mp = ctx.ctx_params.model_path;
+        j["model_path"] = mp;
         j["vram_allocated_mb"] = (int)(get_current_process_vram_usage_gb() * 1024.0f);
         j["vram_free_mb"] = (int)(get_free_vram_gb() * 1024.0f);
         res.set_content(j.dump(), "application/json");

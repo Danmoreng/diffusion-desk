@@ -68,7 +68,10 @@ ArbitrationResult ResourceManager::prepare_for_sd_generation(float estimated_tot
 }
 
 bool ResourceManager::is_llm_loaded() {
-    if (m_last_llm_vram_gb > 0.1f) return true; // Quick check based on metrics
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        if (m_last_llm_vram_gb > 0.1f) return true; // Quick check based on metrics
+    }
     
     httplib::Headers headers;
     if (!m_token.empty()) headers.emplace("X-Internal-Token", m_token);
