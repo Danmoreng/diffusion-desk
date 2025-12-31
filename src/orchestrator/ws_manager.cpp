@@ -46,11 +46,7 @@ void WsManager::stop() {
 
 void WsManager::broadcast(const json& msg) {
     std::string text = msg.dump();
-    auto clients = _server->getClients();
-    if (!clients.empty() && msg["type"] == "progress") {
-        LOG_DEBUG("Broadcasting progress to %zu clients", clients.size());
-    }
-    for (auto& client : clients) {
+    for (auto client : _server->getClients()) {
         client->send(text);
     }
 }

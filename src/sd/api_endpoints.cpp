@@ -10,6 +10,15 @@ namespace fs = std::filesystem;
 
 // Handlers Placeholders - To be filled from main.cpp logic
 
+void log_vram_status(const std::string& phase) {
+    float proc = get_current_process_vram_usage_gb();
+    float free = get_free_vram_gb();
+    float total = get_total_vram_gb();
+    float other = total - free - proc;
+    std::string msg = "[VRAM] " + phase + " | Process: " + std::to_string(proc).substr(0, 4) + " GB, Free: " + std::to_string(free).substr(0, 4) + " GB, Other: " + std::to_string(std::max(0.0f, other)).substr(0, 4) + " GB, Total: " + std::to_string(total).substr(0, 4) + " GB\n";
+    log_print(SD_LOG_INFO, msg.c_str(), true, true);
+}
+
 void handle_health(const httplib::Request&, httplib::Response& res) {
     res.set_content(R"({\"ok\":true,\"service\":\"sd-cpp-http\"})", "application/json");
 }
@@ -581,6 +590,16 @@ void handle_generate_image(const httplib::Request& req, httplib::Response& res, 
             return;
         }
 
+        // B2.5: Dynamic Text Encoder Offloading
+        if (gen_params.clip_on_cpu != ctx.ctx_params.clip_on_cpu) {
+            LOG_INFO("Switching CLIP to %s for this generation...", gen_params.clip_on_cpu ? "CPU" : "GPU");
+            std::lock_guard<std::mutex> lock(ctx.sd_ctx_mutex);
+            ctx.sd_ctx.reset();
+            ctx.ctx_params.clip_on_cpu = gen_params.clip_on_cpu;
+            sd_ctx_params_t sd_ctx_p = ctx.ctx_params.to_sd_ctx_params_t(false, false, false);
+            ctx.sd_ctx.reset(new_sd_ctx(&sd_ctx_p));
+        }
+
         bool save_image = j.value("save_image", false);
 
         if (!gen_params.process_and_check(IMG_GEN, "")) {
@@ -703,10 +722,19 @@ void handle_generate_image(const httplib::Request& req, httplib::Response& res, 
             
             LOG_INFO("VAE VRAM Check: Free=%.2fGB, Estimated Needed=%.2fGB", free_vram, estimated_vae_vram);
             
-            if (estimated_vae_vram > free_vram * 0.7f && !img_gen_params.vae_tiling_params.enabled) {
+            bool request_vae_tiling = j.value("vae_tiling", false);
+            if (request_vae_tiling) {
+                LOG_INFO("VAE tiling enabled by request.");
+                img_gen_params.vae_tiling_params.enabled = true;
+            } else if (estimated_vae_vram > free_vram * 0.7f && !img_gen_params.vae_tiling_params.enabled) {
                 LOG_WARN("High VRAM usage predicted. Automatically enabling VAE tiling.");
                 img_gen_params.vae_tiling_params.enabled = true;
                 set_progress_message("VRAM low: VAE tiling enabled");
+            } else {
+                img_gen_params.vae_tiling_params.enabled = false;
+            }
+
+            if (img_gen_params.vae_tiling_params.enabled) {
                 // Use default tile size if not set
                 if (img_gen_params.vae_tiling_params.tile_size_x <= 0) {
                     img_gen_params.vae_tiling_params.tile_size_x = 512;
@@ -728,7 +756,13 @@ void handle_generate_image(const httplib::Request& req, httplib::Response& res, 
             }
 
             set_progress_phase("Sampling...");
+            log_vram_status("Sampling Start");
+            float vram_before = get_current_process_vram_usage_gb();
             results     = generate_image(ctx.sd_ctx.get(), &img_gen_params);
+            float vram_after = get_current_process_vram_usage_gb();
+            float vram_delta = vram_after - vram_before;
+            log_vram_status("Sampling End");
+            LOG_INFO("Generation Sampling finished. Delta: %+.2f GB", vram_delta);
             num_results = gen_params.batch_count;
 
             // B0.1 & B0.2: Fail Loudly + Conservative Retry
@@ -746,17 +780,17 @@ void handle_generate_image(const httplib::Request& req, httplib::Response& res, 
             if (!first_pass_success) {
                 LOG_WARN("First pass generation failed (empty results). Retrying with conservative settings (VAE tiling)...");
                 set_progress_message("Retrying with VAE tiling...");
-                
+
                 free_sd_images(results, num_results);
-                
+
                 img_gen_params.vae_tiling_params.enabled = true;
                 if (img_gen_params.vae_tiling_params.tile_size_x <= 0) {
                     img_gen_params.vae_tiling_params.tile_size_x = 512;
                     img_gen_params.vae_tiling_params.tile_size_y = 512;
                 }
-                
+
                 results = generate_image(ctx.sd_ctx.get(), &img_gen_params);
-                
+
                 first_pass_success = (results != nullptr);
                 if (first_pass_success) {
                     first_pass_success = false;
@@ -767,7 +801,7 @@ void handle_generate_image(const httplib::Request& req, httplib::Response& res, 
                         }
                     }
                 }
-                
+
                 if (!first_pass_success) {
                     LOG_ERROR("Generation failed after retry.");
                     res.status = 500;
@@ -894,8 +928,10 @@ void handle_generate_image(const httplib::Request& req, httplib::Response& res, 
             }
             auto end_time = std::chrono::high_resolution_clock::now();
             total_generation_time = std::chrono::duration<double>(end_time - start_time).count();
+            
+            out["vram_peak_gb"] = vram_after;
+            out["vram_delta_gb"] = vram_delta;
         }
-
         set_progress_phase("VAE Decoding...");
         
         int successful_generations = 0;
@@ -1171,7 +1207,13 @@ void handle_edit_image(const httplib::Request& req, httplib::Response& res, Serv
                 return;
             }
         set_progress_phase("Sampling...");
+        log_vram_status("Edit Start");
+        float vram_before = get_current_process_vram_usage_gb();
         results     = generate_image(ctx.sd_ctx.get(), &img_gen_params);
+        float vram_after = get_current_process_vram_usage_gb();
+        float vram_delta = vram_after - vram_before;
+        log_vram_status("Edit End");
+        LOG_INFO("Edit Sampling finished. Delta: %+.2f GB", vram_delta);
         num_results = gen_params.batch_count;
 
         // B0.1 & B0.2: Fail Loudly + Conservative Retry

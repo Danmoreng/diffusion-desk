@@ -759,6 +759,8 @@ struct SDGenerationParams {
     std::string pm_id_embed_path;
     float pm_style_strength = 20.f;
 
+    bool clip_on_cpu = false;
+
     // Highres-fix
     bool hires_fix = false;
     std::string hires_upscale_model;
@@ -1257,6 +1259,7 @@ struct SDGenerationParams {
         load_if_exists("strength", strength);
         load_if_exists("control_strength", control_strength);
         load_if_exists("pm_style_strength", pm_style_strength);
+        load_if_exists("clip_on_cpu", clip_on_cpu);
         load_if_exists("moe_boundary", moe_boundary);
         load_if_exists("vace_strength", vace_strength);
 
