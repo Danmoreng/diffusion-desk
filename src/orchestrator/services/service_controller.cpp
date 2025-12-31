@@ -186,14 +186,59 @@ void ServiceController::register_routes(httplib::Server& svr, const SDSvrParams&
 
     svr.Post("/v1/images/generations", [this, params](const httplib::Request& req, httplib::Response& res) {
         LOG_INFO("Request: POST /v1/images/generations");
-        m_res_mgr->prepare_for_sd_generation(4.0f);
+        
         std::string modified_body = req.body;
         httplib::Headers h;
         if (!m_token.empty()) h.emplace("X-Internal-Token", m_token);
 
+        int req_width = 512;
+        int req_height = 512;
+        int req_batch = 1;
+        bool req_hires = false;
+        float req_hires_factor = 2.0f;
+
+        try {
+            auto j = mysti::json::parse(req.body);
+            req_width = j.value("width", 512);
+            req_height = j.value("height", 512);
+            req_batch = j.value("n", 1);
+            req_hires = j.value("hires_fix", false);
+            req_hires_factor = j.value("hires_upscale_factor", 2.0f);
+        } catch(...) {}
+
+        // Simple heuristic for Needed VRAM (GB)
+        // Base overhead (model weights + basic context) + resolution overhead
+        // SDXL weights ~6.5GB, but often partially shared or GGUF. Let's assume 4.5GB base for safety.
+        float base_gb = 4.5f; 
+        float mp = (float)(req_width * req_height) / (1024.0f * 1024.0f);
+        float resolution_gb = mp * 3.5f * req_batch; // ~3.5GB per megapixel for generation (increased for SDXL safety)
+        if (req_hires) resolution_gb += (mp * req_hires_factor * req_hires_factor) * 1.5f;
+
+        float estimated_needed = base_gb + resolution_gb;
+        
+        // Determine current model_id
+        std::string active_model_id = "";
+        try {
+            httplib::Client cli("127.0.0.1", m_sd_port);
+            if (auto c_res = cli.Get("/v1/config", h)) {
+                auto c_j = mysti::json::parse(c_res->body);
+                active_model_id = c_j.value("model", "");
+            }
+        } catch(...) {}
+
+        // Arbitration
+        ArbitrationResult arb = m_res_mgr->prepare_for_sd_generation(estimated_needed, mp, active_model_id);
+
+        try {
+            auto j = mysti::json::parse(modified_body);
+            j["clip_on_cpu"] = arb.request_clip_offload;
+            j["vae_tiling"] = arb.request_vae_tiling;
+            modified_body = j.dump();
+        } catch(...) {}
+
         if (m_db) {
             try {
-                auto req_j = mysti::json::parse(req.body);
+                auto req_j = mysti::json::parse(modified_body);
                 LOG_DEBUG("Generation params: %s", req_j.dump(2).c_str());
                 httplib::Client cli("127.0.0.1", m_sd_port);
                 if (auto c_res = cli.Get("/v1/config", h)) {
@@ -225,11 +270,17 @@ void ServiceController::register_routes(httplib::Server& svr, const SDSvrParams&
         Proxy::forward_request(mod_req, res, "127.0.0.1", m_sd_port, "", m_token);
         
         if (res.status == 200 && m_db) {
-            LOG_INFO("Image generation request completed successfully.");
             try {
+                auto res_json = mysti::json::parse(res.body);
+                float peak_vram = res_json.value("vram_peak_gb", 0.0f);
+                float delta_vram = res_json.value("vram_delta_gb", 0.0f);
+                if (peak_vram > 0) {
+                    LOG_INFO("Image generation completed. Peak VRAM: %.2f GB (Delta: %+.2f GB)", peak_vram, delta_vram);
+                } else {
+                    LOG_INFO("Image generation completed successfully.");
+                }
 
                 auto req_json = mysti::json::parse(modified_body);
-                auto res_json = mysti::json::parse(res.body);
                 std::string uuid = res_json.value("id", ""); 
                 std::string file_path = "";
                 long long seed = req_json.value("seed", -1LL);

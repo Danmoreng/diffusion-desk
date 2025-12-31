@@ -210,6 +210,8 @@ int run_orchestrator(int argc, const char** argv, SDSvrParams& svr_params) {
                 status_msg["loaded"] = llm_loaded;
                 cli_sd.Post("/internal/llm_status", h, status_msg.dump(), "application/json");
 
+                g_res_mgr->update_worker_usage(sd_vram, llm_vram);
+
                 msg["workers"] = {
                     {"sd", {{"vram_gb", sd_vram}}}, 
                     {"llm", {{"vram_gb", llm_vram}, {"model", llm_model}, {"loaded", llm_loaded}}}
