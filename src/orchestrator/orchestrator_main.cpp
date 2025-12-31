@@ -183,6 +183,11 @@ int run_orchestrator(int argc, const char** argv, SDSvrParams& svr_params) {
                 if (auto res = cli_sd.Get("/internal/health", h)) {
                     auto j = mysti::json::parse(res->body);
                     sd_vram = j.value("vram_allocated_mb", 0.0f) / 1024.0f;
+                    std::string sd_model = j.value("model_path", "");
+                    bool sd_loaded = j.value("model_loaded", false);
+                    if (sd_loaded && !sd_model.empty()) {
+                         g_res_mgr->update_model_footprint(sd_model, sd_vram);
+                    }
                 }
 
                 httplib::Client cli_llm("127.0.0.1", llm_port);
