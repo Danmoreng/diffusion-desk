@@ -13,13 +13,14 @@ HealthService::HealthService(ProcessManager& pm,
              const std::string& sd_exe, const std::string& llm_exe,
              const std::vector<std::string>& sd_args, const std::vector<std::string>& llm_args,
              const std::string& sd_log, const std::string& llm_log,
-             const std::string& token)
+             const std::string& token,
+             std::shared_ptr<WsManager> ws_mgr)
     : m_pm(pm), m_sd_proc(sd_proc), m_llm_proc(llm_proc),
       m_sd_port(sd_port), m_llm_port(llm_port),
       m_sd_exe(sd_exe), m_llm_exe(llm_exe),
       m_sd_args(sd_args), m_llm_args(llm_args),
       m_sd_log(sd_log), m_llm_log(llm_log),
-      m_token(token)
+      m_token(token), m_ws_mgr(ws_mgr)
 {}
 
 HealthService::~HealthService() {
@@ -85,8 +86,18 @@ void HealthService::restart_sd_worker() {
     if (!m_running) return;
     LOG_WARN("Detected SD Worker failure. Restarting...");
     
+    if (m_ws_mgr) {
+        mysti::json alert;
+        alert["type"] = "system_alert";
+        alert["level"] = "warning";
+        alert["message"] = "SD Worker crashed! Restarting and attempting to restore model state...";
+        m_ws_mgr->broadcast(alert);
+    }
+
     m_sd_crash_count++;
     std::vector<std::string> current_sd_args = m_sd_args;
+    // ... rest of the code ...
+
     // Note: Mutating state here isn't ideal but we need to track safe mode
     // Ideally orchestrator logic would handle args logic. 
     // Assuming simple args for now.
@@ -114,6 +125,14 @@ void HealthService::restart_sd_worker() {
     if (wait_for_health(m_sd_port)) {
         LOG_INFO("SD Worker back online.");
         
+        if (m_ws_mgr) {
+            mysti::json alert;
+            alert["type"] = "system_alert";
+            alert["level"] = "success";
+            alert["message"] = "SD Worker recovered successfully.";
+            m_ws_mgr->broadcast(alert);
+        }
+
         if (!model_body.empty()) {
             LOG_INFO("Restoring SD model...");
             httplib::Client cli("127.0.0.1", m_sd_port);
@@ -140,6 +159,14 @@ void HealthService::restart_llm_worker() {
     if (!m_running) return;
     LOG_WARN("Detected LLM Worker failure. Restarting...");
     
+    if (m_ws_mgr) {
+        mysti::json alert;
+        alert["type"] = "system_alert";
+        alert["level"] = "warning";
+        alert["message"] = "LLM Worker crashed! Restarting...";
+        m_ws_mgr->broadcast(alert);
+    }
+
     {
         std::lock_guard<std::mutex> lock(m_proc_mutex);
         m_pm.terminate(m_llm_proc);
@@ -151,6 +178,14 @@ void HealthService::restart_llm_worker() {
 
     if (wait_for_health(m_llm_port)) {
         LOG_INFO("LLM Worker back online.");
+
+        if (m_ws_mgr) {
+            mysti::json alert;
+            alert["type"] = "system_alert";
+            alert["level"] = "success";
+            alert["message"] = "LLM Worker recovered successfully.";
+            m_ws_mgr->broadcast(alert);
+        }
 
         std::string model_body = "";
         if (m_get_llm_state) model_body = m_get_llm_state();

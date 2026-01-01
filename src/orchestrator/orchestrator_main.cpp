@@ -118,10 +118,10 @@ int run_orchestrator(int argc, const char** argv, SDSvrParams& svr_params) {
     if (!g_internal_token.empty()) { llm_args.push_back("--internal-token"); llm_args.push_back(g_internal_token); }
     if (!pm.spawn(sd_exe_path, sd_args, sd_process, "sd_worker.log") || !pm.spawn(llm_exe_path, llm_args, llm_process, "llm_worker.log")) return 1;
     
-    g_health_svc = std::make_unique<mysti::HealthService>(pm, sd_process, llm_process, sd_port, llm_port, sd_exe_path, llm_exe_path, sd_args, llm_args, "sd_worker.log", "llm_worker.log", g_internal_token);
+    g_health_svc = std::make_unique<mysti::HealthService>(pm, sd_process, llm_process, sd_port, llm_port, sd_exe_path, llm_exe_path, sd_args, llm_args, "sd_worker.log", "llm_worker.log", g_internal_token, g_ws_mgr);
     g_health_svc->set_model_state_callbacks([]() { return g_controller->get_last_sd_model_req(); }, []() { return g_controller->get_last_llm_model_req(); });
     g_health_svc->start();
-    g_tagging_svc = std::make_unique<mysti::TaggingService>(g_db, llm_port, g_internal_token);
+    g_tagging_svc = std::make_unique<mysti::TaggingService>(g_db, llm_port, g_internal_token, svr_params.tagger_system_prompt);
     g_tagging_svc->set_model_provider([]() { return g_controller->get_last_llm_model_req(); });
     g_tagging_svc->start();
     g_controller->set_on_generation_callback([]() { if (g_tagging_svc) g_tagging_svc->notify_new_generation(); });

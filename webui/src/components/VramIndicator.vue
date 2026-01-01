@@ -102,7 +102,31 @@ const store = useGenerationStore()
 }
 
 .vram-segment {
-// ...
+  height: 100%;
+  transition: width 0.5s ease-in-out;
+}
+
+.vram-segment.sd {
+  background-color: var(--bs-primary);
+}
+
+.vram-segment.llm {
+  background-color: var(--bs-success);
+}
+
+.vram-segment.other {
+  background-color: var(--bs-warning);
+}
+
+.legend-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.legend-dot.sd { background-color: var(--bs-primary); }
+.legend-dot.llm { background-color: var(--bs-success); }
 .legend-dot.other { background-color: var(--bs-warning); }
 
 .legend-marker {

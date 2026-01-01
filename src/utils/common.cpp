@@ -38,6 +38,8 @@ namespace fs = std::filesystem;
 static bool log_verbose = false;
 static bool log_color   = false;
 
+thread_local std::string g_request_id;
+
 const char* modes_str[] = {
     "img_gen",
     "vid_gen",
@@ -52,6 +54,20 @@ uint64_t get_file_size(const std::string& path) {
         }
     } catch (...) {}
     return 0;
+}
+
+std::string iso_timestamp_now() {
+    auto now = std::chrono::system_clock::now();
+    std::time_t now_c = std::chrono::system_clock::to_time_t(now);
+    std::tm now_tm;
+#ifdef _WIN32
+    localtime_s(&now_tm, &now_c);
+#else
+    localtime_r(&now_c, &now_tm);
+#endif
+    std::stringstream ss;
+    ss << std::put_time(&now_tm, "%Y-%m-%dT%H:%M:%S");
+    return ss.str();
 }
 
 #if defined(_WIN32)
@@ -180,17 +196,26 @@ void log_print(enum sd_log_level_t level, const char* log, bool verbose, bool co
             tag_color = 31;
             level_str = "ERROR";
             break;
-        default: /* Potential future-proofing */
+        default:
             tag_color = 33;
             level_str = "?????";
             break;
     }
+
+    // Standardized Text Format: [timestamp] [level] [request_id] message
+    // Note: file:line is currently part of the 'log' string passed from LOG macros
+    fprintf(out_stream, "[%s] ", iso_timestamp_now().c_str());
 
     if (color) {
         fprintf(out_stream, "\033[%d;1m[%-5s]\033[0m ", tag_color, level_str);
     } else {
         fprintf(out_stream, "[%-5s] ", level_str);
     }
+    
+    if (!g_request_id.empty()) {
+        fprintf(out_stream, "[%s] ", g_request_id.c_str());
+    }
+
     print_utf8(out_stream, log);
     fflush(out_stream);
 }
@@ -843,6 +868,9 @@ bool SDSvrParams::load_from_file(const std::string& path) {
             if (l.contains("default_model")) default_llm_model = l["default_model"];
             if (l.contains("threads")) llm_threads = l["threads"];
             if (l.contains("idle_timeout")) llm_idle_timeout = l["idle_timeout"];
+            if (l.contains("assistant_system_prompt")) assistant_system_prompt = l["assistant_system_prompt"];
+            if (l.contains("tagger_system_prompt")) tagger_system_prompt = l["tagger_system_prompt"];
+            if (l.contains("style_extractor_system_prompt")) style_extractor_system_prompt = l["style_extractor_system_prompt"];
         }
 
         if (j.contains("sd")) {

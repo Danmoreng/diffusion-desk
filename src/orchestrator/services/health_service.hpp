@@ -1,12 +1,8 @@
 #pragma once
 
 #include "orchestrator/process_manager.hpp"
+#include "orchestrator/ws_manager.hpp"
 #include <atomic>
-#include <string>
-#include <memory>
-#include <thread>
-#include <mutex>
-#include <functional>
 
 namespace mysti {
 
@@ -16,10 +12,11 @@ public:
                  ProcessManager::ProcessInfo& sd_proc, 
                  ProcessManager::ProcessInfo& llm_proc,
                  int sd_port, int llm_port,
-                              const std::string& sd_exe, const std::string& llm_exe,
-                              const std::vector<std::string>& sd_args, const std::vector<std::string>& llm_args,
-                              const std::string& sd_log, const std::string& llm_log,
-                              const std::string& token);
+                 const std::string& sd_exe, const std::string& llm_exe,
+                 const std::vector<std::string>& sd_args, const std::vector<std::string>& llm_args,
+                 const std::string& sd_log, const std::string& llm_log,
+                 const std::string& token,
+                 std::shared_ptr<WsManager> ws_mgr);
                      ~HealthService();
                  
                      void start();
@@ -53,6 +50,7 @@ public:
                      std::string m_sd_log;
                      std::string m_llm_log;
                      std::string m_token;
+                     std::shared_ptr<WsManager> m_ws_mgr;
     int m_max_sd_crashes = 2;
     int m_sd_crash_count = 0;
     

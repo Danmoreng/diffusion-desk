@@ -246,6 +246,7 @@ void ServiceController::register_routes(httplib::Server& svr, const SDSvrParams&
     });
 
     svr.Post("/v1/images/generations", [this, params](const httplib::Request& req, httplib::Response& res) {
+        g_request_id = "req-" + generate_random_token(8);
         LOG_INFO("Request: POST /v1/images/generations");
         
         std::string modified_body = req.body;
@@ -381,6 +382,8 @@ void ServiceController::register_routes(httplib::Server& svr, const SDSvrParams&
         mod_req.body = modified_body;
         Proxy::forward_request(mod_req, res, "127.0.0.1", m_sd_port, "", m_token);
         
+        g_request_id = ""; 
+
         if (res.status == 200 && m_db) {
             try {
                 auto res_json = mysti::json::parse(res.body);
@@ -524,7 +527,7 @@ void ServiceController::register_routes(httplib::Server& svr, const SDSvrParams&
 
             mysti::json chat_req;
             chat_req["messages"] = mysti::json::array({
-                {{"role", "system"}, {"content", "You are an expert art style analyzer. Analyze the given image prompt and extract distinct art styles, artists, or aesthetic descriptors. Return a JSON object with a 'styles' key containing an array of objects. Each style object must have 'name' (concise style name), 'prompt' (keywords to append, MUST include '{prompt}' placeholder), and 'negative_prompt' (optional tags to avoid). Example: {\"styles\": [{\"name\": \"Cyberpunk\", \"prompt\": \"{prompt}\", \"cyberpunk, neon lights\", \"negative_prompt\": \"organic\"}]}"}},
+                {{"role", "system"}, {"content", params.style_extractor_system_prompt}},
                 {{"role", "user"}, {"content", input_prompt}}
             });
             chat_req["temperature"] = 0.2;
@@ -865,6 +868,55 @@ void ServiceController::register_routes(httplib::Server& svr, const SDSvrParams&
             res.status = 400; 
             res.set_content(R"({\"error\":\"Invalid JSON\"})", "application/json");
         }
+    });
+
+    svr.Get("/v1/assistant/config", [params](const httplib::Request&, httplib::Response& res) {
+        mysti::json c;
+        c["system_prompt"] = params.assistant_system_prompt;
+        c["tools"] = {
+            {
+                {"name", "get_library_items"},
+                {"description", "Retrieve items from the prompt library/gallery by category."},
+                {"parameters", {
+                    {"type", "object"},
+                    {"properties", {
+                        {"category", {{"type", "string"}, {"description", "The category to browse (e.g., 'Style', 'Lighting')"}}}
+                    }}
+                }}
+            },
+            {
+                {"name", "apply_style"},
+                {"description", "Apply a saved style to a prompt."},
+                {"parameters", {
+                    {"type", "object"},
+                    {"properties", {
+                        {"style_name", {{"type", "string"}}},
+                        {"current_prompt", {{"type", "string"}}}
+                    }},
+                    {"required", {"style_name", "current_prompt"}}
+                }}
+            },
+            {
+                {"name", "search_history"},
+                {"description", "Search through past generations using keywords."},
+                {"parameters", {
+                    {"type", "object"},
+                    {"properties", {
+                        {"query", {{"type", "string"}, {"description", "Keywords to search for"}}}
+                    }},
+                    {"required", {"query"}}
+                }}
+            },
+            {
+                {"name", "get_vram_status"},
+                {"description", "Get the current VRAM usage and capacity."},
+                {"parameters", {
+                    {"type", "object"},
+                    {"properties", {}}
+                }}
+            }
+        };
+        res.set_content(c.dump(), "application/json");
     });
 }
 

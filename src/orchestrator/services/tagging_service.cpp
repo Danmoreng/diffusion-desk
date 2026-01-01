@@ -6,8 +6,8 @@
 
 namespace mysti {
 
-TaggingService::TaggingService(std::shared_ptr<Database> db, int llm_port, const std::string& token)
-    : m_db(db), m_llm_port(llm_port), m_token(token) {}
+TaggingService::TaggingService(std::shared_ptr<Database> db, int llm_port, const std::string& token, const std::string& system_prompt)
+    : m_db(db), m_llm_port(llm_port), m_token(token), m_system_prompt(system_prompt) {}
 
 TaggingService::~TaggingService() {
     stop();
@@ -125,7 +125,7 @@ void TaggingService::loop() {
             
             mysti::json chat_req;
             chat_req["messages"] = mysti::json::array({
-                {{"role", "system"}, {"content", "You are a specialized image tagging engine. Output a JSON object with a 'tags' key containing an array of 5-8 descriptive tags (Subject, Style, Mood). Example: {\"tags\": [\"cat\", \"forest\", \"ethereal\"]}. Output ONLY valid JSON."}},
+                {{"role", "system"}, {"content", m_system_prompt}},
                 {{"role", "user"}, {"content", prompt}}
             });
             chat_req["temperature"] = 0.1;
