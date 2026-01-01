@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, watch, computed, onMounted } from 'vue'
 import { useGenerationStore } from '@/stores/generation'
+import LoraManager from './LoraManager.vue'
 
 const props = defineProps<{
   mode: 'txt2img' | 'img2img' | 'inpainting'
@@ -536,6 +537,11 @@ const clearInitImage = () => {
             {{ style.name }}
           </option>
         </select>
+      </div>
+
+      <!-- LoRA Manager -->
+      <div class="mb-4">
+        <LoraManager />
       </div>
 
       <div class="d-grid">

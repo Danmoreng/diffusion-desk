@@ -101,6 +101,72 @@ void ServiceController::generate_style_preview(Style style, std::string output_d
     } catch (...) {}
 }
 
+void ServiceController::generate_model_preview(std::string model_id, std::string output_dir) {
+    if (model_id.empty() || !m_db) return;
+
+    auto meta = m_db->get_model_metadata(model_id);
+    if (meta.empty()) return;
+
+    std::string type = meta.value("type", "");
+    std::string name = meta.value("name", model_id);
+    std::string trigger = meta.value("trigger_word", "");
+    
+    // We generate a preview using the trigger word if it's a LoRA
+    std::string prompt = "a high quality portrait";
+    if (type == "lora" && !trigger.empty()) {
+        prompt = trigger + ", " + prompt;
+    } else if (type == "lora") {
+        // No trigger word, just the generic prompt with the LoRA tag
+        fs::path p(model_id);
+        std::string stem = p.stem().string();
+        prompt = prompt + " <lora:" + stem + ":1.0>";
+    }
+
+    try {
+        httplib::Client cli("127.0.0.1", m_sd_port);
+        cli.set_read_timeout(120);
+        httplib::Headers h;
+        if (!m_token.empty()) h.emplace("X-Internal-Token", m_token);
+
+        mysti::json req;
+        req["prompt"] = prompt;
+        req["width"] = 512;
+        req["height"] = 512;
+        req["sample_steps"] = 15;
+        req["n"] = 1;
+        req["save_image"] = false;
+
+        auto res = cli.Post("/v1/images/generations", h, req.dump(), "application/json");
+        if (res && res->status == 200) {
+            auto j = mysti::json::parse(res->body);
+            if (j.contains("data") && !j["data"].empty()) {
+                std::string b64 = j["data"][0].value("b64_json", "");
+                if (!b64.empty()) {
+                    fs::path preview_dir = fs::path(output_dir) / "previews";
+                    if (!fs::exists(preview_dir)) fs::create_directories(preview_dir);
+
+                    // Sanitize model_id for filename
+                    std::string safe_id = model_id;
+                    std::replace(safe_id.begin(), safe_id.end(), '/', '_');
+                    std::replace(safe_id.begin(), safe_id.end(), '\\', '_');
+                    std::replace(safe_id.begin(), safe_id.end(), ':', '_');
+                    
+                    std::string filename = "model_" + safe_id + ".png";
+                    fs::path filepath = preview_dir / filename;
+
+                    std::string decoded = base64_decode_str(b64);
+                    std::ofstream out(filepath, std::ios::binary);
+                    out.write(decoded.data(), decoded.size());
+                    out.close();
+
+                    meta["preview_path"] = "/outputs/previews/" + filepath.filename().string();
+                    m_db->save_model_metadata(model_id, meta);
+                }
+            }
+        }
+    } catch (...) {}
+}
+
 void ServiceController::register_routes(httplib::Server& svr, const SDSvrParams& params) {
     if (!svr.set_mount_point("/app", params.app_dir)) {
         LOG_WARN("failed to mount %s directory", params.app_dir.c_str());
@@ -359,6 +425,17 @@ void ServiceController::register_routes(httplib::Server& svr, const SDSvrParams&
             if (model_id.empty()) { res.status = 400; return; }
             m_db->save_model_metadata(model_id, j["metadata"]);
             res.set_content(R"({\"status\":\"success\"})", "application/json");
+        } catch(...) { res.status = 400; }
+    });
+
+    svr.Post("/v1/models/metadata/preview", [this, params](const httplib::Request& req, httplib::Response& res) {
+        if (!m_db) { res.status = 500; return; }
+        try {
+            auto j = mysti::json::parse(req.body);
+            std::string model_id = j.value("id", "");
+            if (model_id.empty()) { res.status = 400; return; }
+            std::thread(&ServiceController::generate_model_preview, this, model_id, params.output_dir).detach();
+            res.set_content(R"({\"status\":\"success\",\"message\":\"Preview generation started in background\"})", "application/json");
         } catch(...) { res.status = 400; }
     });
 

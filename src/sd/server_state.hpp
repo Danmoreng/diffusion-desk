@@ -9,6 +9,7 @@ struct ProgressState {
     int step = 0;
     int steps = 0;
     int total_steps = 0;
+    int sampling_steps = 0; // Expected steps for the current sampling pass
     int base_step = 0;
     float time = 0;
     std::string phase = "";

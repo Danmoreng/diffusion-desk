@@ -16,6 +16,7 @@ const activeTab = computed(() => {
   const path = router.currentRoute.value.path
   if (path.includes('/manager/styles')) return 'styles'
   if (path.includes('/manager/models')) return 'models'
+  if (path.includes('/manager/loras')) return 'loras'
   return 'tags'
 })
 const tags = ref<TagInfo[]>([])
@@ -174,6 +175,45 @@ async function saveModelMetadata() {
   }
 }
 
+async function regenerateLoraPreview(model: ModelMetadataEntry) {
+  isLoading.value = true
+  try {
+    const res = await fetch('/v1/models/metadata/preview', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: model.id })
+    })
+    if (res.ok) {
+      // Previews happen in background
+      setTimeout(fetchModelMetadata, 2000)
+    }
+  } catch (e) {
+    console.error('Failed to regenerate LoRA preview', e)
+  } finally {
+    isLoading.value = false
+  }
+}
+
+async function generateMissingLoraPreviews() {
+  isLoading.value = true
+  try {
+    const missing = modelMetadataList.value.filter(m => m.metadata.type === 'lora' && !m.metadata.preview_path)
+    for (const m of missing) {
+      await fetch('/v1/models/metadata/preview', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: m.id })
+      })
+    }
+    // Refresh after some delay
+    setTimeout(fetchModelMetadata, 5000)
+  } catch (e) {
+    console.error('Failed to fix LoRA previews:', e)
+  } finally {
+    isLoading.value = false
+  }
+}
+
 async function fetchTags() {
   isLoading.value = true
   try {
@@ -306,7 +346,7 @@ onUnmounted(() => {
         <router-link class="nav-link" :class="{ active: activeTab === 'models' }" to="/manager/models">Models</router-link>
       </li>
       <li class="nav-item">
-        <a class="nav-link disabled" href="#" title="Coming soon">LoRAs</a>
+        <router-link class="nav-link" :class="{ active: activeTab === 'loras' }" to="/manager/loras">LoRAs</router-link>
       </li>
       <li class="nav-item">
         <a class="nav-link disabled" href="#" title="Coming soon">Embeddings</a>
@@ -495,6 +535,61 @@ onUnmounted(() => {
       </div>
     </div>
 
+    <!-- LoRAs Content -->
+    <div v-else-if="activeTab === 'loras'" class="flex-grow-1 d-flex flex-column overflow-hidden">
+      <!-- Toolbar -->
+      <div class="d-flex gap-2 mb-3 bg-body-secondary p-2 rounded">
+        <input type="text" v-model="searchQuery" class="form-control form-control-sm" placeholder="Search LoRAs..." style="max-width: 250px;">
+        <button class="btn btn-sm btn-outline-primary" @click="syncModels()" :disabled="isLoading">
+          <i class="bi bi-arrow-repeat"></i> Sync LoRAs from Disk
+        </button>
+        <button class="btn btn-sm btn-outline-info ms-auto" @click="generateMissingLoraPreviews()" :disabled="isLoading">
+          <i class="bi bi-image"></i> Generate Missing Previews
+        </button>
+      </div>
+
+      <!-- LoRAs Grid -->
+      <div class="flex-grow-1 overflow-auto">
+        <div class="row g-3">
+          <div v-for="model in filteredModelMetadata.filter(m => m.metadata.type === 'lora')" :key="model.id" class="col-md-6 col-xl-4">
+            <div class="card h-100 shadow-sm border-0 overflow-hidden lora-card" :class="{ 'has-trigger': model.metadata.trigger_word }">
+              <div class="lora-preview-container position-relative bg-dark bg-opacity-10 d-flex align-items-center justify-content-center" style="height: 160px;">
+                <img v-if="model.metadata.preview_path" :src="model.metadata.preview_path" class="w-100 h-100 object-fit-cover" alt="LoRA Preview">
+                <div v-else class="text-center text-muted">
+                  <div class="fs-1 opacity-25"><i class="bi bi-plugin"></i></div>
+                  <div class="x-small">No preview</div>
+                </div>
+                <div class="position-absolute top-0 end-0 m-2">
+                   <button class="btn btn-xs btn-dark bg-opacity-50 border-0 rounded-circle p-1" @click="regenerateLoraPreview(model)" title="Regenerate Preview">
+                     <i class="bi bi-arrow-repeat"></i>
+                   </button>
+                </div>
+                <div class="position-absolute bottom-0 start-0 m-2" v-if="model.metadata.base">
+                  <span class="badge bg-dark bg-opacity-75 x-small">{{ model.metadata.base }}</span>
+                </div>
+              </div>
+              <div class="card-body p-3">
+                <div class="d-flex justify-content-between align-items-start mb-2">
+                  <h6 class="card-title mb-0 text-truncate" :title="model.metadata.name || model.id">{{ model.metadata.name || model.id.split('/').pop().replace(/\.[^/.]+$/, "") }}</h6>
+                  <button class="btn btn-xs btn-outline-secondary border-0" @click="openModelEditModal(model)"><i class="bi bi-pencil"></i></button>
+                </div>
+                <div class="mb-1" v-if="model.metadata.trigger_word">
+                  <span class="x-small text-uppercase fw-bold text-primary d-block mb-1">Trigger Word:</span>
+                  <code class="small px-2 py-1 bg-primary bg-opacity-10 text-primary rounded d-inline-block">{{ model.metadata.trigger_word }}</code>
+                </div>
+                <div class="mt-2 text-muted x-small text-truncate" :title="model.id">
+                  <i class="bi bi-file-earmark-binary"></i> {{ model.id }}
+                </div>
+              </div>
+            </div>
+          </div>
+          <div v-if="filteredModelMetadata.filter(m => m.metadata.type === 'lora').length === 0" class="col-12 text-center py-5 text-muted">
+             No LoRA models found. Sync from disk to see them here!
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- Placeholders for other tabs -->
     <div v-else class="flex-grow-1 d-flex align-items-center justify-content-center text-muted">
       <div class="text-center">
@@ -605,6 +700,7 @@ onUnmounted(() => {
                 <label class="form-label fw-bold small text-uppercase">Type</label>
                 <select v-model="editingModelMetadata.metadata.type" class="form-select">
                   <option value="stable-diffusion">Stable Diffusion (Standard)</option>
+                  <option value="lora">LoRA</option>
                   <option value="flux">Flux (GGUF)</option>
                   <option value="sd3">SD3 (GGUF)</option>
                   <option value="upscaler">Upscaler (ESRGAN)</option>
@@ -620,38 +716,49 @@ onUnmounted(() => {
                   <option value="Other">Other</option>
                 </select>
               </div>
-              <div class="col-12"><hr class="my-2"></div>
-              <div class="col-md-6">
-                <label class="form-label fw-bold small text-uppercase">VAE Path</label>
-                <input type="text" v-model="editingModelMetadata.metadata.vae" class="form-control" placeholder="e.g. vae/ae.safetensors">
+              
+              <!-- Trigger Word (LoRA Only) -->
+              <div class="col-md-12" v-if="editingModelMetadata.metadata.type === 'lora'">
+                <label class="form-label fw-bold small text-uppercase text-primary">Trigger Word</label>
+                <input type="text" v-model="editingModelMetadata.metadata.trigger_word" class="form-control border-primary" placeholder="e.g. ohwx, style of...">
+                <div class="form-text x-small">This word will be automatically added to the prompt when you activate this LoRA.</div>
               </div>
-              <div class="col-md-6">
-                <label class="form-label fw-bold small text-uppercase">Text Encoder / LLM Path</label>
-                <input type="text" v-model="editingModelMetadata.metadata.llm" class="form-control" placeholder="e.g. text-encoder/Qwen.gguf">
-              </div>
-              <div class="col-12"><hr class="my-2"></div>
-              <div class="col-md-4">
-                <label class="form-label fw-bold small text-uppercase">Default CFG</label>
-                <input type="number" v-model.number="editingModelMetadata.metadata.cfg_scale" class="form-control" step="0.5">
-              </div>
-              <div class="col-md-4">
-                <label class="form-label fw-bold small text-uppercase">Default Steps</label>
-                <input type="number" v-model.number="editingModelMetadata.metadata.sample_steps" class="form-control">
-              </div>
-              <div class="col-md-4">
-                <label class="form-label fw-bold small text-uppercase">Default Sampler</label>
-                <select v-model="editingModelMetadata.metadata.sampling_method" class="form-select">
-                  <option v-for="s in store.samplers" :key="s" :value="s">{{ s }}</option>
-                </select>
-              </div>
-              <div class="col-md-6">
-                <label class="form-label fw-bold small text-uppercase">Default Width</label>
-                <input type="number" v-model.number="editingModelMetadata.metadata.width" class="form-control" step="64">
-              </div>
-              <div class="col-md-6">
-                <label class="form-label fw-bold small text-uppercase">Default Height</label>
-                <input type="number" v-model.number="editingModelMetadata.metadata.height" class="form-control" step="64">
-              </div>
+
+              <!-- Advanced Components (Base Model Only) -->
+              <template v-if="editingModelMetadata.metadata.type !== 'lora' && editingModelMetadata.metadata.type !== 'upscaler'">
+                <div class="col-12"><hr class="my-2"></div>
+                <div class="col-md-6">
+                  <label class="form-label fw-bold small text-uppercase">VAE Path</label>
+                  <input type="text" v-model="editingModelMetadata.metadata.vae" class="form-control" placeholder="e.g. vae/ae.safetensors">
+                </div>
+                <div class="col-md-6">
+                  <label class="form-label fw-bold small text-uppercase">Text Encoder / LLM Path</label>
+                  <input type="text" v-model="editingModelMetadata.metadata.llm" class="form-control" placeholder="e.g. text-encoder/Qwen.gguf">
+                </div>
+                <div class="col-12"><hr class="my-2"></div>
+                <div class="col-md-4">
+                  <label class="form-label fw-bold small text-uppercase">Default CFG</label>
+                  <input type="number" v-model.number="editingModelMetadata.metadata.cfg_scale" class="form-control" step="0.5">
+                </div>
+                <div class="col-md-4">
+                  <label class="form-label fw-bold small text-uppercase">Default Steps</label>
+                  <input type="number" v-model.number="editingModelMetadata.metadata.sample_steps" class="form-control">
+                </div>
+                <div class="col-md-4">
+                  <label class="form-label fw-bold small text-uppercase">Default Sampler</label>
+                  <select v-model="editingModelMetadata.metadata.sampling_method" class="form-select">
+                    <option v-for="s in store.samplers" :key="s" :value="s">{{ s }}</option>
+                  </select>
+                </div>
+                <div class="col-md-6">
+                  <label class="form-label fw-bold small text-uppercase">Default Width</label>
+                  <input type="number" v-model.number="editingModelMetadata.metadata.width" class="form-control" step="64">
+                </div>
+                <div class="col-md-6">
+                  <label class="form-label fw-bold small text-uppercase">Default Height</label>
+                  <input type="number" v-model.number="editingModelMetadata.metadata.height" class="form-control" step="64">
+                </div>
+              </template>
             </div>
           </div>
           <div class="modal-footer">

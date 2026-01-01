@@ -5,6 +5,11 @@ ProgressState progress_state;
 void on_progress(int step, int steps, float time, void* data) {
     std::lock_guard<std::mutex> lock(progress_state.mutex);
 
+    // Filter out updates that don't match the expected sampling steps (e.g., LoRA loading)
+    if (progress_state.sampling_steps > 0 && steps != progress_state.sampling_steps) {
+        return;
+    }
+
     // Heuristic: If we are in Sampling phase and the step count resets to 0 (or a very small value)
     // or if the step count exceeds the steps passed by the library, we have likely moved to a new internal phase (VAE Decode).
     if (progress_state.phase == "Sampling..." || progress_state.phase == "Highres-fix Pass...") {
@@ -34,6 +39,7 @@ void reset_progress() {
     progress_state.step = 0;
     progress_state.steps = 0;
     progress_state.total_steps = 0;
+    progress_state.sampling_steps = 0;
     progress_state.base_step = 0;
     progress_state.time = 0;
     progress_state.phase = "idle";
