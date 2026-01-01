@@ -272,7 +272,7 @@ void ServiceController::register_routes(httplib::Server& svr, const SDSvrParams&
         // SDXL weights ~6.5GB, but often partially shared or GGUF. Let's assume 4.5GB base for safety.
         float base_gb = 4.5f; 
         float mp = (float)(req_width * req_height) / (1024.0f * 1024.0f);
-        float resolution_gb = mp * 3.5f * req_batch; // ~3.5GB per megapixel for generation (increased for SDXL safety)
+        float resolution_gb = mp * 2.2f * req_batch; // ~2.2GB per megapixel for generation (adjusted for GGUF efficiency)
         if (req_hires) resolution_gb += (mp * req_hires_factor * req_hires_factor) * 1.5f;
 
         float estimated_needed = base_gb + resolution_gb;
