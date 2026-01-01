@@ -43,6 +43,9 @@ private:
     std::mutex m_cv_mutex;
     
     std::function<std::string()> m_model_provider;
+
+    std::chrono::steady_clock::time_point m_last_load_fail_time = std::chrono::steady_clock::now() - std::chrono::hours(1);
+    int m_load_retry_count = 0;
 };
 
 } // namespace mysti

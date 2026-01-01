@@ -80,6 +80,16 @@ void TaggingService::loop() {
         if (!loaded) {
             bool reloaded = false;
             if (m_model_provider) {
+                // Cooldown check: if we failed recently, don't keep hammering the VRAM
+                auto now = std::chrono::steady_clock::now();
+                auto elapsed_since_fail = std::chrono::duration_cast<std::chrono::seconds>(now - m_last_load_fail_time).count();
+                
+                if (elapsed_since_fail < 60) {
+                    // std::cout << "[Tagging Service] LLM load recently failed, in cooldown (" << 60 - elapsed_since_fail << "s left)" << std::endl;
+                    std::this_thread::sleep_for(std::chrono::seconds(5));
+                    continue;
+                }
+
                 std::string model_body = m_model_provider();
                 if (!model_body.empty()) {
                     std::cout << "[Tagging Service] Auto-loading LLM..." << std::endl;
@@ -88,8 +98,11 @@ void TaggingService::loop() {
                     if (res && res->status == 200) {
                          loaded = true;
                          reloaded = true;
+                         m_load_retry_count = 0;
                     } else {
                          std::cout << "[Tagging Service] Failed to load LLM." << std::endl;
+                         m_last_load_fail_time = std::chrono::steady_clock::now();
+                         m_load_retry_count++;
                     }
                 } else {
                     std::cout << "[Tagging Service] No LLM model configured for auto-load." << std::endl;
