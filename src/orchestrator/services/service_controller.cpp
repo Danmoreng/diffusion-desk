@@ -269,13 +269,6 @@ void ServiceController::register_routes(httplib::Server& svr, const SDSvrParams&
 
         // Simple heuristic for Needed VRAM (GB)
         // Base overhead (model weights + basic context) + resolution overhead
-        // SDXL weights ~6.5GB, but often partially shared or GGUF. Let's assume 4.5GB base for safety.
-        float base_gb = 4.5f; 
-        float mp = (float)(req_width * req_height) / (1024.0f * 1024.0f);
-        float resolution_gb = mp * 2.2f * req_batch; // ~2.2GB per megapixel for generation (adjusted for GGUF efficiency)
-        if (req_hires) resolution_gb += (mp * req_hires_factor * req_hires_factor) * 1.5f;
-
-        float estimated_needed = base_gb + resolution_gb;
         
         // Determine current model_id from cache (avoid extra HTTP call)
         std::string active_model_id = "";
@@ -288,9 +281,48 @@ void ServiceController::register_routes(httplib::Server& svr, const SDSvrParams&
             }
         }
 
+        float base_gb = 4.5f; // Default fallback
+        if (!active_model_id.empty()) {
+            fs::path model_path = fs::path(params.model_dir) / active_model_id;
+            uint64_t size_bytes = get_file_size(model_path.string());
+            
+            // Add size of CLIP/T5 encoders if present
+            try {
+                if (!m_last_sd_model_req_body.empty()) {
+                    auto j_req = mysti::json::parse(m_last_sd_model_req_body);
+                    auto add_size = [&](const std::string& key) {
+                        std::string path = j_req.value(key, "");
+                        if (!path.empty()) {
+                            size_bytes += get_file_size((fs::path(params.model_dir) / path).string());
+                        }
+                    };
+                    add_size("clip_l");
+                    add_size("clip_g");
+                    add_size("t5xxl");
+                }
+            } catch (...) {}
+
+            if (size_bytes > 0) {
+                base_gb = (float)size_bytes / (1024.0f * 1024.0f * 1024.0f);
+                base_gb += 0.5f; // Add 0.5GB for context/runtime overhead
+                LOG_DEBUG("Using actual model size (Weights+Encoders) for base VRAM: %.2f GB", base_gb);
+            }
+        }
+
+        float mp = (float)(req_width * req_height) / (1024.0f * 1024.0f);
+        
+        // Non-linear scaling to account for quadratic attention at high resolutions
+        float per_mp_factor = 3.8f;
+        if (mp > 2.0f) per_mp_factor = 8.0f;       // Massive penalty for > 2MP (likely to crash 16GB cards)
+        
+        float resolution_gb = mp * per_mp_factor * req_batch; 
+        if (req_hires) resolution_gb += (mp * req_hires_factor * req_hires_factor) * 1.5f;
+
+        float estimated_needed = base_gb + resolution_gb;
+        
         try {
             // Arbitration
-            ArbitrationResult arb = m_res_mgr->prepare_for_sd_generation(estimated_needed, mp, active_model_id);
+            ArbitrationResult arb = m_res_mgr->prepare_for_sd_generation(estimated_needed, mp, active_model_id, base_gb);
 
             if (!arb.success) {
                 res.status = 400;
