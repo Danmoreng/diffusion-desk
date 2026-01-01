@@ -49,11 +49,11 @@ ArbitrationResult ResourceManager::prepare_for_sd_generation(float estimated_tot
     }
 
     // Phase 1: If tight, try unloading LLM
-    // We want at least 2.0GB breathing room after allocation
+    // We want at least 0.5GB breathing room after allocation (reduced from 2.0GB)
     // Direct check of m_last_llm_vram_gb to avoid deadlock (is_llm_loaded locks mutex)
     bool llm_seems_loaded = m_last_llm_vram_gb > 0.1f;
-    if (free_vram < actually_needed_additional + 2.0f && llm_seems_loaded) {
-        LOG_INFO("[ResourceManager] Low VRAM detected. Requesting LLM unload to free space...");
+    if (free_vram < actually_needed_additional + 0.5f && llm_seems_loaded) {
+        LOG_INFO("[ResourceManager] Low VRAM detected (Free: %.2f < Needed: %.2f + 0.5). Requesting LLM unload...", free_vram, actually_needed_additional);
         httplib::Client cli("127.0.0.1", m_llm_port);
         cli.set_connection_timeout(2);
         cli.set_read_timeout(5);
