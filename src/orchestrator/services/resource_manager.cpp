@@ -10,7 +10,7 @@ ResourceManager::ResourceManager(int sd_port, int llm_port, const std::string& i
 
 ResourceManager::~ResourceManager() {}
 
-ArbitrationResult ResourceManager::prepare_for_sd_generation(float estimated_total_needed_gb, float megapixels, const std::string& model_id) {
+ArbitrationResult ResourceManager::prepare_for_sd_generation(float estimated_total_needed_gb, float megapixels, const std::string& model_id, float base_gb_override) {
     std::lock_guard<std::mutex> lock(m_mutex);
     ArbitrationResult result;
     
@@ -18,7 +18,9 @@ ArbitrationResult ResourceManager::prepare_for_sd_generation(float estimated_tot
     
     // Determine base requirement vs additional resolution overhead
     float base_gb = 4.5f; 
-    if (!model_id.empty() && m_model_footprints.count(model_id)) {
+    if (base_gb_override > 0.1f) {
+        base_gb = base_gb_override;
+    } else if (!model_id.empty() && m_model_footprints.count(model_id)) {
         base_gb = m_model_footprints[model_id];
     }
     
@@ -34,7 +36,7 @@ ArbitrationResult ResourceManager::prepare_for_sd_generation(float estimated_tot
     }
 
     // Safety margin: CUDA context and temporary buffers often take more than just 'allocations'
-    resolution_overhead *= 1.3f; 
+    resolution_overhead *= 1.15f; 
 
     // If the model is already loaded (sd_vram > base * 0.8), we only care about additional overhead.
     bool sd_has_model = (m_last_sd_vram_gb > base_gb * 0.7f);
@@ -69,8 +71,8 @@ ArbitrationResult ResourceManager::prepare_for_sd_generation(float estimated_tot
     }
 
     // Phase 2: If STILL tight, recommend offloads
-    if (free_vram < actually_needed_additional + 1.0f) {
-        LOG_WARN("[ResourceManager] VRAM tight after arbitration (Free: %.2f GB, Add.Needed: %.2f GB). Recommending CLIP offload.", 
+    if (free_vram < actually_needed_additional + 0.5f || megapixels > 2.0f) {
+        LOG_WARN("[ResourceManager] VRAM tight (Free: %.2f GB, Add.Needed: %.2f GB) or High Res. Recommending CLIP offload.", 
                  free_vram, actually_needed_additional);
         result.request_clip_offload = true;
     }
@@ -79,6 +81,14 @@ ArbitrationResult ResourceManager::prepare_for_sd_generation(float estimated_tot
     if (free_vram < actually_needed_additional + 0.5f || megapixels > 1.5f) {
         LOG_WARN("[ResourceManager] VRAM very tight or high res. Recommending VAE tiling.");
         result.request_vae_tiling = true;
+    }
+    
+    // Final Safety Check: If we simply don't have enough VRAM, prevent the crash.
+    // We allow a small deficit if tiling is on, but 22GB spike indicates we need a hard ceiling.
+    if (free_vram < actually_needed_additional * 0.7f) {
+        LOG_ERROR("[ResourceManager] Insufficient VRAM! Free: %.2f GB, Needed: %.2f GB. Aborting to prevent crash.", 
+                  free_vram, actually_needed_additional);
+        result.success = false;
     }
 
     return result; 
