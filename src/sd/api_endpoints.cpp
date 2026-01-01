@@ -945,6 +945,15 @@ void handle_generate_image(const httplib::Request& req, httplib::Response& res, 
         }
         set_progress_phase("VAE Decoding...");
         
+        std::string accept_header = req.get_header_value("Accept");
+        bool prefer_binary = (accept_header.find("image/png") != std::string::npos || accept_header.find("image/jpeg") != std::string::npos);
+        bool no_base64 = j.value("no_base64", false);
+        
+        // If batch > 1, force JSON to keep it simple unless we implement multipart
+        if (num_results > 1) prefer_binary = false;
+
+        std::vector<uint8_t> first_image_bytes;
+
         int successful_generations = 0;
         for (int i = 0; i < num_results; i++) {
             if (results[i].data == nullptr) {
@@ -962,9 +971,15 @@ void handle_generate_image(const httplib::Request& req, httplib::Response& res, 
                 continue;
             }
 
-            std::string b64 = base64_encode(image_bytes);
+            if (i == 0 && prefer_binary) {
+                first_image_bytes = image_bytes;
+            }
+
             mysti::json item;
-            item["b64_json"] = b64;
+            if (!prefer_binary && !no_base64) {
+                std::string b64 = base64_encode(image_bytes);
+                item["b64_json"] = b64;
+            }
             item["seed"] = gen_params.seed;
 
             if (save_image) {
@@ -1009,7 +1024,15 @@ void handle_generate_image(const httplib::Request& req, httplib::Response& res, 
         }
 
         out["generation_time"] = total_generation_time;
-        res.set_content(out.dump(), "application/json");
+
+        if (prefer_binary && !first_image_bytes.empty()) {
+            res.set_header("X-SD-Seed", std::to_string(gen_params.seed));
+            res.set_header("X-SD-Generation-Time", std::to_string(total_generation_time));
+            std::string mime = (output_format == "jpeg") ? "image/jpeg" : "image/png";
+            res.set_content((const char*)first_image_bytes.data(), first_image_bytes.size(), mime.c_str());
+        } else {
+            res.set_content(out.dump(), "application/json");
+        }
         res.status = 200;
 
         free_sd_images(results, num_results);

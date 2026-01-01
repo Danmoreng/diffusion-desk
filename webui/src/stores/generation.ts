@@ -653,11 +653,17 @@ export const useGenerationStore = defineStore('generation', () => {
       body.mask_image = params.maskImage
     }
 
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+    }
+
+    if (params.batchCount === 1) {
+      headers['Accept'] = 'image/png'
+    }
+
     const response = await fetch('/v1/images/generations', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers,
       body: JSON.stringify(body),
       signal,
     })
@@ -676,13 +682,26 @@ export const useGenerationStore = defineStore('generation', () => {
       throw new Error(errMessage)
     }
 
+    const contentType = response.headers.get('content-type');
+    if (contentType && (contentType.includes('image/png') || contentType.includes('image/jpeg'))) {
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      
+      const seedHeader = response.headers.get('X-SD-Seed');
+      if (seedHeader && lastParams.value) {
+        lastParams.value.seed = parseInt(seedHeader, 10);
+      }
+      
+      return [url];
+    }
+
     const responseData = await response.json();
     if (!responseData.data || responseData.data.length === 0) {
       throw new Error('Server response did not contain image data.');
     }
     
     // Update seed with the actual one used from the first image
-    if (responseData.data[0].seed) {
+    if (responseData.data[0].seed && lastParams.value) {
         lastParams.value.seed = responseData.data[0].seed
     }
 

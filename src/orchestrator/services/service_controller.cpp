@@ -1,5 +1,6 @@
 #include "service_controller.hpp"
 #include "proxy.hpp"
+#include "sd/api_utils.hpp"
 #include <fstream>
 #include <iostream>
 #include <regex>
@@ -282,34 +283,43 @@ void ServiceController::register_routes(httplib::Server& svr, const SDSvrParams&
 
         float estimated_needed = base_gb + resolution_gb;
         
-        // Determine current model_id
+        // Determine current model_id from cache (avoid extra HTTP call)
         std::string active_model_id = "";
-        try {
-            httplib::Client cli("127.0.0.1", m_sd_port);
-            if (auto c_res = cli.Get("/v1/config", h)) {
-                auto c_j = mysti::json::parse(c_res->body);
-                active_model_id = c_j.value("model", "");
+        {
+            std::lock_guard<std::mutex> lock(m_state_mutex);
+            if (!m_last_sd_model_req_body.empty()) {
+                try {
+                    active_model_id = mysti::json::parse(m_last_sd_model_req_body).value("model_id", "");
+                } catch(...) {}
             }
-        } catch(...) {}
-
-        // Arbitration
-        ArbitrationResult arb = m_res_mgr->prepare_for_sd_generation(estimated_needed, mp, active_model_id);
+        }
 
         try {
-            auto j = mysti::json::parse(modified_body);
-            j["clip_on_cpu"] = arb.request_clip_offload;
-            j["vae_tiling"] = arb.request_vae_tiling;
-            modified_body = j.dump();
-        } catch(...) {}
+            // Arbitration
+            ArbitrationResult arb = m_res_mgr->prepare_for_sd_generation(estimated_needed, mp, active_model_id);
 
-        if (m_db) {
+            if (!arb.success) {
+                res.status = 400;
+                res.set_content(R"({\"error\":\"Resource arbitration failed. Resolution may be too high (limit 2.5MP) or VRAM exhausted.\"})", "application/json");
+                return;
+            }
+
             try {
-                auto req_j = mysti::json::parse(modified_body);
-                LOG_DEBUG("Generation params: %s", req_j.dump(2).c_str());
-                httplib::Client cli("127.0.0.1", m_sd_port);
-                if (auto c_res = cli.Get("/v1/config", h)) {
-                    auto c_j = mysti::json::parse(c_res->body);
-                    std::string active_model_id = c_j.value("model", "");
+                auto j = mysti::json::parse(modified_body);
+                j["clip_on_cpu"] = arb.request_clip_offload;
+                j["vae_tiling"] = arb.request_vae_tiling;
+                modified_body = j.dump();
+            } catch(...) {}
+
+            if (m_db) {
+                try {
+                    mysti::json req_j = mysti::json::parse(modified_body);
+                    if (!modified_body.empty() && modified_body.size() < 10000 && modified_body.front() == '{') {
+                        LOG_DEBUG("Generation params: %s", redact_json(req_j).dump(2).c_str());
+                    } else if (modified_body.size() >= 10000) {
+                        LOG_DEBUG("Generation params: [too large to log]");
+                    }
+                    
                     if (!active_model_id.empty()) {
                         auto meta = m_db->get_model_metadata(active_model_id);
                         if (!meta.empty()) {
@@ -327,8 +337,18 @@ void ServiceController::register_routes(httplib::Server& svr, const SDSvrParams&
                             LOG_DEBUG("Applied model defaults for generation.");
                         }
                     }
-                }
-            } catch(...) {}
+                } catch(...) {}
+            }
+        } catch (const std::exception& e) {
+            LOG_ERROR("Exception during generation preparation: %s", e.what());
+            res.status = 500;
+            res.set_content(R"({\"error\":\"Internal Orchestrator Error during preparation\"})", "application/json");
+            return;
+        } catch (...) {
+            LOG_ERROR("Unknown exception during generation preparation.");
+            res.status = 500;
+            res.set_content(R"({\"error\":\"Unknown Internal Orchestrator Error\"})", "application/json");
+            return;
         }
 
         httplib::Request mod_req = req;

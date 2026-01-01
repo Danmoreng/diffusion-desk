@@ -25,8 +25,16 @@ ArbitrationResult ResourceManager::prepare_for_sd_generation(float estimated_tot
     float resolution_overhead = estimated_total_needed_gb - base_gb;
     if (resolution_overhead < 0.5f) resolution_overhead = 0.5f; // Minimum safety
 
+    // Hard limit: CUDA/GGML often fails with assertions if tensors exceed 2GB or certain dimensions.
+    // 2.5 Megapixels is a safe upper bound for most consumer hardware and current GGML limits.
+    if (megapixels > 2.5f) {
+        LOG_ERROR("[ResourceManager] Resolution too high (%.2f MP). Limit is 2.5 MP to prevent CUDA crashes.", megapixels);
+        result.success = false;
+        return result;
+    }
+
     // Safety margin: CUDA context and temporary buffers often take more than just 'allocations'
-    resolution_overhead *= 1.2f; 
+    resolution_overhead *= 1.3f; 
 
     // If the model is already loaded (sd_vram > base * 0.8), we only care about additional overhead.
     bool sd_has_model = (m_last_sd_vram_gb > base_gb * 0.7f);
@@ -41,27 +49,36 @@ ArbitrationResult ResourceManager::prepare_for_sd_generation(float estimated_tot
     }
 
     // Phase 1: If tight, try unloading LLM
-    if (free_vram < actually_needed_additional * 1.15f && is_llm_loaded()) {
+    // We want at least 2.0GB breathing room after allocation
+    // Direct check of m_last_llm_vram_gb to avoid deadlock (is_llm_loaded locks mutex)
+    bool llm_seems_loaded = m_last_llm_vram_gb > 0.1f;
+    if (free_vram < actually_needed_additional + 2.0f && llm_seems_loaded) {
         LOG_INFO("[ResourceManager] Low VRAM detected. Requesting LLM unload to free space...");
         httplib::Client cli("127.0.0.1", m_llm_port);
+        cli.set_connection_timeout(2);
+        cli.set_read_timeout(5);
         auto ures = cli.Post("/v1/llm/unload", headers, "", "application/json");
         if (ures && ures->status == 200) {
             LOG_INFO("[ResourceManager] LLM unloaded successfully.");
-            std::this_thread::sleep_for(std::chrono::milliseconds(500));
+            std::this_thread::sleep_for(std::chrono::milliseconds(1000));
             free_vram = get_free_vram_gb(); // Update free count
+            LOG_INFO("[ResourceManager] Free VRAM after unload: %.2f GB", free_vram);
         } else {
             LOG_WARN("[ResourceManager] Failed to unload LLM.");
         }
     }
 
     // Phase 2: If STILL tight, recommend offloads
-    if (free_vram < actually_needed_additional * 1.05f) {
-        LOG_WARN("[ResourceManager] VRAM tight after arbitration (Free: %.2f GB, Add.Needed: %.2f GB). Recommending offloads.", 
+    if (free_vram < actually_needed_additional + 1.0f) {
+        LOG_WARN("[ResourceManager] VRAM tight after arbitration (Free: %.2f GB, Add.Needed: %.2f GB). Recommending CLIP offload.", 
                  free_vram, actually_needed_additional);
         result.request_clip_offload = true;
-        if (megapixels > 1.5f) {
-            result.request_vae_tiling = true;
-        }
+    }
+
+    // Phase 3: If VERY tight, recommend VAE tiling
+    if (free_vram < actually_needed_additional + 0.5f || megapixels > 1.5f) {
+        LOG_WARN("[ResourceManager] VRAM very tight or high res. Recommending VAE tiling.");
+        result.request_vae_tiling = true;
     }
 
     return result; 

@@ -19,6 +19,9 @@ bool is_base64(unsigned char c);
 mysti::json parse_image_params(const std::string& txt);
 std::string get_image_params(const SDContextParams& ctx_params, const SDGenerationParams& gen_params, int64_t seed, double generation_time = 0.0);
 
+// JSON utilities
+mysti::json redact_json(const mysti::json& j);
+
 // Image processing
 enum class ImageFormat { 
     JPEG,

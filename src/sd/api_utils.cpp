@@ -115,6 +115,48 @@ std::vector<uint8_t> base64_decode(const std::string& encoded_string) {
     return ret;
 }
 
+// JSON utilities
+mysti::json redact_json_impl(const mysti::json& j, int depth) {
+    if (depth > 10) return "[MAX DEPTH]"; // Safety break
+
+    if (j.is_object()) {
+        mysti::json redacted = j;
+        const std::vector<std::string> keys_to_redact = {"b64_json", "image", "init_image", "mask_image", "extra_args"};
+        for (auto& element : redacted.items()) {
+            bool should_redact = false;
+            for (const auto& key : keys_to_redact) {
+                if (element.key() == key) {
+                    should_redact = true;
+                    break;
+                }
+            }
+            if (should_redact) {
+                if (element.value().is_string()) {
+                    if (element.value().get<std::string>().size() > 128) {
+                        element.value() = "[REDACTED BASE64 (" + std::to_string(element.value().get<std::string>().size()) + " chars)]";
+                    }
+                } else {
+                    element.value() = "[REDACTED NON-STRING DATA]";
+                }
+            } else if (element.value().is_structured()) {
+                element.value() = redact_json_impl(element.value(), depth + 1);
+            }
+        }
+        return redacted;
+    } else if (j.is_array()) {
+        mysti::json redacted = mysti::json::array();
+        for (const auto& item : j) {
+            redacted.push_back(redact_json_impl(item, depth + 1));
+        }
+        return redacted;
+    }
+    return j;
+}
+
+mysti::json redact_json(const mysti::json& j) {
+    return redact_json_impl(j, 0);
+}
+
 // Image params
 
 mysti::json parse_image_params(const std::string& txt) {
