@@ -98,6 +98,7 @@ using LlamaServerContextPtr = std::unique_ptr<llama_server_context, LlamaServerC
 
 std::string generate_random_token(size_t length = 32);
 std::string extract_json_block(const std::string& content);
+std::vector<std::string> split(const std::string& s, char delimiter);
 
 
 struct StringOption {

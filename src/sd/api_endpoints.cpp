@@ -602,7 +602,12 @@ void handle_generate_image(const httplib::Request& req, httplib::Response& res, 
 
         bool save_image = j.value("save_image", false);
 
-        if (!gen_params.process_and_check(IMG_GEN, "")) {
+        std::string lora_dir = ctx.ctx_params.lora_model_dir;
+        if (lora_dir.empty()) {
+            lora_dir = (fs::path(ctx.svr_params.model_dir) / "lora").string();
+        }
+
+        if (!gen_params.process_and_check(IMG_GEN, lora_dir)) {
             res.status = 400;
             res.set_content(R"({\"error\":\"invalid params\"})", "application/json");
             return;
@@ -751,6 +756,7 @@ void handle_generate_image(const httplib::Request& req, httplib::Response& res, 
                 } else {
                     progress_state.total_steps = sampling_steps;
                 }
+                progress_state.sampling_steps = sampling_steps;
                 progress_state.base_step = 0;
                 LOG_INFO("Total expected steps: %d", progress_state.total_steps);
             }
@@ -899,6 +905,11 @@ void handle_generate_image(const httplib::Request& req, httplib::Response& res, 
                         stbir_resize_uint8(img_gen_params.control_image.data, (int)img_gen_params.control_image.width, (int)img_gen_params.control_image.height, 0,
                                             hires_params.control_image.data, (int)target_width, (int)target_height, 0,
                                             (int)hires_params.control_image.channel);
+                    }
+
+                    {
+                        std::lock_guard<std::mutex> lock_prog(progress_state.mutex);
+                        progress_state.sampling_steps = gen_params.hires_steps;
                     }
 
                     sd_image_t* second_pass_result = generate_image(ctx.sd_ctx.get(), &hires_params);
@@ -1118,7 +1129,12 @@ void handle_edit_image(const httplib::Request& req, httplib::Response& res, Serv
             return;
         }
 
-        if (!gen_params.process_and_check(IMG_GEN, "")) {
+        std::string lora_dir = ctx.ctx_params.lora_model_dir;
+        if (lora_dir.empty()) {
+            lora_dir = (fs::path(ctx.svr_params.model_dir) / "lora").string();
+        }
+
+        if (!gen_params.process_and_check(IMG_GEN, lora_dir)) {
             res.status = 400;
             res.set_content(R"({\"error\":\"invalid params\"})", "application/json");
             return;
@@ -1206,6 +1222,14 @@ void handle_edit_image(const httplib::Request& req, httplib::Response& res, Serv
                 res.set_content(R"({\"error\":\"no model loaded\"})", "application/json");
                 return;
             }
+
+            {
+                std::lock_guard<std::mutex> lock_prog(progress_state.mutex);
+                progress_state.total_steps = gen_params.sample_params.sample_steps;
+                progress_state.sampling_steps = progress_state.total_steps;
+                progress_state.base_step = 0;
+            }
+
         set_progress_phase("Sampling...");
         log_vram_status("Edit Start");
         float vram_before = get_current_process_vram_usage_gb();

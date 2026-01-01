@@ -20,6 +20,7 @@ struct ServerContext {
     std::string& current_upscale_model_path;
     std::string active_llm_model_path;
     bool active_llm_model_loaded = false;
+    bool was_using_loras = false; // Workaround for stable-diffusion.cpp LoRA persistence bug
     
     // B2.5: Idle timeout tracking
     std::chrono::steady_clock::time_point last_access = std::chrono::steady_clock::now();

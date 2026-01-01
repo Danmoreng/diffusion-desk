@@ -46,6 +46,7 @@ private:
 
     // Helper for generating previews (moved from main)
     void generate_style_preview(Style style, std::string output_dir);
+    void generate_model_preview(std::string model_id, std::string output_dir);
 };
 
 } // namespace mysti
