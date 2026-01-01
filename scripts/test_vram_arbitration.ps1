@@ -1,101 +1,187 @@
-# Test VRAM Arbitration
-# 1. Load an LLM
-# 2. Trigger high-res SD generation
-# 3. Verify LLM is unloaded automatically to free VRAM
+# Test Script for VRAM Arbitration Logic
+# Uses the paths defined in scripts/run.ps1 logic
 
 $ErrorActionPreference = "Stop"
 $ScriptDir = $PSScriptRoot
-$ProjectRoot = Split-Path $ScriptDir
-$RunScript = Join-Path $ScriptDir "run.ps1"
+$ProjectRoot = Split-Path -Parent $ScriptDir
+$BuildDir = Join-Path $ProjectRoot "build"
 
-Write-Host "--- VRAM Arbitration Test ---" -ForegroundColor Cyan
+# Locate Executable
+$PotentialPaths = @(
+    "$BuildDir\bin\mysti_server.exe",
+    "$BuildDir\mysti_server.exe",
+    "$BuildDir\bin\Debug\mysti_server.exe",
+    "$BuildDir\Debug\mysti_server.exe",
+    "$BuildDir\bin\Release\mysti_server.exe",
+    "$BuildDir\Release\mysti_server.exe"
+)
 
-# Cleanup old processes
-Stop-Process -Name "mysti_server", "mysti_sd_worker", "mysti_llm_worker" -ErrorAction SilentlyContinue -Force
-
-Write-Host "Starting Server..." -ForegroundColor Cyan
-$Job = Start-Job -ScriptBlock {
-    param($RunScript, $ProjectRoot)
-    Set-Location $ProjectRoot
-    powershell -ExecutionPolicy Bypass -File $RunScript -verbose
-} -ArgumentList $RunScript, $ProjectRoot
-
-$OrchestratorUrl = "http://localhost:1234"
-$MaxRetries = 60
-
-# Wait for Orchestrator
-Write-Host "Waiting for Orchestrator..."
-$Ready = $false
-for ($i = 0; $i -lt $MaxRetries; $i++) {
-    try {
-        $h = Invoke-RestMethod -Uri "$OrchestratorUrl/health" -Method Get
-        if ($h.status -eq "ok") { $Ready = $true; break }
-    } catch {}
-    Start-Sleep -Seconds 1
+$ServerExe = $null
+foreach ($path in $PotentialPaths) {
+    if (Test-Path $path) {
+        $ServerExe = $path
+        break
+    }
 }
 
-if (-not $Ready) { Write-Host "Server failed to start." -ForegroundColor Red; exit 1 }
-
-# 1. Load LLM
-Write-Host "Step 1: Loading LLM model..."
-$LlmModel = "llm/Qwen3-1.7B-Q8_0.gguf" # Assume this exists or adjust
-try {
-    $loadRes = Invoke-RestMethod -Uri "$OrchestratorUrl/v1/llm/load" -Method Post -Body (@{model_id=$LlmModel} | ConvertTo-Json) -ContentType "application/json"
-    Write-Host "LLM Loaded." -ForegroundColor Green
-} catch {
-    Write-Host "Failed to load LLM. Check if model exists: $LlmModel" -ForegroundColor Yellow
-    # Proceed anyway, maybe it preloaded
+if ($null -eq $ServerExe) {
+    Write-Host "Error: mysti_server.exe not found." -ForegroundColor Red
+    exit 1
 }
 
-# Verify LLM is in VRAM
+# Configuration - Matches run.ps1 default paths
+$ModelBase = "C:\StableDiffusion\Models"
+$LLMPath = "llm\Qwen3-1.7B-Q8_0.gguf" # Relative to ModelBase/llm usually, but run.ps1 had absolute. 
+# run.ps1 had: $LLMPath = "$ModelBase\llm\Qwen3-1.7B-Q8_0.gguf"
+# The server expects relative paths usually if inside model_dir, OR absolute paths.
+# Let's use the absolute paths from run.ps1 for safety.
+$AbsLLMPath = "$ModelBase\llm\Qwen3-1.7B-Q8_0.gguf"
+$AbsSDPath = "$ModelBase\stable-diffusion\z_image_turbo-Q8_0.gguf"
+
+$Port = 5555
+$Url = "http://127.0.0.1:$Port"
+$LogOut = "$ScriptDir\test_vram_server.out.log"
+$LogErr = "$ScriptDir\test_vram_server.err.log"
+
+# Cleanup previous run
+function Kill-Processes {
+    $Names = @("mysti_server", "mysti_sd_worker", "mysti_llm_worker")
+    foreach ($Name in $Names) {
+        $Existing = Get-Process -Name $Name -ErrorAction SilentlyContinue
+        if ($Existing) {
+            Write-Host "Killing existing $Name..."
+            Stop-Process -InputObject $Existing -Force
+        }
+    }
+}
+
+Kill-Processes
 Start-Sleep -Seconds 2
-$health = Invoke-RestMethod -Uri "$OrchestratorUrl/health" -Method Get
-Write-Host "Current VRAM Free: $($health.vram_free_gb) GB"
 
-# 2. Trigger high-res generation
-Write-Host "Step 2: Triggering High-Res Generation (should trigger arbitration)..."
-$Payload = @{
-    prompt = "A majestic dragon"
-    width = 1536
-    height = 1536
-    sample_steps = 4
-} | ConvertTo-Json
+if (Test-Path $LogOut) { Remove-Item $LogOut -ErrorAction SilentlyContinue }
+if (Test-Path $LogErr) { Remove-Item $LogErr -ErrorAction SilentlyContinue }
+if (Test-Path "$ProjectRoot\sd_worker.log") { Remove-Item "$ProjectRoot\sd_worker.log" -ErrorAction SilentlyContinue }
+if (Test-Path "$ProjectRoot\llm_worker.log") { Remove-Item "$ProjectRoot\llm_worker.log" -ErrorAction SilentlyContinue }
 
-$GenTask = Start-ThreadJob -ScriptBlock {
-    param($Url, $Body)
+# Start Server
+Write-Host "Starting Server on port $Port..."
+$ProcArgs = @(
+    "--model-dir", "$ModelBase",
+    "--diffusion-model", "$AbsSDPath",
+    "--llm-model", "$AbsLLMPath",
+    "--listen-port", "$Port",
+    "--verbose"
+)
+
+$Process = Start-Process -FilePath $ServerExe -ArgumentList $ProcArgs -RedirectStandardOutput $LogOut -RedirectStandardError $LogErr -PassThru -NoNewWindow
+
+# Wait for startup
+Write-Host "Waiting for server health..."
+$Retries = 30
+$Healthy = $false
+while ($Retries -gt 0) {
     try {
-        return Invoke-RestMethod -Uri "$Url/v1/images/generations" -Method Post -Body $Body -ContentType "application/json" -TimeoutSec 300
-    } catch { return $_ }
-} -ArgumentList $OrchestratorUrl, $Payload
-
-# 3. Monitor for LLM Unload
-Write-Host "Step 3: Monitoring LLM status during generation..."
-$Unloaded = $false
-for ($i = 0; $i -lt 30; $i++) {
-    try {
-        # Check if LLM is still reported in metrics (health check might be slow if worker is busy, 
-        # but orchestrator keeps last metrics)
-        $h = Invoke-RestMethod -Uri "$OrchestratorUrl/health" -Method Get
-        # The /health endpoint returns resource manager stats
-        if ($h.llm_worker_gb -lt 0.1) {
-            Write-Host "✅ SUCCESS: LLM was unloaded to free VRAM!" -ForegroundColor Green
-            $Unloaded = $true
+        $resp = Invoke-RestMethod -Uri "$Url/health" -Method Get -ErrorAction Stop
+        if ($resp.status -eq "ok") {
+            $Healthy = $true
             break
         }
-    } catch {}
-    Start-Sleep -Seconds 1
+    } catch {
+        Start-Sleep -Seconds 1
+        $Retries--
+    }
 }
 
-# Wait for generation to finish
-$Result = Wait-Job $GenTask | Receive-Job
-if ($Result.data) {
-    Write-Host "✅ SUCCESS: Image generated at high resolution." -ForegroundColor Green
-} else {
-    Write-Host "❌ FAILED: Generation failed." -ForegroundColor Red
+if (-not $Healthy) {
+    Write-Host "Server failed to start." -ForegroundColor Red
+    if (Test-Path $LogOut) { Get-Content $LogOut -Tail 20 }
+    if (Test-Path $LogErr) { Get-Content $LogErr -Tail 20 }
+    if ($Process -and -not $Process.HasExited) { Stop-Process -InputObject $Process -Force }
+    exit 1
 }
+
+Write-Host "Server is up."
+
+# Helper to check logs
+function Check-LogFor ($Pattern, $Name) {
+    $Found = $false
+    
+    # Force flush/read by getting content freshly
+    if (Test-Path $LogOut) {
+        $Content = Get-Content $LogOut -ReadCount 0
+        if ($Content -match $Pattern) { $Found = $true }
+    }
+    if (-not $Found -and (Test-Path $LogErr)) {
+        $ContentErr = Get-Content $LogErr -ReadCount 0
+        if ($ContentErr -match $Pattern) { $Found = $true }
+    }
+    
+    if ($Found) {
+        Write-Host "[PASS] $Name detected." -ForegroundColor Green
+        return $true
+    }
+    Write-Host "[FAIL] $Name NOT detected." -ForegroundColor Red
+    return $false
+}
+
+function Generate-Image ($Width, $Height, $Name) {
+    Write-Host "Requesting Generation: $Name (${Width}x${Height})..."
+    $Body = @{
+        prompt = "test image"
+        width = $Width
+        height = $Height
+        sample_steps = 1 # Fast generation
+        n = 1
+        no_base64 = $true # Use our new feature to keep response clean
+    } | ConvertTo-Json
+
+    try {
+        # Using long timeout because large gens take time
+        $resp = Invoke-RestMethod -Uri "$Url/v1/images/generations" -Method Post -Body $Body -ContentType "application/json" -TimeoutSec 300
+        Write-Host "Generation '$Name' completed successfully." -ForegroundColor Green
+        return $true
+    } catch {
+        Write-Host "Generation failed: $_" -ForegroundColor Red
+        return $false
+    }
+}
+
+# 0. Wakeup / Warmup
+Write-Host "Warming up worker connection..."
+$WarmupRetries = 10
+while ($WarmupRetries -gt 0) {
+    if (Generate-Image 64 64 "Warmup") {
+        break
+    }
+    Write-Host "Worker not ready, retrying..."
+    Start-Sleep -Seconds 2
+    $WarmupRetries--
+}
+
+# 1. Baseline: Small Generation
+Generate-Image 512 512 "Baseline (Small)"
+Start-Sleep -Seconds 2
+
+# 2. Large Generation
+Write-Host "Checking Medium/Large Load..."
+Generate-Image 1280 1280 "Large (Potential LLM Unload)" # ~1.6MP
+Start-Sleep -Seconds 5
+
+# 3. Very Large Generation -> Should Trigger CLIP Offload / VAE Tiling / LLM Unload
+Write-Host "Checking Huge Load..."
+Generate-Image 1408 1408 "Huge (Trigger Offload/Tiling/Unload)" 
+Start-Sleep -Seconds 5
+
+# Final Checks
+Write-Host "`n--- Final Verification ---"
+Check-LogFor "Requesting LLM unload" "LLM Unload (At any stage)"
+Check-LogFor "Recommending CLIP offload" "CLIP Offload"
+Check-LogFor "Recommending VAE tiling" "VAE Tiling"
 
 # Cleanup
-Write-Host "Cleanup..."
-Stop-Process -Name "mysti_server", "mysti_sd_worker", "mysti_llm_worker" -ErrorAction SilentlyContinue -Force
-Stop-Job $Job
-Remove-Job $Job
+Write-Host "Test Complete. Stopping processes..."
+Kill-Processes
+
+# Cleanup
+Write-Host "Test Complete. Stopping processes..."
+Kill-Processes

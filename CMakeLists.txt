@@ -85,8 +85,8 @@ add_executable(mysti_server
     src/orchestrator/services/import_service.cpp
     src/orchestrator/services/service_controller.cpp
     src/orchestrator/services/tool_service.cpp
-    src/utils/common.cpp
-
+    src/sd/api_utils.cpp
+    ${COMMON_SOURCES}
 )
 
 # Include paths for dependencies

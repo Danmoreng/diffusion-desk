@@ -124,20 +124,22 @@ static void print_utf8(FILE* stream, const char* utf8) {
                    ? GetStdHandle(STD_ERROR_HANDLE)
                    : GetStdHandle(STD_OUTPUT_HANDLE);
 
-    int wlen = MultiByteToWideChar(CP_UTF8, 0, utf8, -1, NULL, 0);
-    if (wlen <= 0)
-        return;
-
-    wchar_t* wbuf = (wchar_t*)malloc(wlen * sizeof(wchar_t));
-    MultiByteToWideChar(CP_UTF8, 0, utf8, -1, wbuf, wlen);
-
-    DWORD written;
-    WriteConsoleW(h, wbuf, wlen - 1, &written, NULL);
-
-    free(wbuf);
-#else
-    fputs(utf8, stream);
+    // Check if the handle is a console
+    DWORD mode;
+    if (GetConsoleMode(h, &mode)) {
+        int wlen = MultiByteToWideChar(CP_UTF8, 0, utf8, -1, NULL, 0);
+        if (wlen > 0) {
+            wchar_t* wbuf = (wchar_t*)malloc(wlen * sizeof(wchar_t));
+            MultiByteToWideChar(CP_UTF8, 0, utf8, -1, wbuf, wlen);
+            DWORD written;
+            WriteConsoleW(h, wbuf, wlen - 1, &written, NULL);
+            free(wbuf);
+            return;
+        }
+    }
 #endif
+
+    fputs(utf8, stream);
 }
 
 std::string sd_basename(const std::string& path) {
