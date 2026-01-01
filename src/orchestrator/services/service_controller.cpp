@@ -7,24 +7,6 @@
 
 namespace mysti {
 
-static std::string base64_decode_str(const std::string& in) {
-    std::string out;
-    std::vector<int> T(256, -1);
-    const char* chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    for (int i = 0; i < 64; i++) T[(unsigned char)chars[i]] = i;
-    int val = 0, valb = -8;
-    for (unsigned char c : in) {
-        if (T[c] == -1) break;
-        val = (val << 6) + T[c];
-        valb += 6;
-        if (valb >= 0) {
-            out.push_back(char((val >> valb) & 0xFF));
-            valb -= 8;
-        }
-    }
-    return out;
-}
-
 ServiceController::ServiceController(std::shared_ptr<Database> db, 
                                      std::shared_ptr<ResourceManager> res_mgr,
                                      std::shared_ptr<WsManager> ws_mgr,
@@ -80,8 +62,8 @@ void ServiceController::generate_style_preview(Style style, std::string output_d
         if (res && res->status == 200) {
             auto j = mysti::json::parse(res->body);
             if (j.contains("data") && !j["data"].empty()) {
-                std::string b64 = j["data"][0].value("b64_json", "");
-                if (!b64.empty()) {
+                std::string url = j["data"][0].value("url", "");
+                if (!url.empty()) {
                     fs::path preview_dir = fs::path(output_dir) / "previews";
                     if (!fs::exists(preview_dir)) fs::create_directories(preview_dir);
 
@@ -89,13 +71,19 @@ void ServiceController::generate_style_preview(Style style, std::string output_d
                     std::replace(filename.begin(), filename.end(), ' ', '_');
                     fs::path filepath = preview_dir / filename;
 
-                    std::string decoded = base64_decode_str(b64);
-                    std::ofstream out(filepath, std::ios::binary);
-                    out.write(decoded.data(), decoded.size());
-                    out.close();
+                    // Map URL to local path
+                    std::string rel_path = url;
+                    if (rel_path.find("/outputs/") == 0) {
+                        rel_path = rel_path.substr(9);
+                    }
+                    fs::path source_path = fs::path(output_dir) / rel_path;
 
-                    style.preview_path = "/outputs/previews/" + filepath.filename().string();
-                    if (m_db) m_db->save_style(style);
+                    if (fs::exists(source_path)) {
+                        fs::copy_file(source_path, filepath, fs::copy_options::overwrite_existing);
+
+                        style.preview_path = "/outputs/previews/" + filepath.filename().string();
+                        if (m_db) m_db->save_style(style);
+                    }
                 }
             }
         }
@@ -141,8 +129,8 @@ void ServiceController::generate_model_preview(std::string model_id, std::string
         if (res && res->status == 200) {
             auto j = mysti::json::parse(res->body);
             if (j.contains("data") && !j["data"].empty()) {
-                std::string b64 = j["data"][0].value("b64_json", "");
-                if (!b64.empty()) {
+                std::string url = j["data"][0].value("url", "");
+                if (!url.empty()) {
                     fs::path preview_dir = fs::path(output_dir) / "previews";
                     if (!fs::exists(preview_dir)) fs::create_directories(preview_dir);
 
@@ -155,13 +143,19 @@ void ServiceController::generate_model_preview(std::string model_id, std::string
                     std::string filename = "model_" + safe_id + ".png";
                     fs::path filepath = preview_dir / filename;
 
-                    std::string decoded = base64_decode_str(b64);
-                    std::ofstream out(filepath, std::ios::binary);
-                    out.write(decoded.data(), decoded.size());
-                    out.close();
+                    // Map URL to local path
+                    std::string rel_path = url;
+                    if (rel_path.find("/outputs/") == 0) {
+                        rel_path = rel_path.substr(9);
+                    }
+                    fs::path source_path = fs::path(output_dir) / rel_path;
 
-                    meta["preview_path"] = "/outputs/previews/" + filepath.filename().string();
-                    m_db->save_model_metadata(model_id, meta);
+                    if (fs::exists(source_path)) {
+                        fs::copy_file(source_path, filepath, fs::copy_options::overwrite_existing);
+
+                        meta["preview_path"] = "/outputs/previews/" + filepath.filename().string();
+                        m_db->save_model_metadata(model_id, meta);
+                    }
                 }
             }
         }
