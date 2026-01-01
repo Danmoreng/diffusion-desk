@@ -71,6 +71,7 @@ int run_sd_worker(SDSvrParams& svr_params, SDContextParams& ctx_params, SDGenera
     // Security: Check internal token
     svr.set_pre_routing_handler([&svr_params, &ctx](const httplib::Request& req, httplib::Response& res) {
         ctx.update_last_access();
+        g_request_id = req.get_header_value("X-Request-ID");
         if (!svr_params.internal_token.empty()) {
             std::string token = req.get_header_value("X-Internal-Token");
             if (token != svr_params.internal_token) {
@@ -79,7 +80,7 @@ int run_sd_worker(SDSvrParams& svr_params, SDContextParams& ctx_params, SDGenera
                     svr_params.internal_token.substr(0, 4).c_str(),
                     token.empty() ? "None" : token.substr(0, 4).c_str());
                 res.status = 401;
-                res.set_content("{\"error\":\"Unauthorized internal request\"}", "application/json");
+                res.set_content(make_error_json("unauthorized", "Unauthorized internal request"), "application/json");
                 return httplib::Server::HandlerResponse::Handled;
             }
         }
@@ -105,18 +106,8 @@ int run_sd_worker(SDSvrParams& svr_params, SDContextParams& ctx_params, SDGenera
     // Mount public for convenience if needed, but Orchestrator handles it usually.
     // Worker might need to serve some static files? Probably not.
 
-    svr.Get("/internal/health", [&](const httplib::Request&, httplib::Response& res) {
-        mysti::json j;
-        j["ok"] = true;
-        j["service"] = "sd";
-        j["version"] = version_string();
-        j["model_loaded"] = (ctx.sd_ctx != nullptr);
-        std::string mp = ctx.ctx_params.diffusion_model_path;
-        if (mp.empty()) mp = ctx.ctx_params.model_path;
-        j["model_path"] = mp;
-        j["vram_allocated_mb"] = (int)(get_current_process_vram_usage_gb() * 1024.0f);
-        j["vram_free_mb"] = (int)(get_free_vram_gb() * 1024.0f);
-        res.set_content(j.dump(), "application/json");
+    svr.Get("/internal/health", [&](const httplib::Request& req, httplib::Response& res) {
+        handle_health(req, res, ctx);
     });
     
     svr.Post("/internal/shutdown", [&](const httplib::Request&, httplib::Response& res) {

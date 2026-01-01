@@ -10,21 +10,6 @@
 
 
 
-// Time utilities
-std::string iso_timestamp_now() {
-    auto now = std::chrono::system_clock::now();
-    std::time_t now_c = std::chrono::system_clock::to_time_t(now);
-    std::tm now_tm;
-    #ifdef _WIN32
-        localtime_s(&now_tm, &now_c);
-    #else
-        localtime_r(&now_c, &now_tm);
-    #endif
-    std::stringstream ss;
-    ss << std::put_time(&now_tm, "%Y-%m-%dT%H:%M:%S");
-    return ss.str();
-}
-
 // Base64 utilities
 static const std::string base64_chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 
@@ -213,4 +198,11 @@ void free_sd_images(sd_image_t* images, int n) {
 
     }
 
+}
+
+std::string make_error_json(const std::string& error, const std::string& message) {
+    mysti::json j;
+    j["error"] = error;
+    if (!message.empty()) j["message"] = message;
+    return j.dump();
 }

@@ -16,6 +16,8 @@
 #include <string>
 #include <vector>
 #include <cmath>
+#include <ctime>
+#include <iomanip>
 
 #include <json.hpp>
 namespace mysti {
@@ -42,6 +44,8 @@ namespace fs = std::filesystem;
 extern const char* modes_str[];
 #define SD_ALL_MODES_STR "img_gen, vid_gen, convert, upscale"
 
+extern thread_local std::string g_request_id;
+
 enum SDMode {
     IMG_GEN,
     VID_GEN,
@@ -53,6 +57,7 @@ enum SDMode {
 // Utils
 std::string sd_basename(const std::string& path);
 uint64_t get_file_size(const std::string& path);
+std::string iso_timestamp_now();
 std::string version_string();
 std::string argv_to_utf8(int index, const char** argv);
 float get_total_vram_gb();
@@ -62,6 +67,10 @@ std::map<int, float> get_vram_usage_map();
 
 // Logging
 void log_print(enum sd_log_level_t level, const char* log, bool verbose, bool color);
+
+// Error helpers
+std::string make_error_json(const std::string& error, const std::string& message = "");
+
 void sd_log_cb(enum sd_log_level_t level, const char* log, void* data);
 void set_log_verbose(bool verbose);
 void set_log_color(bool color);
@@ -1589,6 +1598,9 @@ struct SDSvrParams {
     int sd_idle_timeout = 600; // 10 minutes default
     int safe_mode_crashes = 2;
     std::string internal_token;
+    std::string tagger_system_prompt = "You are a specialized image tagging engine. Output a JSON object with a 'tags' key containing an array of 5-8 descriptive tags (Subject, Style, Mood). Example: {\"tags\": [\"cat\", \"forest\", \"ethereal\"]}. Output ONLY valid JSON.";
+    std::string assistant_system_prompt = "You are an integrated creative assistant for MystiCanvas. You help users refine their artistic vision, improve prompts, and organize their library. You can control the application through tools. Be concise, professional, and inspiring.";
+    std::string style_extractor_system_prompt = "You are an expert art style analyzer. Analyze the given image prompt and extract distinct art styles, artists, or aesthetic descriptors. Return a JSON object with a 'styles' key containing an array of objects. Each style object must have 'name' (concise style name), 'prompt' (keywords to append, MUST include '{prompt}' placeholder), and 'negative_prompt' (optional tags to avoid). Example: {\"styles\": [{\"name\": \"Cyberpunk\", \"prompt\": \"{prompt}, cyberpunk, neon lights\", \"negative_prompt\": \"organic\"}]}";
     bool normal_exit      = false;
     bool verbose          = false;
     bool color            = false;

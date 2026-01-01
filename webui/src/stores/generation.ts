@@ -702,10 +702,27 @@ export const useGenerationStore = defineStore('generation', () => {
     seed.value = -1
   }
 
-  function swapDimensions() {
+  const swapDimensions = () => {
     const temp = width.value
     width.value = height.value
     height.value = temp
+  }
+
+  const gcd = (a: number, b: number): number => b ? gcd(b, a % b) : a
+
+  const applyAspectRatio = (ratio: { w: number, h: number }) => {
+    // Jump to the smallest valid resolution for this ratio
+    // Smallest unit is 16px. We need both dimensions >= 64px.
+    const multiplier = Math.ceil(Math.max(4 / ratio.w, 4 / ratio.h))
+    
+    width.value = ratio.w * multiplier * 16
+    height.value = ratio.h * multiplier * 16
+  }
+
+  const snapToNext16 = (val: number) => {
+    if (!val || val < 64) return 64
+    if (val % 16 === 0) return val
+    return Math.ceil(val / 16) * 16
   }
 
   async function fetchStyles() {
@@ -879,10 +896,30 @@ export const useGenerationStore = defineStore('generation', () => {
     }
   }
 
+  function triggerGeneration(mode: 'txt2img' | 'img2img' | 'inpainting') {
+    if (!prompt.value || isGenerating.value || isModelSwitching.value) return
+    
+    generateImage({
+      prompt: prompt.value,
+      negative_prompt: negativePrompt.value,
+      steps: steps.value,
+      seed: seed.value,
+      cfgScale: cfgScale.value,
+      strength: strength.value,
+      batchCount: batchCount.value,
+      sampler: sampler.value,
+      width: width.value,
+      height: height.value,
+      saveImages: saveImages.value,
+      initImage: (mode === 'img2img' || mode === 'inpainting') ? initImage.value : null,
+      maskImage: mode === 'inpainting' ? maskImage.value : null
+    })
+  }
+
   return { 
     isGenerating, isUpscaling, isModelSwitching, isLlmLoading, isLlmLoaded,
     imageUrls, error, 
-    generateImage, requestImage, upscaleImage, parseA1111Parameters, 
+    generateImage, triggerGeneration, requestImage, upscaleImage, parseA1111Parameters, 
     prompt, negativePrompt, steps, seed, cfgScale, strength, batchCount, sampler, samplers, width, height, 
     hiresFix, hiresUpscaleModel, hiresUpscaleFactor, hiresDenoisingStrength, hiresSteps, 
     isSidebarCollapsed, toggleSidebar, theme, toggleTheme, saveImages, initImage, maskImage,
@@ -893,6 +930,6 @@ export const useGenerationStore = defineStore('generation', () => {
     promptHistory, historyIndex, canUndo, canRedo, undoPrompt, redoPrompt, commitPrompt,
     updateConfig, reuseLastSeed, randomizeSeed, swapDimensions,
     styles, activeStyleNames, fetchStyles, saveStyle, deleteStyle, applyStyle, extractStylesFromPrompt,
-    currentModelMetadata, resetToModelDefaults
+    currentModelMetadata, resetToModelDefaults, applyAspectRatio, snapToNext16
   }
 })

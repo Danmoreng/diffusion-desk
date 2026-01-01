@@ -1,6 +1,6 @@
 # MystiCanvas Development Plan (Consolidated)
 
-**Last Updated:** December 30, 2025
+**Last Updated:** January 1, 2026
 **Status:** Active Development
 
 This document outlines the roadmap for MystiCanvas, merging original milestones with architectural review recommendations and the "Model Presets + Creative Assistant" vision.
@@ -20,21 +20,21 @@ This document outlines the roadmap for MystiCanvas, merging original milestones 
 
 **Goal:** Make every core subsystem *inspectable*, *restartable*, and *consistent*.
 
-*   [ ] **A1. Standardize Contracts (Verify):**
-    *   [ ] Ensure all workers return standard health object: `{ ok, service, version, model_loaded, vram_allocated_mb, vram_free_mb }`.
-    *   [ ] Ensure all endpoints use standard error envelope.
-    *   [ ] Verify internal token auth on *all* routes (including proxy).
-*   [ ] **A2. Worker Lifecycle Resilience:**
+*   [x] **A1. Standardize Contracts (Verify):**
+    *   [x] Ensure all workers return standard health object: `{ ok, service, version, model_loaded, vram_allocated_mb, vram_free_mb }`.
+    *   [x] Ensure all endpoints use standard error envelope.
+    *   [x] Verify internal token auth on *all* routes (including proxy).
+*   [x] **A2. Worker Lifecycle Resilience:**
     *   Orchestrator monitors worker health.
     *   Automatic restart on crash.
     *   Broadcast "system alert" to UI via WebSockets.
-*   [ ] **A3. Structured Logs & Correlation:**
+*   [x] **A3. Structured Logs & Correlation:**
     *   Add request IDs to logs.
-    *   Structured JSON logging for easy parsing.
-*   [ ] **A4. UI Modularity & Stores:**
+    *   Standardized text logging format (Apache/PHP style): `[timestamp] [level] [file:line] message`.
+*   [x] **A4. UI Modularity & Stores:**
     *   Extract `Sidebar.vue` sub-components (e.g., `VramIndicator.vue`, `ModelSelector.vue`).
     *   Move business rules (validation, generation logic) from components into Pinia store actions.
-*   [ ] **A5. Config Hygiene:**
+*   [x] **A5. Config Hygiene:**
     *   Move hardcoded system prompts (Assistant, Tagger) to `config.json`.
     *   Externalize tool schemas/descriptions.
 
@@ -49,8 +49,8 @@ This document outlines the roadmap for MystiCanvas, merging original milestones 
 
 **Goal:** Prevent silent failures and improve error visibility before full VRAM system is ready.
 
-*   [ ] **B0.1. Fail Loudly:** Detect "blank output" or generation failure and return hard error to UI.
-*   [ ] **B0.2. Conservative Retry:** Implement single retry with conservative settings on OOM/failure.
+*   [x] **B0.1. Fail Loudly:** Detect "blank output" or generation failure and return hard error to UI.
+*   [x] **B0.2. Conservative Retry:** Implement single retry with conservative settings on OOM/failure.
 
 ---
 
@@ -195,7 +195,7 @@ This document outlines the roadmap for MystiCanvas, merging original milestones 
 
 ## Cross-Cutting & Maintainability
 
-*   **Safety:** Ensure stable-diffusion "blank output" is treated as an error (Release B0).
+*   **Safety:** Ensure stable-diffusion "blank output" is treated as an error (Release B0). [DONE]
 *   **Refactoring:** Continue RAII adoption (SD context, Upscaler context).
 *   **Dependencies:**
     *   E2 (`search_history`) depends on C4 (FTS5).
@@ -203,7 +203,6 @@ This document outlines the roadmap for MystiCanvas, merging original milestones 
 
 ## Priority Order (Next Steps)
 
-1.  **Release B0 (Stop the Bleeding):** Immediate reliability fixes.
-2.  **Release C (DB Hardening):** Unlocks safe schema evolution for Presets/Jobs.
-3.  **Release B (VRAM v2):** Fixes reliability/OOM issues comprehensively.
-4.  **Release D (Presets):** Improves UX and enables accurate VRAM prediction.
+1.  **Release C (DB Hardening):** Unlocks safe schema evolution for Presets/Jobs.
+2.  **Release B (VRAM v2):** Fixes reliability/OOM issues comprehensively.
+3.  **Release D (Presets):** Improves UX and enables accurate VRAM prediction.

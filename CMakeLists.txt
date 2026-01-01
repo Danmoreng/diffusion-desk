@@ -143,24 +143,8 @@ target_include_directories(mysti_sd_worker PRIVATE
 
 target_link_libraries(mysti_sd_worker PRIVATE
     stable-diffusion
-    # We don't link 'llama' lib, but we rely on 'ggml' which is provided by llama.cpp project
-    # stable-diffusion target already links against it.
-    common # llama.cpp common (args etc) - wait, src/utils/common.cpp uses local utils.
-    # The 'common' target in libs/llama.cpp refers to llama's common utils. 
-    # Our src/utils/common.cpp is distinct.
-    # Check if we use symbols from llama's common lib in SD worker?
-    # src/utils/common.hpp includes "util.h" which might be from llama.cpp/common
-    # Yes, SD worker uses stable-diffusion which uses ggml.
+    common # llama.cpp common
 )
-
-# NOTE: The 'common' target comes from llama.cpp (LLAMA_BUILD_COMMON=ON).
-# src/utils/common.cpp implementation doesn't seem to rely on llama's common library symbols heavily
-# EXCEPT for `log_printf` maybe?
-# Let's link 'common' (llama's common) just in case, as stable-diffusion often needs it for some utils if shared.
-# Actually, stable-diffusion.cpp has its own deps.
-# Let's link 'llama' just in case SD_BUILD_EXTERNAL_GGML pulls in stuff that needs it, or just rely on transitive deps.
-
-target_link_libraries(mysti_sd_worker PRIVATE stable-diffusion)
 
 if(WIN32)
     target_link_libraries(mysti_sd_worker PRIVATE ws2_32)
@@ -171,6 +155,7 @@ add_executable(mysti_llm_worker
     src/main_llm.cpp
     src/workers/llm_worker.cpp
     src/server/llama_server.cpp
+    src/sd/api_utils.cpp
     ${COMMON_SOURCES}
 )
 

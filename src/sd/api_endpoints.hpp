@@ -29,7 +29,7 @@ struct ServerContext {
 
 // Endpoint handlers
 void handle_get_outputs(const httplib::Request& req, httplib::Response& res, ServerContext& ctx);
-void handle_health(const httplib::Request& req, httplib::Response& res);
+void handle_health(const httplib::Request& req, httplib::Response& res, ServerContext& ctx);
 void handle_get_config(const httplib::Request& req, httplib::Response& res, ServerContext& ctx);
 void handle_post_config(const httplib::Request& req, httplib::Response& res, ServerContext& ctx);
 void handle_get_progress(const httplib::Request& req, httplib::Response& res);

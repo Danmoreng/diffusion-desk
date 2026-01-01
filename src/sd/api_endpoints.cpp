@@ -19,8 +19,18 @@ void log_vram_status(const std::string& phase) {
     log_print(SD_LOG_INFO, msg.c_str(), true, true);
 }
 
-void handle_health(const httplib::Request&, httplib::Response& res) {
-    res.set_content(R"({\"ok\":true,\"service\":\"sd-cpp-http\"})", "application/json");
+void handle_health(const httplib::Request&, httplib::Response& res, ServerContext& ctx) {
+    mysti::json j;
+    j["ok"] = true;
+    j["service"] = "sd";
+    j["version"] = version_string();
+    j["model_loaded"] = (ctx.sd_ctx != nullptr);
+    std::string mp = ctx.ctx_params.diffusion_model_path;
+    if (mp.empty()) mp = ctx.ctx_params.model_path;
+    j["model_path"] = mp;
+    j["vram_allocated_mb"] = (int)(get_current_process_vram_usage_gb() * 1024.0f);
+    j["vram_free_mb"] = (int)(get_free_vram_gb() * 1024.0f);
+    res.set_content(j.dump(), "application/json");
 }
 
 void handle_get_config(const httplib::Request&, httplib::Response& res, ServerContext& ctx) {
@@ -50,7 +60,7 @@ void handle_post_config(const httplib::Request& req, httplib::Response& res, Ser
         res.set_content(R"({\"status\":\"success\"})", "application/json");
     } catch (const std::exception& e) {
         res.status = 400;
-        res.set_content(R"({\"error\":\"invalid json\"})", "application/json");
+        res.set_content(make_error_json("invalid_json", e.what()), "application/json");
     }
 }
 
@@ -242,7 +252,7 @@ void handle_load_model(const httplib::Request& req, httplib::Response& res, Serv
         mysti::json body = mysti::json::parse(req.body);
         if (!body.contains("model_id")) {
             res.status = 400;
-            res.set_content(R"({\"error\":\"model_id (relative path) required\"})", "application/json");
+            res.set_content(make_error_json("invalid_request", "model_id (relative path) required"), "application/json");
             return;
         }
         std::string model_id = body["model_id"];
@@ -250,7 +260,7 @@ void handle_load_model(const httplib::Request& req, httplib::Response& res, Serv
         
         if (!fs::exists(model_path)) {
             res.status = 404;
-            res.set_content(R"({\"error\":\"model file not found at )" + model_path.string() + R"("})", "application/json");
+            res.set_content(make_error_json("model_not_found", "model file not found at " + model_path.string()), "application/json");
             return;
         }
 
@@ -311,7 +321,7 @@ void handle_load_upscale_model(const httplib::Request& req, httplib::Response& r
         mysti::json body = mysti::json::parse(req.body);
         if (!body.contains("model_id")) {
             res.status = 400;
-            res.set_content(R"({\"error\":\"model_id required\"})", "application/json");
+            res.set_content(make_error_json("invalid_request", "model_id required"), "application/json");
             return;
         }
         std::string model_id = body["model_id"];
@@ -319,7 +329,7 @@ void handle_load_upscale_model(const httplib::Request& req, httplib::Response& r
         
         if (!fs::exists(model_path)) {
             res.status = 404;
-            res.set_content(R"({\"error\":\"upscale model not found\"})", "application/json");
+            res.set_content(make_error_json("model_not_found", "upscale model not found"), "application/json");
             return;
         }
 
@@ -363,14 +373,14 @@ void handle_upscale_image(const httplib::Request& req, httplib::Response& res, S
             fs::path img_path = fs::path(ctx.svr_params.output_dir) / image_name;
             if (!fs::exists(img_path)) {
                 res.status = 404;
-                res.set_content(R"({\"error\":\"image not found\"})", "application/json");
+                res.set_content(make_error_json("image_not_found"), "application/json");
                 return;
             }
             std::ifstream ifs(img_path, std::ios::binary);
             image_data = std::string((std::istreambuf_iterator<char>(ifs)), std::istreambuf_iterator<char>());
         } else {
             res.status = 400;
-            res.set_content(R"({\"error\":\"image (base64) or image_name required\"})", "application/json");
+            res.set_content(make_error_json("invalid_request", "image (base64) or image_name required"), "application/json");
             return;
         }
 
@@ -394,7 +404,7 @@ void handle_upscale_image(const httplib::Request& req, httplib::Response& res, S
 
         if (!input_image.data) {
             res.status = 400;
-            res.set_content(R"({\"error\":\"failed to decode image\"})", "application/json");
+            res.set_content(make_error_json("decode_failed", "failed to decode image"), "application/json");
             return;
         }
 
@@ -404,7 +414,7 @@ void handle_upscale_image(const httplib::Request& req, httplib::Response& res, S
             if (!ctx.upscaler_ctx) {
                 stbi_image_free(input_image.data);
                 res.status = 400;
-                res.set_content(R"({\"error\":\"no upscale model loaded\"})", "application/json");
+                res.set_content(make_error_json("no_model", "no upscale model loaded"), "application/json");
                 return;
             }
             
@@ -420,7 +430,7 @@ void handle_upscale_image(const httplib::Request& req, httplib::Response& res, S
 
         if (!upscaled_image.data) {
             res.status = 500;
-            res.set_content(R"({\"error\":\"upscaling failed\"})", "application/json");
+            res.set_content(make_error_json("upscale_failed"), "application/json");
             return;
         }
 
@@ -434,7 +444,7 @@ void handle_upscale_image(const httplib::Request& req, httplib::Response& res, S
 
         if (image_bytes.empty()) {
             res.status = 500;
-            res.set_content(R"({\"error\":\"failed to encode upscaled image\"})", "application/json");
+            res.set_content(make_error_json("encode_failed", "failed to encode upscaled image"), "application/json");
             return;
         }
 
@@ -527,7 +537,7 @@ void handle_get_history(const httplib::Request&, httplib::Response& res, ServerC
     } catch (const std::exception& e) {
         LOG_ERROR("failed to list image history: %s", e.what());
         res.status = 500;
-        res.set_content(R"({\"error\":\"failed to list image history\"})", "application/json");
+        res.set_content(make_error_json("server_error", "failed to list image history"), "application/json");
         return;
     }
     res.set_content(image_list.dump(), "application/json");
@@ -535,10 +545,11 @@ void handle_get_history(const httplib::Request&, httplib::Response& res, ServerC
 
 void handle_generate_image(const httplib::Request& req, httplib::Response& res, ServerContext& ctx) {
     reset_progress();
+    LOG_INFO("New generation request received");
     try {
         if (req.body.empty()) {
             res.status = 400;
-            res.set_content(R"({\"error\":\"empty body\"})", "application/json");
+            res.set_content(make_error_json("empty_body"), "application/json");
             return;
         }
 
@@ -563,13 +574,13 @@ void handle_generate_image(const httplib::Request& req, httplib::Response& res, 
 
         if (prompt.empty()) {
             res.status = 400;
-            res.set_content(R"({\"error\":\"prompt required\"})", "application/json");
+            res.set_content(make_error_json("invalid_request", "prompt required"), "application/json");
             return;
         }
 
         if (output_format != "png" && output_format != "jpeg") {
             res.status = 400;
-            res.set_content(R"({\"error\":\"invalid output_format, must be one of [png, jpeg]\"})", "application/json");
+            res.set_content(make_error_json("invalid_request", "invalid output_format, must be one of [png, jpeg]"), "application/json");
             return;
         }
         if (n <= 0)
@@ -598,7 +609,7 @@ void handle_generate_image(const httplib::Request& req, httplib::Response& res, 
 
         if (!gen_params.from_json_str(req.body)) {
             res.status = 400;
-            res.set_content(R"({\"error\":\"invalid params\"})", "application/json");
+            res.set_content(make_error_json("invalid_request", "invalid params"), "application/json");
             return;
         }
 
@@ -621,7 +632,7 @@ void handle_generate_image(const httplib::Request& req, httplib::Response& res, 
 
         if (!gen_params.process_and_check(IMG_GEN, lora_dir)) {
             res.status = 400;
-            res.set_content(R"({\"error\":\"invalid params\"})", "application/json");
+            res.set_content(make_error_json("invalid_request", "invalid params"), "application/json");
             return;
         }
 
@@ -728,7 +739,7 @@ void handle_generate_image(const httplib::Request& req, httplib::Response& res, 
             std::lock_guard<std::mutex> lock(ctx.sd_ctx_mutex);
             if (ctx.sd_ctx == nullptr) {
                 res.status = 400;
-                res.set_content(R"({\"error\":\"no model loaded\"})", "application/json");
+                res.set_content(make_error_json("no_model", "no model loaded"), "application/json");
                 return;
             }
 
@@ -789,8 +800,19 @@ void handle_generate_image(const httplib::Request& req, httplib::Response& res, 
                 first_pass_success = false;
                 for (int i = 0; i < num_results; i++) {
                     if (results[i].data != nullptr) {
-                        first_pass_success = true;
-                        break;
+                        // B0.1: Check for "blank" (all zeros) output which indicates a silent failure in SD
+                        bool all_zeros = true;
+                        size_t total_bytes = (size_t)results[i].width * results[i].height * results[i].channel;
+                        for (size_t b = 0; b < total_bytes; b++) {
+                            if (results[i].data[b] != 0) {
+                                all_zeros = false;
+                                break;
+                            }
+                        }
+                        if (!all_zeros) {
+                            first_pass_success = true;
+                            break;
+                        }
                     }
                 }
             }
@@ -814,8 +836,18 @@ void handle_generate_image(const httplib::Request& req, httplib::Response& res, 
                     first_pass_success = false;
                     for (int i = 0; i < num_results; i++) {
                         if (results[i].data != nullptr) {
-                            first_pass_success = true;
-                            break;
+                            bool all_zeros = true;
+                            size_t total_bytes = (size_t)results[i].width * results[i].height * results[i].channel;
+                            for (size_t b = 0; b < total_bytes; b++) {
+                                if (results[i].data[b] != 0) {
+                                    all_zeros = false;
+                                    break;
+                                }
+                            }
+                            if (!all_zeros) {
+                                first_pass_success = true;
+                                break;
+                            }
                         }
                     }
                 }
@@ -823,7 +855,7 @@ void handle_generate_image(const httplib::Request& req, httplib::Response& res, 
                 if (!first_pass_success) {
                     LOG_ERROR("Generation failed after retry.");
                     res.status = 500;
-                    res.set_content(R"({\"error\":\"generation_failed\",\"message\":\"Stable diffusion generation failed even after retry with conservative settings.\"})", "application/json");
+                    res.set_content(make_error_json("generation_failed", "Stable diffusion generation failed even after retry with conservative settings."), "application/json");
                     free_sd_images(results, num_results);
                     return;
                 }
@@ -1029,7 +1061,7 @@ void handle_generate_image(const httplib::Request& req, httplib::Response& res, 
         if (successful_generations == 0) {
             LOG_ERROR("All generated images were null (VAE decoding pass).");
             res.status = 500;
-            res.set_content(R"({\"error\":\"generation_failed\",\"message\":\"Stable diffusion returned only null images. This can happen if the VAE failed or the model is corrupted.\"})", "application/json");
+            res.set_content(make_error_json("generation_failed", "Stable diffusion returned only null images. This can happen if the VAE failed or the model is corrupted."), "application/json");
             free_sd_images(results, num_results);
             return;
         }
@@ -1052,10 +1084,7 @@ void handle_generate_image(const httplib::Request& req, httplib::Response& res, 
 
     } catch (const std::exception& e) {
         res.status = 500;
-        mysti::json err;
-        err["error"]   = "server_error";
-        err["message"] = e.what();
-        res.set_content(err.dump(), "application/json");
+        res.set_content(make_error_json("server_error", e.what()), "application/json");
     }
 }
 
@@ -1064,14 +1093,14 @@ void handle_edit_image(const httplib::Request& req, httplib::Response& res, Serv
     try {
         if (!req.is_multipart_form_data()) {
             res.status = 400;
-            res.set_content(R"({\"error\":\"Content-Type must be multipart/form-data\"})", "application/json");
+            res.set_content(make_error_json("invalid_request", "Content-Type must be multipart/form-data"), "application/json");
             return;
         }
 
         std::string prompt = req.form.get_field("prompt");
         if (prompt.empty()) {
             res.status = 400;
-            res.set_content(R"({\"error\":\"prompt required\"})", "application/json");
+            res.set_content(make_error_json("invalid_request", "prompt required"), "application/json");
             return;
         }
 
@@ -1083,7 +1112,7 @@ void handle_edit_image(const httplib::Request& req, httplib::Response& res, Serv
         size_t image_count = req.form.get_file_count("image[]");
         if (image_count == 0) {
             res.status = 400;
-            res.set_content(R"({\"error\":\"at least one image[] required\"})", "application/json");
+            res.set_content(make_error_json("invalid_request", "at least one image[] required"), "application/json");
             return;
         }
 
@@ -1126,7 +1155,7 @@ void handle_edit_image(const httplib::Request& req, httplib::Response& res, Serv
             output_format = req.form.get_field("output_format");
         if (output_format != "png" && output_format != "jpeg") {
             res.status = 400;
-            res.set_content(R"({\"error\":\"invalid output_format, must be one of [png, jpeg]\"})", "application/json");
+            res.set_content(make_error_json("invalid_request", "invalid output_format, must be one of [png, jpeg]"), "application/json");
             return;
         }
 
@@ -1162,7 +1191,7 @@ void handle_edit_image(const httplib::Request& req, httplib::Response& res, Serv
 
         if (!gen_params.process_and_check(IMG_GEN, lora_dir)) {
             res.status = 400;
-            res.set_content(R"({\"error\":\"invalid params\"})", "application/json");
+            res.set_content(make_error_json("invalid_request", "invalid params"), "application/json");
             return;
         }
 
@@ -1245,7 +1274,7 @@ void handle_edit_image(const httplib::Request& req, httplib::Response& res, Serv
             std::lock_guard<std::mutex> lock(ctx.sd_ctx_mutex);
             if (ctx.sd_ctx == nullptr) {
                 res.status = 400;
-                res.set_content(R"({\"error\":\"no model loaded\"})", "application/json");
+                res.set_content(make_error_json("no_model", "no model loaded"), "application/json");
                 return;
             }
 
@@ -1272,8 +1301,18 @@ void handle_edit_image(const httplib::Request& req, httplib::Response& res, Serv
             success = false;
             for (int i = 0; i < num_results; i++) {
                 if (results[i].data != nullptr) {
-                    success = true;
-                    break;
+                    bool all_zeros = true;
+                    size_t total_bytes = (size_t)results[i].width * results[i].height * results[i].channel;
+                    for (size_t b = 0; b < total_bytes; b++) {
+                        if (results[i].data[b] != 0) {
+                            all_zeros = false;
+                            break;
+                        }
+                    }
+                    if (!all_zeros) {
+                        success = true;
+                        break;
+                    }
                 }
             }
         }
@@ -1297,8 +1336,18 @@ void handle_edit_image(const httplib::Request& req, httplib::Response& res, Serv
                 success = false;
                 for (int i = 0; i < num_results; i++) {
                     if (results[i].data != nullptr) {
-                        success = true;
-                        break;
+                        bool all_zeros = true;
+                        size_t total_bytes = (size_t)results[i].width * results[i].height * results[i].channel;
+                        for (size_t b = 0; b < total_bytes; b++) {
+                            if (results[i].data[b] != 0) {
+                                all_zeros = false;
+                                break;
+                            }
+                        }
+                        if (!all_zeros) {
+                            success = true;
+                            break;
+                        }
                     }
                 }
             }
@@ -1306,7 +1355,7 @@ void handle_edit_image(const httplib::Request& req, httplib::Response& res, Serv
             if (!success) {
                 LOG_ERROR("Edit generation failed after retry.");
                 res.status = 500;
-                res.set_content(R"({\"error\":\"generation_failed\",\"message\":\"Stable diffusion generation failed even after retry with conservative settings.\"})", "application/json");
+                res.set_content(make_error_json("generation_failed", "Stable diffusion generation failed even after retry with conservative settings."), "application/json");
                 free_sd_images(results, num_results);
                 
                 // Still need to free other resources
@@ -1365,7 +1414,7 @@ void handle_edit_image(const httplib::Request& req, httplib::Response& res, Serv
     if (successful_generations == 0) {
         LOG_ERROR("All generated images were null (VAE decoding pass).");
         res.status = 500;
-        res.set_content(R"({\"error\":\"generation_failed\",\"message\":\"Stable diffusion returned only null images.\"})", "application/json");
+        res.set_content(make_error_json("generation_failed", "Stable diffusion returned only null images."), "application/json");
         free_sd_images(results, num_results);
         if (init_image.data) stbi_image_free(init_image.data);
         if (mask_image.data) stbi_image_free(mask_image.data);
@@ -1389,9 +1438,6 @@ void handle_edit_image(const httplib::Request& req, httplib::Response& res, Serv
     }
     } catch (const std::exception& e) {
         res.status = 500;
-        mysti::json err;
-        err["error"]   = "server_error";
-        err["message"] = e.what();
-        res.set_content(err.dump(), "application/json");
+        res.set_content(make_error_json("server_error", e.what()), "application/json");
     }
 }

@@ -60,6 +60,10 @@ void Proxy::forward_request(const httplib::Request& req, httplib::Response& res,
         headers.emplace("X-Internal-Token", internal_token);
     }
 
+    if (!g_request_id.empty()) {
+        headers.emplace("X-Request-ID", g_request_id);
+    }
+
     // Detect if we should use streaming (SSE or long-running completion paths)
     bool is_completion = path.find("/completions") != std::string::npos || 
                          path.find("/progress") != std::string::npos ||

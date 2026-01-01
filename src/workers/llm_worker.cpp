@@ -13,7 +13,7 @@ void handle_load_llm_model(const httplib::Request& req, httplib::Response& res, 
         mysti::json body = mysti::json::parse(req.body);
         if (!body.contains("model_id")) {
             res.status = 400;
-            res.set_content(R"({\"error\":\"model_id required\"})", "application/json");
+            res.set_content(make_error_json("invalid_request", "model_id required"), "application/json");
             return;
         }
         std::string model_id = body["model_id"];
@@ -24,7 +24,7 @@ void handle_load_llm_model(const httplib::Request& req, httplib::Response& res, 
         
         if (!fs::exists(model_path)) {
             res.status = 404;
-            res.set_content(R"({\"error\":\"LLM model file not found\"})", "application/json");
+            res.set_content(make_error_json("model_not_found", "LLM model file not found"), "application/json");
             return;
         }
 
@@ -37,12 +37,12 @@ void handle_load_llm_model(const httplib::Request& req, httplib::Response& res, 
             res.set_content(R"({\"status\":\"success\",\"model\":\")" + model_id + R"("})", "application/json");
         } else {
             res.status = 500;
-            res.set_content(R"({\"error\":\"failed to load LLM model\"})", "application/json");
+            res.set_content(make_error_json("load_failed", "failed to load LLM model"), "application/json");
         }
     } catch (const std::exception& e) {
         LOG_ERROR("error loading LLM model: %s", e.what());
         res.status = 500;
-        res.set_content(R"({\"error\":\")" + std::string(e.what()) + R"("})", "application/json");
+        res.set_content(make_error_json("server_error", e.what()), "application/json");
     }
 }
 
@@ -85,12 +85,13 @@ int run_llm_worker(SDSvrParams& svr_params, SDContextParams& ctx_params) {
 
     // Security: Check internal token
     svr.set_pre_routing_handler([&svr_params](const httplib::Request& req, httplib::Response& res) {
+        g_request_id = req.get_header_value("X-Request-ID");
         if (!svr_params.internal_token.empty()) {
             std::string token = req.get_header_value("X-Internal-Token");
             if (token != svr_params.internal_token) {
                 LOG_WARN("Blocked unauthorized internal request from %s", req.remote_addr.c_str());
                 res.status = 401;
-                res.set_content("{\"error\":\"Unauthorized internal request\"}", "application/json");
+                res.set_content(make_error_json("unauthorized", "Unauthorized internal request"), "application/json");
                 return httplib::Server::HandlerResponse::Handled;
             }
         }
