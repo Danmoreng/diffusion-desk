@@ -514,7 +514,7 @@ export const useGenerationStore = defineStore('generation', () => {
       }
 
       const data = await response.json()
-      const newImageUrl = `data:image/png;base64,${data.b64_json}`
+      const newImageUrl = data.url
       
       // If we are showing the upscaled image, maybe add it to the gallery
       imageUrls.value = [newImageUrl]
@@ -643,6 +643,7 @@ export const useGenerationStore = defineStore('generation', () => {
       hires_upscale_factor: hiresUpscaleFactor.value,
       hires_denoising_strength: hiresDenoisingStrength.value,
       hires_steps: hiresSteps.value,
+      no_base64: true
     }
 
     if (params.initImage) {
@@ -655,10 +656,6 @@ export const useGenerationStore = defineStore('generation', () => {
 
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
-    }
-
-    if (params.batchCount === 1) {
-      headers['Accept'] = 'image/png'
     }
 
     const response = await fetch('/v1/images/generations', {
@@ -682,19 +679,6 @@ export const useGenerationStore = defineStore('generation', () => {
       throw new Error(errMessage)
     }
 
-    const contentType = response.headers.get('content-type');
-    if (contentType && (contentType.includes('image/png') || contentType.includes('image/jpeg'))) {
-      const blob = await response.blob();
-      const url = URL.createObjectURL(blob);
-      
-      const seedHeader = response.headers.get('X-SD-Seed');
-      if (seedHeader && lastParams.value) {
-        lastParams.value.seed = parseInt(seedHeader, 10);
-      }
-      
-      return [url];
-    }
-
     const responseData = await response.json();
     if (!responseData.data || responseData.data.length === 0) {
       throw new Error('Server response did not contain image data.');
@@ -705,7 +689,7 @@ export const useGenerationStore = defineStore('generation', () => {
         lastParams.value.seed = responseData.data[0].seed
     }
 
-    return responseData.data.map((item: any) => `data:image/png;base64,${item.b64_json}`);
+    return responseData.data.map((item: any) => item.url);
   }
 
   function reuseLastSeed() {

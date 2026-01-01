@@ -11,7 +11,6 @@
 std::string iso_timestamp_now();
 
 // Base64 utilities
-std::string base64_encode(const std::vector<uint8_t>& bytes);
 std::vector<uint8_t> base64_decode(const std::string& encoded_string);
 bool is_base64(unsigned char c);
 

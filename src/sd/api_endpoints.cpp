@@ -438,22 +438,34 @@ void handle_upscale_image(const httplib::Request& req, httplib::Response& res, S
             return;
         }
 
-        std::string b64 = base64_encode(image_bytes);
         mysti::json out;
         out["width"] = upscaled_image.width;
         out["height"] = upscaled_image.height;
-        out["b64_json"] = b64;
 
-        if (body.value("save_image", true)) {
-            auto timestamp = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
-            std::string out_name = "upscale-" + std::to_string(timestamp) + ".png";
-            fs::path out_path = fs::path(ctx.svr_params.output_dir) / out_name;
-            std::ofstream ofs(out_path, std::ios::binary);
-            ofs.write((const char*)image_bytes.data(), image_bytes.size());
-            out["url"] = "/outputs/" + out_name;
-            out["name"] = out_name;
-            LOG_INFO("Saved upscaled image to %s", out_path.string().c_str());
+        bool save_image = body.value("save_image", true);
+        
+        // Always save to disk now (either persistent or temp) to serve via URL
+        std::string final_output_dir = ctx.svr_params.output_dir;
+        std::string url_prefix = "/outputs/";
+        
+        if (!save_image) {
+            final_output_dir = (fs::path(ctx.svr_params.output_dir) / "temp").string();
+            url_prefix = "/outputs/temp/";
+            if (!fs::exists(final_output_dir)) {
+                fs::create_directories(final_output_dir);
+            }
         }
+
+        auto timestamp = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+        std::string out_name = "upscale-" + std::to_string(timestamp) + ".png";
+        fs::path out_path = fs::path(final_output_dir) / out_name;
+        
+        std::ofstream ofs(out_path, std::ios::binary);
+        ofs.write((const char*)image_bytes.data(), image_bytes.size());
+        
+        out["url"] = url_prefix + out_name;
+        out["name"] = out_name;
+        LOG_INFO("Saved upscaled image to %s", out_path.string().c_str());
 
         res.set_content(out.dump(), "application/json");
 
@@ -945,14 +957,10 @@ void handle_generate_image(const httplib::Request& req, httplib::Response& res, 
         }
         set_progress_phase("VAE Decoding...");
         
-        std::string accept_header = req.get_header_value("Accept");
-        bool prefer_binary = (accept_header.find("image/png") != std::string::npos || accept_header.find("image/jpeg") != std::string::npos);
         bool no_base64 = j.value("no_base64", false);
         
         // If batch > 1, force JSON to keep it simple unless we implement multipart
-        if (num_results > 1) prefer_binary = false;
-
-        std::vector<uint8_t> first_image_bytes;
+        // Note: We now always return JSON with URLs as primary method.
 
         int successful_generations = 0;
         for (int i = 0; i < num_results; i++) {
@@ -971,45 +979,48 @@ void handle_generate_image(const httplib::Request& req, httplib::Response& res, 
                 continue;
             }
 
-            if (i == 0 && prefer_binary) {
-                first_image_bytes = image_bytes;
-            }
-
             mysti::json item;
-            if (!prefer_binary && !no_base64) {
-                std::string b64 = base64_encode(image_bytes);
-                item["b64_json"] = b64;
-            }
             item["seed"] = gen_params.seed;
 
-            if (save_image) {
-                try {
-                    const std::string output_dir = ctx.svr_params.output_dir;
-                    if (!fs::exists(output_dir)) {
-                        fs::create_directories(output_dir);
-                    }
-                    auto timestamp = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
-                    std::string base_filename = "img-" + std::to_string(timestamp) + "-" + std::to_string(gen_params.seed);
-                    std::string img_filename = output_dir + "/" + base_filename + ".png";
-                    
-                    std::ofstream file(img_filename, std::ios::binary);
-                    file.write(reinterpret_cast<const char*>(image_bytes.data()), image_bytes.size());
-                    LOG_INFO("saved image to %s", img_filename.c_str());
+            // Always save to disk (temp or permanent) to serve via URL
+            try {
+                std::string final_output_dir = ctx.svr_params.output_dir;
+                std::string url_prefix = "/outputs/";
 
-                    std::string txt_filename = output_dir + "/" + base_filename + ".txt";
+                if (!save_image) {
+                    final_output_dir = (fs::path(ctx.svr_params.output_dir) / "temp").string();
+                    url_prefix = "/outputs/temp/";
+                    if (!fs::exists(final_output_dir)) {
+                        fs::create_directories(final_output_dir);
+                    }
+                } else {
+                    if (!fs::exists(final_output_dir)) {
+                        fs::create_directories(final_output_dir);
+                    }
+                }
+
+                auto timestamp = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+                std::string base_filename = "img-" + std::to_string(timestamp) + "-" + std::to_string(gen_params.seed);
+                std::string img_filename = (fs::path(final_output_dir) / (base_filename + ".png")).string();
+                
+                std::ofstream file(img_filename, std::ios::binary);
+                file.write(reinterpret_cast<const char*>(image_bytes.data()), image_bytes.size());
+                LOG_INFO("saved image to %s", img_filename.c_str());
+
+                // Only save metadata txt if saving permanently
+                if (save_image) {
+                    std::string txt_filename = (fs::path(final_output_dir) / (base_filename + ".txt")).string();
                     std::string params_txt = get_image_params(ctx.ctx_params, gen_params, gen_params.seed, total_generation_time);
-                    
                     std::ofstream txt_file(txt_filename);
                     txt_file << params_txt;
-                    LOG_INFO("saved parameters to %s", txt_filename.c_str());
-
-                    // Add file info to response
-                    item["url"] = "/outputs/" + base_filename + ".png";
-                    item["name"] = base_filename + ".png";
-
-                } catch (const std::exception& e) {
-                    LOG_ERROR("failed to save image or metadata: %s", e.what());
                 }
+
+                // Add file info to response
+                item["url"] = url_prefix + base_filename + ".png";
+                item["name"] = base_filename + ".png";
+
+            } catch (const std::exception& e) {
+                LOG_ERROR("failed to save image or metadata: %s", e.what());
             }
 
             out["data"].push_back(item);
@@ -1024,15 +1035,7 @@ void handle_generate_image(const httplib::Request& req, httplib::Response& res, 
         }
 
         out["generation_time"] = total_generation_time;
-
-        if (prefer_binary && !first_image_bytes.empty()) {
-            res.set_header("X-SD-Seed", std::to_string(gen_params.seed));
-            res.set_header("X-SD-Generation-Time", std::to_string(total_generation_time));
-            std::string mime = (output_format == "jpeg") ? "image/jpeg" : "image/png";
-            res.set_content((const char*)first_image_bytes.data(), first_image_bytes.size(), mime.c_str());
-        } else {
-            res.set_content(out.dump(), "application/json");
-        }
+        res.set_content(out.dump(), "application/json");
         res.status = 200;
 
         free_sd_images(results, num_results);
@@ -1332,10 +1335,30 @@ void handle_edit_image(const httplib::Request& req, httplib::Response& res, Serv
                                                     (int)results[i].height,
                                                     (int)results[i].channel,
                                                     output_compression);
-        std::string b64 = base64_encode(image_bytes);
+        
         mysti::json item;
-        item["b64_json"] = b64;
         item["seed"] = gen_params.seed;
+
+        // Always save edits to temp to serve via URL (Edits are usually transient unless saved by user)
+        try {
+            std::string temp_dir = (fs::path(ctx.svr_params.output_dir) / "temp").string();
+            if (!fs::exists(temp_dir)) {
+                fs::create_directories(temp_dir);
+            }
+
+            auto timestamp = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+            std::string base_filename = "edit-" + std::to_string(timestamp) + "-" + std::to_string(gen_params.seed);
+            std::string img_filename = (fs::path(temp_dir) / (base_filename + ".png")).string();
+            
+            std::ofstream file(img_filename, std::ios::binary);
+            file.write(reinterpret_cast<const char*>(image_bytes.data()), image_bytes.size());
+            
+            item["url"] = "/outputs/temp/" + base_filename + ".png";
+            item["name"] = base_filename + ".png";
+        } catch (...) {
+            LOG_ERROR("failed to save edit image to temp");
+        }
+
         out["data"].push_back(item);
     }
 

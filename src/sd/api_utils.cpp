@@ -32,46 +32,6 @@ bool is_base64(unsigned char c) {
     return (isalnum(c) || (c == '+') || (c == '/'));
 }
 
-std::string base64_encode(const std::vector<uint8_t>& bytes) {
-    std::string ret;
-    int i = 0;
-    int j = 0;
-    unsigned char char_array_3[3];
-    unsigned char char_array_4[4];
-
-    for (uint8_t byte : bytes) {
-        char_array_3[i++] = byte;
-        if (i == 3) {
-            char_array_4[0] = (char_array_3[0] & 0xfc) >> 2;
-            char_array_4[1] = ((char_array_3[0] & 0x03) << 4) + ((char_array_3[1] & 0xf0) >> 4);
-            char_array_4[2] = ((char_array_3[1] & 0x0f) << 2) + ((char_array_3[2] & 0xc0) >> 6);
-            char_array_4[3] = char_array_3[2] & 0x3f;
-
-            for (i = 0; i < 4; i++)
-                ret += base64_chars[char_array_4[i]];
-            i = 0;
-        }
-    }
-
-    if (i) {
-        for (j = i; j < 3; j++)
-            char_array_3[j] = '\0';
-
-        char_array_4[0] = (char_array_3[0] & 0xfc) >> 2;
-        char_array_4[1] = ((char_array_3[0] & 0x03) << 4) + ((char_array_3[1] & 0xf0) >> 4);
-        char_array_4[2] = ((char_array_3[1] & 0x0f) << 2) + ((char_array_3[2] & 0xc0) >> 6);
-        char_array_4[3] = char_array_3[2] & 0x3f;
-
-        for (j = 0; j < i + 1; j++)
-            ret += base64_chars[char_array_4[j]];
-
-        while (i++ < 3)
-            ret += '=';
-    }
-
-    return ret;
-}
-
 std::vector<uint8_t> base64_decode(const std::string& encoded_string) {
     int in_len = (int)encoded_string.size();
     int i = 0;
@@ -121,7 +81,7 @@ mysti::json redact_json_impl(const mysti::json& j, int depth) {
 
     if (j.is_object()) {
         mysti::json redacted = j;
-        const std::vector<std::string> keys_to_redact = {"b64_json", "image", "init_image", "mask_image", "extra_args"};
+        const std::vector<std::string> keys_to_redact = {"image", "init_image", "mask_image"};
         for (auto& element : redacted.items()) {
             bool should_redact = false;
             for (const auto& key : keys_to_redact) {
