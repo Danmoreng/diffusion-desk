@@ -125,6 +125,7 @@ int run_orchestrator(int argc, const char** argv, SDSvrParams& svr_params) {
     g_tagging_svc->set_model_provider([]() { return g_controller->get_last_llm_model_req(); });
     g_tagging_svc->start();
     g_controller->set_on_generation_callback([]() { if (g_tagging_svc) g_tagging_svc->notify_new_generation(); });
+    g_controller->set_generation_active_callback([](bool active) { if (g_tagging_svc) g_tagging_svc->set_generation_active(active); });
     g_ws_mgr->start();
 
     // Auto-initialize SD Model State from Args

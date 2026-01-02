@@ -245,9 +245,15 @@ void ServiceController::register_routes(httplib::Server& svr, const SDSvrParams&
         }
     });
 
-    svr.Post("/v1/images/generations", [this, params](const httplib::Request& req, httplib::Response& res) {
-        LOG_INFO("Request: POST /v1/images/generations");
-        
+            svr.Post("/v1/images/generations", [this, params](const httplib::Request& req, httplib::Response& res) {
+                struct GenActiveGuard {
+                    std::function<void(bool)>& cb;
+                    GenActiveGuard(std::function<void(bool)>& c) : cb(c) { if(cb) cb(true); }
+                    ~GenActiveGuard() { if(cb) cb(false); }
+                };
+                GenActiveGuard gen_guard(m_generation_active_cb);
+    
+                LOG_INFO("Request: POST /v1/images/generations");        
         std::string modified_body = req.body;
         httplib::Headers h;
         if (!m_token.empty()) h.emplace("X-Internal-Token", m_token);
@@ -282,6 +288,7 @@ void ServiceController::register_routes(httplib::Server& svr, const SDSvrParams&
         }
 
         float base_gb = 4.5f; // Default fallback
+        float clip_gb = 0.0f;
         if (!active_model_id.empty()) {
             fs::path model_path = fs::path(params.model_dir) / active_model_id;
             uint64_t size_bytes = get_file_size(model_path.string());
@@ -290,30 +297,59 @@ void ServiceController::register_routes(httplib::Server& svr, const SDSvrParams&
             try {
                 if (!m_last_sd_model_req_body.empty()) {
                     auto j_req = mysti::json::parse(m_last_sd_model_req_body);
+                    uint64_t clip_bytes = 0;
                     auto add_size = [&](const std::string& key) {
                         std::string path = j_req.value(key, "");
                         if (!path.empty()) {
-                            size_bytes += get_file_size((fs::path(params.model_dir) / path).string());
+                            uint64_t s = get_file_size((fs::path(params.model_dir) / path).string());
+                            size_bytes += s;
+                            clip_bytes += s;
                         }
                     };
                     add_size("clip_l");
                     add_size("clip_g");
                     add_size("t5xxl");
+                    add_size("llm");
+                    
+                    if (clip_bytes > 0) {
+                        clip_gb = (float)clip_bytes / (1024.0f * 1024.0f * 1024.0f);
+                    }
                 }
             } catch (...) {}
 
             if (size_bytes > 0) {
                 base_gb = (float)size_bytes / (1024.0f * 1024.0f * 1024.0f);
                 base_gb += 0.5f; // Add 0.5GB for context/runtime overhead
-                LOG_DEBUG("Using actual model size (Weights+Encoders) for base VRAM: %.2f GB", base_gb);
+                LOG_DEBUG("Using actual model size (Weights+Encoders) for base VRAM: %.2f GB (CLIP: %.2f GB)", base_gb, clip_gb);
             }
         }
 
         float mp = (float)(req_width * req_height) / (1024.0f * 1024.0f);
         
         // Non-linear scaling to account for quadratic attention at high resolutions
-        float per_mp_factor = 3.8f;
-        if (mp > 2.0f) per_mp_factor = 8.0f;       // Massive penalty for > 2MP (likely to crash 16GB cards)
+        // For resolutions > 2MP, we previously used a massive 8.0 factor which was too conservative.
+        // With VAE tiling, the actual bottleneck is usually the U-Net attention blocks.
+        // Adjusted scaling. Flash Attention (Z-Image) is closer to 1.2 GB/MP. Standard is closer to 2.5 GB/MP.
+        float per_mp_factor = 1.5f; 
+        
+        // Z-Image / optimized models use Flash Attention which is much more memory efficient
+        std::string model_id_lower = active_model_id;
+        // Simple manual tolower to avoid header dependency issues if <algorithm> missing
+        for (auto& c : model_id_lower) c = tolower(c);
+
+        if (model_id_lower.find("z_image") != std::string::npos || model_id_lower.find("turbo") != std::string::npos) {
+             per_mp_factor = 1.2f;
+        }
+
+        if (mp > 2.0f && per_mp_factor > 1.5f) { 
+            // Minimal increase for high res, assuming tiling takes over
+            per_mp_factor += (mp - 2.0f) * 0.2f; 
+            if (per_mp_factor > 3.0f) per_mp_factor = 3.0f; 
+        }
+        // Hard cap for arbitration to prevent blocking valid tiled generations
+        if (per_mp_factor > 2.5f) per_mp_factor = 2.5f;
+        
+        LOG_DEBUG("Model ID for VRAM calc: %s, Factor: %.2f", active_model_id.c_str(), per_mp_factor);
         
         float resolution_gb = mp * per_mp_factor * req_batch; 
         if (req_hires) resolution_gb += (mp * req_hires_factor * req_hires_factor) * 1.5f;
@@ -322,7 +358,7 @@ void ServiceController::register_routes(httplib::Server& svr, const SDSvrParams&
         
         try {
             // Arbitration
-            ArbitrationResult arb = m_res_mgr->prepare_for_sd_generation(estimated_needed, mp, active_model_id, base_gb);
+            ArbitrationResult arb = m_res_mgr->prepare_for_sd_generation(estimated_needed, mp, active_model_id, base_gb, clip_gb);
 
             if (!arb.success) {
                 res.status = 400;

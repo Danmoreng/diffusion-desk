@@ -612,6 +612,31 @@ void handle_generate_image(const httplib::Request& req, httplib::Response& res, 
             ctx.sd_ctx.reset(new_sd_ctx(&sd_ctx_p));
         }
 
+        // B2.6: Dynamic VAE Offloading (Force CPU/FP32 for high res to prevent NaNs)
+        bool request_vae_on_cpu = j.value("vae_on_cpu", false);
+        float mp_check = (float)(width * height) / (1024.0f * 1024.0f);
+        if (mp_check >= 3.0f && !request_vae_on_cpu) {
+             LOG_INFO("High resolution detected (%.2f MP). Forcing VAE to CPU to avoid NaN/static artifacts.", mp_check);
+             request_vae_on_cpu = true;
+        }
+
+        // B2.7: Dynamic Model Weight Offloading (Crucial for ultra-high res)
+        bool request_offload = j.value("offload_to_cpu", false);
+        if (mp_check >= 4.0f && !request_offload) {
+             LOG_INFO("Ultra-high resolution detected (%.2f MP). Enabling model weight offloading to prevent OOM.", mp_check);
+             request_offload = true;
+        }
+
+        if (request_vae_on_cpu != ctx.ctx_params.vae_on_cpu || request_offload != ctx.ctx_params.offload_params_to_cpu) {
+            LOG_INFO("Context update required: VAE on CPU: %s, Offload: %s", request_vae_on_cpu ? "Yes" : "No", request_offload ? "Yes" : "No");
+            std::lock_guard<std::mutex> lock(ctx.sd_ctx_mutex);
+            ctx.sd_ctx.reset();
+            ctx.ctx_params.vae_on_cpu = request_vae_on_cpu;
+            ctx.ctx_params.offload_params_to_cpu = request_offload;
+            sd_ctx_params_t sd_ctx_p = ctx.ctx_params.to_sd_ctx_params_t(false, false, false);
+            ctx.sd_ctx.reset(new_sd_ctx(&sd_ctx_p));
+        }
+
         bool save_image = j.value("save_image", false);
 
         std::string lora_dir = ctx.ctx_params.lora_model_dir;
@@ -734,8 +759,8 @@ void handle_generate_image(const httplib::Request& req, httplib::Response& res, 
 
             // Dynamic VRAM management for VAE
             float free_vram = get_free_vram_gb();
-            // Estimate VAE VRAM: 1.6GB for 512x512, scales with area
-            float estimated_vae_vram = (float(gen_params.width) * gen_params.height) / (512.0f * 512.0f) * 1.6f;
+            // Estimate VAE VRAM: 0.8GB for 512x512, scales with area (Relaxed from 1.6f for Z-Image compatibility)
+            float estimated_vae_vram = (float(gen_params.width) * gen_params.height) / (512.0f * 512.0f) * 0.8f;
             
             LOG_INFO("VAE VRAM Check: Free=%.2fGB, Estimated Needed=%.2fGB", free_vram, estimated_vae_vram);
             
@@ -754,8 +779,8 @@ void handle_generate_image(const httplib::Request& req, httplib::Response& res, 
             if (img_gen_params.vae_tiling_params.enabled) {
                 // Use default tile size if not set
                 if (img_gen_params.vae_tiling_params.tile_size_x <= 0) {
-                    img_gen_params.vae_tiling_params.tile_size_x = 512;
-                    img_gen_params.vae_tiling_params.tile_size_y = 512;
+                    img_gen_params.vae_tiling_params.tile_size_x = 32;
+                    img_gen_params.vae_tiling_params.tile_size_y = 32;
                 }
             }
 
@@ -788,7 +813,7 @@ void handle_generate_image(const httplib::Request& req, httplib::Response& res, 
             if (first_pass_success) {
                 first_pass_success = false;
                 for (int i = 0; i < num_results; i++) {
-                    if (results[i].data != nullptr) {
+                    if (results[i].data != nullptr && is_image_valid(results[i])) {
                         first_pass_success = true;
                         break;
                     }
@@ -796,15 +821,15 @@ void handle_generate_image(const httplib::Request& req, httplib::Response& res, 
             }
 
             if (!first_pass_success) {
-                LOG_WARN("First pass generation failed (empty results). Retrying with conservative settings (VAE tiling)...");
+                LOG_WARN("First pass generation failed (empty results or invalid/grey image). Retrying with conservative settings (VAE tiling)...");
                 set_progress_message("Retrying with VAE tiling...");
 
                 free_sd_images(results, num_results);
 
                 img_gen_params.vae_tiling_params.enabled = true;
                 if (img_gen_params.vae_tiling_params.tile_size_x <= 0) {
-                    img_gen_params.vae_tiling_params.tile_size_x = 512;
-                    img_gen_params.vae_tiling_params.tile_size_y = 512;
+                    img_gen_params.vae_tiling_params.tile_size_x = 32;
+                    img_gen_params.vae_tiling_params.tile_size_y = 32;
                 }
 
                 results = generate_image(ctx.sd_ctx.get(), &img_gen_params);
@@ -813,7 +838,7 @@ void handle_generate_image(const httplib::Request& req, httplib::Response& res, 
                 if (first_pass_success) {
                     first_pass_success = false;
                     for (int i = 0; i < num_results; i++) {
-                        if (results[i].data != nullptr) {
+                        if (results[i].data != nullptr && is_image_valid(results[i])) {
                             first_pass_success = true;
                             break;
                         }
