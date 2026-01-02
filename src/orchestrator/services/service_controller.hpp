@@ -28,6 +28,7 @@ public:
     void set_last_llm_model_req(const std::string& body) { std::lock_guard<std::mutex> lock(m_state_mutex); m_last_llm_model_req_body = body; }
 
     void set_on_generation_callback(std::function<void()> cb) { m_on_generation = cb; }
+    void set_generation_active_callback(std::function<void(bool)> cb) { m_generation_active_cb = cb; }
 
 private:
     std::shared_ptr<Database> m_db;
@@ -43,6 +44,7 @@ private:
     std::mutex m_state_mutex;
 
     std::function<void()> m_on_generation;
+    std::function<void(bool)> m_generation_active_cb;
 
     // Helper for generating previews (moved from main)
     void generate_style_preview(Style style, std::string output_dir);

@@ -10,14 +10,14 @@ ResourceManager::ResourceManager(int sd_port, int llm_port, const std::string& i
 
 ResourceManager::~ResourceManager() {}
 
-ArbitrationResult ResourceManager::prepare_for_sd_generation(float estimated_total_needed_gb, float megapixels, const std::string& model_id, float base_gb_override) {
+ArbitrationResult ResourceManager::prepare_for_sd_generation(float estimated_total_needed_gb, float megapixels, const std::string& model_id, float base_gb_override, float clip_size_gb) {
     std::lock_guard<std::mutex> lock(m_mutex);
     ArbitrationResult result;
     
     float free_vram = get_free_vram_gb();
     
     // Determine base requirement vs additional resolution overhead
-    float base_gb = 4.5f; 
+    float base_gb = 2.5f; 
     if (base_gb_override > 0.1f) {
         base_gb = base_gb_override;
     } else if (!model_id.empty() && m_model_footprints.count(model_id)) {
@@ -29,11 +29,14 @@ ArbitrationResult ResourceManager::prepare_for_sd_generation(float estimated_tot
 
     // Hard limit: CUDA/GGML often fails with assertions if tensors exceed 2GB or certain dimensions.
     // 2.5 Megapixels is a safe upper bound for most consumer hardware and current GGML limits.
+    // User requested removal of artificial limit.
+    /*
     if (megapixels > 2.5f) {
         LOG_ERROR("[ResourceManager] Resolution too high (%.2f MP). Limit is 2.5 MP to prevent CUDA crashes.", megapixels);
         result.success = false;
         return result;
     }
+    */
 
     // Safety margin: CUDA context and temporary buffers often take more than just 'allocations'
     resolution_overhead *= 1.15f; 
@@ -78,7 +81,7 @@ ArbitrationResult ResourceManager::prepare_for_sd_generation(float estimated_tot
     }
 
     // Phase 3: If VERY tight, recommend VAE tiling
-    if (free_vram < actually_needed_additional + 0.5f || megapixels > 1.5f) {
+    if (free_vram < actually_needed_additional + 0.5f || megapixels > 2.5f) {
         LOG_WARN("[ResourceManager] VRAM very tight or high res. Recommending VAE tiling.");
         result.request_vae_tiling = true;
     }
@@ -88,12 +91,14 @@ ArbitrationResult ResourceManager::prepare_for_sd_generation(float estimated_tot
 
     // Adjust expectation based on mitigations
     if (result.request_clip_offload) {
-        checked_needed -= 0.6f; // Conservative savings for CLIP offload
+        float saved_gb = (clip_size_gb > 0.1f) ? clip_size_gb : 3.0f;
+        checked_needed -= saved_gb;
+        LOG_INFO("[ResourceManager] Applying CLIP offload savings: -%.2f GB", saved_gb);
     }
 
     float tiling_factor = 1.0f;
     if (result.request_vae_tiling) {
-        tiling_factor = 0.6f; // Significant savings from tiling
+        tiling_factor = 0.4f; // Massive savings from tiling
     } else {
         tiling_factor = 0.85f; // Normal operation allows some squeeze vs strict allocation
     }

@@ -40,3 +40,6 @@ void sd_log_cb(enum sd_log_level_t level, const char* log, void* data);
 
 void free_sd_images(sd_image_t* images, int n);
 
+// Validation
+bool is_image_valid(const sd_image_t& img);
+
