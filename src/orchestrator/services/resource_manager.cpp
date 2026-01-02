@@ -84,10 +84,29 @@ ArbitrationResult ResourceManager::prepare_for_sd_generation(float estimated_tot
     }
     
     // Final Safety Check: If we simply don't have enough VRAM, prevent the crash.
-    // We allow a small deficit if tiling is on, but 22GB spike indicates we need a hard ceiling.
-    if (free_vram < actually_needed_additional * 0.7f) {
-        LOG_ERROR("[ResourceManager] Insufficient VRAM! Free: %.2f GB, Needed: %.2f GB. Aborting to prevent crash.", 
-                  free_vram, actually_needed_additional);
+    float checked_needed = actually_needed_additional;
+
+    // Adjust expectation based on mitigations
+    if (result.request_clip_offload) {
+        checked_needed -= 0.6f; // Conservative savings for CLIP offload
+    }
+
+    float tiling_factor = 1.0f;
+    if (result.request_vae_tiling) {
+        tiling_factor = 0.6f; // Significant savings from tiling
+    } else {
+        tiling_factor = 0.85f; // Normal operation allows some squeeze vs strict allocation
+    }
+    
+    // Apply tiling/squeeze factor
+    checked_needed *= tiling_factor;
+
+    // Ensure we don't go below a sanity floor
+    if (checked_needed < 0.5f) checked_needed = 0.5f;
+
+    if (free_vram < checked_needed) {
+        LOG_ERROR("[ResourceManager] Insufficient VRAM! Free: %.2f GB, Needed (adjusted): %.2f GB (Raw: %.2f). Aborting to prevent crash.", 
+                  free_vram, checked_needed, actually_needed_additional);
         result.success = false;
     }
 
