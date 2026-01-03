@@ -246,6 +246,8 @@ void ServiceController::register_routes(httplib::Server& svr, const SDSvrParams&
     });
 
     svr.Post("/v1/images/generations", [this, params](const httplib::Request& req, httplib::Response& res) {
+        RequestIdGuard request_id_guard("req-" + generate_random_token(8));
+
         struct GenActiveGuard {
             std::function<void(bool)>& cb;
             GenActiveGuard(std::function<void(bool)>& c) : cb(c) { if(cb) cb(true); }
@@ -253,7 +255,6 @@ void ServiceController::register_routes(httplib::Server& svr, const SDSvrParams&
         };
         GenActiveGuard gen_guard(m_generation_active_cb);
 
-        g_request_id = "req-" + generate_random_token(8);
         LOG_INFO("Request: POST /v1/images/generations");
         std::string modified_body = req.body;
         httplib::Headers h;
@@ -418,8 +419,6 @@ void ServiceController::register_routes(httplib::Server& svr, const SDSvrParams&
         mod_req.body = modified_body;
         Proxy::forward_request(mod_req, res, "127.0.0.1", m_sd_port, "", m_token);
         
-        g_request_id = ""; 
-
         if (res.status == 200 && m_db) {
             try {
                 auto res_json = mysti::json::parse(res.body);

@@ -194,27 +194,40 @@ void free_sd_images(sd_image_t* images, int n) {
 bool is_image_valid(const sd_image_t& img) {
     if (!img.data || img.width == 0 || img.height == 0) return false;
     
+    int channels = img.channel;
+    if (channels <= 0) {
+        LOG_WARN("Image validation failed: invalid channel count (%d).", channels);
+        return false;
+    }
+
     // Grey image detection (VAE NaN clamping usually results in flat 0, 127, 128, or 255)
     // We check if >95% of pixels are identical
     uint32_t total_pixels = img.width * img.height;
     if (total_pixels < 100) return true; // Too small to judge
 
     // Check first pixel as reference
-    uint8_t r = img.data[0];
-    uint8_t g = img.data[1];
-    uint8_t b = img.data[2];
+    std::vector<uint8_t> ref_pixel(channels);
+    for (int c = 0; c < channels; ++c) ref_pixel[c] = img.data[c];
     
     // Quick scan for identical pixels
     uint32_t identical_count = 0;
-    // Step by 3 (assuming 3 channels)
-    for (uint32_t i = 0; i < total_pixels * 3; i += 3) {
-        if (img.data[i] == r && img.data[i+1] == g && img.data[i+2] == b) {
-            identical_count++;
+    for (uint32_t i = 0; i < total_pixels * channels; i += channels) {
+        bool match = true;
+        for (int c = 0; c < channels; ++c) {
+            if (img.data[i + c] != ref_pixel[c]) {
+                match = false;
+                break;
+            }
         }
+        if (match) identical_count++;
     }
     
     if (identical_count > total_pixels * 0.95f) {
-        LOG_WARN("Image validation failed: Flat color detected (R:%d G:%d B:%d). Possible VAE failure.", r, g, b);
+        if (channels >= 3) {
+            LOG_WARN("Image validation failed: Flat color detected (R:%d G:%d B:%d). Possible VAE failure.", ref_pixel[0], ref_pixel[1], ref_pixel[2]);
+        } else {
+            LOG_WARN("Image validation failed: Flat color detected (Value:%d). Possible VAE failure.", ref_pixel[0]);
+        }
         return false;
     }
 

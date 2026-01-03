@@ -172,7 +172,7 @@ private:
     void migrate_to_v3();
 
     SQLite::Database m_db;
-    std::mutex m_mutex; // Protects access to m_db
+    std::recursive_mutex m_mutex; // Protects access to m_db, recursive to allow nested calls
 };
 
 } // namespace mysti
