@@ -21,12 +21,16 @@ LlamaServer::~LlamaServer() {
     stop();
 }
 
-bool LlamaServer::load_model(const std::string& model_path, int n_gpu_layers, int n_ctx) {
+bool LlamaServer::load_model(const std::string& model_path, const std::string& mmproj_path, int n_gpu_layers, int n_ctx, int image_max_tokens) {
     std::lock_guard<std::mutex> lock(state_mutex);
     stop();
 
     llama_params = common_params();
     llama_params.model.path = model_path;
+    if (!mmproj_path.empty()) {
+        llama_params.mmproj.path = mmproj_path;
+    }
+    llama_params.image_max_tokens = image_max_tokens;
 
     if (n_gpu_layers >= 0) {
         llama_params.n_gpu_layers = n_gpu_layers;

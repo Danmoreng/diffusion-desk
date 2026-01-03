@@ -968,13 +968,13 @@ void Database::delete_unused_tags() {
     try { m_db.exec("DELETE FROM tags WHERE id NOT IN (SELECT DISTINCT tag_id FROM image_tags)"); } catch (...) {}
 }
 
-std::vector<std::tuple<int, std::string, std::string>> Database::get_untagged_generations(int limit) {
+std::vector<std::tuple<int, std::string, std::string, std::string>> Database::get_untagged_generations(int limit) {
     std::lock_guard<std::recursive_mutex> lock(m_mutex);
-    std::vector<std::tuple<int, std::string, std::string>> results;
+    std::vector<std::tuple<int, std::string, std::string, std::string>> results;
     try {
-        SQLite::Statement query(m_db, "SELECT id, uuid, prompt FROM generations WHERE auto_tagged = 0 AND prompt IS NOT NULL AND prompt != '' LIMIT ?");
+        SQLite::Statement query(m_db, "SELECT id, uuid, prompt, file_path FROM generations WHERE auto_tagged = 0 AND prompt IS NOT NULL AND prompt != '' LIMIT ?");
         query.bind(1, limit);
-        while (query.executeStep()) results.emplace_back(query.getColumn(0).getInt(), query.getColumn(1).getText(), query.getColumn(2).getText());
+        while (query.executeStep()) results.emplace_back(query.getColumn(0).getInt(), query.getColumn(1).getText(), query.getColumn(2).getText(), query.getColumn(3).getText());
     } catch (...) {}
     return results;
 }
