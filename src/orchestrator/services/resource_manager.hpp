@@ -19,7 +19,7 @@ public:
     ~ResourceManager();
 
     // VRAM management
-    ArbitrationResult prepare_for_sd_generation(float estimated_total_needed_gb, float megapixels, const std::string& model_id = "", float base_gb_override = 0.0f);
+    ArbitrationResult prepare_for_sd_generation(float estimated_total_needed_gb, float megapixels, const std::string& model_id = "", float base_gb_override = 0.0f, float clip_size_gb = 0.0f);
     bool is_llm_loaded();
 
     // Statistics

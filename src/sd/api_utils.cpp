@@ -181,23 +181,44 @@ std::vector<uint8_t> write_image_to_vector(ImageFormat format, const uint8_t* im
 }
 
 void free_sd_images(sd_image_t* images, int n) {
-
     if (images) {
-
         for (int i = 0; i < n; i++) {
-
             if (images[i].data) {
-
                 free(images[i].data);
-
             }
-
         }
-
         free(images);
+    }
+}
 
+bool is_image_valid(const sd_image_t& img) {
+    if (!img.data || img.width == 0 || img.height == 0) return false;
+    
+    // Grey image detection (VAE NaN clamping usually results in flat 0, 127, 128, or 255)
+    // We check if >95% of pixels are identical
+    uint32_t total_pixels = img.width * img.height;
+    if (total_pixels < 100) return true; // Too small to judge
+
+    // Check first pixel as reference
+    uint8_t r = img.data[0];
+    uint8_t g = img.data[1];
+    uint8_t b = img.data[2];
+    
+    // Quick scan for identical pixels
+    uint32_t identical_count = 0;
+    // Step by 3 (assuming 3 channels)
+    for (uint32_t i = 0; i < total_pixels * 3; i += 3) {
+        if (img.data[i] == r && img.data[i+1] == g && img.data[i+2] == b) {
+            identical_count++;
+        }
+    }
+    
+    if (identical_count > total_pixels * 0.95f) {
+        LOG_WARN("Image validation failed: Flat color detected (R:%d G:%d B:%d). Possible VAE failure.", r, g, b);
+        return false;
     }
 
+    return true;
 }
 
 std::string make_error_json(const std::string& error, const std::string& message) {
