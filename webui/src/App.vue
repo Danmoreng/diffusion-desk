@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import Sidebar from './components/Sidebar.vue'
+import FloatingActionBar from './components/FloatingActionBar.vue'
 import { useGenerationStore } from '@/stores/generation'
 
 const store = useGenerationStore()
@@ -22,8 +23,14 @@ const store = useGenerationStore()
         <Sidebar />
       </aside>
       
-      <main class="main-content flex-grow-1 overflow-auto bg-body-tertiary p-4">
-        <router-view />
+      <main class="main-content flex-grow-1 overflow-auto bg-body-tertiary d-flex flex-column">
+        <FloatingActionBar v-if="store.actionBarPosition === 'top'" />
+        
+        <div class="flex-grow-1 p-4">
+          <router-view />
+        </div>
+
+        <FloatingActionBar v-if="store.actionBarPosition === 'bottom'" />
       </main>
     </div>
   </div>

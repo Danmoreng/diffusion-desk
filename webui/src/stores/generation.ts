@@ -15,6 +15,7 @@ export const useGenerationStore = defineStore('generation', () => {
     saveImages: true,
     strength: 0.75,
     batchCount: 1,
+    actionBarPosition: 'bottom' as 'top' | 'bottom',
   }
 
   // Load state from localStorage or use defaults
@@ -62,6 +63,7 @@ export const useGenerationStore = defineStore('generation', () => {
   const saveImages = ref(initialState.saveImages)
   const outputDir = ref('outputs')
   const modelDir = ref('models')
+  const actionBarPosition = ref(initialState.actionBarPosition as 'top' | 'bottom')
 
   // Style Management
   interface Style {
@@ -561,7 +563,7 @@ export const useGenerationStore = defineStore('generation', () => {
 
 
   // Watch for changes in settings and persist them to localStorage
-  watch([prompt, negativePrompt, steps, cfgScale, sampler, width, height, theme, saveImages, strength, batchCount, hiresFix, hiresUpscaleModel, hiresUpscaleFactor, hiresDenoisingStrength, hiresSteps], (newValues) => {
+  watch([prompt, negativePrompt, steps, cfgScale, sampler, width, height, theme, saveImages, strength, batchCount, hiresFix, hiresUpscaleModel, hiresUpscaleFactor, hiresDenoisingStrength, hiresSteps, actionBarPosition], (newValues) => {
     const settingsToSave = {
       prompt: newValues[0],
       negativePrompt: newValues[1],
@@ -579,6 +581,7 @@ export const useGenerationStore = defineStore('generation', () => {
       hiresUpscaleFactor: newValues[13],
       hiresDenoisingStrength: newValues[14],
       hiresSteps: newValues[15],
+      actionBarPosition: newValues[16],
     }
     localStorage.setItem('webui-settings', JSON.stringify(settingsToSave))
   }, { deep: true })
@@ -930,6 +933,7 @@ export const useGenerationStore = defineStore('generation', () => {
     promptHistory, historyIndex, canUndo, canRedo, undoPrompt, redoPrompt, commitPrompt,
     updateConfig, reuseLastSeed, randomizeSeed, swapDimensions,
     styles, activeStyleNames, fetchStyles, saveStyle, deleteStyle, applyStyle, extractStylesFromPrompt,
-    currentModelMetadata, resetToModelDefaults, applyAspectRatio, snapToNext16
+    currentModelMetadata, resetToModelDefaults, applyAspectRatio, snapToNext16,
+    actionBarPosition
   }
 })
