@@ -770,17 +770,29 @@ void handle_generate_image(const httplib::Request& req, httplib::Response& res, 
 
             // Dynamic VRAM management for VAE
             float free_vram = get_free_vram_gb();
-            // Estimate VAE VRAM: 0.8GB for 512x512, scales with area (Relaxed from 1.6f for Z-Image compatibility)
-            float estimated_vae_vram = (float(gen_params.width) * gen_params.height) / (512.0f * 512.0f) * 0.8f;
+            // Estimate VAE VRAM: 1.5GB base per 512x512 tile (more conservative than 0.8)
+            float estimated_vae_vram = (float(gen_params.width) * gen_params.height) / (512.0f * 512.0f) * 1.5f;
+            float mp = (float)(gen_params.width * gen_params.height) / (1024.0f * 1024.0f);
             
             LOG_INFO("VAE VRAM Check: Free=%.2fGB, Estimated Needed=%.2fGB", free_vram, estimated_vae_vram);
             
             bool request_vae_tiling = j.value("vae_tiling", false);
+            
             if (request_vae_tiling) {
                 LOG_INFO("VAE tiling enabled by request.");
                 img_gen_params.vae_tiling_params.enabled = true;
-            } else if (estimated_vae_vram > free_vram * 0.7f && !img_gen_params.vae_tiling_params.enabled) {
-                LOG_WARN("High VRAM usage predicted. Automatically enabling VAE tiling.");
+            } 
+            else if (img_gen_params.vae_tiling_params.enabled) {
+                 // Already enabled by model config or global default - keep it
+            }
+            else if (mp > 1.25f) { 
+                // > 1.25 MP (e.g. above 1024x1024/1152x1152) -> Auto-tile to prevent grey images/NaNs
+                LOG_INFO("High resolution (%.2f MP) detected. Auto-enabling VAE tiling.", mp);
+                img_gen_params.vae_tiling_params.enabled = true;
+                set_progress_message("High-res: VAE tiling enabled");
+            }
+            else if (estimated_vae_vram > free_vram * 0.6f) {
+                LOG_WARN("High VRAM usage predicted. Auto-enabling VAE tiling.");
                 img_gen_params.vae_tiling_params.enabled = true;
                 set_progress_message("VRAM low: VAE tiling enabled");
             } else {
