@@ -494,7 +494,7 @@ onUnmounted(() => {
             </tr>
           </thead>
           <tbody>
-            <tr v-for="model in filteredModelMetadata" :key="model.id">
+            <tr v-for="model in filteredModelMetadata.filter(m => m.metadata.type !== 'llm' && m.metadata.type !== 'lora')" :key="model.id">
               <td>
                 <div class="fw-bold">{{ model.id }}</div>
                 <div class="x-small text-muted" v-if="model.metadata.name">{{ model.metadata.name }}</div>
@@ -529,7 +529,7 @@ onUnmounted(() => {
                 </button>
               </td>
             </tr>
-            <tr v-if="filteredModelMetadata.length === 0">
+            <tr v-if="filteredModelMetadata.filter(m => m.metadata.type !== 'llm' && m.metadata.type !== 'lora').length === 0">
               <td colspan="5" class="text-center py-5 text-muted">
                 No models found in database. Try syncing from disk.
               </td>
@@ -757,6 +757,7 @@ onUnmounted(() => {
                 <select v-model="editingModelMetadata.metadata.type" class="form-select">
                   <option value="stable-diffusion">Stable Diffusion (Standard)</option>
                   <option value="lora">LoRA</option>
+                  <option value="llm">LLM (Chat/Vision)</option>
                   <option value="flux">Flux (GGUF)</option>
                   <option value="sd3">SD3 (GGUF)</option>
                   <option value="upscaler">Upscaler (ESRGAN)</option>

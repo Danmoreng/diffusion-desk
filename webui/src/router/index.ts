@@ -51,6 +51,7 @@ const router = createRouter({
         { path: 'tags', name: 'Manager-Tags', component: ManagerView },
         { path: 'styles', name: 'Manager-Styles', component: ManagerView },
         { path: 'models', name: 'Manager-Models', component: ManagerView },
+        { path: 'llms', name: 'Manager-LLMs', component: ManagerView },
         { path: 'loras', name: 'Manager-Loras', component: ManagerView }
       ]
     },
