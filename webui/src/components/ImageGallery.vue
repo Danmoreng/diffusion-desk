@@ -50,6 +50,7 @@ const endDate = ref('')
 
 const newTagInput = ref('')
 let currentFetchId = 0
+const nextCursor = ref<string | null>(null)
 
 const availableModels = computed(() => {
   const models = new Set<string>()
@@ -383,14 +384,28 @@ defineExpose({
   deleteSelected
 })
 
-watch([selectedTags, minRating], fetchImages, { deep: true })
+watch([selectedTags, minRating, selectedModel, selectedDateRange], () => {
+    // Reset on filter change
+    images.value = []
+    nextCursor.value = null
+    fetchImages(true)
+}, { deep: true })
 
-async function fetchImages() {
+async function fetchImages(reset = false) {
   const fetchId = ++currentFetchId
   isLoading.value = true
   error.value = null
+  
+  if (reset) {
+      nextCursor.value = null
+      // Don't clear images immediately to avoid flicker if we want, but simple is better
+  }
+
   try {
-    let url = '/v1/history/images?limit=200'
+    let url = '/v1/history/images?limit=50'
+    if (nextCursor.value && !reset) {
+        url += `&cursor=${encodeURIComponent(nextCursor.value)}`
+    }
     
     // Add multiple tag parameters
     if (selectedTags.value.length > 0) {
@@ -402,31 +417,45 @@ async function fetchImages() {
     if (minRating.value > 0) {
       url += `&min_rating=${minRating.value}`
     }
+    
+    if (selectedModel.value !== 'all') {
+        url += `&model=${encodeURIComponent(selectedModel.value)}`
+    }
+
     const response = await fetch(url)
     if (!response.ok) {
       throw new Error('Failed to fetch image history from the server.')
     }
-    const data = await response.json()
+    const json = await response.json()
     
     // Check for race condition
     if (fetchId !== currentFetchId) return
 
-    images.value = data
+    // Handle new response format { data: [], next_cursor: "..." }
+    const newImages = json.data || []
+    nextCursor.value = json.next_cursor || null
 
-    // Fetch all available tags for the filter
-    const tagsRes = await fetch('/v1/history/tags')
-    if (tagsRes.ok) {
-      // Tags update is less critical for race conditions but good to be consistent
-      if (fetchId === currentFetchId) {
-          allTags.value = await tagsRes.json()
-      }
+    if (reset) {
+        images.value = newImages
+    } else {
+        images.value = [...images.value, ...newImages]
+    }
+
+    // Fetch all available tags for the filter (only on first load)
+    if (reset) {
+        const tagsRes = await fetch('/v1/history/tags')
+        if (tagsRes.ok) {
+          if (fetchId === currentFetchId) {
+              allTags.value = await tagsRes.json()
+          }
+        }
     }
 
     // Wait for the DOM to update with the new images
     await nextTick()
     
     // Initialize modal and carousel now that the elements are in the DOM
-    if (modalElement.value && carouselElement.value) {
+    if (modalElement.value && carouselElement.value && !modalInstance) {
       modalInstance = new Modal(modalElement.value)
       carouselInstance = new Carousel(carouselElement.value, {
         interval: false, // Do not auto-cycle
@@ -448,6 +477,12 @@ async function fetchImages() {
         isLoading.value = false
     }
   }
+}
+
+function loadMore() {
+    if (nextCursor.value && !isLoading.value) {
+        fetchImages(false)
+    }
 }
 
 function openModal(index: number) {
@@ -561,7 +596,7 @@ async function upscaleActiveImage() {
 }
 
 onMounted(() => {
-  fetchImages()
+  fetchImages(true)
 })
 
 onUnmounted(() => {
@@ -616,6 +651,14 @@ onUnmounted(() => {
             </div>
           </div>
         </div>
+      </div>
+      
+      <!-- Load More -->
+      <div v-if="nextCursor" class="text-center my-4">
+        <button class="btn btn-outline-primary" @click="loadMore" :disabled="isLoading">
+            <span v-if="isLoading" class="spinner-border spinner-border-sm me-1"></span>
+            Load More
+        </button>
       </div>
       
       <!-- No Results -->
