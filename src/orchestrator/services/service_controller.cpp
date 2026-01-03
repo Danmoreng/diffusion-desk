@@ -461,7 +461,13 @@ void ServiceController::register_routes(httplib::Server& svr, const SDSvrParams&
                                     try { gen.model_id = mysti::json::parse(m_last_sd_model_req_body).value("model_id", ""); } catch(...) {}
                                 }
                             }
-                            m_db->insert_generation(gen);
+                            int gen_id = m_db->insert_generation(gen);
+                            if (gen_id > 0) {
+                                mysti::json job_payload;
+                                job_payload["generation_id"] = gen_id;
+                                job_payload["image_path"] = gen.file_path;
+                                m_db->add_job("generate_thumbnail", job_payload, 10);
+                            }
                         }
                     }
                     if (m_on_generation) m_on_generation();

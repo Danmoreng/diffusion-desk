@@ -820,7 +820,7 @@ bool Database::generation_exists(const std::string& file_path) {
     } catch (...) { return false; }
 }
 
-void Database::insert_generation(const Generation& gen) {
+int Database::insert_generation(const Generation& gen) {
     std::lock_guard<std::recursive_mutex> lock(m_mutex);
     try {
         SQLite::Statement ins(m_db, "INSERT INTO generations (uuid, file_path, prompt, negative_prompt, seed, width, height, steps, cfg_scale, generation_time, model_hash, is_favorite, auto_tagged, rating, model_id, params_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
@@ -841,7 +841,8 @@ void Database::insert_generation(const Generation& gen) {
         ins.bind(15, gen.model_id);
         ins.bind(16, gen.params_json);
         ins.exec();
-    } catch (...) {}
+        return (int)m_db.getLastInsertRowid();
+    } catch (...) { return -1; }
 }
 
 void Database::insert_generation_with_tags(const Generation& gen, const std::vector<std::string>& tags) {

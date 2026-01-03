@@ -94,7 +94,7 @@ This document outlines the roadmap for MystiCanvas, merging original milestones 
     *   Verify/Add indexes.
 *   [x] **C3. Asset Management:**
     *   [x] `generation_files` table (thumbnails, previews, masks).
-    *   [ ] Job for background thumbnail creation.
+    *   [x] Job for background thumbnail creation.
 *   [x] **C4. FTS5 Search:**
     *   [x] Virtual table for prompt search.
     *   [x] Endpoints for full-text search query.
@@ -103,7 +103,7 @@ This document outlines the roadmap for MystiCanvas, merging original milestones 
     *   [x] `tag_aliases` table.
 *   [x] **C6. Job Queue:**
     *   [x] `jobs` table for background tasks (Auto-tagging, Thumbnails).
-    *   [ ] Job runner service in Orchestrator.
+    *   [x] Job runner service in Orchestrator.
 *   [x] **C7. Prompt Library (Generalized Styles):**
     *   [x] `prompt_library` table: `id`, `label`, `content`, `category`, `created_at`.
     *   [x] Categories: "Style", "Character", "Lighting", "Negative", etc.
