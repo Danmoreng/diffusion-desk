@@ -20,6 +20,14 @@ const isGenerationPage = computed(() => {
 function handleGenerate() {
   store.triggerGeneration(currentMode.value)
 }
+
+function toggleEndless() {
+  store.isEndless = !store.isEndless
+  // If we turned it ON and are not currently generating, start it
+  if (store.isEndless && !store.isGenerating) {
+    handleGenerate()
+  }
+}
 </script>
 
 <template>
@@ -45,9 +53,14 @@ function handleGenerate() {
 
       <div class="vr mx-2 text-muted opacity-25"></div>
 
-      <!-- Placeholder for future buttons -->
+      <!-- Secondary Actions -->
       <div class="d-flex gap-2">
-        <button class="btn btn-outline-secondary btn-sm border-0" title="Continuous Generation (Future)" disabled>
+        <button 
+          class="btn btn-sm border-0 transition-all" 
+          :class="store.isEndless ? 'btn-success text-white shadow-sm' : 'btn-outline-secondary'"
+          :title="store.isEndless ? 'Endless Generation: ON' : 'Endless Generation: OFF'"
+          @click="toggleEndless"
+        >
           <i class="bi bi-repeat"></i>
         </button>
         <button class="btn btn-outline-secondary btn-sm border-0" title="Add to Queue (Future)" disabled>
@@ -95,5 +108,9 @@ function handleGenerate() {
 
 .btn-text {
   min-width: 100px;
+}
+
+.transition-all {
+  transition: all 0.2s ease-in-out;
 }
 </style>
