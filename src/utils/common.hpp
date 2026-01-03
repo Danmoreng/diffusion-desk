@@ -46,6 +46,12 @@ extern const char* modes_str[];
 
 extern thread_local std::string g_request_id;
 
+struct RequestIdGuard {
+    std::string prev;
+    RequestIdGuard(const std::string& id) : prev(std::move(g_request_id)) { g_request_id = id; }
+    ~RequestIdGuard() { g_request_id = std::move(prev); }
+};
+
 enum SDMode {
     IMG_GEN,
     VID_GEN,

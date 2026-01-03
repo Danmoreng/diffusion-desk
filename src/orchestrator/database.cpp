@@ -19,7 +19,7 @@ Database::Database(const std::string& db_path)
 Database::~Database() {}
 
 void Database::init_schema() {
-    std::lock_guard<std::mutex> lock(m_mutex);
+    std::lock_guard<std::recursive_mutex> lock(m_mutex);
     try {
         int current_version = get_schema_version();
         std::cout << "[Database] Current schema version: " << current_version << std::endl;
@@ -279,6 +279,7 @@ void Database::migrate_to_v3() {
 }
 
 void Database::save_generation(const mysti::json& j) {
+    std::lock_guard<std::recursive_mutex> lock(m_mutex);
     try {
         std::string uuid = j.value("uuid", "");
         std::string file_path = j.value("file_path", "");
@@ -320,6 +321,7 @@ void Database::save_generation(const mysti::json& j) {
 }
 
 void Database::set_favorite(const std::string& uuid, bool favorite) {
+    std::lock_guard<std::recursive_mutex> lock(m_mutex);
     try {
         SQLite::Statement query(m_db, "UPDATE generations SET is_favorite = ? WHERE uuid = ?");
         query.bind(1, favorite ? 1 : 0);
@@ -331,6 +333,7 @@ void Database::set_favorite(const std::string& uuid, bool favorite) {
 }
 
 void Database::set_rating(const std::string& uuid, int rating) {
+    std::lock_guard<std::recursive_mutex> lock(m_mutex);
     try {
         SQLite::Statement query(m_db, "UPDATE generations SET rating = ? WHERE uuid = ?");
         query.bind(1, std::max(0, std::min(5, rating)));
@@ -342,6 +345,7 @@ void Database::set_rating(const std::string& uuid, int rating) {
 }
 
 void Database::remove_generation(const std::string& uuid) {
+    std::lock_guard<std::recursive_mutex> lock(m_mutex);
     try {
         SQLite::Statement query(m_db, "DELETE FROM generations WHERE uuid = ?");
         query.bind(1, uuid);
@@ -353,6 +357,7 @@ void Database::remove_generation(const std::string& uuid) {
 }
 
 std::string Database::get_generation_filepath(const std::string& uuid) {
+    std::lock_guard<std::recursive_mutex> lock(m_mutex);
     try {
         SQLite::Statement query(m_db, "SELECT file_path FROM generations WHERE uuid = ?");
         query.bind(1, uuid);
@@ -366,7 +371,7 @@ std::string Database::get_generation_filepath(const std::string& uuid) {
 }
 
 mysti::json Database::get_generations(int limit, int offset, const std::vector<std::string>& tags, const std::string& model, int min_rating) {
-    std::lock_guard<std::mutex> lock(m_mutex);
+    std::lock_guard<std::recursive_mutex> lock(m_mutex);
     mysti::json results = mysti::json::array();
     try {
         std::string sql = "SELECT g.* FROM generations g WHERE 1=1 ";
@@ -439,7 +444,7 @@ mysti::json Database::get_generations(int limit, int offset, const std::vector<s
 }
 
 mysti::json Database::get_tags() {
-    std::lock_guard<std::mutex> lock(m_mutex);
+    std::lock_guard<std::recursive_mutex> lock(m_mutex);
     mysti::json results = mysti::json::array();
     try {
         SQLite::Statement query(m_db, "SELECT name, category, COUNT(it.tag_id) as count FROM tags t LEFT JOIN image_tags it ON t.id = it.tag_id GROUP BY t.id ORDER BY count DESC");
@@ -457,7 +462,7 @@ mysti::json Database::get_tags() {
 }
 
 void Database::save_style(const Style& style) {
-    std::lock_guard<std::mutex> lock(m_mutex);
+    std::lock_guard<std::recursive_mutex> lock(m_mutex);
     try {
         SQLite::Statement query(m_db, "INSERT OR REPLACE INTO styles (name, prompt, negative_prompt, preview_path) VALUES (?, ?, ?, ?)");
         query.bind(1, style.name);
@@ -471,7 +476,7 @@ void Database::save_style(const Style& style) {
 }
 
 mysti::json Database::get_styles() {
-    std::lock_guard<std::mutex> lock(m_mutex);
+    std::lock_guard<std::recursive_mutex> lock(m_mutex);
     mysti::json results = mysti::json::array();
     try {
         SQLite::Statement query(m_db, "SELECT name, prompt, negative_prompt, preview_path FROM styles ORDER BY name ASC");
@@ -490,7 +495,7 @@ mysti::json Database::get_styles() {
 }
 
 void Database::delete_style(const std::string& name) {
-    std::lock_guard<std::mutex> lock(m_mutex);
+    std::lock_guard<std::recursive_mutex> lock(m_mutex);
     try {
         SQLite::Statement query(m_db, "DELETE FROM styles WHERE name = ?");
         query.bind(1, name);
@@ -501,7 +506,7 @@ void Database::delete_style(const std::string& name) {
 }
 
 void Database::add_library_item(const LibraryItem& item) {
-    std::lock_guard<std::mutex> lock(m_mutex);
+    std::lock_guard<std::recursive_mutex> lock(m_mutex);
     try {
         SQLite::Statement query(m_db, "INSERT INTO prompt_library (label, content, category, preview_path) VALUES (?, ?, ?, ?)");
         query.bind(1, item.label);
@@ -515,7 +520,7 @@ void Database::add_library_item(const LibraryItem& item) {
 }
 
 mysti::json Database::get_library_items(const std::string& category) {
-    std::lock_guard<std::mutex> lock(m_mutex);
+    std::lock_guard<std::recursive_mutex> lock(m_mutex);
     mysti::json results = mysti::json::array();
     try {
         std::string sql = "SELECT id, label, content, category, preview_path, usage_count FROM prompt_library ";
@@ -540,21 +545,21 @@ mysti::json Database::get_library_items(const std::string& category) {
 }
 
 void Database::delete_library_item(int id) {
-    std::lock_guard<std::mutex> lock(m_mutex);
+    std::lock_guard<std::recursive_mutex> lock(m_mutex);
     try {
         m_db.exec("DELETE FROM prompt_library WHERE id = " + std::to_string(id));
     } catch (...) {}
 }
 
 void Database::increment_library_usage(int id) {
-    std::lock_guard<std::mutex> lock(m_mutex);
+    std::lock_guard<std::recursive_mutex> lock(m_mutex);
     try {
         m_db.exec("UPDATE prompt_library SET usage_count = usage_count + 1 WHERE id = " + std::to_string(id));
     } catch (...) {}
 }
 
 int Database::add_job(const std::string& type, const mysti::json& payload, int priority) {
-    std::lock_guard<std::mutex> lock(m_mutex);
+    std::lock_guard<std::recursive_mutex> lock(m_mutex);
     try {
         SQLite::Statement query(m_db, "INSERT INTO jobs (type, payload, priority) VALUES (?, ?, ?)");
         query.bind(1, type);
@@ -566,7 +571,7 @@ int Database::add_job(const std::string& type, const mysti::json& payload, int p
 }
 
 std::optional<Job> Database::get_next_job() {
-    std::lock_guard<std::mutex> lock(m_mutex);
+    std::lock_guard<std::recursive_mutex> lock(m_mutex);
     try {
         SQLite::Statement query(m_db, "SELECT id, type, payload, status, error, priority, created_at FROM jobs WHERE status = 'pending' ORDER BY priority DESC, created_at ASC LIMIT 1");
         if (query.executeStep()) {
@@ -585,7 +590,7 @@ std::optional<Job> Database::get_next_job() {
 }
 
 void Database::update_job_status(int id, const std::string& status, const std::string& error) {
-    std::lock_guard<std::mutex> lock(m_mutex);
+    std::lock_guard<std::recursive_mutex> lock(m_mutex);
     try {
         std::string sql = "UPDATE jobs SET status = ?, updated_at = CURRENT_TIMESTAMP ";
         if (status == "completed") sql += ", completed_at = CURRENT_TIMESTAMP ";
@@ -600,7 +605,7 @@ void Database::update_job_status(int id, const std::string& status, const std::s
 }
 
 void Database::add_generation_file(int generation_id, const std::string& type, const std::string& path) {
-    std::lock_guard<std::mutex> lock(m_mutex);
+    std::lock_guard<std::recursive_mutex> lock(m_mutex);
     try {
         SQLite::Statement query(m_db, "INSERT INTO generation_files (generation_id, file_type, file_path) VALUES (?, ?, ?)");
         query.bind(1, generation_id);
@@ -611,7 +616,7 @@ void Database::add_generation_file(int generation_id, const std::string& type, c
 }
 
 std::vector<std::string> Database::get_generation_files(int generation_id, const std::string& type) {
-    std::lock_guard<std::mutex> lock(m_mutex);
+    std::lock_guard<std::recursive_mutex> lock(m_mutex);
     std::vector<std::string> results;
     try {
         std::string sql = "SELECT file_path FROM generation_files WHERE generation_id = ? ";
@@ -626,7 +631,7 @@ std::vector<std::string> Database::get_generation_files(int generation_id, const
 }
 
 void Database::save_image_preset(const ImagePreset& p) {
-    std::lock_guard<std::mutex> lock(m_mutex);
+    std::lock_guard<std::recursive_mutex> lock(m_mutex);
     try {
         SQLite::Statement query(m_db, R"(
             INSERT OR REPLACE INTO image_presets (
@@ -650,7 +655,7 @@ void Database::save_image_preset(const ImagePreset& p) {
 }
 
 mysti::json Database::get_image_presets() {
-    std::lock_guard<std::mutex> lock(m_mutex);
+    std::lock_guard<std::recursive_mutex> lock(m_mutex);
     mysti::json results = mysti::json::array();
     try {
         SQLite::Statement query(m_db, "SELECT id, name, unet_path, vae_path, clip_l_path, clip_g_path, t5xxl_path, vram_weights_mb_estimate, vram_weights_mb_measured, default_params, preferred_params FROM image_presets ORDER BY name ASC");
@@ -674,12 +679,12 @@ mysti::json Database::get_image_presets() {
 }
 
 void Database::delete_image_preset(int id) {
-    std::lock_guard<std::mutex> lock(m_mutex);
+    std::lock_guard<std::recursive_mutex> lock(m_mutex);
     try { m_db.exec("DELETE FROM image_presets WHERE id = " + std::to_string(id)); } catch (...) {}
 }
 
 void Database::save_llm_preset(const LlmPreset& p) {
-    std::lock_guard<std::mutex> lock(m_mutex);
+    std::lock_guard<std::recursive_mutex> lock(m_mutex);
     try {
         SQLite::Statement query(m_db, R"(
             INSERT OR REPLACE INTO llm_presets (
@@ -698,7 +703,7 @@ void Database::save_llm_preset(const LlmPreset& p) {
 }
 
 mysti::json Database::get_llm_presets() {
-    std::lock_guard<std::mutex> lock(m_mutex);
+    std::lock_guard<std::recursive_mutex> lock(m_mutex);
     mysti::json results = mysti::json::array();
     try {
         SQLite::Statement query(m_db, "SELECT id, name, model_path, mmproj_path, n_ctx, capabilities, role FROM llm_presets ORDER BY name ASC");
@@ -718,12 +723,12 @@ mysti::json Database::get_llm_presets() {
 }
 
 void Database::delete_llm_preset(int id) {
-    std::lock_guard<std::mutex> lock(m_mutex);
+    std::lock_guard<std::recursive_mutex> lock(m_mutex);
     try { m_db.exec("DELETE FROM llm_presets WHERE id = " + std::to_string(id)); } catch (...) {}
 }
 
 void Database::save_model_metadata(const std::string& model_id, const mysti::json& metadata) {
-    std::lock_guard<std::mutex> lock(m_mutex);
+    std::lock_guard<std::recursive_mutex> lock(m_mutex);
     try {
         SQLite::Statement query(m_db, "INSERT OR REPLACE INTO models (id, metadata, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)");
         query.bind(1, model_id);
@@ -733,7 +738,7 @@ void Database::save_model_metadata(const std::string& model_id, const mysti::jso
 }
 
 mysti::json Database::get_model_metadata(const std::string& model_id) {
-    std::lock_guard<std::mutex> lock(m_mutex);
+    std::lock_guard<std::recursive_mutex> lock(m_mutex);
     try {
         SQLite::Statement query(m_db, "SELECT metadata FROM models WHERE id = ?");
         query.bind(1, model_id);
@@ -757,7 +762,7 @@ mysti::json Database::get_model_metadata(const std::string& model_id) {
 }
 
 mysti::json Database::get_all_models_metadata() {
-    std::lock_guard<std::mutex> lock(m_mutex);
+    std::lock_guard<std::recursive_mutex> lock(m_mutex);
     mysti::json results = mysti::json::array();
     try {
         SQLite::Statement query(m_db, "SELECT id, metadata FROM models ORDER BY id ASC");
@@ -772,7 +777,7 @@ mysti::json Database::get_all_models_metadata() {
 }
 
 bool Database::generation_exists(const std::string& file_path) {
-    std::lock_guard<std::mutex> lock(m_mutex);
+    std::lock_guard<std::recursive_mutex> lock(m_mutex);
     try {
         SQLite::Statement check(m_db, "SELECT id FROM generations WHERE file_path = ?");
         check.bind(1, file_path);
@@ -781,7 +786,7 @@ bool Database::generation_exists(const std::string& file_path) {
 }
 
 void Database::insert_generation(const Generation& gen) {
-    std::lock_guard<std::mutex> lock(m_mutex);
+    std::lock_guard<std::recursive_mutex> lock(m_mutex);
     try {
         SQLite::Statement ins(m_db, "INSERT INTO generations (uuid, file_path, prompt, negative_prompt, seed, width, height, steps, cfg_scale, generation_time, model_hash, is_favorite, auto_tagged, rating, model_id, params_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
         ins.bind(1, gen.uuid);
@@ -805,7 +810,7 @@ void Database::insert_generation(const Generation& gen) {
 }
 
 void Database::insert_generation_with_tags(const Generation& gen, const std::vector<std::string>& tags) {
-    std::lock_guard<std::mutex> lock(m_mutex);
+    std::lock_guard<std::recursive_mutex> lock(m_mutex);
     try {
         SQLite::Transaction transaction(m_db);
         // Inlining insert_generation logic here to avoid double locking
@@ -845,7 +850,7 @@ void Database::insert_generation_with_tags(const Generation& gen, const std::vec
 }
 
 void Database::add_tag(const std::string& uuid, const std::string& tag, const std::string& source) {
-    std::lock_guard<std::mutex> lock(m_mutex);
+    std::lock_guard<std::recursive_mutex> lock(m_mutex);
     try {
         SQLite::Statement get_id(m_db, "SELECT id FROM generations WHERE uuid = ?");
         get_id.bind(1, uuid);
@@ -876,19 +881,19 @@ void Database::add_tag_by_id(int generation_id, const std::string& tag, const st
 }
 
 void Database::remove_tag(const std::string& uuid, const std::string& tag) {
-    std::lock_guard<std::mutex> lock(m_mutex);
+    std::lock_guard<std::recursive_mutex> lock(m_mutex);
     try {
         m_db.exec("DELETE FROM image_tags WHERE generation_id = (SELECT id FROM generations WHERE uuid = '" + uuid + "') AND tag_id = (SELECT id FROM tags WHERE name = '" + tag + "')");
     } catch (...) {}
 }
 
 void Database::delete_unused_tags() {
-    std::lock_guard<std::mutex> lock(m_mutex);
+    std::lock_guard<std::recursive_mutex> lock(m_mutex);
     try { m_db.exec("DELETE FROM tags WHERE id NOT IN (SELECT DISTINCT tag_id FROM image_tags)"); } catch (...) {}
 }
 
 std::vector<std::tuple<int, std::string, std::string>> Database::get_untagged_generations(int limit) {
-    std::lock_guard<std::mutex> lock(m_mutex);
+    std::lock_guard<std::recursive_mutex> lock(m_mutex);
     std::vector<std::tuple<int, std::string, std::string>> results;
     try {
         SQLite::Statement query(m_db, "SELECT id, uuid, prompt FROM generations WHERE auto_tagged = 0 AND prompt IS NOT NULL AND prompt != '' LIMIT ?");
@@ -899,7 +904,7 @@ std::vector<std::tuple<int, std::string, std::string>> Database::get_untagged_ge
 }
 
 void Database::mark_as_tagged(int id) {
-    std::lock_guard<std::mutex> lock(m_mutex);
+    std::lock_guard<std::recursive_mutex> lock(m_mutex);
     try { m_db.exec("UPDATE generations SET auto_tagged = 1 WHERE id = " + std::to_string(id)); } catch (...) {}
 }
 

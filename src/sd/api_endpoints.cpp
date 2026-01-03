@@ -848,19 +848,23 @@ void handle_generate_image(const httplib::Request& req, httplib::Response& res, 
                 first_pass_success = (results != nullptr);
                 if (first_pass_success) {
                     first_pass_success = false;
-                    for (int i = 0; i < num_results; i++) {
-                        if (results[i].data != nullptr && is_image_valid(results[i])) {
-                            first_pass_success = true;
-                            break;
-                        }
-                    }
-                }
-
-                if (!first_pass_success) {
+                                    for (int i = 0; i < num_results; i++) {
+                                        if (results[i].data != nullptr && is_image_valid(results[i])) {
+                                            first_pass_success = true;
+                                            break;
+                                        }
+                                    }
+                                }
+                    
+                                if (!first_pass_success) {
+                    
                     LOG_ERROR("Generation failed after retry.");
                     res.status = 500;
                     res.set_content(make_error_json("generation_failed", "Stable diffusion generation failed even after retry with conservative settings."), "application/json");
                     free_sd_images(results, num_results);
+                    if (init_image.data) stbi_image_free(init_image.data);
+                    if (mask_image.data) stbi_image_free(mask_image.data);
+                    if (control_image.data) stbi_image_free(control_image.data);
                     return;
                 }
             }
@@ -1068,6 +1072,9 @@ void handle_generate_image(const httplib::Request& req, httplib::Response& res, 
             res.status = 500;
             res.set_content(make_error_json("generation_failed", "Stable diffusion returned only null images. This can happen if the VAE failed or the model is corrupted."), "application/json");
             free_sd_images(results, num_results);
+            if (init_image.data) stbi_image_free(init_image.data);
+            if (mask_image.data) stbi_image_free(mask_image.data);
+            if (control_image.data) stbi_image_free(control_image.data);
             return;
         }
 
@@ -1081,10 +1088,10 @@ void handle_generate_image(const httplib::Request& req, httplib::Response& res, 
             stbi_image_free(init_image.data);
         }
         if (mask_image.data) {
-            free(mask_image.data);
+            stbi_image_free(mask_image.data);
         }
         if (control_image.data) {
-            free(control_image.data);
+            stbi_image_free(control_image.data);
         }
 
     } catch (const std::exception& e) {
@@ -1280,6 +1287,9 @@ void handle_edit_image(const httplib::Request& req, httplib::Response& res, Serv
             if (ctx.sd_ctx == nullptr) {
                 res.status = 400;
                 res.set_content(make_error_json("no_model", "no model loaded"), "application/json");
+                if (init_image.data) stbi_image_free(init_image.data);
+                if (mask_image.data) stbi_image_free(mask_image.data);
+                for (auto& ref_image : ref_images) stbi_image_free(ref_image.data);
                 return;
             }
 
@@ -1366,7 +1376,7 @@ void handle_edit_image(const httplib::Request& req, httplib::Response& res, Serv
                 // Still need to free other resources
                 if (init_image.data) stbi_image_free(init_image.data);
                 if (mask_image.data) stbi_image_free(mask_image.data);
-                for (auto ref_image : ref_images) stbi_image_free(ref_image.data);
+                for (auto& ref_image : ref_images) stbi_image_free(ref_image.data);
                 return;
             }
         }
@@ -1424,7 +1434,7 @@ void handle_edit_image(const httplib::Request& req, httplib::Response& res, Serv
         free_sd_images(results, num_results);
         if (init_image.data) stbi_image_free(init_image.data);
         if (mask_image.data) stbi_image_free(mask_image.data);
-        for (auto ref_image : ref_images) stbi_image_free(ref_image.data);
+        for (auto& ref_image : ref_images) stbi_image_free(ref_image.data);
         return;
     }
 
@@ -1439,7 +1449,7 @@ void handle_edit_image(const httplib::Request& req, httplib::Response& res, Serv
     if (mask_image.data) {
         stbi_image_free(mask_image.data);
     }
-    for (auto ref_image : ref_images) {
+    for (auto& ref_image : ref_images) {
         stbi_image_free(ref_image.data);
     }
     } catch (const std::exception& e) {
