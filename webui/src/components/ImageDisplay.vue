@@ -1,47 +1,7 @@
 <script setup lang="ts">
-import { computed } from 'vue'
 import { useGenerationStore } from '@/stores/generation'
-import { useRouter } from 'vue-router'
 
 const store = useGenerationStore()
-const router = useRouter()
-
-const parametersString = computed(() => {
-  if (!store.lastParams) return ''
-  const p = store.lastParams
-  const modelName = store.models.find(m => m.id === store.currentModel)?.id || 'unknown'
-  
-  let s = `${p.prompt}\n`
-  if (p.negative_prompt) {
-    s += `Negative prompt: ${p.negative_prompt}\n`
-  }
-  
-  const samplerName = p.sampler.toLowerCase().replace(' a', '_a').replace(/\+\+/g, 'pp')
-  
-  s += `Steps: ${p.steps}, `
-  s += `Sampler: ${samplerName}, `
-  s += `CFG scale: ${p.cfgScale}, `
-  s += `Seed: ${p.seed}, `
-  s += `Size: ${p.width}x${p.height}, `
-  s += `Model: ${modelName}, `
-  if (p.total_generation_time) {
-    s += `Time: ${p.total_generation_time.toFixed(2)}s, `
-  }
-  s += `Version: stable-diffusion.cpp`
-  
-  return s
-})
-
-function copyParameters() {
-  if (parametersString.value) {
-    navigator.clipboard.writeText(parametersString.value)
-  }
-}
-
-function sendToImg2Img(url: string) {
-  store.initImage = url
-  router.push('/img2img')
-}
 </script>
 
 <template>
@@ -88,14 +48,14 @@ function sendToImg2Img(url: string) {
         </div>
 
         <!-- Results Grid -->
-        <div v-else-if="store.imageUrls.length > 0" class="results-wrapper h-100">
+        <div v-else-if="store.imageUrls.length > 0" class="results-wrapper results-grid h-100">
           <div 
             v-for="(url, index) in store.imageUrls" 
             :key="index" 
-            class="d-flex flex-column align-items-center h-100"
+            class="d-flex flex-column align-items-center result-item"
           >
             <div class="image-box flex-grow-1">
-              <a :href="url" target="_blank" class="d-flex align-items-center justify-content-center h-100">
+              <a :href="url" target="_blank" class="d-flex align-items-center justify-content-center w-100 h-100">
                 <img 
                   :src="url" 
                   :alt="'Generated Image ' + (index + 1)" 
@@ -103,11 +63,7 @@ function sendToImg2Img(url: string) {
                 />
               </a>
             </div>
-            <div class="py-3 w-100 text-center border-top mt-3 bg-body-tertiary rounded-bottom">
-              <button class="btn btn-sm btn-outline-success px-4" @click="sendToImg2Img(url)">
-                <i class="bi bi-image"></i> Send to Img2Img
-              </button>
-            </div>
+
           </div>
         </div>
 
@@ -117,16 +73,7 @@ function sendToImg2Img(url: string) {
         </div>
       </div>
 
-      <!-- Metadata Section -->
-      <div v-if="store.imageUrls.length > 0 && !store.isGenerating && store.lastParams" class="metadata-pane p-3 rounded bg-body-secondary small">
-        <div class="d-flex justify-content-between align-items-center mb-1">
-          <span class="fw-bold text-muted text-uppercase x-small">Generation Parameters</span>
-          <button class="btn btn-link btn-sm p-0 text-decoration-none x-small" @click="copyParameters">
-            <i class="bi bi-clipboard"></i> Copy
-          </button>
-        </div>
-        <pre class="bg-body-tertiary p-2 rounded x-small mb-0 text-break-all white-space-pre-wrap border">{{ parametersString }}</pre>
-      </div>
+
     </div>
   </div>
 </template>
@@ -143,22 +90,45 @@ function sendToImg2Img(url: string) {
 }
 
 .results-wrapper {
-  overflow: hidden;
+  overflow-y: auto;
 }
 
-.image-box {
-  width: 100%;
+.results-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 1rem;
+  align-content: start;
+}
+
+/* If only one image, make it take full space and center */
+.results-grid:has(> .result-item:only-child) {
   display: flex;
   justify-content: center;
   align-items: center;
 }
 
+.image-box {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 200px;
+}
+
+.result-item {
+  background: var(--bs-body-bg);
+  border-radius: 0.5rem;
+  overflow: hidden;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+}
+
 .result-img {
   max-width: 100%;
-  max-height: 60vh;
+  max-height: 100%;
   width: auto;
   height: auto;
-  object-fit: scale-down;
+  object-fit: contain;
   display: block;
 }
 
