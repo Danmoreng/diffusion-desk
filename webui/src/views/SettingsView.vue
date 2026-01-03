@@ -20,12 +20,19 @@ async function runTest() {
     <div class="row g-4">
       <div class="col-md-6">
         <h5>UI Settings</h5>
-        <div class="d-flex justify-content-between align-items-center">
+        <div class="d-flex justify-content-between align-items-center mt-3">
           <label for="themeSelect" class="form-label mb-0">Theme</label>
           <select id="themeSelect" class="form-select form-select-sm" v-model="store.theme" style="width: auto; min-width: 120px;">
-            <option value="system"><i class="bi bi-display"></i> System</option>
-            <option value="light"><i class="bi bi-sun"></i> Light</option>
-            <option value="dark"><i class="bi bi-moon"></i> Dark</option>
+            <option value="system">System</option>
+            <option value="light">Light</option>
+            <option value="dark">Dark</option>
+          </select>
+        </div>
+        <div class="d-flex justify-content-between align-items-center mt-3">
+          <label for="barPos" class="form-label mb-0">Action Bar Position</label>
+          <select id="barPos" class="form-select form-select-sm" v-model="store.actionBarPosition" style="width: auto; min-width: 120px;">
+            <option value="bottom">Bottom</option>
+            <option value="top">Top</option>
           </select>
         </div>
       </div>

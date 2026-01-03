@@ -1,0 +1,99 @@
+<script setup lang="ts">
+import { computed } from 'vue'
+import { useRoute } from 'vue-router'
+import { useGenerationStore } from '@/stores/generation'
+
+const store = useGenerationStore()
+const route = useRoute()
+
+const currentMode = computed(() => {
+  if (route.path === '/img2img') return 'img2img'
+  if (route.path === '/inpainting') return 'inpainting'
+  return 'txt2img'
+})
+
+const isGenerationPage = computed(() => {
+  // Only show on main generation pages
+  return ['/', '/img2img', '/inpainting'].includes(route.path)
+})
+
+function handleGenerate() {
+  store.triggerGeneration(currentMode.value)
+}
+</script>
+
+<template>
+  <div v-if="isGenerationPage" 
+       class="action-bar shadow-sm border-bottom border-top"
+       :class="[store.actionBarPosition === 'top' ? 'bar-top' : 'bar-bottom']">
+    <div class="container-fluid d-flex justify-content-start align-items-center gap-2 py-2 px-3">
+      
+      <!-- Primary Action: Generate -->
+      <button
+        class="btn btn-primary generate-btn d-flex align-items-center gap-2 px-4 py-1 fw-bold"
+        @click="handleGenerate"
+        :disabled="store.isGenerating || store.isModelSwitching || !store.prompt"
+      >
+        <div class="icon-wrapper d-flex align-items-center justify-content-center">
+          <span v-if="store.isGenerating || store.isModelSwitching" class="spinner-border spinner-border-sm" role="status"></span>
+          <i v-else class="bi bi-play-fill fs-5"></i>
+        </div>
+        <span class="btn-text text-start">
+          {{ store.isGenerating ? 'Generating...' : (store.isModelSwitching ? 'Switching...' : 'Generate') }}
+        </span>
+      </button>
+
+      <div class="vr mx-2 text-muted opacity-25"></div>
+
+      <!-- Placeholder for future buttons -->
+      <div class="d-flex gap-2">
+        <button class="btn btn-outline-secondary btn-sm border-0" title="Continuous Generation (Future)" disabled>
+          <i class="bi bi-repeat"></i>
+        </button>
+        <button class="btn btn-outline-secondary btn-sm border-0" title="Add to Queue (Future)" disabled>
+          <i class="bi bi-list-task"></i>
+        </button>
+      </div>
+
+    </div>
+  </div>
+</template>
+
+<style scoped>
+.action-bar {
+  position: sticky;
+  z-index: 1000;
+  background-color: var(--bs-body-bg);
+  width: 100%;
+  transition: all 0.3s ease;
+}
+
+.bar-bottom {
+  bottom: 0;
+  margin-top: auto;
+  border-top: 1px solid var(--bs-border-color) !important;
+  border-bottom: none !important;
+}
+
+.bar-top {
+  top: 0;
+  border-bottom: 1px solid var(--bs-border-color) !important;
+  border-top: none !important;
+}
+
+.generate-btn {
+  border-radius: var(--bs-border-radius);
+  min-width: 180px;
+  height: 40px;
+  justify-content: center;
+}
+
+.icon-wrapper {
+  width: 20px;
+  height: 20px;
+}
+
+.btn-text {
+  min-width: 100px;
+}
+</style>

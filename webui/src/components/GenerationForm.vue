@@ -543,18 +543,6 @@ const clearInitImage = () => {
       <div class="mb-4">
         <LoraManager />
       </div>
-
-      <div class="d-grid">
-        <button
-          type="submit"
-          class="btn btn-primary"
-          :disabled="store.isGenerating || store.isModelSwitching"
-        >
-          <span v-if="store.isGenerating" class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
-          <span v-if="store.isModelSwitching" class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
-          {{ store.isGenerating ? ' Generating...' : (store.isModelSwitching ? ' Switching model...' : 'Generate') }}
-        </button>
-      </div>
     </form>
   </div>
 </template>
