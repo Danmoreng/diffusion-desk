@@ -67,10 +67,10 @@ This document outlines the roadmap for MystiCanvas, merging original milestones 
 *   [ ] **B2.5. Latency-Optimized State Transitions:**
     *   LRU / Idle unload policy (e.g., "unload after 10m idle").
     *   Pre-warm models when resources allow.
-*   [ ] **B3. Surgical Worker-Level Mitigations:**
-    *   Dynamic VAE tiling based on resolution.
-    *   Auto VAE-on-CPU fallback if VRAM is tight.
-    *   **B3.4 Text Encoder Offload:** Enable `clip_on_cpu` for massive encoders (e.g., T5XXL) per preset.
+*   [x] **B3. Surgical Worker-Level Mitigations:**
+    *   [x] Dynamic VAE tiling based on resolution.
+    *   [x] Auto VAE-on-CPU fallback if VRAM is tight.
+    *   [x] **B3.4 Text Encoder Offload:** Enable `clip_on_cpu` for massive encoders (e.g., T5XXL) per preset.
 *   [ ] **B4. UI Feedback:**
     *   Indicate "Projected vs Actual" VRAM.
     *   Notifications for "VAE moved to CPU" or "LLM Unloaded".
@@ -86,27 +86,27 @@ This document outlines the roadmap for MystiCanvas, merging original milestones 
 
 **Goal:** A robust persistence layer supporting advanced features (Search, Jobs, Presets).
 
-*   [ ] **C1. Schema Versioning & Migrations:**
-    *   Use `PRAGMA user_version`.
-    *   Implement idempotent migration system on startup.
+*   [x] **C1. Schema Versioning & Migrations:**
+    *   [x] Use `PRAGMA user_version`.
+    *   [x] Implement idempotent migration system on startup.
 *   [ ] **C2. Performance Optimization:**
     *   Keyset pagination for Gallery (cursor-based).
     *   Verify/Add indexes.
-*   [ ] **C3. Asset Management:**
-    *   `generation_files` table (thumbnails, previews, masks).
-    *   Job for background thumbnail creation.
-*   [ ] **C4. FTS5 Search:**
-    *   Virtual table for prompt search.
-    *   Endpoints for full-text search query.
-*   [ ] **C5. Tag Normalization:**
-    *   `normalized_name` column.
-    *   `tag_aliases` table.
-*   [ ] **C6. Job Queue:**
-    *   `jobs` table for background tasks (Auto-tagging, Thumbnails).
-    *   Job runner service in Orchestrator.
-*   [ ] **C7. Prompt Library (Generalized Styles):**
-    *   `prompt_library` table: `id`, `label`, `content`, `category`, `created_at`.
-    *   Categories: "Style", "Character", "Lighting", "Negative", etc.
+*   [x] **C3. Asset Management:**
+    *   [x] `generation_files` table (thumbnails, previews, masks).
+    *   [ ] Job for background thumbnail creation.
+*   [x] **C4. FTS5 Search:**
+    *   [x] Virtual table for prompt search.
+    *   [x] Endpoints for full-text search query.
+*   [x] **C5. Tag Normalization:**
+    *   [x] `normalized_name` column.
+    *   [x] `tag_aliases` table.
+*   [x] **C6. Job Queue:**
+    *   [x] `jobs` table for background tasks (Auto-tagging, Thumbnails).
+    *   [ ] Job runner service in Orchestrator.
+*   [x] **C7. Prompt Library (Generalized Styles):**
+    *   [x] `prompt_library` table: `id`, `label`, `content`, `category`, `created_at`.
+    *   [x] Categories: "Style", "Character", "Lighting", "Negative", etc.
 
 **Definition of Done:**
 *   Database upgrades automatically without data loss.
@@ -119,16 +119,16 @@ This document outlines the roadmap for MystiCanvas, merging original milestones 
 
 **Goal:** Formalize model stacks to enable reliable VRAM prediction and user convenience.
 
-*   [ ] **D1. Preset Schema:**
-    *   `image_presets` table: `unet`, `vae`, `clip`, `vram_weights_mb_estimate`, `vram_weights_mb_measured`, `default_params`, `preferred_params`.
-    *   `llm_presets` table: `model`, `mmproj`, `n_ctx`, `capabilities`, `role` (e.g., "Vision", "Assistant").
+*   [x] **D1. Preset Schema:**
+    *   [x] `image_presets` table: `unet`, `vae`, `clip`, `vram_weights_mb_estimate`, `vram_weights_mb_measured`, `default_params`, `preferred_params`.
+    *   [x] `llm_presets` table: `model`, `mmproj`, `n_ctx`, `capabilities`, `role` (e.g., "Vision", "Assistant").
 *   [ ] **D2. Preset Manager UI:**
     *   Interface to assemble/edit presets.
     *   Auto-calculate VRAM estimates from file sizes (heuristic).
     *   Update `vram_weights_mb_measured` from actual usage reports.
-*   [ ] **D3. Runtime Integration:**
-    *   Orchestrator loads by Preset ID.
-    *   VRAM Arbiter uses preset metadata for predictions.
+*   [x] **D3. Runtime Integration:**
+    *   [x] Orchestrator loads by Preset ID.
+    *   [ ] VRAM Arbiter uses preset metadata for predictions.
 
 **Definition of Done:**
 *   User can switch between "SDXL High Quality" and "Flux Fast" with one click.
