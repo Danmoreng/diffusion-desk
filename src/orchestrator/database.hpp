@@ -104,6 +104,7 @@ public:
     void remove_generation(const std::string& uuid);
     std::string get_generation_filepath(const std::string& uuid);
     mysti::json get_generations(int limit = 50, int offset = 0, const std::vector<std::string>& tags = {}, const std::string& model = "", int min_rating = 0);
+    mysti::json search_generations(const std::string& query, int limit = 50);
     mysti::json get_tags();
     
     // Styles

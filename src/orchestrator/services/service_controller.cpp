@@ -488,6 +488,17 @@ void ServiceController::register_routes(httplib::Server& svr, const SDSvrParams&
         res.set_content(m_db->get_generations(limit, offset, tags, model, min_rating).dump(), "application/json");
     });
 
+    svr.Get("/v1/history/search", [this](const httplib::Request& req, httplib::Response& res) {
+        if (!m_db) { res.set_content("[]", "application/json"); return; }
+        std::string query = req.get_param_value("q");
+        int limit = req.has_param("limit") ? std::stoi(req.get_param_value("limit")) : 50;
+        if (query.empty()) {
+            res.set_content("[]", "application/json");
+            return;
+        }
+        res.set_content(m_db->search_generations(query, limit).dump(), "application/json");
+    });
+
     svr.Get("/v1/history/tags", [this](const httplib::Request&, httplib::Response& res) {
         if (!m_db) { res.set_content("[]", "application/json"); return; }
         res.set_content(m_db->get_tags().dump(), "application/json");
