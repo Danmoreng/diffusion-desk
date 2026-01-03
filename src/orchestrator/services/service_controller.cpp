@@ -485,13 +485,13 @@ void ServiceController::register_routes(httplib::Server& svr, const SDSvrParams&
     svr.Get("/v1/history/images", [this](const httplib::Request& req, httplib::Response& res) {
         if (!m_db) { Proxy::forward_request(req, res, "127.0.0.1", m_sd_port, "", m_token); return; }
         int limit = req.has_param("limit") ? std::stoi(req.get_param_value("limit")) : 50;
-        int offset = req.has_param("offset") ? std::stoi(req.get_param_value("offset")) : 0;
+        std::string cursor = req.has_param("cursor") ? req.get_param_value("cursor") : "";
         int min_rating = req.has_param("min_rating") ? std::stoi(req.get_param_value("min_rating")) : 0;
         std::vector<std::string> tags;
         auto count = req.get_param_value_count("tag");
         for (size_t i = 0; i < count; ++i) tags.push_back(req.get_param_value("tag", i));
         std::string model = req.has_param("model") ? req.get_param_value("model") : "";
-        res.set_content(m_db->get_generations(limit, offset, tags, model, min_rating).dump(), "application/json");
+        res.set_content(m_db->get_generations(limit, cursor, tags, model, min_rating).dump(), "application/json");
     });
 
     svr.Get("/v1/history/search", [this](const httplib::Request& req, httplib::Response& res) {

@@ -14,8 +14,13 @@ if (Test-Path $dbPath) {
 # 2. Check API
 Write-Host "`nTesting API: $baseUrl/v1/history/images ..." -ForegroundColor Cyan
 try {
-    $response = Invoke-RestMethod -Uri "$baseUrl/v1/history/images" -Method Get -TimeoutSec 5
+    $json = Invoke-RestMethod -Uri "$baseUrl/v1/history/images" -Method Get -TimeoutSec 5
+    $response = $json.data
     Write-Host "[OK] API responded with $($response.Count) items." -ForegroundColor Green
+    
+    if ($json.next_cursor) {
+        Write-Host "     Next Cursor: $($json.next_cursor)" -ForegroundColor Gray
+    }
     
     if ($response.Count -gt 0) {
         Write-Host "`nLast 3 images in DB:" -ForegroundColor Yellow

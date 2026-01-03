@@ -13,6 +13,7 @@ static mysti::json parse_generation_row(SQLite::Statement& q, SQLite::Database& 
     if (last_slash != std::string::npos) name = file_path.substr(last_slash + 1);
 
     gen["id"] = q.getColumn("uuid").getText();
+    gen["__internal_id"] = q.getColumn("id").getInt();
     gen["name"] = name;
     gen["file_path"] = file_path;
     gen["timestamp"] = q.getColumn("timestamp").getText();
@@ -412,11 +413,19 @@ std::string Database::get_generation_filepath(const std::string& uuid) {
     return "";
 }
 
-mysti::json Database::get_generations(int limit, int offset, const std::vector<std::string>& tags, const std::string& model, int min_rating) {
+mysti::json Database::get_generations(int limit, const std::string& cursor, const std::vector<std::string>& tags, const std::string& model, int min_rating) {
     std::lock_guard<std::recursive_mutex> lock(m_mutex);
-    mysti::json results = mysti::json::array();
+    mysti::json response;
+    mysti::json items = mysti::json::array();
+    
     try {
         std::string sql = "SELECT g.* FROM generations g WHERE 1=1 ";
+        
+        // Cursor logic: "timestamp|id"
+        if (!cursor.empty()) {
+            sql += "AND (g.timestamp < ? OR (g.timestamp = ? AND g.id < ?)) ";
+        }
+
         if (!tags.empty()) {
             sql += "AND g.id IN (SELECT it.generation_id FROM image_tags it JOIN tags t ON it.tag_id = t.id WHERE t.name IN (";
             for (size_t i = 0; i < tags.size(); ++i) {
@@ -426,10 +435,32 @@ mysti::json Database::get_generations(int limit, int offset, const std::vector<s
         }
         if (!model.empty()) sql += "AND g.model_id = ? ";
         if (min_rating > 0) sql += "AND g.rating >= ? ";
-        sql += "ORDER BY g.timestamp DESC LIMIT ? OFFSET ?";
+        
+        // Stable sort
+        sql += "ORDER BY g.timestamp DESC, g.id DESC LIMIT ?";
 
         SQLite::Statement query(m_db, sql);
         int bind_idx = 1;
+
+        if (!cursor.empty()) {
+            size_t pipe_pos = cursor.find('|');
+            if (pipe_pos != std::string::npos) {
+                std::string ts = cursor.substr(0, pipe_pos);
+                int id = std::stoi(cursor.substr(pipe_pos + 1));
+                query.bind(bind_idx++, ts);
+                query.bind(bind_idx++, ts);
+                query.bind(bind_idx++, id);
+            } else {
+                // Fallback or invalid cursor, maybe just ignore or throw
+                // For safety, just bind something that returns nothing or everything?
+                // Actually, if invalid, we might just proceed without cursor logic effectively (or error).
+                // Let's assume empty result if invalid cursor to prompt reset.
+                query.bind(bind_idx++, "9999-99-99 99:99:99");
+                query.bind(bind_idx++, "9999-99-99 99:99:99");
+                query.bind(bind_idx++, 0);
+            }
+        }
+
         if (!tags.empty()) {
             for (const auto& tag : tags) query.bind(bind_idx++, tag);
             query.bind(bind_idx++, (int)tags.size());
@@ -437,15 +468,24 @@ mysti::json Database::get_generations(int limit, int offset, const std::vector<s
         if (!model.empty()) query.bind(bind_idx++, model);
         if (min_rating > 0) query.bind(bind_idx++, min_rating);
         query.bind(bind_idx++, limit);
-        query.bind(bind_idx++, offset);
 
         while (query.executeStep()) {
-            results.push_back(parse_generation_row(query, m_db));
+            items.push_back(parse_generation_row(query, m_db));
         }
     } catch (const std::exception& e) {
         std::cerr << "[Database] get_generations failed: " << e.what() << std::endl;
     }
-    return results;
+    
+    response["data"] = items;
+    response["next_cursor"] = nullptr;
+    
+    if (!items.empty() && items.size() == limit) {
+        auto& last = items.back();
+        std::string next = last["timestamp"].get<std::string>() + "|" + std::to_string(last["__internal_id"].get<int>());
+        response["next_cursor"] = next;
+    }
+    
+    return response;
 }
 
 mysti::json Database::search_generations(const std::string& query, int limit) {
