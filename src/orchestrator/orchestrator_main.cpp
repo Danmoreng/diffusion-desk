@@ -25,6 +25,8 @@
 #include "services/service_controller.hpp"
 #include "services/tagging_service.hpp"
 #include "services/import_service.hpp"
+#include "services/job_service.hpp"
+#include "services/thumbnail_service.hpp"
 
 static ProcessManager pm;
 static ProcessManager::ProcessInfo sd_process;
@@ -39,6 +41,8 @@ static std::shared_ptr<mysti::WsManager> g_ws_mgr;
 static std::unique_ptr<mysti::TaggingService> g_tagging_svc;
 static std::unique_ptr<mysti::HealthService> g_health_svc;
 static std::unique_ptr<mysti::ImportService> g_import_svc;
+static std::shared_ptr<mysti::JobService> g_job_svc;
+static std::unique_ptr<mysti::ThumbnailService> g_thumb_svc;
 static std::string g_internal_token;
 static std::atomic<bool> is_shutting_down{false};
 
@@ -47,6 +51,7 @@ BOOL WINAPI ConsoleCtrlHandler(DWORD dwCtrlType) {
     if (dwCtrlType == CTRL_C_EVENT || dwCtrlType == CTRL_BREAK_EVENT || dwCtrlType == CTRL_CLOSE_EVENT) {
         is_shutting_down = true;
         if (g_tagging_svc) g_tagging_svc->stop();
+        if (g_job_svc) g_job_svc->stop();
         if (g_health_svc) g_health_svc->stop();
         if (pm.is_running(sd_process)) pm.terminate(sd_process);
         if (pm.is_running(llm_process)) pm.terminate(llm_process);
@@ -121,6 +126,9 @@ int run_orchestrator(int argc, const char** argv, SDSvrParams& svr_params) {
     g_health_svc = std::make_unique<mysti::HealthService>(pm, sd_process, llm_process, sd_port, llm_port, sd_exe_path, llm_exe_path, sd_args, llm_args, "sd_worker.log", "llm_worker.log", g_internal_token, g_ws_mgr);
     g_health_svc->set_model_state_callbacks([]() { return g_controller->get_last_sd_model_req(); }, []() { return g_controller->get_last_llm_model_req(); });
     g_health_svc->start();
+    g_job_svc = std::make_shared<mysti::JobService>(g_db);
+    g_thumb_svc = std::make_unique<mysti::ThumbnailService>(g_job_svc, g_db);
+    g_job_svc->start();
     g_tagging_svc = std::make_unique<mysti::TaggingService>(g_db, llm_port, g_internal_token, svr_params.tagger_system_prompt);
     g_tagging_svc->set_model_provider([]() { return g_controller->get_last_llm_model_req(); });
     g_tagging_svc->start();
@@ -266,6 +274,7 @@ int run_orchestrator(int argc, const char** argv, SDSvrParams& svr_params) {
     svr.listen(svr_params.listen_ip, svr_params.listen_port);
     is_shutting_down = true;
     if (g_tagging_svc) g_tagging_svc->stop();
+    if (g_job_svc) g_job_svc->stop();
     if (g_health_svc) g_health_svc->stop();
     pm.terminate(sd_process); 
     pm.terminate(llm_process);

@@ -145,7 +145,7 @@ public:
     bool generation_exists(const std::string& file_path);
 
     // Insertion
-    void insert_generation(const Generation& gen);
+    int insert_generation(const Generation& gen);
     void insert_generation_with_tags(const Generation& gen, const std::vector<std::string>& tags);
     
     // Tag Management
