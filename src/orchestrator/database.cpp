@@ -4,6 +4,48 @@
 
 namespace mysti {
 
+// Internal helper to parse a generation row from a query (assumes all columns are selected)
+static mysti::json parse_generation_row(SQLite::Statement& q, SQLite::Database& db) {
+    mysti::json gen;
+    std::string file_path = q.getColumn("file_path").getText();
+    std::string name = file_path;
+    size_t last_slash = file_path.find_last_of("/\\");
+    if (last_slash != std::string::npos) name = file_path.substr(last_slash + 1);
+
+    gen["id"] = q.getColumn("uuid").getText();
+    gen["name"] = name;
+    gen["file_path"] = file_path;
+    gen["timestamp"] = q.getColumn("timestamp").getText();
+
+    mysti::json params;
+    try {
+        std::string pjson = q.getColumn("params_json").getText();
+        if (!pjson.empty()) params = mysti::json::parse(pjson);
+    } catch (...) {}
+
+    params["prompt"] = q.getColumn("prompt").getText();
+    params["negative_prompt"] = q.getColumn("negative_prompt").getText();
+    params["seed"] = (long long)q.getColumn("seed").getInt64();
+    params["width"] = q.getColumn("width").getInt();
+    params["height"] = q.getColumn("height").getInt();
+    params["steps"] = q.getColumn("steps").getInt();
+    params["cfg_scale"] = q.getColumn("cfg_scale").getDouble();
+    params["model_id"] = q.getColumn("model_id").getText();
+
+    gen["params"] = params;
+    gen["is_favorite"] = q.getColumn("is_favorite").getInt() != 0;
+    try { gen["rating"] = q.getColumn("rating").getInt(); } catch (...) { gen["rating"] = 0; }
+
+    mysti::json tags_arr = mysti::json::array();
+    SQLite::Statement tag_query(db, "SELECT t.name FROM tags t JOIN image_tags it ON t.id = it.tag_id WHERE it.generation_id = ?");
+    tag_query.bind(1, q.getColumn("id").getInt());
+    while (tag_query.executeStep()) {
+        tags_arr.push_back(tag_query.getColumn(0).getText());
+    }
+    gen["tags"] = tags_arr;
+    return gen;
+}
+
 Database::Database(const std::string& db_path) 
     : m_db(db_path, SQLite::OPEN_READWRITE | SQLite::OPEN_CREATE) 
 {
@@ -398,47 +440,40 @@ mysti::json Database::get_generations(int limit, int offset, const std::vector<s
         query.bind(bind_idx++, offset);
 
         while (query.executeStep()) {
-            mysti::json gen;
-            std::string file_path = query.getColumn("file_path").getText();
-            std::string name = file_path;
-            size_t last_slash = file_path.find_last_of("/\\");
-            if (last_slash != std::string::npos) name = file_path.substr(last_slash + 1);
-
-            gen["id"] = query.getColumn("uuid").getText();
-            gen["name"] = name; 
-            gen["file_path"] = file_path;
-            gen["timestamp"] = query.getColumn("timestamp").getText();
-            
-            mysti::json params;
-            try {
-                std::string pjson = query.getColumn("params_json").getText();
-                if (!pjson.empty()) params = mysti::json::parse(pjson);
-            } catch (...) {}
-
-            params["prompt"] = query.getColumn("prompt").getText();
-            params["negative_prompt"] = query.getColumn("negative_prompt").getText();
-            params["seed"] = (long long)query.getColumn("seed").getInt64();
-            params["width"] = query.getColumn("width").getInt();
-            params["height"] = query.getColumn("height").getInt();
-            params["steps"] = query.getColumn("steps").getInt();
-            params["cfg_scale"] = query.getColumn("cfg_scale").getDouble();
-            params["model_id"] = query.getColumn("model_id").getText();
-            
-            gen["params"] = params;
-            gen["is_favorite"] = query.getColumn("is_favorite").getInt() != 0;
-            try { gen["rating"] = query.getColumn("rating").getInt(); } catch (...) { gen["rating"] = 0; }
-            
-            mysti::json tags_arr = mysti::json::array();
-            SQLite::Statement tag_query(m_db, "SELECT t.name FROM tags t JOIN image_tags it ON t.id = it.tag_id WHERE it.generation_id = ?");
-            tag_query.bind(1, query.getColumn("id").getInt());
-            while (tag_query.executeStep()) {
-                tags_arr.push_back(tag_query.getColumn(0).getText());
-            }
-            gen["tags"] = tags_arr;
-            results.push_back(gen);
+            results.push_back(parse_generation_row(query, m_db));
         }
     } catch (const std::exception& e) {
         std::cerr << "[Database] get_generations failed: " << e.what() << std::endl;
+    }
+    return results;
+}
+
+mysti::json Database::search_generations(const std::string& query, int limit) {
+    std::lock_guard<std::recursive_mutex> lock(m_mutex);
+    mysti::json results = mysti::json::array();
+    try {
+        SQLite::Statement q(m_db, R"(
+            SELECT g.* 
+            FROM generations g
+            WHERE g.id IN (SELECT rowid FROM generations_fts WHERE generations_fts MATCH ?)
+            ORDER BY g.timestamp DESC LIMIT ?
+        )");
+        q.bind(1, query);
+        q.bind(2, limit);
+        while (q.executeStep()) {
+            results.push_back(parse_generation_row(q, m_db));
+        }
+    } catch (const std::exception& e) {
+        std::cerr << "[Database] search_generations FTS failed, falling back to LIKE: " << e.what() << std::endl;
+        try {
+            SQLite::Statement q(m_db, "SELECT * FROM generations WHERE prompt LIKE ? OR negative_prompt LIKE ? ORDER BY timestamp DESC LIMIT ?");
+            q.bind(1, "%" + query + "%");
+            q.bind(2, "%" + query + "%");
+            q.bind(3, limit);
+            while (q.executeStep()) {
+                results.push_back(parse_generation_row(q, m_db));
+            }
+        } catch (...) {}
     }
     return results;
 }

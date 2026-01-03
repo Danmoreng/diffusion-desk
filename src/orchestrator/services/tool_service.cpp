@@ -57,37 +57,7 @@ mysti::json ToolService::apply_style(const std::string& style_name, const std::s
 
 mysti::json ToolService::search_history(const std::string& query) {
     if (!m_db) return mysti::json::array();
-    
-    // We'll use FTS5 search
-    mysti::json results = mysti::json::array();
-    try {
-        SQLite::Statement q(m_db->get_db(), R"(
-            SELECT uuid, prompt, timestamp 
-            FROM generations 
-            WHERE id IN (SELECT rowid FROM generations_fts WHERE generations_fts MATCH ?)
-            ORDER BY timestamp DESC LIMIT 10
-        )");
-        q.bind(1, query);
-        while (q.executeStep()) {
-            mysti::json item;
-            item["uuid"] = q.getColumn(0).getText();
-            item["prompt"] = q.getColumn(1).getText();
-            item["timestamp"] = q.getColumn(2).getText();
-            results.push_back(item);
-        }
-    } catch (...) {
-        // Fallback to LIKE if FTS fails
-        SQLite::Statement q(m_db->get_db(), "SELECT uuid, prompt, timestamp FROM generations WHERE prompt LIKE ? ORDER BY timestamp DESC LIMIT 10");
-        q.bind(1, "%" + query + "%");
-        while (q.executeStep()) {
-            mysti::json item;
-            item["uuid"] = q.getColumn(0).getText();
-            item["prompt"] = q.getColumn(1).getText();
-            item["timestamp"] = q.getColumn(2).getText();
-            results.push_back(item);
-        }
-    }
-    return results;
+    return m_db->search_generations(query, 10);
 }
 
 mysti::json ToolService::get_vram_status() {
