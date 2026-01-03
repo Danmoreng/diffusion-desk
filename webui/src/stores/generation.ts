@@ -23,11 +23,13 @@ export const useGenerationStore = defineStore('generation', () => {
   const initialState = savedSettings ? { ...defaults, ...JSON.parse(savedSettings) } : defaults
 
   const isGenerating = ref(false)
+  const isEndless = ref(false)
   const isUpscaling = ref(false)
   const isModelSwitching = ref(false)
   const imageUrls = ref<string[]>([])
   const error = ref<string | null>(null)
   const lastParams = ref<any>(null)
+  const lastGenerationMode = ref<'txt2img' | 'img2img' | 'inpainting'>('txt2img')
 
   // State for parameters
   const prompt = ref(initialState.prompt)
@@ -894,13 +896,22 @@ export const useGenerationStore = defineStore('generation', () => {
     } catch (e: any) {
       error.value = e.message
       console.error(e)
+      // Stop endless on error to prevent infinite error loops
+      isEndless.value = false
     } finally {
       isGenerating.value = false
+      if (isEndless.value && !error.value) {
+        // Small delay to let UI breathe and prevent stack issues
+        setTimeout(() => {
+          if (isEndless.value) triggerGeneration(lastGenerationMode.value)
+        }, 200)
+      }
     }
   }
 
   function triggerGeneration(mode: 'txt2img' | 'img2img' | 'inpainting') {
     if (!prompt.value || isGenerating.value || isModelSwitching.value) return
+    lastGenerationMode.value = mode
     
     generateImage({
       prompt: prompt.value,
@@ -920,7 +931,7 @@ export const useGenerationStore = defineStore('generation', () => {
   }
 
   return { 
-    isGenerating, isUpscaling, isModelSwitching, isLlmLoading, isLlmLoaded,
+    isGenerating, isUpscaling, isModelSwitching, isLlmLoading, isLlmLoaded, isEndless,
     imageUrls, error, 
     generateImage, triggerGeneration, requestImage, upscaleImage, parseA1111Parameters, 
     prompt, negativePrompt, steps, seed, cfgScale, strength, batchCount, sampler, samplers, width, height, 
