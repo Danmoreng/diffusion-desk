@@ -1015,8 +1015,9 @@ void handle_generate_image(const httplib::Request& req, httplib::Response& res, 
                 continue;
             }
 
+            int64_t current_seed = gen_params.seed + i;
             mysti::json item;
-            item["seed"] = gen_params.seed;
+            item["seed"] = current_seed;
 
             // Always save to disk (temp or permanent) to serve via URL
             try {
@@ -1036,7 +1037,7 @@ void handle_generate_image(const httplib::Request& req, httplib::Response& res, 
                 }
 
                 auto timestamp = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
-                std::string base_filename = "img-" + std::to_string(timestamp) + "-" + std::to_string(gen_params.seed);
+                std::string base_filename = "img-" + std::to_string(timestamp) + "-" + std::to_string(current_seed);
                 std::string img_filename = (fs::path(final_output_dir) / (base_filename + ".png")).string();
                 
                 std::ofstream file(img_filename, std::ios::binary);
@@ -1046,7 +1047,7 @@ void handle_generate_image(const httplib::Request& req, httplib::Response& res, 
                 // Only save metadata txt if saving permanently
                 if (save_image) {
                     std::string txt_filename = (fs::path(final_output_dir) / (base_filename + ".txt")).string();
-                    std::string params_txt = get_image_params(ctx.ctx_params, gen_params, gen_params.seed, total_generation_time);
+                    std::string params_txt = get_image_params(ctx.ctx_params, gen_params, current_seed, total_generation_time);
                     std::ofstream txt_file(txt_filename);
                     txt_file << params_txt;
                 }
@@ -1389,8 +1390,9 @@ void handle_edit_image(const httplib::Request& req, httplib::Response& res, Serv
                                                     (int)results[i].channel,
                                                     output_compression);
         
+        int64_t current_seed = gen_params.seed + i;
         mysti::json item;
-        item["seed"] = gen_params.seed;
+        item["seed"] = current_seed;
 
         // Always save edits to temp to serve via URL (Edits are usually transient unless saved by user)
         try {
@@ -1400,7 +1402,7 @@ void handle_edit_image(const httplib::Request& req, httplib::Response& res, Serv
             }
 
             auto timestamp = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
-            std::string base_filename = "edit-" + std::to_string(timestamp) + "-" + std::to_string(gen_params.seed);
+            std::string base_filename = "edit-" + std::to_string(timestamp) + "-" + std::to_string(current_seed);
             std::string img_filename = (fs::path(temp_dir) / (base_filename + ".png")).string();
             
             std::ofstream file(img_filename, std::ios::binary);

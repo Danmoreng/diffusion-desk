@@ -432,37 +432,39 @@ void ServiceController::register_routes(httplib::Server& svr, const SDSvrParams&
                 }
 
                 auto req_json = mysti::json::parse(modified_body);
-                std::string uuid = res_json.value("id", ""); 
-                std::string file_path = "";
-                long long seed = req_json.value("seed", -1LL);
-                if (res_json.contains("data") && res_json["data"].is_array() && !res_json["data"].empty()) {
-                    file_path = res_json["data"][0].value("url", "");
-                    if (seed == -1LL) seed = res_json["data"][0].value("seed", seed);
-                }
-                if (uuid.empty() && !file_path.empty()) {
-                    size_t last_slash = file_path.find_last_of('/');
-                    uuid = (last_slash != std::string::npos) ? file_path.substr(last_slash + 1) : file_path;
-                }
-                if (!uuid.empty() && !file_path.empty()) {
-                    Generation gen;
-                    gen.uuid = uuid;
-                    gen.file_path = file_path;
-                    gen.prompt = req_json.value("prompt", "");
-                    gen.negative_prompt = req_json.value("negative_prompt", "");
-                    gen.seed = seed;
-                    gen.width = req_json.value("width", 512);
-                    gen.height = req_json.value("height", 512);
-                    gen.steps = req_json.contains("sample_steps") ? req_json["sample_steps"].get<int>() : req_json.value("steps", 20);
-                    gen.cfg_scale = req_json.value("cfg_scale", 7.0f);
-                    gen.generation_time = res_json.value("generation_time", 0.0);
-                    gen.params_json = modified_body;
-                    {
-                        std::lock_guard<std::mutex> lock(m_state_mutex);
-                        if (!m_last_sd_model_req_body.empty()) {
-                            try { gen.model_id = mysti::json::parse(m_last_sd_model_req_body).value("model_id", ""); } catch(...) {}
+                if (res_json.contains("data") && res_json["data"].is_array()) {
+                    for (const auto& item : res_json["data"]) {
+                        std::string file_path = item.value("url", "");
+                        long long item_seed = item.value("seed", -1LL);
+                        std::string uuid = res_json.value("id", ""); 
+
+                        if (uuid.empty() && !file_path.empty()) {
+                            size_t last_slash = file_path.find_last_of('/');
+                            uuid = (last_slash != std::string::npos) ? file_path.substr(last_slash + 1) : file_path;
+                        }
+
+                        if (!uuid.empty() && !file_path.empty()) {
+                            Generation gen;
+                            gen.uuid = uuid;
+                            gen.file_path = file_path;
+                            gen.prompt = req_json.value("prompt", "");
+                            gen.negative_prompt = req_json.value("negative_prompt", "");
+                            gen.seed = item_seed;
+                            gen.width = req_json.value("width", 512);
+                            gen.height = req_json.value("height", 512);
+                            gen.steps = req_json.contains("sample_steps") ? req_json["sample_steps"].get<int>() : req_json.value("steps", 20);
+                            gen.cfg_scale = req_json.value("cfg_scale", 7.0f);
+                            gen.generation_time = res_json.value("generation_time", 0.0);
+                            gen.params_json = modified_body;
+                            {
+                                std::lock_guard<std::mutex> lock(m_state_mutex);
+                                if (!m_last_sd_model_req_body.empty()) {
+                                    try { gen.model_id = mysti::json::parse(m_last_sd_model_req_body).value("model_id", ""); } catch(...) {}
+                                }
+                            }
+                            m_db->insert_generation(gen);
                         }
                     }
-                    m_db->insert_generation(gen);
                     if (m_on_generation) m_on_generation();
                 }
             } catch (...) {}
