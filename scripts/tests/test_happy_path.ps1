@@ -3,8 +3,8 @@
 
 $ErrorActionPreference = "Stop"
 $ScriptDir = $PSScriptRoot
-$ProjectRoot = Split-Path $ScriptDir
-$RunScript = Join-Path $ScriptDir "run.ps1"
+$ProjectRoot = Split-Path (Split-Path $ScriptDir)
+$RunScript = Join-Path (Join-Path $ProjectRoot "scripts") "run.ps1"
 
 Write-Host "Starting Server..." -ForegroundColor Cyan
 $Job = Start-Job -ScriptBlock {

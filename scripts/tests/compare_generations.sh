@@ -5,7 +5,7 @@ set -e
 # Goal: Reproduce failing pattern at 1152x1728
 
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
-PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
+PROJECT_ROOT="$(dirname "$(dirname "$SCRIPT_DIR")")"
 BUILD_DIR="$PROJECT_ROOT/build"
 SERVER_EXE="$BUILD_DIR/bin/mysti_server"
 SD_CLI_EXE="/home/sebastian/Development/benchmark_sd_backends/sdcp/build/bin/sd-cli"

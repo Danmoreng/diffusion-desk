@@ -1,4 +1,6 @@
 $ErrorActionPreference = "Stop"
+$ScriptDir = $PSScriptRoot
+$ProjectRoot = Split-Path (Split-Path $ScriptDir)
 
 function Log-Message {
     param([string]$Message)
@@ -15,7 +17,9 @@ Start-Sleep -Seconds 2
 
 # 2. Start Server
 Log-Message "Starting Server on port 5555..."
-$serverProcess = Start-Process -FilePath ".\build\bin\mysti_server.exe" -ArgumentList "--listen-port 5555 --verbose --model-dir ""C:\StableDiffusion\Models"" --output-dir ""C:\StableDiffusion\MystiCanvas\outputs""" -PassThru -NoNewWindow
+$ServerExe = Join-Path (Join-Path $ProjectRoot "build") "bin\mysti_server.exe"
+if (!(Test-Path $ServerExe)) { $ServerExe = Join-Path (Join-Path $ProjectRoot "build") "mysti_server.exe" }
+$serverProcess = Start-Process -FilePath $ServerExe -ArgumentList "--listen-port 5555 --verbose --model-dir ""C:\StableDiffusion\Models"" --output-dir ""C:\StableDiffusion\MystiCanvas\outputs""" -PassThru -NoNewWindow
 Start-Sleep -Seconds 5
 
 # 3. Wait for Health

@@ -1,6 +1,8 @@
 # Verify Routing & Security Script for MystiCanvas
-$ServerExe = "build\bin\mysti_server.exe"
-if (!(Test-Path $ServerExe)) { $ServerExe = "build\mysti_server.exe" }
+$ScriptDir = $PSScriptRoot
+$ProjectRoot = Split-Path (Split-Path $ScriptDir)
+$ServerExe = Join-Path (Join-Path $ProjectRoot "build") "bin\mysti_server.exe"
+if (!(Test-Path $ServerExe)) { $ServerExe = Join-Path (Join-Path $ProjectRoot "build") "mysti_server.exe" }
 
 Write-Host "Starting server for routing & security test..."
 # Generate a known token for testing

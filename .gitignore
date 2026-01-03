@@ -39,3 +39,8 @@ public/app/
 *.db
 *.db-shm
 *.db-wal
+
+# Test artifacts
+scripts/tests/*.png
+scripts/tests/comparison_results/
+scripts/tests/max_res_test*/

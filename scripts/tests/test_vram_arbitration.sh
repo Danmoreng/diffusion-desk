@@ -4,7 +4,7 @@ set -e
 # Test Script for VRAM Arbitration Logic (Linux/Bash Port)
 
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
-PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
+PROJECT_ROOT="$(dirname "$(dirname "$SCRIPT_DIR")")"
 BUILD_DIR="$PROJECT_ROOT/build"
 SERVER_EXE="$BUILD_DIR/bin/mysti_server"
 

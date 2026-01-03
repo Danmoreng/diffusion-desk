@@ -3,7 +3,7 @@
 
 $ErrorActionPreference = "Stop"
 $ScriptDir = $PSScriptRoot
-$ProjectRoot = Split-Path -Parent $ScriptDir
+$ProjectRoot = Split-Path -Parent (Split-Path -Parent $ScriptDir)
 $BuildDir = Join-Path $ProjectRoot "build"
 
 # Locate Executable
