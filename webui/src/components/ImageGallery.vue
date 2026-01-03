@@ -304,8 +304,10 @@ const formatDate = (filename: string) => {
 
 const modalElement = ref<HTMLElement | null>(null)
 const carouselElement = ref<HTMLElement | null>(null)
+const sentinelElement = ref<HTMLElement | null>(null)
 let modalInstance: Modal | null = null
 let carouselInstance: Carousel | null = null
+let observer: IntersectionObserver | null = null
 
 const activeIndex = ref(0)
 
@@ -597,10 +599,22 @@ async function upscaleActiveImage() {
 
 onMounted(() => {
   fetchImages(true)
+  
+  observer = new IntersectionObserver((entries) => {
+    if (entries[0].isIntersecting && nextCursor.value && !isLoading.value) {
+      fetchImages(false)
+    }
+  }, { rootMargin: '200px' })
+  
+  // We use a watcher or nextTick because sentinel might not be in DOM yet if images.length is 0
+  watch(sentinelElement, (el) => {
+    if (el && observer) observer.observe(el)
+  })
 })
 
 onUnmounted(() => {
   extractModalInstance?.dispose()
+  observer?.disconnect()
 })
 </script>
 
@@ -653,16 +667,13 @@ onUnmounted(() => {
         </div>
       </div>
       
-      <!-- Load More -->
-      <div v-if="nextCursor" class="text-center my-4">
-        <button class="btn btn-outline-primary" @click="loadMore" :disabled="isLoading">
-            <span v-if="isLoading" class="spinner-border spinner-border-sm me-1"></span>
-            Load More
-        </button>
+      <!-- Infinite Scroll Sentinel -->
+      <div ref="sentinelElement" class="py-4 text-center">
+         <div v-if="isLoading && images.length > 0" class="spinner-border spinner-border-sm text-secondary" role="status"></div>
       </div>
       
       <!-- No Results -->
-      <div v-else class="text-center my-5 text-muted">
+      <div v-if="!isLoading && images.length > 0 && filteredImages.length === 0" class="text-center my-5 text-muted">
         <i class="bi bi-search display-1"></i>
         <p class="mt-2">No images match your current filters.</p>
         <button class="btn btn-sm btn-link" @click="selectedModel = 'all'; selectedDateRange = 'all'; minRating = 0; startDate = ''; endDate = '';">Reset Filters</button>
