@@ -5,8 +5,10 @@
 namespace fs = std::filesystem;
 
 static std::string last_loaded_model_path;
+static std::string last_loaded_mmproj_path;
 static int last_n_gpu_layers = -1;
 static int last_n_ctx = 2048;
+static int last_image_max_tokens = -1;
 
 void handle_load_llm_model(const httplib::Request& req, httplib::Response& res, SDSvrParams& svr_params, LlamaServer& llm_server) {
     try {
@@ -17,23 +19,38 @@ void handle_load_llm_model(const httplib::Request& req, httplib::Response& res, 
             return;
         }
         std::string model_id = body["model_id"];
+        std::string mmproj_id = body.value("mmproj_id", "");
         int n_gpu_layers = body.value("n_gpu_layers", -1);
         int n_ctx = body.value("n_ctx", 2048);
+        int image_max_tokens = body.value("image_max_tokens", -1);
         
         fs::path model_path = fs::path(svr_params.model_dir) / model_id;
-        
+        fs::path mmproj_path;
+
         if (!fs::exists(model_path)) {
             res.status = 404;
             res.set_content(make_error_json("model_not_found", "LLM model file not found"), "application/json");
             return;
         }
 
-        LOG_INFO("Loading LLM model: %s (gpu_layers: %d, ctx: %d)", model_path.string().c_str(), n_gpu_layers, n_ctx);
+        if (!mmproj_id.empty()) {
+            mmproj_path = fs::path(svr_params.model_dir) / mmproj_id;
+             if (!fs::exists(mmproj_path)) {
+                res.status = 404;
+                res.set_content(make_error_json("mmproj_not_found", "Multimodal projector file not found"), "application/json");
+                return;
+            }
+        }
 
-        if (llm_server.load_model(model_path.string(), n_gpu_layers, n_ctx)) {
+        LOG_INFO("Loading LLM model: %s (mmproj: %s, gpu_layers: %d, ctx: %d, img_max_tokens: %d)", 
+                 model_path.string().c_str(), mmproj_path.string().c_str(), n_gpu_layers, n_ctx, image_max_tokens);
+
+        if (llm_server.load_model(model_path.string(), mmproj_path.string(), n_gpu_layers, n_ctx, image_max_tokens)) {
             last_loaded_model_path = model_path.string();
+            last_loaded_mmproj_path = mmproj_path.string();
             last_n_gpu_layers = n_gpu_layers;
             last_n_ctx = n_ctx;
+            last_image_max_tokens = image_max_tokens;
             res.set_content(R"({\"status\":\"success\",\"model\":\")" + model_id + R"("})", "application/json");
         } else {
             res.status = 500;
@@ -57,7 +74,7 @@ void ensure_llm_loaded(SDSvrParams& svr_params, LlamaServer& llm_server) {
 
     if (!last_loaded_model_path.empty()) {
         LOG_INFO("Auto-reloading last LLM: %s", last_loaded_model_path.c_str());
-        llm_server.load_model(last_loaded_model_path, last_n_gpu_layers, last_n_ctx);
+        llm_server.load_model(last_loaded_model_path, last_loaded_mmproj_path, last_n_gpu_layers, last_n_ctx, last_image_max_tokens);
         return;
     }
 
@@ -65,7 +82,7 @@ void ensure_llm_loaded(SDSvrParams& svr_params, LlamaServer& llm_server) {
         fs::path model_path = fs::path(svr_params.model_dir) / svr_params.default_llm_model;
         if (fs::exists(model_path)) {
             LOG_INFO("Auto-loading default LLM: %s", svr_params.default_llm_model.c_str());
-            llm_server.load_model(model_path.string(), 0, 2048);
+            llm_server.load_model(model_path.string(), "", 0, 2048, -1);
         } else {
             LOG_WARN("Default LLM model not found: %s", model_path.string().c_str());
         }
@@ -112,6 +129,7 @@ int run_llm_worker(SDSvrParams& svr_params, SDContextParams& ctx_params) {
         j["vram_allocated_mb"] = (int)(get_current_process_vram_usage_gb() * 1024.0f);
         j["vram_free_mb"] = (int)(get_free_vram_gb() * 1024.0f);
         j["model_path"] = last_loaded_model_path;
+        j["mmproj_path"] = last_loaded_mmproj_path;
         res.set_content(j.dump(), "application/json");
     });
     

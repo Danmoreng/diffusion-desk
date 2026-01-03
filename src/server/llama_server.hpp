@@ -13,7 +13,7 @@ public:
     LlamaServer();
     ~LlamaServer();
 
-    bool load_model(const std::string& model_path, int n_gpu_layers = -1, int n_ctx = 2048);
+    bool load_model(const std::string& model_path, const std::string& mmproj_path = "", int n_gpu_layers = -1, int n_ctx = 2048, int image_max_tokens = -1);
     void stop();
 
     void init_server(httplib::Server& svr, std::function<void()> before_handler = nullptr, std::mutex* external_mutex = nullptr);

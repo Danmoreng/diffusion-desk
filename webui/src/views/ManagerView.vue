@@ -16,6 +16,7 @@ const activeTab = computed(() => {
   const path = router.currentRoute.value.path
   if (path.includes('/manager/styles')) return 'styles'
   if (path.includes('/manager/models')) return 'models'
+  if (path.includes('/manager/llms')) return 'llms'
   if (path.includes('/manager/loras')) return 'loras'
   return 'tags'
 })
@@ -346,6 +347,9 @@ onUnmounted(() => {
         <router-link class="nav-link" :class="{ active: activeTab === 'models' }" to="/manager/models">Models</router-link>
       </li>
       <li class="nav-item">
+        <router-link class="nav-link" :class="{ active: activeTab === 'llms' }" to="/manager/llms">Intelligence</router-link>
+      </li>
+      <li class="nav-item">
         <router-link class="nav-link" :class="{ active: activeTab === 'loras' }" to="/manager/loras">LoRAs</router-link>
       </li>
       <li class="nav-item">
@@ -528,6 +532,58 @@ onUnmounted(() => {
             <tr v-if="filteredModelMetadata.length === 0">
               <td colspan="5" class="text-center py-5 text-muted">
                 No models found in database. Try syncing from disk.
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- LLMs Content -->
+    <div v-else-if="activeTab === 'llms'" class="flex-grow-1 d-flex flex-column overflow-hidden">
+      <!-- Toolbar -->
+      <div class="d-flex gap-2 mb-3 bg-body-secondary p-2 rounded">
+        <input type="text" v-model="searchQuery" class="form-control form-control-sm" placeholder="Search LLMs..." style="max-width: 250px;">
+        <button class="btn btn-sm btn-outline-primary" @click="syncModels()" :disabled="isLoading">
+          <i class="bi bi-arrow-repeat"></i> Sync Models from Disk
+        </button>
+      </div>
+
+      <!-- LLMs Table -->
+      <div class="flex-grow-1 overflow-auto bg-body rounded shadow-sm">
+        <table class="table table-hover mb-0 align-middle">
+          <thead class="table-light sticky-top">
+            <tr>
+              <th>Model ID</th>
+              <th>Vision Projector</th>
+              <th>Context</th>
+              <th class="text-end">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="model in filteredModelMetadata.filter(m => m.metadata.type === 'llm')" :key="model.id">
+              <td>
+                <div class="fw-bold">{{ model.metadata.name || model.id }}</div>
+                <div class="x-small text-muted font-monospace">{{ model.id }}</div>
+              </td>
+              <td>
+                <span v-if="model.metadata.mmproj" class="badge bg-success bg-opacity-10 text-success border border-success border-opacity-25">
+                  <i class="bi bi-eye"></i> {{ model.metadata.mmproj.split('/').pop() }}
+                </span>
+                <span v-else class="text-muted x-small italic">None (Text Only)</span>
+              </td>
+              <td>
+                <span class="badge bg-secondary bg-opacity-10 text-secondary">{{ model.metadata.n_ctx || '2048' }}</span>
+              </td>
+              <td class="text-end">
+                <button class="btn btn-sm btn-outline-secondary" @click="openModelEditModal(model)">
+                  <i class="bi bi-pencil"></i> Edit
+                </button>
+              </td>
+            </tr>
+            <tr v-if="filteredModelMetadata.filter(m => m.metadata.type === 'llm').length === 0">
+              <td colspan="4" class="text-center py-5 text-muted">
+                No LLM models found. Try syncing from disk.
               </td>
             </tr>
           </tbody>
@@ -724,8 +780,27 @@ onUnmounted(() => {
                 <div class="form-text x-small">This word will be automatically added to the prompt when you activate this LoRA.</div>
               </div>
 
+              <!-- LLM Specific -->
+              <div class="col-md-12" v-if="editingModelMetadata.metadata.type === 'llm'">
+                <div class="col-12"><hr class="my-2"></div>
+                <label class="form-label fw-bold small text-uppercase text-success">Multimodal Projector (Vision)</label>
+                <input type="text" v-model="editingModelMetadata.metadata.mmproj" class="form-control border-success" placeholder="e.g. mmproj-model-f16.gguf">
+                <div class="form-text x-small">Filename of the vision projector (must be in models directory). Required for image analysis.</div>
+                
+                <div class="row mt-2">
+                    <div class="col-6">
+                        <label class="form-label fw-bold small text-uppercase">Context Size</label>
+                        <input type="number" v-model.number="editingModelMetadata.metadata.n_ctx" class="form-control" step="1024" placeholder="2048">
+                    </div>
+                    <div class="col-6">
+                        <label class="form-label fw-bold small text-uppercase">Max Image Tokens</label>
+                        <input type="number" v-model.number="editingModelMetadata.metadata.image_max_tokens" class="form-control" step="256" placeholder="-1 (Auto)">
+                    </div>
+                </div>
+              </div>
+
               <!-- Advanced Components (Base Model Only) -->
-              <template v-if="editingModelMetadata.metadata.type !== 'lora' && editingModelMetadata.metadata.type !== 'upscaler'">
+              <template v-if="editingModelMetadata.metadata.type !== 'lora' && editingModelMetadata.metadata.type !== 'upscaler' && editingModelMetadata.metadata.type !== 'llm'">
                 <div class="col-12"><hr class="my-2"></div>
                 <div class="col-md-6">
                   <label class="form-label fw-bold small text-uppercase">VAE Path</label>

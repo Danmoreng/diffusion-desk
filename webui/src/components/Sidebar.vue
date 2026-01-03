@@ -62,6 +62,7 @@ const menuItems = [
   { path: '/inpainting', label: 'Inpainting', icon: 'bi-brush' },
   { path: '/upscale', label: 'Upscale', icon: 'bi-stars' },
   { path: '/exploration', label: 'Dynamic Exploration', icon: 'bi-search' },
+  { path: '/vision', label: 'Vision Debugger', icon: 'bi-eye' },
   { path: '/gallery', label: 'Gallery', icon: 'bi-images' },
   { path: '/manager', label: 'Library', icon: 'bi-collection' },
 ]

@@ -2,9 +2,15 @@
 #include "httplib.h"
 #include "utils/common.hpp"
 #include <iostream>
+#include <fstream>
 #include <chrono>
 
 namespace mysti {
+
+static bool str_ends_with(const std::string& str, const std::string& suffix) {
+    return str.size() >= suffix.size() && 
+           str.compare(str.size() - suffix.size(), suffix.size(), suffix) == 0;
+}
 
 TaggingService::TaggingService(std::shared_ptr<Database> db, int llm_port, const std::string& token, const std::string& system_prompt)
     : m_db(db), m_llm_port(llm_port), m_token(token), m_system_prompt(system_prompt) {}
@@ -70,10 +76,12 @@ void TaggingService::loop() {
         if (!m_token.empty()) h.emplace("X-Internal-Token", m_token);
         
         bool loaded = false;
+        std::string loaded_mmproj = "";
         if (auto res = cli.Get("/internal/health", h)) {
              try {
                  auto j = mysti::json::parse(res->body);
                  loaded = j.value("loaded", false);
+                 loaded_mmproj = j.value("mmproj_path", "");
              } catch(...) {}
         }
 
@@ -99,6 +107,10 @@ void TaggingService::loop() {
                          loaded = true;
                          reloaded = true;
                          m_load_retry_count = 0;
+                         // Check mmproj after reload
+                         if (auto h_res = cli.Get("/internal/health", h)) {
+                             try { loaded_mmproj = mysti::json::parse(h_res->body).value("mmproj_path", ""); } catch(...) {}
+                         }
                     } else {
                          std::cout << "[Tagging Service] Failed to load LLM." << std::endl;
                          m_last_load_fail_time = std::chrono::steady_clock::now();
@@ -122,16 +134,64 @@ void TaggingService::loop() {
 
             int id = std::get<0>(item);
             std::string prompt = std::get<2>(item);
+            std::string file_path = std::get<3>(item);
+
+            // Read Image
+            std::ifstream img_file(file_path, std::ios::binary | std::ios::ate);
+            if (!img_file.is_open()) {
+                // Try prepending "." if path starts with / and it's a relative path in context of project root
+                if (file_path.size() > 0 && file_path[0] == '/') {
+                    std::string rel_path = "." + file_path;
+                    img_file.open(rel_path, std::ios::binary | std::ios::ate);
+                    if (img_file.is_open()) {
+                        file_path = rel_path;
+                    }
+                }
+            }
+
+            if (!img_file.is_open()) {
+                std::cerr << "[Tagging Service] Could not open image: " << file_path << std::endl;
+                m_db->mark_as_tagged(id);
+                continue;
+            }
+            std::streamsize size = img_file.tellg();
+            img_file.seekg(0, std::ios::beg);
+            std::vector<unsigned char> buffer(size);
+            if (!img_file.read((char*)buffer.data(), size)) {
+                 std::cerr << "[Tagging Service] Failed to read image: " << file_path << std::endl;
+                 m_db->mark_as_tagged(id);
+                 continue;
+            }
+            
+            // Base64 Encode
+            std::string b64 = base64_encode(buffer.data(), (unsigned int)buffer.size());
+            // Determine Mime Type (simple check)
+            std::string mime_type = "image/png";
+            if (str_ends_with(file_path, ".jpg") || str_ends_with(file_path, ".jpeg")) mime_type = "image/jpeg";
+            else if (str_ends_with(file_path, ".webp")) mime_type = "image/webp";
+
+            std::string data_uri = "data:" + mime_type + ";base64," + b64;
             
             mysti::json chat_req;
-            chat_req["messages"] = mysti::json::array({
-                {{"role", "system"}, {"content", m_system_prompt}},
-                {{"role", "user"}, {"content", prompt}}
-            });
+            chat_req["messages"] = mysti::json::array();
+            chat_req["messages"].push_back({{"role", "system"}, {"content", m_system_prompt}});
+            
+            if (!loaded_mmproj.empty()) {
+                // Vision Request
+                mysti::json user_content = mysti::json::array();
+                user_content.push_back({{"type", "text"}, {"text", "Analyze this image and provide descriptive tags (Subject, Style, Mood). Return JSON."}});
+                user_content.push_back({{"type", "image_url"}, {"image_url", {{"url", data_uri}}}});
+                chat_req["messages"].push_back({{"role", "user"}, {"content", user_content}});
+                std::cout << "[Tagging Service] Tagging image ID " << id << " (Vision)..." << std::endl;
+            } else {
+                // Text-only Fallback
+                chat_req["messages"].push_back({{"role", "user"}, {"content", prompt}});
+                std::cout << "[Tagging Service] Tagging image ID " << id << " (Text-Only)..." << std::endl;
+            }
+
             chat_req["temperature"] = 0.1;
             chat_req["response_format"] = {{"type", "json_object"}};
             
-            std::cout << "[Tagging Service] Tagging image ID " << id << "..." << std::endl;
             cli.set_read_timeout(120);
             
             auto chat_res = cli.Post("/v1/chat/completions", h, chat_req.dump(), "application/json");
@@ -140,7 +200,7 @@ void TaggingService::loop() {
                 try {
                     auto rj = mysti::json::parse(chat_res->body);
                     if (!rj.contains("choices") || rj["choices"].empty()) {
-                        m_db->mark_as_tagged(id); // Skip invalid
+                        m_db->mark_as_tagged(id); 
                         continue;
                     }
                     
@@ -178,7 +238,7 @@ void TaggingService::loop() {
                                 if (!tag_val.is_string()) continue;
                                 std::string tag = tag_val.get<std::string>();
                                 if (tag.length() < 2) continue;
-                                m_db->add_tag_by_id(id, tag, "llm_auto");
+                                m_db->add_tag_by_id(id, tag, "llm_vision");
                                 count++;
                             }
                             std::cout << "[Tagging Service] ID " << id << ": Saved " << count << " tags." << std::endl;
@@ -189,10 +249,10 @@ void TaggingService::loop() {
                     
                 } catch (const std::exception& e) {
                     std::cerr << "[Tagging Service] Error processing ID " << id << ": " << e.what() << std::endl;
-                    m_db->mark_as_tagged(id); // Mark as tagged to avoid infinite retry loop on bad data
+                    m_db->mark_as_tagged(id); 
                 }
             } else {
-                std::cout << "[Tagging Service] ID " << id << ": LLM Request failed." << std::endl;
+                std::cout << "[Tagging Service] ID " << id << ": LLM Request failed (" << (chat_res ? chat_res->status : 0) << ")." << std::endl;
             }
         }
     }

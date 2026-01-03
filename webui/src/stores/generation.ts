@@ -383,10 +383,27 @@ export const useGenerationStore = defineStore('generation', () => {
   async function loadLlmModel(modelId: string) {
     isLlmLoading.value = true
     try {
+      let mmproj = '';
+      let n_ctx = 2048;
+      let image_max_tokens = -1;
+      if (modelId) {
+          try {
+              const res = await fetch(`/v1/models/metadata/${encodeURIComponent(modelId)}`)
+              if (res.ok) {
+                  const meta = await res.json()
+                  if (meta) {
+                      if (meta.mmproj) mmproj = meta.mmproj;
+                      if (meta.n_ctx) n_ctx = meta.n_ctx;
+                      if (meta.image_max_tokens) image_max_tokens = meta.image_max_tokens;
+                  }
+              }
+          } catch(e) { console.error("Error fetching LLM metadata:", e) }
+      }
+
       const response = await fetch('/v1/llm/load', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ model_id: modelId })
+        body: JSON.stringify({ model_id: modelId, mmproj_id: mmproj, n_ctx: n_ctx, image_max_tokens: image_max_tokens })
       })
       if (!response.ok) throw new Error('Failed to load LLM model')
       currentLlmModel.value = modelId
