@@ -125,6 +125,10 @@ int run_sd_worker(SDSvrParams& svr_params, SDContextParams& ctx_params, SDGenera
         handle_load_model(req, res, ctx);
     });
 
+    svr.Post("/v1/models/unload", [&](const httplib::Request& req, httplib::Response& res) {
+        handle_unload_model(res, ctx);
+    });
+
     svr.Get("/v1/config", [&](const httplib::Request& req, httplib::Response& res) {
         handle_get_config(req, res, ctx);
     });
