@@ -89,7 +89,7 @@ const navigateToManager = (tab: string) => {
         </div>
         
         <div class="dropdown w-100">
-           <button class="btn btn-sm btn-outline-secondary w-100 text-start text-truncate d-flex justify-content-between align-items-center bg-body" type="button" @click="toggleModelMenu">
+           <button class="btn btn-sm btn-outline-secondary w-100 text-start text-truncate d-flex justify-content-between align-items-center bg-body" type="button" @click.stop="toggleModelMenu">
              <span>{{ activePresetName }}</span>
              <i class="bi bi-chevron-down x-small"></i>
            </button>
@@ -120,7 +120,7 @@ const navigateToManager = (tab: string) => {
         </div>
         
         <div class="dropdown w-100">
-           <button class="btn btn-sm btn-outline-secondary w-100 text-start text-truncate d-flex justify-content-between align-items-center bg-body" type="button" @click="toggleLlmMenu">
+           <button class="btn btn-sm btn-outline-secondary w-100 text-start text-truncate d-flex justify-content-between align-items-center bg-body" type="button" @click.stop="toggleLlmMenu">
              <span>{{ activeLlmPresetName }}</span>
              <i class="bi bi-chevron-down x-small"></i>
            </button>

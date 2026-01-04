@@ -25,18 +25,18 @@ This document outlines the roadmap for MystiCanvas, merging original milestones 
     *   [x] Ensure all endpoints use standard error envelope.
     *   [x] Verify internal token auth on *all* routes (including proxy).
 *   [x] **A2. Worker Lifecycle Resilience:**
-    *   Orchestrator monitors worker health.
-    *   Automatic restart on crash.
-    *   Broadcast "system alert" to UI via WebSockets.
+    *   [x] Orchestrator monitors worker health.
+    *   [x] Automatic restart on crash.
+    *   [x] Broadcast "system alert" to UI via WebSockets.
 *   [x] **A3. Structured Logs & Correlation:**
-    *   Add request IDs to logs.
-    *   Standardized text logging format (Apache/PHP style): `[timestamp] [level] [file:line] message`.
+    *   [x] Add request IDs to logs.
+    *   [x] Standardized text logging format (Apache/PHP style): `[timestamp] [level] [file:line] message`.
 *   [x] **A4. UI Modularity & Stores:**
-    *   Extract `Sidebar.vue` sub-components (e.g., `VramIndicator.vue`, `ModelSelector.vue`).
-    *   Move business rules (validation, generation logic) from components into Pinia store actions.
+    *   [x] Extract `Sidebar.vue` sub-components (e.g., `VramIndicator.vue`, `ModelSelector.vue`).
+    *   [x] Move business rules (validation, generation logic) from components into Pinia store actions.
 *   [x] **A5. Config Hygiene:**
-    *   Move hardcoded system prompts (Assistant, Tagger) to `config.json`.
-    *   Externalize tool schemas/descriptions.
+    *   [x] Move hardcoded system prompts (Assistant, Tagger) to `config.json` / `SDSvrParams`.
+    *   [x] Externalize tool schemas/descriptions.
 
 **Definition of Done:**
 *   `curl /internal/health` works uniformly across all services.
@@ -58,24 +58,22 @@ This document outlines the roadmap for MystiCanvas, merging original milestones 
 
 **Goal:** Prevent OOM *without* brute-force unloading; explain behavior to the user.
 
-*   [ ] **B1. Health-Driven VRAM Registry:**
-    *   Workers report detailed memory usage.
-    *   Orchestrator tracks model footprints.
+*   [x] **B1. Health-Driven VRAM Registry:**
+    *   [x] Workers report detailed memory usage.
+    *   [x] Orchestrator tracks model footprints.
 *   [x] **B2. Predictive Arbitration (Orchestrator):**
-    *   Compute expected VRAM (Weights + Compute + Safety).
-    *   Logic: Proceed vs. Soft Unload (KV) vs. Hard Unload.
-    *   *(Partial: Implemented arbitration for LLM Loading to prevent OOM)*.
-*   [ ] **B2.5. Latency-Optimized State Transitions:**
-    *   LRU / Idle unload policy (e.g., "unload after 10m idle").
-    *   Pre-warm models when resources allow.
+    *   [x] Compute expected VRAM (Weights + Compute + Safety).
+    *   [x] Logic: Proceed vs. Soft Unload (KV) vs. Hard Unload.
+*   [x] **B2.5. Latency-Optimized State Transitions:**
+    *   [x] LRU / Idle unload policy (e.g., "unload after 10m idle").
+    *   [ ] Pre-warm models when resources allow.
 *   [x] **B3. Surgical Worker-Level Mitigations:**
     *   [x] Dynamic VAE tiling based on resolution.
     *   [x] Auto VAE-on-CPU fallback if VRAM is tight.
     *   [x] **B3.4 Text Encoder Offload:** Enable `clip_on_cpu` for massive encoders (e.g., T5XXL) per preset.
 *   [x] **B4. UI Feedback:**
-    *   Indicate "Projected vs Actual" VRAM.
-    *   Notifications for "VAE moved to CPU" or "LLM Unloaded".
-    *   *(Partial: Implemented user-facing errors for insufficient VRAM during LLM load)*.
+    *   [x] Indicate "Projected vs Actual" VRAM.
+    *   [x] Notifications for "VAE moved to CPU" or "LLM Unloaded".
 
 **Definition of Done:**
 *   Zero "silent crashes" or blank images due to VRAM.
@@ -91,9 +89,9 @@ This document outlines the roadmap for MystiCanvas, merging original milestones 
 *   [x] **C1. Schema Versioning & Migrations:**
     *   [x] Use `PRAGMA user_version`.
     *   [x] Implement idempotent migration system on startup.
-*   [ ] **C2. Performance Optimization:**
-    *   Keyset pagination for Gallery (cursor-based).
-    *   Verify/Add indexes.
+*   [x] **C2. Performance Optimization:**
+    *   [x] Keyset pagination for Gallery (cursor-based).
+    *   [x] Verify/Add indexes.
 *   [x] **C3. Asset Management:**
     *   [x] `generation_files` table (thumbnails, previews, masks).
     *   [x] Job for background thumbnail creation.
@@ -125,12 +123,12 @@ This document outlines the roadmap for MystiCanvas, merging original milestones 
     *   [x] `image_presets` table: `unet`, `vae`, `clip`, `vram_weights_mb_estimate`, `vram_weights_mb_measured`, `default_params`, `preferred_params`.
     *   [x] `llm_presets` table: `model`, `mmproj`, `n_ctx`, `capabilities`, `role` (e.g., "Vision", "Assistant").
 *   [x] **D2. Preset Manager UI:**
-    *   Interface to assemble/edit presets.
-    *   Auto-calculate VRAM estimates from file sizes (heuristic).
-    *   Update `vram_weights_mb_measured` from actual usage reports.
+    *   [x] Interface to assemble/edit presets.
+    *   [x] Auto-calculate VRAM estimates from file sizes (heuristic).
+    *   [x] Update `vram_weights_mb_measured` from actual usage reports.
 *   [x] **D3. Runtime Integration:**
     *   [x] Orchestrator loads by Preset ID.
-    *   [ ] VRAM Arbiter uses preset metadata for predictions.
+    *   [x] VRAM Arbiter uses preset metadata for predictions.
 
 **Definition of Done:**
 *   User can switch between "SDXL High Quality" and "Flux Fast" with one click.
@@ -143,11 +141,11 @@ This document outlines the roadmap for MystiCanvas, merging original milestones 
 **Goal:** An integrated Chat Agent that can control the application.
 
 *   [ ] **E1. Assistant UI:** Persistent sidebar chat drawer.
-*   [ ] **E2. Tool Definition:**
-    *   `get_library_items(category)`, `apply_style()`, `enhance_prompt()`, `search_history()` (Depends on C4).
-*   [ ] **E3. Safety Rails:**
-    *   Orchestrator executes tools (not the LLM worker directly).
-    *   Permission checks and loop prevention.
+*   [x] **E2. Tool Definition:**
+    *   [x] `get_library_items(category)`, `apply_style()`, `enhance_prompt()`, `search_history()` (Depends on C4).
+*   [x] **E3. Safety Rails:**
+    *   [x] Orchestrator executes tools (not the LLM worker directly).
+    *   [x] Permission checks and loop prevention.
 *   [ ] **E4. Integration:**
     *   Connect `prompt_library` (C7) to Assistant context.
 
@@ -163,7 +161,7 @@ This document outlines the roadmap for MystiCanvas, merging original milestones 
 
 *   [x] **F1. Vision Presets:** Support `mmproj` in LLM presets (Depends on D1).
 *   [ ] **F2. Image Handoff:** Mechanism to pass image paths to LLM worker.
-*   [ ] **F3. Vision Tagging Job:** Background job to tag images based on visual content (Depends on C6 + D1).
+*   [x] **F3. Vision Tagging Job:** Background job to tag images based on visual content (Depends on C6 + D1).
 *   [ ] **F4. Feedback Loop:** "Analyze last image and suggest improvements."
 
 ---
@@ -184,7 +182,7 @@ This document outlines the roadmap for MystiCanvas, merging original milestones 
 
 **Goal:** Installer-grade polish.
 
-*   [ ] **G1. Build Automation:** One-command release build.
+*   [x] **G1. Build Automation:** One-command release build.
 *   [ ] **G2. Installer:** Inno Setup / NSIS.
 *   [ ] **G2.1. First-Run Wizard:**
     *   Set model paths.
