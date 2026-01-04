@@ -295,7 +295,7 @@ const clearInitImage = () => {
         ></textarea>
       </div>
 
-      <div class="mb-3">
+      <div class="mb-3" v-show="store.cfgScale !== 1">
         <label for="negativePrompt" class="form-label">Negative Prompt:</label>
         <textarea
           id="negativePrompt"
