@@ -18,10 +18,10 @@ const store = useGenerationStore()
           <p class="mb-0 small">Waiting for worker...</p>
         </div>
 
-        <!-- Loading State -->
-        <div v-else-if="store.isGenerating" class="d-flex flex-column align-items-center justify-content-center h-100 text-muted p-5 bg-dark bg-opacity-10 rounded">
+        <!-- Processing State -->
+        <div v-else-if="store.currentHistoryItem && store.currentHistoryItem.status === 'processing'" class="d-flex flex-column align-items-center justify-content-center h-100 text-muted p-5 bg-dark bg-opacity-10 rounded">
           <div class="spinner-border text-primary mb-3" role="status">
-            <span class="visually-hidden">Loading...</span>
+            <span class="visually-hidden">Generating...</span>
           </div>
           
           <div class="w-100 px-4" style="max-width: 400px;">

@@ -240,10 +240,10 @@ export const useGenerationStore = defineStore('generation', () => {
       item.status = 'processing'
       isGenerating.value = true
       
-      // If user is "watching" the end of the queue (or near it), jump to this item?
-      // Or if they are way back in history, maybe don't jump?
-      // For now, let's jump to it so they see progress.
-      seekHistory(nextIdx)
+      // Only jump to it if we are at the end of history
+      if (historyIndex.value === -1 || historyIndex.value >= nextIdx - 1) {
+          seekHistory(nextIdx)
+      }
       
       const startTime = Date.now()
       
@@ -1138,10 +1138,10 @@ export const useGenerationStore = defineStore('generation', () => {
     // Add to History
     history.value.push(newItem)
     
-    // If we were at the end (or history was empty), jump to this new item
-    // Actually, always jump to new item when user explicitly requests generation?
-    // Yes, usually.
-    seekHistory(history.value.length - 1)
+    // Jump to the new item ONLY if we were already at the latest item
+    if (historyIndex.value === history.value.length - 2 || historyIndex.value === -1) {
+        seekHistory(history.value.length - 1)
+    }
     
     // Trigger Processing
     processQueue()
