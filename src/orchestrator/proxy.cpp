@@ -65,11 +65,16 @@ void Proxy::forward_request(const httplib::Request& req, httplib::Response& res,
     }
 
     // Detect if we should use streaming (SSE or long-running completion paths)
-    bool is_completion = path.find("/completions") != std::string::npos || 
-                         path.find("/progress") != std::string::npos ||
-                         path.find("/llm/load") != std::string::npos;
+    bool is_stream_req = (req.body.find("\"stream\": true") != std::string::npos || 
+                          req.body.find("\"stream\":true") != std::string::npos);
     
-    if (is_completion) {
+    bool is_sse_path = path.find("/progress") != std::string::npos;
+    bool is_long_running = path.find("/llm/load") != std::string::npos;
+    
+    // Use streaming proxy ONLY for actual streams or specific long-running paths
+    bool use_streaming = is_sse_path || (is_stream_req && path.find("/completions") != std::string::npos) || is_long_running;
+    
+    if (use_streaming) {
         LOG_DEBUG("Using streaming proxy for %s", path.c_str());
         auto queue = std::make_shared<ChunkQueue>();
         auto status = std::make_shared<std::atomic<int>>(0);

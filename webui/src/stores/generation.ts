@@ -16,6 +16,7 @@ export const useGenerationStore = defineStore('generation', () => {
     strength: 0.75,
     batchCount: 1,
     actionBarPosition: 'bottom' as 'top' | 'bottom',
+    assistantPosition: 'right' as 'left' | 'right',
   }
 
   // Load state from localStorage or use defaults
@@ -74,6 +75,7 @@ export const useGenerationStore = defineStore('generation', () => {
   const outputDir = ref('outputs')
   const modelDir = ref('models')
   const actionBarPosition = ref(initialState.actionBarPosition as 'top' | 'bottom')
+  const assistantPosition = ref(initialState.assistantPosition as 'left' | 'right')
 
   // Style Management
   interface Style {
@@ -477,7 +479,7 @@ export const useGenerationStore = defineStore('generation', () => {
   async function fetchModels() {
     isModelsLoading.value = true
     fetchConfig() // Also fetch server config
-    fetchPresets() // Fetch presets alongside models
+    const presetsPromise = fetchPresets() // Start fetching presets
     try {
       const response = await fetch('/v1/models')
       const data = await response.json()
@@ -496,10 +498,33 @@ export const useGenerationStore = defineStore('generation', () => {
         currentLlmModel.value = activeLlmModel.id
         isLlmLoaded.value = !!activeLlmModel.loaded
       }
+
+      // Wait for presets and sync
+      await presetsPromise
+      syncPresetsWithActiveModels()
+
     } catch (e) {
       console.error('Failed to fetch models:', e)
     } finally {
       isModelsLoading.value = false
+    }
+  }
+
+  function syncPresetsWithActiveModels() {
+    // Sync Image Preset
+    if (currentModel.value) {
+      const p = imagePresets.value.find(p => p.unet_path === currentModel.value)
+      if (p) {
+        currentImagePresetId.value = p.id
+      }
+    }
+
+    // Sync LLM Preset
+    if (currentLlmModel.value) {
+      const p = llmPresets.value.find(p => p.model_path === currentLlmModel.value)
+      if (p) {
+        currentLlmPresetId.value = p.id
+      }
     }
   }
   
@@ -805,7 +830,7 @@ export const useGenerationStore = defineStore('generation', () => {
 
 
   // Watch for changes in settings and persist them to localStorage
-  watch([prompt, negativePrompt, steps, cfgScale, sampler, width, height, theme, saveImages, strength, batchCount, hiresFix, hiresUpscaleModel, hiresUpscaleFactor, hiresDenoisingStrength, hiresSteps, actionBarPosition], (newValues) => {
+  watch([prompt, negativePrompt, steps, cfgScale, sampler, width, height, theme, saveImages, strength, batchCount, hiresFix, hiresUpscaleModel, hiresUpscaleFactor, hiresDenoisingStrength, hiresSteps, actionBarPosition, assistantPosition], (newValues) => {
     const settingsToSave = {
       prompt: newValues[0],
       negativePrompt: newValues[1],
@@ -824,6 +849,7 @@ export const useGenerationStore = defineStore('generation', () => {
       hiresDenoisingStrength: newValues[14],
       hiresSteps: newValues[15],
       actionBarPosition: newValues[16],
+      assistantPosition: newValues[17],
     }
     localStorage.setItem('webui-settings', JSON.stringify(settingsToSave))
   }, { deep: true })
@@ -1188,6 +1214,6 @@ export const useGenerationStore = defineStore('generation', () => {
     styles, activeStyleNames, fetchStyles, saveStyle, deleteStyle, applyStyle, extractStylesFromPrompt,
     currentModelMetadata, resetToModelDefaults, applyAspectRatio, snapToNext16,
     imagePresets, llmPresets, currentImagePresetId, currentLlmPresetId, loadImagePreset, loadLlmPreset, fetchPresets,
-    actionBarPosition
+    actionBarPosition, assistantPosition
   }
 })

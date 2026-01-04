@@ -1,11 +1,13 @@
 <script setup lang="ts">
 import { onMounted, computed, watch, onUnmounted, ref } from 'vue'
 import { useGenerationStore } from '@/stores/generation'
+import { useAssistantStore } from '@/stores/assistant'
 import Tooltip from 'bootstrap/js/dist/tooltip'
 import VramIndicator from './VramIndicator.vue'
 import ModelSelector from './ModelSelector.vue'
 
 const store = useGenerationStore()
+const assistantStore = useAssistantStore()
 const modelSelectorRef = ref<any>(null)
 
 // Close menu when clicking outside
@@ -96,6 +98,19 @@ const menuItems = [
     <!-- Bottom Actions -->
     <div class="mt-auto border-top pt-2">
       <VramIndicator />
+
+      <a 
+        href="#"
+        class="nav-link d-flex align-items-center px-2 py-2 mb-1"
+        :class="{ 'justify-content-center': store.isSidebarCollapsed, 'active-assistant': assistantStore.isOpen }"
+        @click.prevent="assistantStore.toggleAssistant"
+        title="Creative Assistant"
+        data-bs-toggle="tooltip"
+        data-bs-placement="right"
+      >
+        <i class="fs-5 me-2 bi bi-robot" :class="{ 'me-0': store.isSidebarCollapsed }"></i>
+        <span v-if="!store.isSidebarCollapsed">Assistant</span>
+      </a>
 
       <router-link 
         to="/settings" 
@@ -190,6 +205,11 @@ const menuItems = [
 .router-link-active {
   background-color: var(--bs-primary) !important;
   color: white !important;
+}
+
+.active-assistant {
+  background-color: var(--bs-primary-bg-subtle);
+  color: var(--bs-primary-text-emphasis) !important;
 }
 
 .cursor-pointer {

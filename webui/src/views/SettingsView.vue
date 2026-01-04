@@ -35,6 +35,13 @@ async function runTest() {
             <option value="top">Top</option>
           </select>
         </div>
+        <div class="d-flex justify-content-between align-items-center mt-3">
+          <label for="assistantPos" class="form-label mb-0">Assistant Position</label>
+          <select id="assistantPos" class="form-select form-select-sm" v-model="store.assistantPosition" style="width: auto; min-width: 120px;">
+            <option value="right">Right</option>
+            <option value="left">Left</option>
+          </select>
+        </div>
       </div>
       <div class="col-md-6">
         <h5>Image Generation</h5>
