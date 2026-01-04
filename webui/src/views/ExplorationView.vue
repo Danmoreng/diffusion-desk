@@ -3,6 +3,7 @@ import { onMounted, computed } from 'vue';
 import { useExplorationStore } from '@/stores/exploration';
 import { useGenerationStore } from '@/stores/generation';
 import CondensedGenerationForm from '@/components/CondensedGenerationForm.vue';
+import GenerationProgress from '@/components/GenerationProgress.vue';
 
 const explorationStore = useExplorationStore();
 const generationStore = useGenerationStore();
@@ -102,19 +103,14 @@ const dynamicAspectRatio = computed(() => {
                       </div>
                       
                       <!-- Cell Progress (Only for active) -->
-                      <div v-if="cell.activeGenerating && generationStore.progressSteps > 0" class="px-3">
-                        <div class="tiny-text text-info mb-1 fw-bold">{{ generationStore.progressPhase }}</div>
-                        <div class="progress bg-secondary mb-1" style="height: 4px;">
-                          <div 
-                            class="progress-bar bg-info progress-bar-striped progress-bar-animated" 
-                            role="progressbar" 
-                            :style="{ width: (generationStore.progressStep / generationStore.progressSteps * 100) + '%' }"
-                          ></div>
-                        </div>
-                        <div class="tiny-text text-light d-flex justify-content-between">
-                          <span>{{ generationStore.progressStep }}/{{ generationStore.progressSteps }}</span>
-                          <span>{{ generationStore.progressTime.toFixed(0) }}s</span>
-                        </div>
+                      <div v-if="cell.activeGenerating" class="px-3 w-100">
+                        <GenerationProgress 
+                          compact
+                          :step="generationStore.progressStep"
+                          :total-steps="generationStore.progressSteps"
+                          :phase="generationStore.progressPhase"
+                          :time-elapsed="generationStore.progressTime"
+                        />
                       </div>
                     </div>
                   </div>

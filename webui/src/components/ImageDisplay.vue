@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { useGenerationStore } from '@/stores/generation'
+import GenerationProgress from './GenerationProgress.vue'
 
 const store = useGenerationStore()
 </script>
@@ -22,31 +23,16 @@ const store = useGenerationStore()
           <div class="spinner-border text-primary mb-3" role="status">
             <span class="visually-hidden">Loading...</span>
           </div>
-          <h5 class="text-primary mb-1">{{ store.progressPhase }}</h5>
-          <p class="mb-3 small">Generating image(s)...</p>
-          <div v-if="store.progressMessage" class="alert alert-info py-1 px-2 small mb-3">
-            <i class="bi bi-info-circle me-1"></i> {{ store.progressMessage }}
-          </div>
           
-          <!-- Progress Bar -->
-          <div v-if="store.progressSteps > 0" class="w-100 px-4" style="max-width: 400px;">
-            <div class="progress mb-2" style="height: 12px;">
-              <div 
-                class="progress-bar progress-bar-striped progress-bar-animated" 
-                role="progressbar" 
-                :style="{ width: (store.progressStep / store.progressSteps * 100) + '%' }"
-                :aria-valuenow="store.progressStep" 
-                :aria-valuemin="0" 
-                :aria-valuemax="store.progressSteps"
-              ></div>
-            </div>
-            <div class="d-flex justify-content-between x-small fw-bold">
-              <span>Step {{ store.progressStep }} / {{ store.progressSteps }}</span>
-              <span>
-                <span class="me-3"><i class="bi bi-clock"></i> {{ store.progressTime.toFixed(1) }}s</span>
-                <span v-if="store.eta > 0">Remaining: ~{{ store.eta }}s</span>
-              </span>
-            </div>
+          <div class="w-100 px-4" style="max-width: 400px;">
+            <GenerationProgress 
+              :step="store.progressStep"
+              :total-steps="store.progressSteps"
+              :phase="store.progressPhase"
+              :time-elapsed="store.progressTime"
+              :eta="store.eta"
+              :message="store.progressMessage"
+            />
           </div>
         </div>
 

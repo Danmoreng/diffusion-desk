@@ -2,6 +2,7 @@
 import { computed } from 'vue';
 import { useExplorationStore } from '@/stores/exploration';
 import { useGenerationStore } from '@/stores/generation';
+import { GENERATION_LIMITS } from '@/constants';
 
 const explorationStore = useExplorationStore();
 const generationStore = useGenerationStore();
@@ -77,7 +78,8 @@ const updateParams = () => {
           v-model.number="explorationStore.centerParams.steps" 
           @change="updateParams"
           class="form-control form-control-sm" 
-          min="1"
+          :min="GENERATION_LIMITS.MIN_STEPS"
+          :max="GENERATION_LIMITS.MAX_STEPS"
         />
       </div>
       <!-- Guidance -->
@@ -96,6 +98,8 @@ const updateParams = () => {
           v-model.number="explorationStore.centerParams.guidanceScale" 
           @change="updateParams"
           class="form-control form-control-sm" 
+          :min="GENERATION_LIMITS.MIN_CFG_SCALE"
+          :max="GENERATION_LIMITS.MAX_CFG_SCALE"
           step="0.1"
         />
       </div>
@@ -144,12 +148,12 @@ const updateParams = () => {
     <div class="row g-2 mb-3">
       <div class="col-6">
         <label class="form-label small mb-1">Width</label>
-        <input type="number" v-model.number="explorationStore.centerParams.width" @change="updateParams" class="form-control form-control-sm" step="64" />
+        <input type="number" v-model.number="explorationStore.centerParams.width" @change="updateParams" class="form-control form-control-sm" :min="GENERATION_LIMITS.MIN_RESOLUTION" :max="GENERATION_LIMITS.MAX_RESOLUTION" :step="GENERATION_LIMITS.RESOLUTION_STEP" />
       </div>
       <div class="col-6">
         <label class="form-label small mb-1">Height</label>
         <div class="input-group input-group-sm">
-          <input type="number" v-model.number="explorationStore.centerParams.height" @change="updateParams" class="form-control" step="64" />
+          <input type="number" v-model.number="explorationStore.centerParams.height" @change="updateParams" class="form-control" :min="GENERATION_LIMITS.MIN_RESOLUTION" :max="GENERATION_LIMITS.MAX_RESOLUTION" :step="GENERATION_LIMITS.RESOLUTION_STEP" />
           <span class="input-group-text bg-body-tertiary font-monospace" style="font-size: 0.65rem; padding: 0 0.4rem;">{{ aspectRatio }}</span>
         </div>
       </div>

@@ -2,6 +2,7 @@
 import { ref, watch, computed, onMounted } from 'vue'
 import { useGenerationStore } from '@/stores/generation'
 import LoraManager from './LoraManager.vue'
+import { GENERATION_LIMITS, DEFAULT_ASPECT_RATIOS } from '@/constants'
 
 const props = defineProps<{
   mode: 'txt2img' | 'img2img' | 'inpainting'
@@ -17,18 +18,7 @@ const aspectRatio = computed(() => {
   return `${w / gcdValue}:${h / gcdValue}`
 })
 
-const commonRatios = [
-  { label: '1:1', w: 1, h: 1 },
-  { label: '4:3', w: 4, h: 3 },
-  { label: '3:4', w: 3, h: 4 },
-  { label: '3:2', w: 3, h: 2 },
-  { label: '2:3', w: 2, h: 3 },
-  { label: '16:9', w: 16, h: 9 },
-  { label: '9:16', w: 9, h: 16 },
-  { label: '16:10', w: 16, h: 10 },
-  { label: '10:16', w: 10, h: 16 },
-  { label: '21:9', w: 21, h: 9 },
-]
+const commonRatios = DEFAULT_ASPECT_RATIOS
 
 const applyAspectRatio = (ratio: { w: number, h: number }) => {
   isInternalScaleUpdate = true
@@ -37,10 +27,12 @@ const applyAspectRatio = (ratio: { w: number, h: number }) => {
   // Smallest unit is 16px. We need both dimensions >= 64px.
   // multiplier * ratio.w * 16 >= 64  => multiplier * ratio.w >= 4
   // multiplier * ratio.h * 16 >= 64  => multiplier * ratio.h >= 4
-  const multiplier = Math.ceil(Math.max(4 / ratio.w, 4 / ratio.h))
+  const minRes = GENERATION_LIMITS.MIN_RESOLUTION
+  const resStep = GENERATION_LIMITS.RESOLUTION_STEP
+  const multiplier = Math.ceil(Math.max(minRes / (ratio.w * resStep), minRes / (ratio.h * resStep)))
   
-  store.width = ratio.w * multiplier * 16
-  store.height = ratio.h * multiplier * 16
+  store.width = ratio.w * multiplier * resStep
+  store.height = ratio.h * multiplier * resStep
   
   stepW.value = ratio.w
   stepH.value = ratio.h
@@ -103,30 +95,32 @@ let isInternalScaleUpdate = false
 const gcd = (a: number, b: number): number => b ? gcd(b, a % b) : a
 
 const updateStepRange = () => {
-  const unitsW = Math.round(store.width / 16)
-  const unitsH = Math.round(store.height / 16)
+  const resStep = GENERATION_LIMITS.RESOLUTION_STEP
+  const unitsW = Math.round(store.width / resStep)
+  const unitsH = Math.round(store.height / resStep)
   const common = gcd(unitsW, unitsH)
   
   stepW.value = unitsW / common
   stepH.value = unitsH / common
   currentSizeStep.value = common
   
-  // Calculate max steps to stay within 4096px
-  const maxW = Math.floor(4096 / (stepW.value * 16))
-  const maxH = Math.floor(4096 / (stepH.value * 16))
+  // Calculate max steps to stay within MAX_RESOLUTION
+  const maxW = Math.floor(GENERATION_LIMITS.MAX_RESOLUTION / (stepW.value * resStep))
+  const maxH = Math.floor(GENERATION_LIMITS.MAX_RESOLUTION / (stepH.value * resStep))
   maxSizeStep.value = Math.max(currentSizeStep.value, Math.min(maxW, maxH))
   minSizeStep.value = 1
 }
 
 const useImageSize = () => {
   if (uploadedImageWidth.value > 0 && uploadedImageHeight.value > 0) {
-    // Round to nearest multiple of 16
-    store.width = Math.round((uploadedImageWidth.value * scaleFactor.value) / 16) * 16
-    store.height = Math.round((uploadedImageHeight.value * scaleFactor.value) / 16) * 16
+    const resStep = GENERATION_LIMITS.RESOLUTION_STEP
+    // Round to nearest multiple of RESOLUTION_STEP
+    store.width = Math.round((uploadedImageWidth.value * scaleFactor.value) / resStep) * resStep
+    store.height = Math.round((uploadedImageHeight.value * scaleFactor.value) / resStep) * resStep
     
-    // Ensure minimum of 64
-    if (store.width < 64) store.width = 64
-    if (store.height < 64) store.height = 64
+    // Ensure minimum of MIN_RESOLUTION
+    if (store.width < GENERATION_LIMITS.MIN_RESOLUTION) store.width = GENERATION_LIMITS.MIN_RESOLUTION
+    if (store.height < GENERATION_LIMITS.MIN_RESOLUTION) store.height = GENERATION_LIMITS.MIN_RESOLUTION
     updateStepRange()
   }
 }
@@ -144,8 +138,9 @@ onMounted(() => {
 // When width or height change manually, recalculate our steps
 watch([() => store.width, () => store.height], ([newW, newH]) => {
   if (!isInternalScaleUpdate) {
-    // Only update the slider internal state if we have valid multiples of 16
-    if (newW > 0 && newH > 0 && newW % 16 === 0 && newH % 16 === 0) {
+    const resStep = GENERATION_LIMITS.RESOLUTION_STEP
+    // Only update the slider internal state if we have valid multiples of resStep
+    if (newW > 0 && newH > 0 && newW % resStep === 0 && newH % resStep === 0) {
       updateStepRange()
     }
   }
@@ -153,26 +148,29 @@ watch([() => store.width, () => store.height], ([newW, newH]) => {
 
 watch(currentSizeStep, (newStep) => {
   isInternalScaleUpdate = true
-  store.width = stepW.value * newStep * 16
-  store.height = stepH.value * newStep * 16
+  const resStep = GENERATION_LIMITS.RESOLUTION_STEP
+  store.width = stepW.value * newStep * resStep
+  store.height = stepH.value * newStep * resStep
   
   // Use nextTick to reset flag after reactive updates propagate
   setTimeout(() => { isInternalScaleUpdate = false }, 0)
 })
 
-const snapToNext16 = (val: number) => {
-  if (!val || val < 64) return 64
-  if (val % 16 === 0) return val
-  return Math.ceil(val / 16) * 16
+const snapToNextStep = (val: number) => {
+  const minRes = GENERATION_LIMITS.MIN_RESOLUTION
+  const resStep = GENERATION_LIMITS.RESOLUTION_STEP
+  if (!val || val < minRes) return minRes
+  if (val % resStep === 0) return val
+  return Math.ceil(val / resStep) * resStep
 }
 
 const handleWidthBlur = () => {
-  store.width = snapToNext16(store.width)
+  store.width = snapToNextStep(store.width)
   updateStepRange()
 }
 
 const handleHeightBlur = () => {
-  store.height = snapToNext16(store.height)
+  store.height = snapToNextStep(store.height)
   updateStepRange()
 }
 
@@ -326,8 +324,8 @@ const clearInitImage = () => {
             <input
               type="number"
               v-model.number="store.steps"
-              min="1"
-              max="150"
+              :min="GENERATION_LIMITS.MIN_STEPS"
+              :max="GENERATION_LIMITS.MAX_STEPS"
               class="form-control"
             />
           </div>
@@ -338,8 +336,8 @@ const clearInitImage = () => {
             <input
               type="number"
               v-model.number="store.batchCount"
-              min="1"
-              max="8"
+              :min="GENERATION_LIMITS.MIN_BATCH_COUNT"
+              :max="GENERATION_LIMITS.MAX_BATCH_COUNT"
               class="form-control"
             />
           </div>
@@ -371,9 +369,9 @@ const clearInitImage = () => {
                 type="number"
                 v-model.number="store.width"
                 @blur="handleWidthBlur"
-                min="64"
-                max="4096"
-                step="16"
+                :min="GENERATION_LIMITS.MIN_RESOLUTION"
+                :max="GENERATION_LIMITS.MAX_RESOLUTION"
+                :step="GENERATION_LIMITS.RESOLUTION_STEP"
                 class="form-control"
               />
             </div>
@@ -386,9 +384,9 @@ const clearInitImage = () => {
                 type="number"
                 v-model.number="store.height"
                 @blur="handleHeightBlur"
-                min="64"
-                max="4096"
-                step="16"
+                :min="GENERATION_LIMITS.MIN_RESOLUTION"
+                :max="GENERATION_LIMITS.MAX_RESOLUTION"
+                :step="GENERATION_LIMITS.RESOLUTION_STEP"
                 class="form-control"
               />
             </div>
@@ -442,8 +440,8 @@ const clearInitImage = () => {
             <input
               type="number"
               v-model.number="store.cfgScale"
-              min="1"
-              max="30"
+              :min="GENERATION_LIMITS.MIN_CFG_SCALE"
+              :max="GENERATION_LIMITS.MAX_CFG_SCALE"
               step="0.1"
               class="form-control"
             />
@@ -482,7 +480,7 @@ const clearInitImage = () => {
             </div>
             <div class="col-md-5">
               <label for="hiresFactor" class="x-small text-muted mb-1 d-block text-uppercase fw-bold">Upscale by:</label>
-              <input type="number" id="hiresFactor" v-model.number="store.hiresUpscaleFactor" min="1" max="4" step="0.25" class="form-control form-control-sm">
+              <input type="number" id="hiresFactor" v-model.number="store.hiresUpscaleFactor" :min="GENERATION_LIMITS.MIN_HIRES_UPSCALE" :max="GENERATION_LIMITS.MAX_HIRES_UPSCALE" step="0.25" class="form-control form-control-sm">
             </div>
           </div>
           
@@ -491,13 +489,13 @@ const clearInitImage = () => {
               <span>Denoising Strength:</span>
               <span class="text-primary">{{ store.hiresDenoisingStrength }}</span>
             </label>
-            <input type="range" class="form-range" id="hiresDenoise" v-model.number="store.hiresDenoisingStrength" min="0" max="1" step="0.01">
+            <input type="range" class="form-range" id="hiresDenoise" v-model.number="store.hiresDenoisingStrength" :min="GENERATION_LIMITS.MIN_DENOISING" :max="GENERATION_LIMITS.MAX_DENOISING" step="0.01">
           </div>
 
           <div class="row g-2">
             <div class="col-md-12">
               <label for="hiresSteps" class="x-small text-muted mb-1 d-block text-uppercase fw-bold">Hires Steps:</label>
-              <input type="number" id="hiresSteps" v-model.number="store.hiresSteps" min="1" max="150" class="form-control form-control-sm">
+              <input type="number" id="hiresSteps" v-model.number="store.hiresSteps" :min="GENERATION_LIMITS.MIN_STEPS" :max="GENERATION_LIMITS.MAX_STEPS" class="form-control form-control-sm">
             </div>
           </div>
         </div>
