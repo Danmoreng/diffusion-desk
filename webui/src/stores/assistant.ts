@@ -16,6 +16,7 @@ export const useAssistantStore = defineStore('assistant', () => {
   const isOpen = ref(false)
   const isLoading = ref(false)
   const assistantConfig = ref<any>(null)
+  const lastUsage = ref<{ prompt_tokens: number, completion_tokens: number, total_tokens: number } | null>(null)
   const messages = ref<ChatMessage[]>([
     {
       role: 'assistant',
@@ -133,6 +134,9 @@ export const useAssistantStore = defineStore('assistant', () => {
         }
 
         const data = await response.json()
+        if (data.usage) {
+          lastUsage.value = data.usage
+        }
         const choice = data.choices[0]
         const message = choice.message
 
@@ -141,34 +145,55 @@ export const useAssistantStore = defineStore('assistant', () => {
           toolCallCount++
           
           // Add the assistant's tool call message to history
-          currentMessages.push({
+          const assistantMsg: ChatMessage = {
             role: 'assistant',
             content: message.content || '',
             timestamp: Date.now(),
             ...message // Includes tool_calls
-          })
+          }
+          currentMessages.push(assistantMsg)
+          messages.value.push(assistantMsg) // Update UI
 
           // Execute each tool call
           for (const toolCall of message.tool_calls) {
-            const toolRes = await fetch('/v1/tools/execute', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                name: toolCall.function.name,
-                arguments: JSON.parse(toolCall.function.arguments)
-              })
-            })
+            let result: any
+            const args = JSON.parse(toolCall.function.arguments)
 
-            const result = await toolRes.json()
+            if (toolCall.function.name === 'update_generation_params') {
+                 // Frontend interception
+                 try {
+                     if (args.prompt !== undefined) generationStore.prompt = args.prompt
+                     if (args.negative_prompt !== undefined) generationStore.negativePrompt = args.negative_prompt
+                     if (args.steps !== undefined) generationStore.steps = args.steps
+                     if (args.width !== undefined) generationStore.width = args.width
+                     if (args.height !== undefined) generationStore.height = args.height
+                     if (args.cfg_scale !== undefined) generationStore.cfgScale = args.cfg_scale
+                     result = { status: "success", message: "Parameters updated in UI." }
+                 } catch (e: any) {
+                     result = { error: e.message }
+                 }
+            } else {
+                const toolRes = await fetch('/v1/tools/execute', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    name: toolCall.function.name,
+                    arguments: args
+                  })
+                })
+                result = await toolRes.json()
+            }
             
             // Add tool result to history
-            currentMessages.push({
+            const toolMsg: ChatMessage = {
               role: 'tool',
               name: toolCall.function.name,
               tool_call_id: toolCall.id,
               content: JSON.stringify(result),
               timestamp: Date.now()
-            })
+            }
+            currentMessages.push(toolMsg)
+            messages.value.push(toolMsg) // Update UI
           }
           // Continue loop to let LLM process tool results
           continue
@@ -209,6 +234,7 @@ export const useAssistantStore = defineStore('assistant', () => {
     isOpen,
     isLoading,
     messages,
+    lastUsage,
     toggleAssistant,
     sendMessage,
     clearHistory

@@ -974,21 +974,6 @@ void ServiceController::register_routes(httplib::Server& svr, const SDSvrParams&
             {
                 {"type", "function"},
                 {"function", {
-                    {"name", "apply_style"},
-                    {"description", "Apply a saved style to a prompt."},
-                    {"parameters", {
-                        {"type", "object"},
-                        {"properties", {
-                            {"style_name", {{"type", "string"}}},
-                            {"current_prompt", {{"type", "string"}}}
-                        }},
-                        {"required", {"style_name", "current_prompt"}}
-                    }}
-                }}
-            },
-            {
-                {"type", "function"},
-                {"function", {
                     {"name", "search_history"},
                     {"description", "Search through past generations using keywords."},
                     {"parameters", {
@@ -1008,6 +993,24 @@ void ServiceController::register_routes(httplib::Server& svr, const SDSvrParams&
                     {"parameters", {
                         {"type", "object"},
                         {"properties", {}}
+                    }}
+                }}
+            },
+            {
+                {"type", "function"},
+                {"function", {
+                    {"name", "update_generation_params"},
+                    {"description", "Update the image generation parameters (prompt, steps, size, etc.) in the UI."},
+                    {"parameters", {
+                        {"type", "object"},
+                        {"properties", {
+                            {"prompt", {{"type", "string"}, {"description", "The positive prompt text."}}},
+                            {"negative_prompt", {{"type", "string"}, {"description", "The negative prompt text."}}},
+                            {"steps", {{"type", "integer"}, {"description", "Sampling steps (1-100)."}}},
+                            {"width", {{"type", "integer"}, {"description", "Image width."}}},
+                            {"height", {{"type", "integer"}, {"description", "Image height."}}},
+                            {"cfg_scale", {{"type", "number"}, {"description", "CFG Scale."}}}
+                        }}
                     }}
                 }}
             }

@@ -1,8 +1,26 @@
 <script setup lang="ts">
 import { useGenerationStore } from '@/stores/generation'
+import { useAssistantStore } from '@/stores/assistant'
 import GenerationProgress from './GenerationProgress.vue'
 
 const store = useGenerationStore()
+const assistantStore = useAssistantStore()
+
+const sendToAssistant = async (url: string) => {
+  try {
+    const response = await fetch(url)
+    const blob = await response.blob()
+    const reader = new FileReader()
+    reader.onloadend = () => {
+      const base64data = reader.result as string
+      if (!assistantStore.isOpen) assistantStore.toggleAssistant()
+      assistantStore.sendMessage("Here is the generated image. What do you think?", base64data)
+    }
+    reader.readAsDataURL(blob)
+  } catch (e) {
+    console.error("Failed to fetch image for assistant", e)
+  }
+}
 </script>
 
 <template>
@@ -49,7 +67,7 @@ const store = useGenerationStore()
             :key="index" 
             class="d-flex flex-column align-items-center result-item"
           >
-            <div class="image-box flex-grow-1">
+            <div class="image-box flex-grow-1 position-relative">
               <a :href="url" target="_blank" class="d-flex align-items-center justify-content-center w-100 h-100">
                 <img 
                   :src="url" 
@@ -57,6 +75,12 @@ const store = useGenerationStore()
                   class="result-img"
                 />
               </a>
+              <!-- Overlay Actions -->
+              <div class="position-absolute top-0 end-0 p-2">
+                 <button class="btn btn-sm btn-light shadow-sm bg-opacity-75" @click.stop="sendToAssistant(url)" title="Send to Assistant">
+                   <i class="bi bi-robot"></i>
+                 </button>
+              </div>
             </div>
 
           </div>
