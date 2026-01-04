@@ -66,10 +66,16 @@ onMounted(scrollToBottom)
        :class="[generationStore.assistantPosition === 'right' ? 'border-start' : 'border-end']">
     <!-- Header -->
     <div class="p-3 border-bottom d-flex justify-content-between align-items-center bg-body-tertiary">
-      <h5 class="mb-0 d-flex align-items-center">
-        <i class="bi bi-robot me-2 text-primary"></i>
-        Assistant
-      </h5>
+      <div class="d-flex align-items-center gap-2">
+        <h5 class="mb-0 d-flex align-items-center">
+          <i class="bi bi-robot me-2 text-primary"></i>
+          Assistant
+        </h5>
+        <!-- Token Usage Pill -->
+        <span v-if="assistantStore.lastUsage" class="badge rounded-pill bg-secondary shadow-sm opacity-75" style="font-size: 0.65rem;">
+           {{ assistantStore.lastUsage.total_tokens }} / {{ generationStore.llmContextSize }}
+        </span>
+      </div>
       <div class="d-flex gap-2">
         <button class="btn btn-sm btn-outline-secondary" @click="assistantStore.clearHistory" title="Clear History">
           <i class="bi bi-trash"></i>
@@ -95,9 +101,17 @@ onMounted(scrollToBottom)
           <div class="text-break" v-html="formatMessage(msg.content)"></div>
         </div>
 
-        <!-- Tool Call Indicator -->
-        <div v-else class="x-small text-muted mb-2 px-2">
-          <i class="bi bi-gear-fill me-1"></i> Used tool: <code>{{ msg.name }}</code>
+        <!-- Tool Call Indicator & Response -->
+        <div v-else class="w-100 mb-2 px-2">
+          <details class="tool-details border rounded bg-body-tertiary">
+            <summary class="px-2 py-1 small text-muted cursor-pointer d-flex align-items-center">
+              <i class="bi bi-gear-fill me-2"></i> 
+              <span class="fw-bold me-1">Tool:</span> <code>{{ msg.name }}</code>
+            </summary>
+            <div class="p-2 border-top bg-body">
+              <pre class="m-0 small text-muted text-wrap text-break" style="max-height: 200px; overflow-y: auto; white-space: pre-wrap;">{{ msg.content }}</pre>
+            </div>
+          </details>
         </div>
 
         <div class="message-time text-muted mt-1" v-if="msg.role !== 'tool'">
@@ -112,8 +126,9 @@ onMounted(scrollToBottom)
     </div>
 
     <!-- Input Area - Aligned with Action Bar -->
-    <div class="assistant-input-area py-2 px-3 bg-body"
+    <div class="assistant-input-area py-2 px-3 bg-body position-relative"
          :class="[generationStore.actionBarPosition === 'top' ? 'border-bottom' : 'border-top']">
+      
       <!-- Image Preview -->
       <div v-if="attachedImage" class="attachment-preview mb-2 position-relative d-inline-block">
         <img :src="attachedImage" class="rounded border bg-body" style="height: 60px; width: auto;" />

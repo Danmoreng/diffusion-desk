@@ -10,8 +10,6 @@ ToolService::ToolService(std::shared_ptr<Database> db, int sd_port, int llm_port
 mysti::json ToolService::execute_tool(const std::string& name, const mysti::json& arguments) {
     if (name == "get_library_items") {
         return get_library_items(arguments.value("category", ""));
-    } else if (name == "apply_style") {
-        return apply_style(arguments.value("style_name", ""), arguments.value("current_prompt", ""));
     } else if (name == "search_history") {
         return search_history(arguments.value("query", ""));
     } else if (name == "get_vram_status") {
@@ -26,33 +24,6 @@ mysti::json ToolService::execute_tool(const std::string& name, const mysti::json
 mysti::json ToolService::get_library_items(const std::string& category) {
     if (!m_db) return mysti::json::array();
     return m_db->get_library_items(category);
-}
-
-mysti::json ToolService::apply_style(const std::string& style_name, const std::string& current_prompt) {
-    if (!m_db) return {{"error", "db_not_available"}};
-    
-    auto styles = m_db->get_styles();
-    for (auto& s : styles) {
-        if (s["name"] == style_name) {
-            std::string template_str = s["prompt"];
-            std::string final_prompt = current_prompt;
-            
-            if (template_str.find("{prompt}") != std::string::npos) {
-                // Replace placeholder
-                size_t pos = template_str.find("{prompt}");
-                final_prompt = template_str.replace(pos, 8, current_prompt);
-            } else {
-                final_prompt = current_prompt + ", " + template_str;
-            }
-            
-            mysti::json res;
-            res["new_prompt"] = final_prompt;
-            res["applied_style"] = style_name;
-            return res;
-        }
-    }
-    
-    return {{"error", "style_not_found"}};
 }
 
 mysti::json ToolService::search_history(const std::string& query) {

@@ -92,6 +92,7 @@ export const useGenerationStore = defineStore('generation', () => {
   const currentModel = ref<string>('')
   const currentModelMetadata = ref<any>(null)
   const currentLlmModel = ref<string>('')
+  const llmContextSize = ref(2048)
   const isModelsLoading = ref(false)
   const isLlmLoading = ref(false)
   const isLlmLoaded = ref(false)
@@ -497,6 +498,16 @@ export const useGenerationStore = defineStore('generation', () => {
       if (activeLlmModel) {
         currentLlmModel.value = activeLlmModel.id
         isLlmLoaded.value = !!activeLlmModel.loaded
+        // Fetch metadata to get context size
+        try {
+            const res = await fetch(`/v1/models/metadata/${encodeURIComponent(activeLlmModel.id)}`)
+            if (res.ok) {
+                const meta = await res.json()
+                if (meta && meta.n_ctx) {
+                    llmContextSize.value = meta.n_ctx
+                }
+            }
+        } catch(e) { console.error("Error fetching initial LLM metadata", e) }
       }
 
       // Wait for presets and sync
@@ -578,6 +589,7 @@ export const useGenerationStore = defineStore('generation', () => {
         currentLlmPresetId.value = id
         currentLlmModel.value = p.model_path
         isLlmLoaded.value = true
+        llmContextSize.value = p.n_ctx || 2048
       } catch(e: any) { error.value = e.message } finally { isLlmLoading.value = false }
   }
 
@@ -655,6 +667,7 @@ export const useGenerationStore = defineStore('generation', () => {
       })
       if (!response.ok) throw new Error('Failed to load LLM model')
       currentLlmModel.value = modelId
+      llmContextSize.value = n_ctx
     } catch (e: any) {
       error.value = e.message
     } finally {
@@ -1214,6 +1227,7 @@ export const useGenerationStore = defineStore('generation', () => {
     styles, activeStyleNames, fetchStyles, saveStyle, deleteStyle, applyStyle, extractStylesFromPrompt,
     currentModelMetadata, resetToModelDefaults, applyAspectRatio, snapToNext16,
     imagePresets, llmPresets, currentImagePresetId, currentLlmPresetId, loadImagePreset, loadLlmPreset, fetchPresets,
-    actionBarPosition, assistantPosition
+    actionBarPosition, assistantPosition,
+    llmContextSize
   }
 })

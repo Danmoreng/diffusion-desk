@@ -17,7 +17,6 @@ public:
 
     // Tool Definitions
     mysti::json get_library_items(const std::string& category);
-    mysti::json apply_style(const std::string& style_name, const std::string& current_prompt);
     mysti::json search_history(const std::string& query);
     mysti::json get_vram_status();
 
