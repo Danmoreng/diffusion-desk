@@ -233,8 +233,38 @@ void ServiceController::register_routes(httplib::Server& svr, const SDSvrParams&
         }
     });
 
-    svr.Post("/v1/llm/load", [this](const httplib::Request& req, httplib::Response& res) {
+    svr.Post("/v1/llm/load", [this, params](const httplib::Request& req, httplib::Response& res) {
         LOG_INFO("Request: POST /v1/llm/load, Body: %s", req.body.c_str());
+        
+        // 1. Estimate Size
+        float estimated_gb = 4.0f; // Default conservative estimate
+        try {
+            auto j = mysti::json::parse(req.body);
+            std::string model_id = j.value("model_id", "");
+            std::string mmproj_id = j.value("mmproj_id", "");
+            int n_ctx = j.value("n_ctx", 2048);
+            
+            if (!model_id.empty()) {
+                uint64_t model_bytes = get_file_size((fs::path(params.model_dir) / model_id).string());
+                uint64_t proj_bytes = mmproj_id.empty() ? 0 : get_file_size((fs::path(params.model_dir) / mmproj_id).string());
+                
+                if (model_bytes > 0) {
+                    // Weights + KV Cache estimate
+                    // KV Cache ~ 2 * n_layers * n_heads * head_dim * n_ctx * 2 bytes (f16)
+                    // Rough heuristic: 0.5 GB per 4k context for 7B models
+                    float kv_gb = (float)n_ctx / 8192.0f; 
+                    estimated_gb = ((float)(model_bytes + proj_bytes) / (1024.0f * 1024.0f * 1024.0f)) + kv_gb + 0.5f; // +0.5GB runtime overhead
+                }
+            }
+        } catch(...) {}
+
+        // 2. Arbitrate
+        if (!m_res_mgr->prepare_for_llm_load(estimated_gb)) {
+            res.status = 503; // Service Unavailable / Overloaded
+            res.set_content(R"({\"error\":\"Insufficient VRAM to load this LLM. Try unloading the Image model first.\"})", "application/json");
+            return;
+        }
+
         Proxy::forward_request(req, res, "127.0.0.1", m_llm_port, "", m_token);
         if (res.status == 200) {
             LOG_INFO("LLM model loaded successfully.");
