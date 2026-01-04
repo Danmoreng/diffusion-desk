@@ -51,7 +51,7 @@ const updateParams = () => {
     </div>
 
     <!-- Negative Prompt -->
-    <div class="mb-2">
+    <div class="mb-2" v-show="explorationStore.centerParams.guidanceScale !== 1">
       <label class="form-label small mb-1">Negative Prompt</label>
       <textarea 
         v-model="explorationStore.centerParams.negative_prompt" 
