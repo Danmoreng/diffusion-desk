@@ -474,7 +474,7 @@ onUnmounted(() => {
                 <i class="bi bi-plus-lg"></i> New Preset
             </button>
         </div>
-        <div class="flex-grow-1 overflow-auto px-3">
+        <div class="flex-grow-1">
             <div class="row g-3">
                 <div v-for="preset in imagePresets" :key="preset.id" class="col-md-6 col-xl-4">
                     <div class="card h-100 shadow-sm border-0">
@@ -512,7 +512,7 @@ onUnmounted(() => {
                 <i class="bi bi-plus-lg"></i> New Preset
             </button>
         </div>
-        <div class="flex-grow-1 overflow-auto px-3">
+        <div class="flex-grow-1">
             <div class="row g-3">
                 <div v-for="preset in llmPresets" :key="preset.id" class="col-md-6 col-xl-4">
                     <div class="card h-100 shadow-sm border-0">
@@ -612,7 +612,7 @@ onUnmounted(() => {
         </button>
       </div>
       <!-- Styles Grid -->
-      <div class="flex-grow-1 overflow-auto px-3">
+      <div class="flex-grow-1">
         <div class="row g-3">
           <div v-for="style in filteredStyles" :key="style.name" class="col-md-6 col-xl-4">
             <div class="card h-100 shadow-sm border-0 overflow-hidden">
@@ -786,7 +786,7 @@ onUnmounted(() => {
         </button>
       </div>
       <!-- LoRAs Grid -->
-      <div class="flex-grow-1 overflow-auto px-3">
+      <div class="flex-grow-1">
         <div class="row g-3">
           <div v-for="model in filteredModelMetadata.filter(m => m.metadata.type === 'lora')" :key="model.id" class="col-md-6 col-xl-4">
             <div class="card h-100 shadow-sm border-0 overflow-hidden lora-card" :class="{ 'has-trigger': model.metadata.trigger_word }">
