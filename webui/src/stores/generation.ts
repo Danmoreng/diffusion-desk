@@ -87,6 +87,12 @@ export const useGenerationStore = defineStore('generation', () => {
   const isLlmLoaded = ref(false)
   const isLlmThinking = ref(false)
   
+  // Presets State
+  const imagePresets = ref<any[]>([])
+  const llmPresets = ref<any[]>([])
+  const currentImagePresetId = ref<number>(-1)
+  const currentLlmPresetId = ref<number>(-1)
+
   // Prompt History
   const promptHistory = ref<string[]>([initialState.prompt])
   // Rename local historyIndex to promptHistoryIndex to avoid confusion with the main generation history
@@ -457,6 +463,7 @@ export const useGenerationStore = defineStore('generation', () => {
   async function fetchModels() {
     isModelsLoading.value = true
     fetchConfig() // Also fetch server config
+    fetchPresets() // Fetch presets alongside models
     try {
       const response = await fetch('/v1/models')
       const data = await response.json()
@@ -480,6 +487,59 @@ export const useGenerationStore = defineStore('generation', () => {
     } finally {
       isModelsLoading.value = false
     }
+  }
+  
+  async function fetchPresets() {
+    try {
+        const resImg = await fetch('/v1/presets/image')
+        imagePresets.value = await resImg.json()
+        const resLlm = await fetch('/v1/presets/llm')
+        llmPresets.value = await resLlm.json()
+    } catch(e) { console.error("Failed to fetch presets", e) }
+  }
+  
+  async function loadImagePreset(id: number) {
+      isModelSwitching.value = true
+      try {
+       const res = await fetch('/v1/presets/image/load', {
+         method: 'POST',
+         headers: { 'Content-Type': 'application/json' },
+         body: JSON.stringify({ id })
+       })
+       if (!res.ok) {
+         const err = await res.json()
+         throw new Error(err.error || 'Failed to load preset')
+       }
+       currentImagePresetId.value = id
+       // Refresh models to update active status
+       await fetchModels()
+     } catch(e: any) { error.value = e.message } finally { isModelSwitching.value = false }
+  }
+
+  async function loadLlmPreset(id: number) {
+      isLlmLoading.value = true
+      try {
+        // Find preset to get params
+        const p = llmPresets.value.find(p => p.id === id)
+        if (!p) throw new Error("Preset not found")
+        
+        const res = await fetch('/v1/llm/load', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ 
+                model_id: p.model_path, 
+                mmproj_id: p.mmproj_path, 
+                n_ctx: p.n_ctx 
+            })
+        })
+        if (!res.ok) {
+             const err = await res.json()
+             throw new Error(err.error || 'Failed to load LLM preset')
+        }
+        currentLlmPresetId.value = id
+        currentLlmModel.value = p.model_path
+        isLlmLoaded.value = true
+      } catch(e: any) { error.value = e.message } finally { isLlmLoading.value = false }
   }
 
   async function fetchCurrentModelMetadata(modelId: string) {
@@ -1113,6 +1173,7 @@ export const useGenerationStore = defineStore('generation', () => {
     updateConfig, reuseLastSeed, randomizeSeed, swapDimensions,
     styles, activeStyleNames, fetchStyles, saveStyle, deleteStyle, applyStyle, extractStylesFromPrompt,
     currentModelMetadata, resetToModelDefaults, applyAspectRatio, snapToNext16,
+    imagePresets, llmPresets, currentImagePresetId, currentLlmPresetId, loadImagePreset, loadLlmPreset, fetchPresets,
     actionBarPosition
   }
 })

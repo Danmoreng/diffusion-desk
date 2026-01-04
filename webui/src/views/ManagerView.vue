@@ -10,19 +10,69 @@ interface TagInfo {
   count: number
 }
 
+// Preset Interfaces
+interface ImagePreset {
+  id: number
+  name: string
+  unet_path: string
+  vae_path: string
+  clip_l_path: string
+  clip_g_path: string
+  t5xxl_path: string
+  vram_weights_mb_estimate: number
+  default_params?: any
+}
+
+interface LlmPreset {
+  id: number
+  name: string
+  model_path: string
+  mmproj_path: string
+  n_ctx: number
+  role: string
+}
+
 const router = useRouter()
 const store = useGenerationStore()
-const activeTab = computed(() => {
-  const path = router.currentRoute.value.path
-  if (path.includes('/manager/styles')) return 'styles'
-  if (path.includes('/manager/models')) return 'models'
-  if (path.includes('/manager/llms')) return 'llms'
-  if (path.includes('/manager/loras')) return 'loras'
-  return 'tags'
+const activeTab = computed({
+  get: () => {
+    const path = router.currentRoute.value.path
+    if (path.includes('/manager/presets/image')) return 'image_presets'
+    if (path.includes('/manager/presets/llm')) return 'llm_presets'
+    if (path.includes('/manager/styles')) return 'styles'
+    if (path.includes('/manager/models')) return 'models'
+    if (path.includes('/manager/llms')) return 'llms'
+    if (path.includes('/manager/loras')) return 'loras'
+    if (path.includes('/manager/tags')) return 'tags'
+    return 'image_presets' // Default
+  },
+  set: (val) => {
+    // We handle navigation in the template clicks, this setter is just to satisfy computed
+  }
 })
+
 const tags = ref<TagInfo[]>([])
 const isLoading = ref(false)
 const searchQuery = ref('')
+
+// Presets State
+const imagePresets = ref<ImagePreset[]>([])
+const llmPresets = ref<LlmPreset[]>([])
+const presetModalRef = ref<HTMLElement | null>(null)
+let presetModalInstance: Modal | null = null
+const isEditingPreset = ref(false)
+const editingImagePreset = ref<ImagePreset>({
+  id: 0, name: '', unet_path: '', vae_path: '', clip_l_path: '', clip_g_path: '', t5xxl_path: '', vram_weights_mb_estimate: 0, default_params: {}
+})
+const editingLlmPreset = ref<LlmPreset>({
+  id: 0, name: '', model_path: '', mmproj_path: '', n_ctx: 2048, role: 'Assistant'
+})
+
+// Helper lists for dropdowns
+const availableModels = computed(() => store.models.filter(m => m.type !== 'llm' && m.type !== 'lora' && m.type !== 'upscaler'))
+const availableVaEs = computed(() => store.models.filter(m => m.type === 'vae'))
+const availableClips = computed(() => store.models.filter(m => m.type === 'text-encoder' || m.type === 'clip'))
+const availableLlms = computed(() => store.models.filter(m => m.type === 'llm'))
 
 const modalRef = ref<HTMLElement | null>(null)
 let modalInstance: Modal | null = null
@@ -63,7 +113,6 @@ async function doExtract() {
     try {
         await store.extractStylesFromPrompt(extractionPrompt.value)
         extractModalInstance?.hide()
-        // Maybe show a toast or success message?
     } catch(e: any) {
         extractionResult.value = e.message || 'Extraction failed'
     } finally {
@@ -116,15 +165,10 @@ async function fetchModelMetadata() {
 async function syncModels() {
   isLoading.value = true
   try {
-    // 1. Fetch current models from SD worker via orchestrator
     await store.fetchModels()
-    
-    // 2. For each model, ensure it has an entry in our metadata DB
     for (const m of store.models) {
-      console.log(`Checking metadata for model: ${m.id} (${m.name})`)
       const existing = modelMetadataList.value.find(entry => entry.id === m.id)
       if (!existing) {
-        // Create default metadata if missing
         const defaultMeta = {
           name: m.name,
           type: m.type,
@@ -185,7 +229,6 @@ async function regenerateLoraPreview(model: ModelMetadataEntry) {
       body: JSON.stringify({ id: model.id })
     })
     if (res.ok) {
-      // Previews happen in background
       setTimeout(fetchModelMetadata, 2000)
     }
   } catch (e) {
@@ -206,7 +249,6 @@ async function generateMissingLoraPreviews() {
         body: JSON.stringify({ id: m.id })
       })
     }
-    // Refresh after some delay
     setTimeout(fetchModelMetadata, 5000)
   } catch (e) {
     console.error('Failed to fix LoRA previews:', e)
@@ -242,12 +284,74 @@ async function confirmCleanup() {
   try {
     const res = await fetch('/v1/history/tags/cleanup', { method: 'POST' })
     if (res.ok) {
-      await fetchTags() // Refresh list
+      await fetchTags() 
     }
   } catch (e) {
     console.error('Failed to cleanup tags', e)
   } finally {
     isLoading.value = false
+  }
+}
+
+// Preset Methods
+async function fetchPresets() {
+  try {
+    const resImg = await fetch('/v1/presets/image')
+    imagePresets.value = await resImg.json()
+    
+    const resLlm = await fetch('/v1/presets/llm')
+    llmPresets.value = await resLlm.json()
+    
+    // Also fetch raw models to populate dropdowns
+    store.fetchModels()
+  } catch (e) {
+    console.error(e)
+  }
+}
+
+function openPresetModal(type: 'image' | 'llm', preset?: any) {
+  isEditingPreset.value = !!preset
+  if (type === 'image') {
+    if (preset) editingImagePreset.value = { ...preset }
+    else editingImagePreset.value = { id: 0, name: '', unet_path: '', vae_path: '', clip_l_path: '', clip_g_path: '', t5xxl_path: '', vram_weights_mb_estimate: 0, default_params: {} }
+  } else {
+    if (preset) editingLlmPreset.value = { ...preset }
+    else editingLlmPreset.value = { id: 0, name: '', model_path: '', mmproj_path: '', n_ctx: 2048, role: 'Assistant' }
+  }
+  
+  if (presetModalRef.value) {
+    presetModalInstance = new Modal(presetModalRef.value)
+    presetModalInstance.show()
+  }
+}
+
+async function savePreset(type: 'image' | 'llm') {
+  const endpoint = type === 'image' ? '/v1/presets/image' : '/v1/presets/llm'
+  const body = type === 'image' ? editingImagePreset.value : editingLlmPreset.value
+  
+  try {
+    const res = await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    })
+    if (res.ok) {
+      presetModalInstance?.hide()
+      fetchPresets()
+    }
+  } catch (e) {
+    console.error(e)
+  }
+}
+
+async function deletePreset(type: 'image' | 'llm', id: number) {
+  if (!confirm('Are you sure?')) return
+  const endpoint = type === 'image' ? `/v1/presets/image/${id}` : `/v1/presets/llm/${id}`
+  try {
+    const res = await fetch(endpoint, { method: 'DELETE' })
+    if (res.ok) fetchPresets()
+  } catch (e) {
+    console.error(e)
   }
 }
 
@@ -272,7 +376,6 @@ async function saveStyle() {
 }
 
 async function regeneratePreview(style: any) {
-  // Clear path and save to trigger background generation
   const updated = { ...style, preview_path: '' }
   await store.saveStyle(updated)
 }
@@ -282,9 +385,6 @@ async function generateMissingPreviews() {
   try {
     const res = await fetch('/v1/styles/previews/fix', { method: 'POST' })
     if (res.ok) {
-      const data = await res.json()
-      console.log(`Triggered generation for ${data.count} styles`)
-      // Previews happen in background, but we refresh list to see progress if any finished instantly
       await store.fetchStyles()
     }
   } catch (e) {
@@ -318,6 +418,7 @@ onMounted(() => {
   fetchTags()
   store.fetchStyles()
   fetchModelMetadata()
+  fetchPresets()
 })
 
 onUnmounted(() => {
@@ -326,6 +427,7 @@ onUnmounted(() => {
   styleDeleteModalInstance?.dispose()
   extractModalInstance?.dispose()
   modelEditModalInstance?.dispose()
+  presetModalInstance?.dispose()
 })
 </script>
 
@@ -338,28 +440,113 @@ onUnmounted(() => {
     <!-- Tabs -->
     <ul class="nav nav-tabs mb-3">
       <li class="nav-item">
-        <router-link class="nav-link" :class="{ active: activeTab === 'tags' }" to="/manager/tags">Tags</router-link>
+        <router-link class="nav-link" :class="{ active: activeTab === 'image_presets' }" to="/manager/presets/image">
+            <i class="bi bi-stack"></i> Image Presets
+        </router-link>
+      </li>
+      <li class="nav-item">
+        <router-link class="nav-link" :class="{ active: activeTab === 'llm_presets' }" to="/manager/presets/llm">
+            <i class="bi bi-chat-text"></i> Intelligence Presets
+        </router-link>
       </li>
       <li class="nav-item">
         <router-link class="nav-link" :class="{ active: activeTab === 'styles' }" to="/manager/styles">Styles</router-link>
       </li>
       <li class="nav-item">
-        <router-link class="nav-link" :class="{ active: activeTab === 'models' }" to="/manager/models">Models</router-link>
-      </li>
-      <li class="nav-item">
-        <router-link class="nav-link" :class="{ active: activeTab === 'llms' }" to="/manager/llms">Intelligence</router-link>
-      </li>
-      <li class="nav-item">
         <router-link class="nav-link" :class="{ active: activeTab === 'loras' }" to="/manager/loras">LoRAs</router-link>
       </li>
       <li class="nav-item">
-        <a class="nav-link disabled" href="#" title="Coming soon">Embeddings</a>
+        <router-link class="nav-link" :class="{ active: activeTab === 'tags' }" to="/manager/tags">Tags</router-link>
+      </li>
+      <li class="nav-item">
+        <router-link class="nav-link text-muted" :class="{ active: activeTab === 'models' }" to="/manager/models">Files: Models</router-link>
+      </li>
+      <li class="nav-item">
+        <router-link class="nav-link text-muted" :class="{ active: activeTab === 'llms' }" to="/manager/llms">Files: LLM</router-link>
       </li>
     </ul>
 
+    <!-- Image Presets Content -->
+    <div v-if="activeTab === 'image_presets'" class="flex-grow-1 d-flex flex-column overflow-hidden">
+        <div class="d-flex justify-content-between mb-3 bg-body-secondary p-2 rounded">
+            <div class="fw-bold align-self-center px-2">Image Generation Presets</div>
+            <button class="btn btn-sm btn-primary" @click="openPresetModal('image')">
+                <i class="bi bi-plus-lg"></i> New Preset
+            </button>
+        </div>
+        <div class="flex-grow-1 overflow-auto">
+            <div class="row g-3">
+                <div v-for="preset in imagePresets" :key="preset.id" class="col-md-6 col-xl-4">
+                    <div class="card h-100 shadow-sm border-0">
+                        <div class="card-body">
+                            <h5 class="card-title">{{ preset.name }}</h5>
+                            <div class="small text-muted mb-2">
+                                <div v-if="preset.unet_path" class="text-truncate" title="UNet"><i class="bi bi-cpu"></i> {{ preset.unet_path.split('/').pop() }}</div>
+                                <div v-if="preset.vae_path" class="text-truncate" title="VAE"><i class="bi bi-palette"></i> {{ preset.vae_path.split('/').pop() }}</div>
+                                <div v-if="preset.t5xxl_path" class="text-truncate" title="T5"><i class="bi bi-fonts"></i> {{ preset.t5xxl_path.split('/').pop() }}</div>
+                            </div>
+                            <div class="d-flex justify-content-between align-items-center mt-3">
+                                <button class="btn btn-sm btn-outline-success" @click="store.loadImagePreset(preset.id)" :disabled="isLoading">
+                                    <i class="bi bi-play-fill"></i> Load
+                                </button>
+                                <div>
+                                    <button class="btn btn-sm btn-outline-secondary me-1" @click="openPresetModal('image', preset)"><i class="bi bi-pencil"></i></button>
+                                    <button class="btn btn-sm btn-outline-danger" @click="deletePreset('image', preset.id)"><i class="bi bi-trash"></i></button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div v-if="imagePresets.length === 0" class="col-12 text-center py-5 text-muted">
+                    No image presets. Create one to get started!
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- LLM Presets Content -->
+    <div v-if="activeTab === 'llm_presets'" class="flex-grow-1 d-flex flex-column overflow-hidden">
+        <div class="d-flex justify-content-between mb-3 bg-body-secondary p-2 rounded">
+            <div class="fw-bold align-self-center px-2">Intelligence (LLM) Presets</div>
+            <button class="btn btn-sm btn-primary" @click="openPresetModal('llm')">
+                <i class="bi bi-plus-lg"></i> New Preset
+            </button>
+        </div>
+        <div class="flex-grow-1 overflow-auto">
+            <div class="row g-3">
+                <div v-for="preset in llmPresets" :key="preset.id" class="col-md-6 col-xl-4">
+                    <div class="card h-100 shadow-sm border-0">
+                        <div class="card-body">
+                            <div class="d-flex justify-content-between">
+                                <h5 class="card-title">{{ preset.name }}</h5>
+                                <span class="badge bg-secondary">{{ preset.role }}</span>
+                            </div>
+                            <div class="small text-muted mb-2 mt-2">
+                                <div class="text-truncate fw-bold" title="Model"><i class="bi bi-chat-text"></i> {{ preset.model_path.split('/').pop() }}</div>
+                                <div v-if="preset.mmproj_path" class="text-truncate text-success" title="Vision Projector"><i class="bi bi-eye"></i> {{ preset.mmproj_path.split('/').pop() }}</div>
+                                <div class="text-muted"><i class="bi bi-memory"></i> Context: {{ preset.n_ctx }}</div>
+                            </div>
+                            <div class="d-flex justify-content-between align-items-center mt-3">
+                                <button class="btn btn-sm btn-outline-success" @click="store.loadLlmPreset(preset.id)" :disabled="isLoading">
+                                    <i class="bi bi-play-fill"></i> Load
+                                </button>
+                                <div>
+                                    <button class="btn btn-sm btn-outline-secondary me-1" @click="openPresetModal('llm', preset)"><i class="bi bi-pencil"></i></button>
+                                    <button class="btn btn-sm btn-outline-danger" @click="deletePreset('llm', preset.id)"><i class="bi bi-trash"></i></button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div v-if="llmPresets.length === 0" class="col-12 text-center py-5 text-muted">
+                    No intelligence presets. Create one to get started!
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- Tags Content -->
     <div v-if="activeTab === 'tags'" class="flex-grow-1 d-flex flex-column overflow-hidden">
-      
       <!-- Toolbar -->
       <div class="d-flex gap-2 mb-3 bg-body-secondary p-2 rounded">
         <input type="text" v-model="searchQuery" class="form-control form-control-sm" placeholder="Search tags..." style="max-width: 250px;">
@@ -371,7 +558,6 @@ onUnmounted(() => {
           <i class="bi bi-arrow-repeat"></i> Refresh
         </button>
       </div>
-
       <!-- Table -->
       <div class="flex-grow-1 overflow-auto border rounded bg-body">
         <table class="table table-hover table-striped mb-0">
@@ -402,7 +588,6 @@ onUnmounted(() => {
           </tbody>
         </table>
       </div>
-      
       <div class="mt-2 text-muted x-small">
         Total tags: {{ tags.length }}
       </div>
@@ -426,7 +611,6 @@ onUnmounted(() => {
           <i class="bi bi-arrow-repeat"></i> Refresh
         </button>
       </div>
-
       <!-- Styles Grid -->
       <div class="flex-grow-1 overflow-auto">
         <div class="row g-3">
@@ -470,7 +654,7 @@ onUnmounted(() => {
       </div>
     </div>
 
-    <!-- Models Content -->
+    <!-- Models Content (File View) -->
     <div v-else-if="activeTab === 'models'" class="flex-grow-1 d-flex flex-column overflow-hidden">
       <!-- Toolbar -->
       <div class="d-flex gap-2 mb-3 bg-body-secondary p-2 rounded">
@@ -479,7 +663,6 @@ onUnmounted(() => {
           <i class="bi bi-arrow-repeat"></i> Sync Models from Disk
         </button>
       </div>
-
       <!-- Models Table -->
       <div class="flex-grow-1 overflow-auto bg-body rounded shadow-sm">
         <table class="table table-hover mb-0 align-middle">
@@ -539,7 +722,7 @@ onUnmounted(() => {
       </div>
     </div>
 
-    <!-- LLMs Content -->
+    <!-- LLMs Content (File View) -->
     <div v-else-if="activeTab === 'llms'" class="flex-grow-1 d-flex flex-column overflow-hidden">
       <!-- Toolbar -->
       <div class="d-flex gap-2 mb-3 bg-body-secondary p-2 rounded">
@@ -548,7 +731,6 @@ onUnmounted(() => {
           <i class="bi bi-arrow-repeat"></i> Sync Models from Disk
         </button>
       </div>
-
       <!-- LLMs Table -->
       <div class="flex-grow-1 overflow-auto bg-body rounded shadow-sm">
         <table class="table table-hover mb-0 align-middle">
@@ -603,7 +785,6 @@ onUnmounted(() => {
           <i class="bi bi-image"></i> Generate Missing Previews
         </button>
       </div>
-
       <!-- LoRAs Grid -->
       <div class="flex-grow-1 overflow-auto">
         <div class="row g-3">
@@ -731,6 +912,119 @@ onUnmounted(() => {
           <div class="modal-footer">
             <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
             <button type="button" class="btn btn-primary" @click="saveStyle" :disabled="!editingStyle.name">Save Style</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    </Teleport>
+
+    <!-- Preset Edit Modal -->
+    <Teleport to="body">
+    <div class="modal fade" ref="presetModalRef" tabindex="-1" aria-hidden="true">
+      <div class="modal-dialog modal-lg modal-dialog-centered">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title">{{ isEditingPreset ? 'Edit' : 'New' }} Preset</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+          </div>
+          <div class="modal-body">
+            
+            <!-- Image Preset Form -->
+            <div v-if="activeTab === 'image_presets'" class="row g-3">
+               <div class="col-12">
+                 <label class="form-label fw-bold">Preset Name</label>
+                 <input type="text" v-model="editingImagePreset.name" class="form-control" placeholder="e.g. Flux Dev + FP8 T5">
+               </div>
+               
+               <div class="col-12"><hr class="my-2"></div>
+               
+               <div class="col-12">
+                 <label class="form-label small text-uppercase fw-bold">UNet / Main Model (Required)</label>
+                 <select v-model="editingImagePreset.unet_path" class="form-select">
+                    <option value="">Select Model...</option>
+                    <option v-for="m in availableModels" :key="m.id" :value="m.id">{{ m.name }} ({{ m.type }})</option>
+                 </select>
+               </div>
+               
+               <div class="col-md-6">
+                 <label class="form-label small text-uppercase fw-bold">VAE (Optional)</label>
+                 <select v-model="editingImagePreset.vae_path" class="form-select">
+                    <option value="">None (Use Embedded)</option>
+                    <option v-for="m in availableVaEs" :key="m.id" :value="m.id">{{ m.name }}</option>
+                 </select>
+               </div>
+               
+               <div class="col-md-6">
+                 <label class="form-label small text-uppercase fw-bold">T5 / Text Encoder 2 (Optional)</label>
+                 <select v-model="editingImagePreset.t5xxl_path" class="form-select">
+                    <option value="">None (Use Embedded)</option>
+                    <option v-for="m in availableClips" :key="m.id" :value="m.id">{{ m.name }}</option>
+                 </select>
+               </div>
+               
+               <div class="col-md-6">
+                 <label class="form-label small text-uppercase fw-bold">CLIP L (Optional)</label>
+                 <select v-model="editingImagePreset.clip_l_path" class="form-select">
+                    <option value="">None</option>
+                    <option v-for="m in availableClips" :key="m.id" :value="m.id">{{ m.name }}</option>
+                 </select>
+               </div>
+               
+               <div class="col-md-6">
+                 <label class="form-label small text-uppercase fw-bold">CLIP G (Optional)</label>
+                 <select v-model="editingImagePreset.clip_g_path" class="form-select">
+                    <option value="">None</option>
+                    <option v-for="m in availableClips" :key="m.id" :value="m.id">{{ m.name }}</option>
+                 </select>
+               </div>
+               
+               <div class="col-12">
+                   <div class="form-text x-small">Note: For Flux/SD3, ensure you select the correct CLIP/T5 combination if not using a GGUF that embeds them.</div>
+               </div>
+            </div>
+
+            <!-- LLM Preset Form -->
+            <div v-else class="row g-3">
+               <div class="col-12">
+                 <label class="form-label fw-bold">Preset Name</label>
+                 <input type="text" v-model="editingLlmPreset.name" class="form-control" placeholder="e.g. Qwen2-VL Vision">
+               </div>
+               
+               <div class="col-md-6">
+                 <label class="form-label small text-uppercase fw-bold">Role</label>
+                 <select v-model="editingLlmPreset.role" class="form-select">
+                    <option value="Assistant">Assistant (Chat/Tools)</option>
+                    <option value="Vision">Vision (Tagging/Analysis)</option>
+                    <option value="Roleplay">Roleplay</option>
+                 </select>
+               </div>
+               
+               <div class="col-12"><hr class="my-2"></div>
+               
+               <div class="col-12">
+                 <label class="form-label small text-uppercase fw-bold">LLM Model (Required)</label>
+                 <select v-model="editingLlmPreset.model_path" class="form-select">
+                    <option value="">Select Model...</option>
+                    <option v-for="m in availableLlms" :key="m.id" :value="m.id">{{ m.name }}</option>
+                 </select>
+               </div>
+               
+               <div class="col-12">
+                 <label class="form-label small text-uppercase fw-bold">Vision Projector (mmproj) (Optional)</label>
+                 <input type="text" v-model="editingLlmPreset.mmproj_path" class="form-control" placeholder="e.g. mmproj-model-f16.gguf">
+                 <div class="form-text x-small">Filename of the projector in the 'models' directory.</div>
+               </div>
+               
+               <div class="col-md-6">
+                 <label class="form-label small text-uppercase fw-bold">Context Size</label>
+                 <input type="number" v-model="editingLlmPreset.n_ctx" class="form-control" step="1024">
+               </div>
+            </div>
+
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+            <button type="button" class="btn btn-primary" @click="savePreset(activeTab === 'image_presets' ? 'image' : 'llm')">Save Preset</button>
           </div>
         </div>
       </div>

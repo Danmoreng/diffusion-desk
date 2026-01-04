@@ -43,17 +43,9 @@ const router = createRouter({
       component: UpscaleView
     },
     {
-      path: '/manager',
-      name: 'Manager',
-      component: ManagerView,
-      children: [
-        { path: '', redirect: '/manager/tags' },
-        { path: 'tags', name: 'Manager-Tags', component: ManagerView },
-        { path: 'styles', name: 'Manager-Styles', component: ManagerView },
-        { path: 'models', name: 'Manager-Models', component: ManagerView },
-        { path: 'llms', name: 'Manager-LLMs', component: ManagerView },
-        { path: 'loras', name: 'Manager-Loras', component: ManagerView }
-      ]
+      path: '/manager/:section?/:subsection?',
+      name: 'manager',
+      component: () => import('../views/ManagerView.vue')
     },
     {
       path: '/settings',
