@@ -140,14 +140,15 @@ This document outlines the roadmap for MystiCanvas, merging original milestones 
 
 **Goal:** An integrated Chat Agent that can control the application.
 
-*   [ ] **E1. Assistant UI:** Persistent sidebar chat drawer.
+*   [x] **E1. Assistant UI:** Persistent sidebar chat drawer (now `AssistantPanel`, configurable Left/Right).
 *   [x] **E2. Tool Definition:**
     *   [x] `get_library_items(category)`, `apply_style()`, `enhance_prompt()`, `search_history()` (Depends on C4).
 *   [x] **E3. Safety Rails:**
     *   [x] Orchestrator executes tools (not the LLM worker directly).
     *   [x] Permission checks and loop prevention.
-*   [ ] **E4. Integration:**
-    *   Connect `prompt_library` (C7) to Assistant context.
+*   [x] **E4. Integration:**
+    *   [x] Connect `prompt_library` (C7) to Assistant context.
+    *   [x] Inject current generation parameters into system prompt.
 
 **Definition of Done:**
 *   Assistant can "Find that blue robot image I made yesterday" (FTS + History).
@@ -160,7 +161,7 @@ This document outlines the roadmap for MystiCanvas, merging original milestones 
 **Goal:** Image-grounded intelligence.
 
 *   [x] **F1. Vision Presets:** Support `mmproj` in LLM presets (Depends on D1).
-*   [ ] **F2. Image Handoff:** Mechanism to pass image paths to LLM worker.
+*   [x] **F2. Image Handoff:** Mechanism to pass image paths to LLM worker (Implemented in Assistant).
 *   [x] **F3. Vision Tagging Job:** Background job to tag images based on visual content (Depends on C6 + D1).
 *   [ ] **F4. Feedback Loop:** "Analyze last image and suggest improvements."
 
