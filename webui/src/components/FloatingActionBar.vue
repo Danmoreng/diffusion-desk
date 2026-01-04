@@ -36,8 +36,42 @@ function toggleEndless() {
        :class="[store.actionBarPosition === 'top' ? 'bar-top' : 'bar-bottom']">
     <div class="container-fluid d-flex justify-content-start align-items-center gap-2 py-2 px-3">
       
+      <!-- Primary Action: Generate -->
+      <button
+        class="btn btn-primary generate-btn d-flex align-items-center gap-2 px-4 py-1 fw-bold position-relative"
+        @click="handleGenerate"
+        :disabled="store.isModelSwitching || !store.prompt"
+      >
+        <div class="icon-wrapper d-flex align-items-center justify-content-center">
+          <span v-if="store.isGenerating && store.queueCount === 0" class="spinner-border spinner-border-sm" role="status"></span>
+          <i v-else-if="store.isGenerating" class="bi bi-layers-fill"></i>
+          <i v-else class="bi bi-play-fill fs-5"></i>
+        </div>
+        <span class="btn-text text-start">
+          {{ store.isGenerating ? (store.queueCount > 0 ? 'Queue' : 'Generating...') : (store.isModelSwitching ? 'Switching...' : 'Generate') }}
+        </span>
+        
+        <span v-if="store.queueCount > 0" class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger border border-light">
+          {{ store.queueCount }}
+          <span class="visually-hidden">queued items</span>
+        </span>
+      </button>
+
+      <div class="d-flex gap-2 ms-2">
+        <button 
+          class="btn btn-sm border-0 transition-all" 
+          :class="store.isEndless ? 'btn-success text-white shadow-sm' : 'btn-outline-secondary'"
+          :title="store.isEndless ? 'Endless Generation: ON' : 'Endless Generation: OFF'"
+          @click="toggleEndless"
+        >
+          <i class="bi bi-repeat"></i>
+        </button>
+      </div>
+
+      <div class="vr mx-2 text-muted opacity-25"></div>
+
       <!-- History Navigation -->
-      <div class="btn-group shadow-sm me-2" role="group" v-if="store.history.length > 0">
+      <div class="btn-group shadow-sm" role="group" v-if="store.history.length > 0">
         <button 
           type="button" 
           class="btn btn-outline-secondary d-flex align-items-center justify-content-center px-3" 
@@ -58,44 +92,6 @@ function toggleEndless() {
           title="Next Generation"
         >
           <i class="bi bi-chevron-right"></i>
-        </button>
-      </div>
-
-      <!-- Primary Action: Generate -->
-      <button
-        class="btn btn-primary generate-btn d-flex align-items-center gap-2 px-4 py-1 fw-bold position-relative"
-        @click="handleGenerate"
-        :disabled="store.isModelSwitching || !store.prompt"
-      >
-        <div class="icon-wrapper d-flex align-items-center justify-content-center">
-          <span v-if="store.isGenerating && store.queueCount === 0" class="spinner-border spinner-border-sm" role="status"></span>
-          <i v-else-if="store.isGenerating" class="bi bi-layers-fill"></i>
-          <i v-else class="bi bi-play-fill fs-5"></i>
-        </div>
-        <span class="btn-text text-start">
-          {{ store.isGenerating ? 'Queue' : (store.isModelSwitching ? 'Switching...' : 'Generate') }}
-        </span>
-        
-        <span v-if="store.queueCount > 0" class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger border border-light">
-          {{ store.queueCount }}
-          <span class="visually-hidden">queued items</span>
-        </span>
-      </button>
-
-      <div class="vr mx-2 text-muted opacity-25"></div>
-
-      <!-- Secondary Actions -->
-      <div class="d-flex gap-2">
-        <button 
-          class="btn btn-sm border-0 transition-all" 
-          :class="store.isEndless ? 'btn-success text-white shadow-sm' : 'btn-outline-secondary'"
-          :title="store.isEndless ? 'Endless Generation: ON' : 'Endless Generation: OFF'"
-          @click="toggleEndless"
-        >
-          <i class="bi bi-repeat"></i>
-        </button>
-        <button class="btn btn-outline-secondary btn-sm border-0" title="Add to Queue (Future)" disabled>
-          <i class="bi bi-list-task"></i>
         </button>
       </div>
 

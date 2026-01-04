@@ -36,6 +36,7 @@ export const useGenerationStore = defineStore('generation', () => {
   const negativePrompt = ref(initialState.negativePrompt)
   const steps = ref(initialState.steps)
   const seed = ref(-1) // Seed is not persisted
+  const lastExplicitSeed = ref(-1) // Track what the user last manually set for NEW generations
   const cfgScale = ref(initialState.cfgScale)
   const strength = ref(initialState.strength)
   const batchCount = ref(initialState.batchCount)
@@ -43,6 +44,13 @@ export const useGenerationStore = defineStore('generation', () => {
   const samplers = ref(['euler', 'euler_a', 'heun', 'dpm2', 'dpmpp_2s_a', 'dpmpp_2m', 'dpmpp_2mv2', 'ipndm', 'ipndm_v', 'lcm', 'ddim_trailing', 'tcd'])
   const width = ref(initialState.width)
   const height = ref(initialState.height)
+
+  // Capture manual seed changes if we are at the end of history (input mode)
+  watch(seed, (newVal) => {
+    if (historyIndex.value === -1 || historyIndex.value === history.value.length - 1) {
+      lastExplicitSeed.value = newVal
+    }
+  })
 
   // Highres-fix State
   const hiresFix = ref(initialState.hiresFix || false)
@@ -170,12 +178,14 @@ export const useGenerationStore = defineStore('generation', () => {
       prompt.value = p.prompt
       negativePrompt.value = p.negative_prompt
       steps.value = p.steps
-      // We don't restore seed immediately if it was random (-1) in params vs actual seed in result?
-      // params.seed holds the INPUT seed. If it was -1, we might want to show -1.
-      // But for reproduction, we often want the ACTUAL seed.
-      // The store.seed usually implies input seed.
-      // Let's restore the input seed for now.
-      seed.value = p.seed 
+      // If we are at the latest item, restore the user's explicit seed (e.g. -1), 
+      // otherwise restore the seed used for that history item.
+      if (index === history.value.length - 1) {
+        seed.value = lastExplicitSeed.value
+      } else {
+        seed.value = p.seed
+      }
+      
       cfgScale.value = p.cfgScale
       strength.value = p.strength
       batchCount.value = p.batchCount
@@ -248,7 +258,10 @@ export const useGenerationStore = defineStore('generation', () => {
           // If we are still looking at this item, update the view
           if (historyIndex.value === nextIdx) {
               imageUrls.value = urls
-              seed.value = usedSeed // Update input field if we are still on this item
+              // Update input field ONLY if it wasn't random, otherwise stay on -1
+              if (item.params.seed !== -1) {
+                seed.value = usedSeed
+              }
           }
           
       } catch (e: any) {
