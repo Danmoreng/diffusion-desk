@@ -47,7 +47,6 @@ private:
 
 void Proxy::forward_request(const httplib::Request& req, httplib::Response& res, const std::string& host, int port, const std::string& target_path, const std::string& internal_token) {
     std::string path = target_path.empty() ? req.path : target_path;
-    LOG_DEBUG("Forwarding %s %s -> %s:%d", req.method.c_str(), path.c_str(), host.c_str(), port);
     
     // Copy headers and remove hop-by-hop
     httplib::Headers headers = req.headers;
@@ -181,7 +180,6 @@ void Proxy::forward_request(const httplib::Request& req, httplib::Response& res,
         }
         
         if (result) {
-            LOG_DEBUG("Forward response: %d", result->status);
             res.status = result->status;
             res.set_content(result->body, result->get_header_value("Content-Type"));
             for (const auto& h : result->headers) {

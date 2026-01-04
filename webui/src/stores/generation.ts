@@ -300,26 +300,6 @@ export const useGenerationStore = defineStore('generation', () => {
     llm: 0
   })
 
-  const projectedVram = computed(() => {
-    if (!currentModel.value) return 0;
-    
-    // Heuristic estimation in GB
-    let base = 2.5; 
-    const id = currentModel.value.toLowerCase();
-    if (id.includes('xl')) base = 6.5;
-    else if (id.includes('flux')) base = 14.0;
-    else if (id.includes('sd3')) base = 9.0;
-    
-    // Compute overhead (approx 1GB per megapixel for float16)
-    const megapixels = (width.value * height.value) / (1024 * 1024);
-    const compute = megapixels * 1.2 * batchCount.value;
-    
-    // Hires fix overhead
-    const hires = hiresFix.value ? (megapixels * Math.pow(hiresUpscaleFactor.value, 2) * 0.8) : 0;
-    
-    return base + compute + hires;
-  });
-
   // WebSocket Connection
   let ws: WebSocket | null = null;
   const isWsConnected = ref(false);
@@ -1217,7 +1197,7 @@ export const useGenerationStore = defineStore('generation', () => {
     prompt, negativePrompt, steps, seed, cfgScale, strength, batchCount, sampler, samplers, width, height, 
     hiresFix, hiresUpscaleModel, hiresUpscaleFactor, hiresDenoisingStrength, hiresSteps, 
     isSidebarCollapsed, toggleSidebar, theme, toggleTheme, saveImages, initImage, maskImage,
-    models, currentModel, currentLlmModel, upscaleModel, upscaleFactor, vramInfo, projectedVram,
+    models, currentModel, currentLlmModel, upscaleModel, upscaleFactor, vramInfo,
     isModelsLoading, fetchModels, loadModel, loadLlmModel, unloadLlmModel, loadUpscaleModel, testLlmCompletion, enhancePrompt,
     progressStep, progressSteps, progressTime, progressPhase, progressMessage, eta, 
     lastParams, outputDir, modelDir, isLlmThinking, 

@@ -836,8 +836,8 @@ onUnmounted(() => {
     <!-- Placeholders for other tabs -->
     <div v-else class="flex-grow-1 d-flex align-items-center justify-content-center text-muted">
       <div class="text-center">
-        <h4><i class="bi bi-cone-striped"></i> Work in Progress</h4>
-        <p>This section is coming soon.</p>
+        <i class="bi bi-folder2-open fs-1 opacity-25"></i>
+        <p class="mt-3">Select a category to manage your library.</p>
       </div>
     </div>
 
