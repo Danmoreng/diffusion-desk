@@ -252,6 +252,7 @@ export const useGenerationStore = defineStore('generation', () => {
           
           item.status = 'completed'
           item.images = urls
+          const wasRandom = item.params.seed === -1
           item.params.seed = usedSeed // Record the actual seed used
           item.generation_time = (Date.now() - startTime) / 1000
           
@@ -259,7 +260,7 @@ export const useGenerationStore = defineStore('generation', () => {
           if (historyIndex.value === nextIdx) {
               imageUrls.value = urls
               // Update input field ONLY if it wasn't random, otherwise stay on -1
-              if (item.params.seed !== -1) {
+              if (!wasRandom) {
                 seed.value = usedSeed
               }
           }

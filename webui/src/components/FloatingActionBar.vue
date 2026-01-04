@@ -71,22 +71,22 @@ function toggleEndless() {
       <div class="vr mx-2 text-muted opacity-25"></div>
 
       <!-- History Navigation -->
-      <div class="btn-group shadow-sm" role="group" v-if="store.history.length > 0">
+      <div class="btn-group shadow-sm history-nav" role="group" v-if="store.history.length > 0">
         <button 
           type="button" 
-          class="btn btn-outline-secondary d-flex align-items-center justify-content-center px-3" 
+          class="btn btn-outline-secondary d-flex align-items-center justify-content-center px-3 rounded-start" 
           @click="store.goBack()"
           :disabled="!store.canGoBack"
           title="Previous Generation (Restore Parameters)"
         >
           <i class="bi bi-chevron-left"></i>
         </button>
-        <div class="input-group-text bg-body border-top border-bottom border-secondary-subtle px-3 fw-mono">
+        <div class="input-group-text bg-body border-secondary-subtle px-3 fw-mono rounded-0 border-start-0 border-end-0">
           <span class="small">{{ store.historyIndex + 1 }} <span class="text-muted">/</span> {{ store.history.length }}</span>
         </div>
         <button 
           type="button" 
-          class="btn btn-outline-secondary d-flex align-items-center justify-content-center px-3" 
+          class="btn btn-outline-secondary d-flex align-items-center justify-content-center px-3 rounded-end" 
           @click="store.goForward()"
           :disabled="!store.canGoForward"
           title="Next Generation"
