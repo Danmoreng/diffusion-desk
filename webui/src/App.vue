@@ -42,11 +42,11 @@ const store = useGenerationStore()
   transition: width 0.25s ease-in-out;
   flex-shrink: 0;
   z-index: 1050; /* Above regular content and most BS elements */
+  overflow: visible !important;
 }
 
 .sidebar.sidebar-collapsed {
   width: 64px;
-  overflow: visible !important;
 }
 
 .toggle-btn {
