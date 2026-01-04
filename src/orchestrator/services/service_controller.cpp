@@ -959,44 +959,56 @@ void ServiceController::register_routes(httplib::Server& svr, const SDSvrParams&
         c["system_prompt"] = params.assistant_system_prompt;
         c["tools"] = {
             {
-                {"name", "get_library_items"},
-                {"description", "Retrieve items from the prompt library/gallery by category."},
-                {"parameters", {
-                    {"type", "object"},
-                    {"properties", {
-                        {"category", {{"type", "string"}, {"description", "The category to browse (e.g., 'Style', 'Lighting')"}}}
+                {"type", "function"},
+                {"function", {
+                    {"name", "get_library_items"},
+                    {"description", "Retrieve items from the prompt library/gallery by category."},
+                    {"parameters", {
+                        {"type", "object"},
+                        {"properties", {
+                            {"category", {{"type", "string"}, {"description", "The category to browse (e.g., 'Style', 'Lighting')"}}}
+                        }}
                     }}
                 }}
             },
             {
-                {"name", "apply_style"},
-                {"description", "Apply a saved style to a prompt."},
-                {"parameters", {
-                    {"type", "object"},
-                    {"properties", {
-                        {"style_name", {{"type", "string"}}},
-                        {"current_prompt", {{"type", "string"}}}
-                    }},
-                    {"required", {"style_name", "current_prompt"}}
+                {"type", "function"},
+                {"function", {
+                    {"name", "apply_style"},
+                    {"description", "Apply a saved style to a prompt."},
+                    {"parameters", {
+                        {"type", "object"},
+                        {"properties", {
+                            {"style_name", {{"type", "string"}}},
+                            {"current_prompt", {{"type", "string"}}}
+                        }},
+                        {"required", {"style_name", "current_prompt"}}
+                    }}
                 }}
             },
             {
-                {"name", "search_history"},
-                {"description", "Search through past generations using keywords."},
-                {"parameters", {
-                    {"type", "object"},
-                    {"properties", {
-                        {"query", {{"type", "string"}, {"description", "Keywords to search for"}}}
-                    }},
-                    {"required", {"query"}}
+                {"type", "function"},
+                {"function", {
+                    {"name", "search_history"},
+                    {"description", "Search through past generations using keywords."},
+                    {"parameters", {
+                        {"type", "object"},
+                        {"properties", {
+                            {"query", {{"type", "string"}, {"description", "Keywords to search for"}}}
+                        }},
+                        {"required", {"query"}}
+                    }}
                 }}
             },
             {
-                {"name", "get_vram_status"},
-                {"description", "Get the current VRAM usage and capacity."},
-                {"parameters", {
-                    {"type", "object"},
-                    {"properties", {}}
+                {"type", "function"},
+                {"function", {
+                    {"name", "get_vram_status"},
+                    {"description", "Get the current VRAM usage and capacity."},
+                    {"parameters", {
+                        {"type", "object"},
+                        {"properties", {}}
+                    }}
                 }}
             }
         };

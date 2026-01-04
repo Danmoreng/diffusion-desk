@@ -486,7 +486,10 @@ onUnmounted(() => {
                                 <div v-if="preset.t5xxl_path" class="text-truncate" title="T5"><i class="bi bi-fonts"></i> {{ preset.t5xxl_path.split('/').pop() }}</div>
                             </div>
                             <div class="d-flex justify-content-between align-items-center mt-3">
-                                <button class="btn btn-sm btn-outline-success" @click="store.loadImagePreset(preset.id)" :disabled="isLoading">
+                                <button v-if="preset.id === store.currentImagePresetId" class="btn btn-sm btn-success px-3" disabled>
+                                    <i class="bi bi-check-lg"></i> Loaded
+                                </button>
+                                <button v-else class="btn btn-sm btn-outline-success" @click="store.loadImagePreset(preset.id)" :disabled="isLoading">
                                     <i class="bi bi-play-fill"></i> Load
                                 </button>
                                 <div>
@@ -527,7 +530,10 @@ onUnmounted(() => {
                                 <div class="text-muted"><i class="bi bi-memory"></i> Context: {{ preset.n_ctx }}</div>
                             </div>
                             <div class="d-flex justify-content-between align-items-center mt-3">
-                                <button class="btn btn-sm btn-outline-success" @click="store.loadLlmPreset(preset.id)" :disabled="isLoading">
+                                <button v-if="preset.id === store.currentLlmPresetId" class="btn btn-sm btn-success px-3" disabled>
+                                    <i class="bi bi-check-lg"></i> Loaded
+                                </button>
+                                <button v-else class="btn btn-sm btn-outline-success" @click="store.loadLlmPreset(preset.id)" :disabled="isLoading">
                                     <i class="bi bi-play-fill"></i> Load
                                 </button>
                                 <div>

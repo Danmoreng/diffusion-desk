@@ -1,9 +1,12 @@
 <script setup lang="ts">
 import Sidebar from './components/Sidebar.vue'
 import FloatingActionBar from './components/FloatingActionBar.vue'
+import AssistantPanel from './components/AssistantPanel.vue'
 import { useGenerationStore } from '@/stores/generation'
+import { useAssistantStore } from '@/stores/assistant'
 
 const store = useGenerationStore()
+const assistantStore = useAssistantStore()
 </script>
 
 <template>
@@ -23,15 +26,23 @@ const store = useGenerationStore()
         <Sidebar />
       </aside>
       
-      <main class="main-content flex-grow-1 overflow-auto bg-body-tertiary d-flex flex-column">
+      <!-- Assistant Panel (Left) -->
+      <AssistantPanel v-if="assistantStore.isOpen && store.assistantPosition === 'left'" />
+
+      <div class="d-flex flex-column flex-grow-1 overflow-hidden">
         <FloatingActionBar v-if="store.actionBarPosition === 'top'" />
         
-        <div class="flex-grow-1 p-4">
-          <router-view />
-        </div>
+        <main class="main-content flex-grow-1 overflow-auto bg-body-tertiary">
+          <div class="p-4">
+            <router-view />
+          </div>
+        </main>
 
         <FloatingActionBar v-if="store.actionBarPosition === 'bottom'" />
-      </main>
+      </div>
+
+      <!-- Assistant Panel (Right) -->
+      <AssistantPanel v-if="assistantStore.isOpen && store.assistantPosition === 'right'" />
     </div>
   </div>
 </template>
