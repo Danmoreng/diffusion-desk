@@ -99,7 +99,7 @@ export const useExplorationStore = defineStore('exploration', () => {
       isAnchorGenerating.value = true;
       try {
         console.log('Generating missing anchor image...');
-        const centerResults = await generationStore.requestImage({
+        const { urls: centerResults } = await generationStore.requestImage({
           ...centerParams.value,
           cfgScale: centerParams.value.guidanceScale,
           sampler: centerParams.value.scheduler,
@@ -123,7 +123,7 @@ export const useExplorationStore = defineStore('exploration', () => {
       if (cell.url) continue;
       cell.isGenerating = true;
       try {
-        const results = await generationStore.requestImage({
+        const { urls: results } = await generationStore.requestImage({
           ...cell.params,
           cfgScale: cell.params.guidanceScale,
           sampler: cell.params.scheduler,

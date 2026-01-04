@@ -36,18 +36,49 @@ function toggleEndless() {
        :class="[store.actionBarPosition === 'top' ? 'bar-top' : 'bar-bottom']">
     <div class="container-fluid d-flex justify-content-start align-items-center gap-2 py-2 px-3">
       
+      <!-- History Navigation -->
+      <div class="btn-group shadow-sm me-2" role="group" v-if="store.history.length > 0">
+        <button 
+          type="button" 
+          class="btn btn-outline-secondary d-flex align-items-center justify-content-center px-3" 
+          @click="store.goBack()"
+          :disabled="!store.canGoBack"
+          title="Previous Generation (Restore Parameters)"
+        >
+          <i class="bi bi-chevron-left"></i>
+        </button>
+        <div class="input-group-text bg-body border-top border-bottom border-secondary-subtle px-3 fw-mono">
+          <span class="small">{{ store.historyIndex + 1 }} <span class="text-muted">/</span> {{ store.history.length }}</span>
+        </div>
+        <button 
+          type="button" 
+          class="btn btn-outline-secondary d-flex align-items-center justify-content-center px-3" 
+          @click="store.goForward()"
+          :disabled="!store.canGoForward"
+          title="Next Generation"
+        >
+          <i class="bi bi-chevron-right"></i>
+        </button>
+      </div>
+
       <!-- Primary Action: Generate -->
       <button
-        class="btn btn-primary generate-btn d-flex align-items-center gap-2 px-4 py-1 fw-bold"
+        class="btn btn-primary generate-btn d-flex align-items-center gap-2 px-4 py-1 fw-bold position-relative"
         @click="handleGenerate"
-        :disabled="store.isGenerating || store.isModelSwitching || !store.prompt"
+        :disabled="store.isModelSwitching || !store.prompt"
       >
         <div class="icon-wrapper d-flex align-items-center justify-content-center">
-          <span v-if="store.isGenerating || store.isModelSwitching" class="spinner-border spinner-border-sm" role="status"></span>
+          <span v-if="store.isGenerating && store.queueCount === 0" class="spinner-border spinner-border-sm" role="status"></span>
+          <i v-else-if="store.isGenerating" class="bi bi-layers-fill"></i>
           <i v-else class="bi bi-play-fill fs-5"></i>
         </div>
         <span class="btn-text text-start">
-          {{ store.isGenerating ? 'Generating...' : (store.isModelSwitching ? 'Switching...' : 'Generate') }}
+          {{ store.isGenerating ? 'Queue' : (store.isModelSwitching ? 'Switching...' : 'Generate') }}
+        </span>
+        
+        <span v-if="store.queueCount > 0" class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger border border-light">
+          {{ store.queueCount }}
+          <span class="visually-hidden">queued items</span>
         </span>
       </button>
 

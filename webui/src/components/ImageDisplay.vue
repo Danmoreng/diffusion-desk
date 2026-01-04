@@ -8,8 +8,17 @@ const store = useGenerationStore()
   <div class="card shadow-sm h-100 border-0">
     <div class="card-body d-flex flex-column p-3">
       <div class="image-display-container flex-grow-1 mb-3">
+        <!-- Queued State -->
+        <div v-if="store.currentHistoryItem && store.currentHistoryItem.status === 'pending'" class="d-flex flex-column align-items-center justify-content-center h-100 text-muted p-5 bg-dark bg-opacity-10 rounded">
+          <div class="spinner-grow text-secondary mb-3" role="status">
+            <span class="visually-hidden">Queued...</span>
+          </div>
+          <h5 class="text-secondary mb-1">Queued</h5>
+          <p class="mb-0 small">Waiting for worker...</p>
+        </div>
+
         <!-- Loading State -->
-        <div v-if="store.isGenerating" class="d-flex flex-column align-items-center justify-content-center h-100 text-muted p-5 bg-dark bg-opacity-10 rounded">
+        <div v-else-if="store.isGenerating" class="d-flex flex-column align-items-center justify-content-center h-100 text-muted p-5 bg-dark bg-opacity-10 rounded">
           <div class="spinner-border text-primary mb-3" role="status">
             <span class="visually-hidden">Loading...</span>
           </div>
