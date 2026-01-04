@@ -36,6 +36,7 @@ void handle_get_progress(const httplib::Request& req, httplib::Response& res);
 void handle_stream_progress(const httplib::Request& req, httplib::Response& res);
 void handle_get_models(const httplib::Request& req, httplib::Response& res, ServerContext& ctx);
 void handle_load_model(const httplib::Request& req, httplib::Response& res, ServerContext& ctx);
+void handle_unload_model(httplib::Response& res, ServerContext& ctx);
 void handle_load_upscale_model(const httplib::Request& req, httplib::Response& res, ServerContext& ctx);
 void handle_upscale_image(const httplib::Request& req, httplib::Response& res, ServerContext& ctx);
 void handle_get_history(const httplib::Request& req, httplib::Response& res, ServerContext& ctx);

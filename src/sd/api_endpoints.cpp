@@ -316,6 +316,28 @@ void handle_load_model(const httplib::Request& req, httplib::Response& res, Serv
     }
 }
 
+void handle_unload_model(httplib::Response& res, ServerContext& ctx) {
+    LOG_INFO("Unloading Image model to free VRAM.");
+    try {
+        std::lock_guard<std::mutex> lock(ctx.sd_ctx_mutex);
+        ctx.sd_ctx.reset();
+        
+        // Reset path state so it's clearly empty
+        ctx.ctx_params.diffusion_model_path = "";
+        ctx.ctx_params.model_path = "";
+        ctx.ctx_params.vae_path = "";
+        ctx.ctx_params.clip_l_path = "";
+        ctx.ctx_params.clip_g_path = "";
+        ctx.ctx_params.t5xxl_path = "";
+        
+        res.set_content(R"({\"status\":\"success\",\"message\":\"Model unloaded\"})", "application/json");
+    } catch (const std::exception& e) {
+        LOG_ERROR("Failed to unload model: %s", e.what());
+        res.status = 500;
+        res.set_content(R"({\"error\":\")" + std::string(e.what()) + R"("})", "application/json");
+    }
+}
+
 void handle_load_upscale_model(const httplib::Request& req, httplib::Response& res, ServerContext& ctx) {
     try {
         mysti::json body = mysti::json::parse(req.body);

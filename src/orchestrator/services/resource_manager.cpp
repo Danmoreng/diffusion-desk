@@ -120,54 +120,62 @@ ArbitrationResult ResourceManager::prepare_for_sd_generation(float estimated_tot
 
 bool ResourceManager::prepare_for_llm_load(float estimated_needed_gb) {
     std::lock_guard<std::mutex> lock(m_mutex);
-    float free_vram = get_free_vram_gb();
     
-    // Safety buffer
-    estimated_needed_gb *= 1.1f; 
-    
-    // Check if we already have enough space (considering current LLM usage as reusable space if we are replacing it)
-    // Note: This logic assumes we are *replacing* the current LLM, so its memory will be freed.
-    float reusable_llm_space = m_last_llm_vram_gb; 
-    float effective_free = free_vram + reusable_llm_space;
+    // Phase 1: Always unload current LLM first to get a clean baseline of free VRAM
+    // unless it's already empty.
+    httplib::Headers headers;
+    if (!m_token.empty()) headers.emplace("X-Internal-Token", m_token);
 
-    LOG_INFO("[ResourceManager] LLM Load Arbitration | Free: %.2f GB, Reusable LLM: %.2f GB, Needed: %.2f GB", 
-             free_vram, reusable_llm_space, estimated_needed_gb);
-
-    if (effective_free >= estimated_needed_gb + 0.5f) {
-        return true; // Enough space
-    }
-
-    // Not enough space. Check if unloading SD helps.
-    if (m_last_sd_vram_gb > 0.5f) {
-        float potential_free = effective_free + m_last_sd_vram_gb;
-        if (potential_free >= estimated_needed_gb + 0.5f) {
-            LOG_WARN("[ResourceManager] VRAM tight for LLM. Requesting SD model unload (SD uses %.2f GB)...", m_last_sd_vram_gb);
-            
-            httplib::Headers headers;
-            if (!m_token.empty()) headers.emplace("X-Internal-Token", m_token);
-            
-            // Trigger SD Unload (Load empty model or specific unload endpoint if available)
-            // For now, we load a tiny dummy or just rely on 'unload' endpoint if we add one.
-            // Since we don't have an explicit 'unload' for SD exposed nicely, 
-            // we can try loading a very small model? Or better, add an internal unload endpoint to SD worker.
-            // But for B2, let's assume we can just fail safely or use a trick.
-            // Actually, we can use the '/internal/shutdown' but that kills the worker.
-            // Best approach: Force SD to load a "null" context or just accept that we need to kill it.
-            // Let's rely on the user manually unloading for now if this fails? 
-            // NO, "Release B" goal is to prevent crashes.
-            // Let's just return false if we can't fit it.
-            
-            // Actually, we can just fail the request and tell the user why.
-            LOG_ERROR("[ResourceManager] Insufficient VRAM for LLM. Need %.2f GB, have %.2f GB (even with SD unload).", estimated_needed_gb, effective_free);
-            return false;
-        } else {
-             // Even unloading SD won't help? That's a huge LLM.
-             LOG_ERROR("[ResourceManager] LLM too big! Need %.2f GB, Max Potential Free %.2f GB.", estimated_needed_gb, potential_free);
-             return false;
+    if (m_last_llm_vram_gb > 0.1f) {
+        LOG_INFO("[ResourceManager] Proactively unloading current LLM to prepare for new load.");
+        httplib::Client cli("127.0.0.1", m_llm_port);
+        cli.set_connection_timeout(2);
+        cli.set_read_timeout(5);
+        auto ures = cli.Post("/v1/llm/unload", headers, "", "application/json");
+        if (ures && ures->status == 200) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(500));
         }
     }
 
-    return false;
+    float free_vram = get_free_vram_gb();
+    // Safety buffer
+    float safety_needed = estimated_needed_gb * 1.1f; 
+    
+    LOG_INFO("[ResourceManager] LLM Load Arbitration | Free: %.2f GB, Needed (w/ safety): %.2f GB", 
+             free_vram, safety_needed);
+
+    if (free_vram >= safety_needed + 0.5f) {
+        return true; // Enough space now
+    }
+
+    // Phase 2: Not enough space. Check if unloading SD helps.
+    if (m_last_sd_vram_gb > 0.5f) {
+        float potential_free = free_vram + m_last_sd_vram_gb;
+        if (potential_free >= safety_needed + 0.3f) {
+            LOG_WARN("[ResourceManager] VRAM tight for LLM. Requesting SD model unload (SD uses %.2f GB)...", m_last_sd_vram_gb);
+            
+            httplib::Client cli("127.0.0.1", m_sd_port);
+            cli.set_connection_timeout(2);
+            cli.set_read_timeout(5);
+            auto ures = cli.Post("/v1/models/unload", headers, "", "application/json");
+            
+            if (ures && ures->status == 200) {
+                LOG_INFO("[ResourceManager] SD model unloaded successfully.");
+                std::this_thread::sleep_for(std::chrono::milliseconds(800));
+                free_vram = get_free_vram_gb();
+                LOG_INFO("[ResourceManager] Free VRAM after SD unload: %.2f GB", free_vram);
+                
+                if (free_vram >= safety_needed) return true;
+            }
+        }
+    }
+
+    if (free_vram < safety_needed) {
+        LOG_ERROR("[ResourceManager] Insufficient VRAM for LLM. Need %.2f GB, have %.2f GB.", safety_needed, free_vram);
+        return false;
+    }
+
+    return true;
 }
 
 bool ResourceManager::is_llm_loaded() {
