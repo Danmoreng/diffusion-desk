@@ -89,35 +89,184 @@ export const useGenerationStore = defineStore('generation', () => {
   
   // Prompt History
   const promptHistory = ref<string[]>([initialState.prompt])
-  const historyIndex = ref(0)
-  const canUndo = computed(() => historyIndex.value > 0)
-  const canRedo = computed(() => historyIndex.value < promptHistory.value.length - 1)
+  // Rename local historyIndex to promptHistoryIndex to avoid confusion with the main generation history
+  const promptHistoryIndex = ref(0)
+  const canUndo = computed(() => promptHistoryIndex.value > 0)
+  const canRedo = computed(() => promptHistoryIndex.value < promptHistory.value.length - 1)
 
   function commitPrompt() {
     const current = prompt.value
     // Only commit if different from *current* history pointer
-    if (current !== promptHistory.value[historyIndex.value]) {
+    if (current !== promptHistory.value[promptHistoryIndex.value]) {
       // If we are in the middle of history, discard the "future"
-      if (historyIndex.value < promptHistory.value.length - 1) {
-        promptHistory.value = promptHistory.value.slice(0, historyIndex.value + 1)
+      if (promptHistoryIndex.value < promptHistory.value.length - 1) {
+        promptHistory.value = promptHistory.value.slice(0, promptHistoryIndex.value + 1)
       }
       promptHistory.value.push(current)
-      historyIndex.value = promptHistory.value.length - 1
+      promptHistoryIndex.value = promptHistory.value.length - 1
     }
   }
 
   function undoPrompt() {
     if (canUndo.value) {
-      historyIndex.value--
-      prompt.value = promptHistory.value[historyIndex.value]
+      promptHistoryIndex.value--
+      prompt.value = promptHistory.value[promptHistoryIndex.value]
     }
   }
 
   function redoPrompt() {
     if (canRedo.value) {
-      historyIndex.value++
-      prompt.value = promptHistory.value[historyIndex.value]
+      promptHistoryIndex.value++
+      prompt.value = promptHistory.value[promptHistoryIndex.value]
     }
+  }
+
+  // --- Generation History & Queue ---
+  
+  interface GenerationHistoryItem {
+    uuid: string
+    status: 'pending' | 'processing' | 'completed' | 'failed'
+    params: GenerationParams
+    images: string[]
+    error?: string
+    timestamp: number
+    generation_time?: number
+  }
+
+  const history = ref<GenerationHistoryItem[]>([])
+  const historyIndex = ref(-1) // Points to the currently displayed generation
+  
+  // Computed helpers
+  const currentHistoryItem = computed(() => historyIndex.value >= 0 ? history.value[historyIndex.value] : null)
+  const queueCount = computed(() => history.value.filter(h => h.status === 'pending').length)
+  const canGoBack = computed(() => historyIndex.value > 0)
+  const canGoForward = computed(() => historyIndex.value < history.value.length - 1)
+
+  function generateUUID() {
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+        const r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
+        return v.toString(16);
+    });
+  }
+
+  function seekHistory(index: number) {
+      if (index < 0 || index >= history.value.length) return
+      
+      historyIndex.value = index
+      const item = history.value[index]
+      
+      // Restore Parameters (only if not processing/pending to avoid messing up active queue view?)
+      // Actually user might want to see params of queued item.
+      // But if we restore params, we overwrite current inputs. 
+      // YES, that is the requested feature: "ALL generation parameters are set back to what they were"
+      
+      const p = item.params
+      prompt.value = p.prompt
+      negativePrompt.value = p.negative_prompt
+      steps.value = p.steps
+      // We don't restore seed immediately if it was random (-1) in params vs actual seed in result?
+      // params.seed holds the INPUT seed. If it was -1, we might want to show -1.
+      // But for reproduction, we often want the ACTUAL seed.
+      // The store.seed usually implies input seed.
+      // Let's restore the input seed for now.
+      seed.value = p.seed 
+      cfgScale.value = p.cfgScale
+      strength.value = p.strength
+      batchCount.value = p.batchCount
+      
+      // Handle sampler casing/normalization if needed, but we store string
+      // p.sampler might be lowercase from previous save?
+      // Our store expects one of 'samplers' list.
+      // Let's try to match it.
+      const foundSampler = samplers.value.find(s => s.toLowerCase() === p.sampler.toLowerCase())
+      if (foundSampler) sampler.value = foundSampler
+      else sampler.value = p.sampler
+      
+      width.value = p.width
+      height.value = p.height
+      saveImages.value = p.saveImages
+      if (p.initImage) initImage.value = p.initImage
+      if (p.maskImage) maskImage.value = p.maskImage
+      
+      // Update Display
+      if (item.status === 'completed') {
+          imageUrls.value = item.images
+          error.value = null
+      } else if (item.status === 'failed') {
+          imageUrls.value = []
+          error.value = item.error || 'Generation failed'
+      } else {
+          // Pending or Processing
+          imageUrls.value = [] // Or show placeholder?
+          error.value = null
+      }
+      
+      // Update lastParams so "Reuse Last Seed" etc work from this context
+      lastParams.value = { ...p }
+  }
+
+  function goBack() {
+      if (canGoBack.value) seekHistory(historyIndex.value - 1)
+  }
+
+  function goForward() {
+      if (canGoForward.value) seekHistory(historyIndex.value + 1)
+  }
+
+  async function processQueue() {
+      if (isGenerating.value) return // Already busy
+      
+      // Find next pending item
+      const nextIdx = history.value.findIndex(h => h.status === 'pending')
+      if (nextIdx === -1) return // Nothing to do
+      
+      const item = history.value[nextIdx]
+      item.status = 'processing'
+      isGenerating.value = true
+      
+      // If user is "watching" the end of the queue (or near it), jump to this item?
+      // Or if they are way back in history, maybe don't jump?
+      // For now, let's jump to it so they see progress.
+      seekHistory(nextIdx)
+      
+      const startTime = Date.now()
+      
+      try {
+          const { urls, seed: usedSeed } = await requestImage(item.params)
+          
+          item.status = 'completed'
+          item.images = urls
+          item.params.seed = usedSeed // Record the actual seed used
+          item.generation_time = (Date.now() - startTime) / 1000
+          
+          // If we are still looking at this item, update the view
+          if (historyIndex.value === nextIdx) {
+              imageUrls.value = urls
+              seed.value = usedSeed // Update input field if we are still on this item
+          }
+          
+      } catch (e: any) {
+          console.error("Queue processing error:", e)
+          item.status = 'failed'
+          item.error = e.message
+          if (historyIndex.value === nextIdx) {
+              error.value = e.message
+          }
+      } finally {
+          isGenerating.value = false
+          
+          // Auto-continue if Endless Mode is on
+          if (isEndless.value && item.status === 'completed') {
+             // Re-queue the SAME params (or current params?)
+             // endless mode usually means "do it again".
+             // We should use the *current* params from the store, 
+             // because user might have tweaked them while waiting.
+             setTimeout(() => triggerGeneration(lastGenerationMode.value), 200)
+          }
+          
+          // Process next item
+          setTimeout(() => processQueue(), 100)
+      }
   }
 
   // VRAM State
@@ -624,7 +773,7 @@ export const useGenerationStore = defineStore('generation', () => {
     maskImage?: string | null
   }
 
-  async function requestImage(params: GenerationParams, signal?: AbortSignal): Promise<string[]> {
+  async function requestImage(params: GenerationParams, signal?: AbortSignal): Promise<{ urls: string[], seed: number }> {
     let finalPrompt = params.prompt
     let finalNegativePrompt = params.negative_prompt
 
@@ -706,12 +855,17 @@ export const useGenerationStore = defineStore('generation', () => {
       throw new Error('Server response did not contain image data.');
     }
     
+    const usedSeed = responseData.data[0].seed || params.seed;
+
     // Update seed with the actual one used from the first image
-    if (responseData.data[0].seed && lastParams.value) {
-        lastParams.value.seed = responseData.data[0].seed
+    if (usedSeed && lastParams.value) {
+        lastParams.value.seed = usedSeed
     }
 
-    return responseData.data.map((item: any) => item.url);
+    return {
+        urls: responseData.data.map((item: any) => item.url),
+        seed: usedSeed
+    };
   }
 
   function reuseLastSeed() {
@@ -898,36 +1052,32 @@ export const useGenerationStore = defineStore('generation', () => {
 
   async function generateImage(params: GenerationParams) {
     if (isModelSwitching.value) return;
-    isGenerating.value = true
-    imageUrls.value = []
-    error.value = null
-    const startTime = Date.now();
-    lastParams.value = { ...params }
     
-    // Progress is now handled automatically via WebSocket
-
-    try {
-      imageUrls.value = await requestImage(params);
-      const endTime = Date.now();
-      lastParams.value.total_generation_time = (endTime - startTime) / 1000;
-    } catch (e: any) {
-      error.value = e.message
-      console.error(e)
-      // Stop endless on error to prevent infinite error loops
-      isEndless.value = false
-    } finally {
-      isGenerating.value = false
-      if (isEndless.value && !error.value) {
-        // Small delay to let UI breathe and prevent stack issues
-        setTimeout(() => {
-          if (isEndless.value) triggerGeneration(lastGenerationMode.value)
-        }, 200)
-      }
+    // Create History Item
+    const newItem: GenerationHistoryItem = {
+        uuid: generateUUID(),
+        status: 'pending',
+        params: { ...params },
+        images: [],
+        timestamp: Date.now()
     }
+    
+    // Add to History
+    history.value.push(newItem)
+    
+    // If we were at the end (or history was empty), jump to this new item
+    // Actually, always jump to new item when user explicitly requests generation?
+    // Yes, usually.
+    seekHistory(history.value.length - 1)
+    
+    // Trigger Processing
+    processQueue()
   }
 
   function triggerGeneration(mode: 'txt2img' | 'img2img' | 'inpainting') {
-    if (!prompt.value || isGenerating.value || isModelSwitching.value) return
+    if (!prompt.value || isModelSwitching.value) return
+    // Note: We allow triggering even if isGenerating (to queue)
+    
     lastGenerationMode.value = mode
     
     generateImage({
@@ -958,7 +1108,8 @@ export const useGenerationStore = defineStore('generation', () => {
     isModelsLoading, fetchModels, loadModel, loadLlmModel, unloadLlmModel, loadUpscaleModel, testLlmCompletion, enhancePrompt,
     progressStep, progressSteps, progressTime, progressPhase, progressMessage, eta, 
     lastParams, outputDir, modelDir, isLlmThinking, 
-    promptHistory, historyIndex, canUndo, canRedo, undoPrompt, redoPrompt, commitPrompt,
+    promptHistory, promptHistoryIndex, canUndo, canRedo, undoPrompt, redoPrompt, commitPrompt,
+    history, historyIndex, currentHistoryItem, queueCount, canGoBack, canGoForward, seekHistory, goBack, goForward,
     updateConfig, reuseLastSeed, randomizeSeed, swapDimensions,
     styles, activeStyleNames, fetchStyles, saveStyle, deleteStyle, applyStyle, extractStylesFromPrompt,
     currentModelMetadata, resetToModelDefaults, applyAspectRatio, snapToNext16,
