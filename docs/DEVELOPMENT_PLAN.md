@@ -61,9 +61,10 @@ This document outlines the roadmap for MystiCanvas, merging original milestones 
 *   [ ] **B1. Health-Driven VRAM Registry:**
     *   Workers report detailed memory usage.
     *   Orchestrator tracks model footprints.
-*   [ ] **B2. Predictive Arbitration (Orchestrator):**
+*   [x] **B2. Predictive Arbitration (Orchestrator):**
     *   Compute expected VRAM (Weights + Compute + Safety).
     *   Logic: Proceed vs. Soft Unload (KV) vs. Hard Unload.
+    *   *(Partial: Implemented arbitration for LLM Loading to prevent OOM)*.
 *   [ ] **B2.5. Latency-Optimized State Transitions:**
     *   LRU / Idle unload policy (e.g., "unload after 10m idle").
     *   Pre-warm models when resources allow.
@@ -71,9 +72,10 @@ This document outlines the roadmap for MystiCanvas, merging original milestones 
     *   [x] Dynamic VAE tiling based on resolution.
     *   [x] Auto VAE-on-CPU fallback if VRAM is tight.
     *   [x] **B3.4 Text Encoder Offload:** Enable `clip_on_cpu` for massive encoders (e.g., T5XXL) per preset.
-*   [ ] **B4. UI Feedback:**
+*   [x] **B4. UI Feedback:**
     *   Indicate "Projected vs Actual" VRAM.
     *   Notifications for "VAE moved to CPU" or "LLM Unloaded".
+    *   *(Partial: Implemented user-facing errors for insufficient VRAM during LLM load)*.
 
 **Definition of Done:**
 *   Zero "silent crashes" or blank images due to VRAM.
@@ -122,7 +124,7 @@ This document outlines the roadmap for MystiCanvas, merging original milestones 
 *   [x] **D1. Preset Schema:**
     *   [x] `image_presets` table: `unet`, `vae`, `clip`, `vram_weights_mb_estimate`, `vram_weights_mb_measured`, `default_params`, `preferred_params`.
     *   [x] `llm_presets` table: `model`, `mmproj`, `n_ctx`, `capabilities`, `role` (e.g., "Vision", "Assistant").
-*   [ ] **D2. Preset Manager UI:**
+*   [x] **D2. Preset Manager UI:**
     *   Interface to assemble/edit presets.
     *   Auto-calculate VRAM estimates from file sizes (heuristic).
     *   Update `vram_weights_mb_measured` from actual usage reports.
@@ -159,7 +161,7 @@ This document outlines the roadmap for MystiCanvas, merging original milestones 
 
 **Goal:** Image-grounded intelligence.
 
-*   [ ] **F1. Vision Presets:** Support `mmproj` in LLM presets (Depends on D1).
+*   [x] **F1. Vision Presets:** Support `mmproj` in LLM presets (Depends on D1).
 *   [ ] **F2. Image Handoff:** Mechanism to pass image paths to LLM worker.
 *   [ ] **F3. Vision Tagging Job:** Background job to tag images based on visual content (Depends on C6 + D1).
 *   [ ] **F4. Feedback Loop:** "Analyze last image and suggest improvements."
