@@ -784,9 +784,21 @@ void ServiceController::register_routes(httplib::Server& svr, const SDSvrParams&
             httplib::Headers h;
             if (!m_token.empty()) h.emplace("X-Internal-Token", m_token);
 
+            std::string sys_prompt = params.style_extractor_system_prompt;
+            if (m_db && m_last_llm_preset_id > 0) {
+                auto presets = m_db->get_llm_presets();
+                for (const auto& p : presets) {
+                    if (p.value("id", 0) == m_last_llm_preset_id) {
+                        std::string custom = p.value("system_prompt_style", "");
+                        if (!custom.empty()) sys_prompt = custom;
+                        break;
+                    }
+                }
+            }
+
             mysti::json chat_req;
             chat_req["messages"] = mysti::json::array({
-                {{"role", "system"}, {"content", params.style_extractor_system_prompt}},
+                {{"role", "system"}, {"content", sys_prompt}},
                 {{"role", "user"}, {"content", input_prompt}}
             });
             chat_req["temperature"] = 0.2;
@@ -1061,7 +1073,10 @@ void ServiceController::register_routes(httplib::Server& svr, const SDSvrParams&
             p.mmproj_path = j.value("mmproj_path", "");
             p.n_ctx = j.value("n_ctx", 2048);
             p.capabilities = j.value("capabilities", std::vector<std::string>());
-            p.role = j.value("role", "Assistant");
+            p.system_prompt_assistant = j.value("system_prompt_assistant", "");
+            p.system_prompt_tagging = j.value("system_prompt_tagging", "");
+            p.system_prompt_style = j.value("system_prompt_style", "");
+            
             if (p.name.empty() || p.model_path.empty()) { res.status = 400; return; }
             m_db->save_llm_preset(p);
             res.set_content(R"({\"status\":\"success\"})", "application/json");
@@ -1135,9 +1150,22 @@ void ServiceController::register_routes(httplib::Server& svr, const SDSvrParams&
         }
     });
 
-    svr.Get("/v1/assistant/config", [params](const httplib::Request&, httplib::Response& res) {
+    svr.Get("/v1/assistant/config", [this, params](const httplib::Request&, httplib::Response& res) {
         mysti::json c;
-        c["system_prompt"] = params.assistant_system_prompt;
+        std::string prompt = params.assistant_system_prompt;
+        
+        if (m_db && m_last_llm_preset_id > 0) {
+            auto presets = m_db->get_llm_presets();
+            for (const auto& p : presets) {
+                if (p.value("id", 0) == m_last_llm_preset_id) {
+                    std::string custom = p.value("system_prompt_assistant", "");
+                    if (!custom.empty()) prompt = custom;
+                    break;
+                }
+            }
+        }
+        
+        c["system_prompt"] = prompt;
         c["tools"] = {
             {
                 {"type", "function"},
