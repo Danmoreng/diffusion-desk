@@ -146,6 +146,12 @@ int run_llm_worker(SDSvrParams& svr_params, SDContextParams& ctx_params) {
         handle_unload_llm_model(res, llm_server); 
     });
 
+    svr.Post("/v1/llm/offload", [&](const httplib::Request& req, httplib::Response& res) { 
+        LOG_INFO("Offloading LLM to CPU...");
+        llm_server.offload_to_cpu();
+        res.set_content(R"({\"status\":\"success\"})", "application/json");
+    });
+
     LOG_INFO("LLM Worker listening on: %s:%d\n", svr_params.listen_ip.c_str(), svr_params.listen_port);
     svr.listen(svr_params.listen_ip, svr_params.listen_port);
 

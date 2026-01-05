@@ -338,6 +338,37 @@ void handle_unload_model(httplib::Response& res, ServerContext& ctx) {
     }
 }
 
+void handle_offload_model(httplib::Response& res, ServerContext& ctx) {
+    LOG_INFO("Offloading Image model to CPU/RAM.");
+    try {
+        std::lock_guard<std::mutex> lock(ctx.sd_ctx_mutex);
+        if (!ctx.sd_ctx) {
+            res.set_content(R"({\"status\":\"success\",\"message\":\"No model loaded\"})", "application/json");
+            return;
+        }
+
+        // We reload the current model with offload_params_to_cpu = true
+        auto params = ctx.ctx_params;
+        params.offload_params_to_cpu = true;
+        
+        LOG_INFO("Re-initializing SD context with CPU offloading...");
+        auto sd_params = params.to_sd_ctx_params_t(false, false, false);
+        ctx.sd_ctx.reset(new_sd_ctx(&sd_params));
+        
+        if (ctx.sd_ctx) {
+            ctx.ctx_params.offload_params_to_cpu = true;
+            res.set_content(R"({\"status\":\"success\",\"message\":\"Model offloaded to CPU\"})", "application/json");
+        } else {
+            res.status = 500;
+            res.set_content(R"({\"error\":\"Failed to re-initialize model for offloading\"})", "application/json");
+        }
+    } catch (const std::exception& e) {
+        LOG_ERROR("Failed to offload model: %s", e.what());
+        res.status = 500;
+        res.set_content(R"({\"error\":\")" + std::string(e.what()) + R"("})", "application/json");
+    }
+}
+
 void handle_load_upscale_model(const httplib::Request& req, httplib::Response& res, ServerContext& ctx) {
     try {
         mysti::json body = mysti::json::parse(req.body);
@@ -843,7 +874,11 @@ void handle_generate_image(const httplib::Request& req, httplib::Response& res, 
                 LOG_INFO("Total expected steps: %d", progress_state.total_steps);
             }
 
-            set_progress_phase("Sampling...");
+            if (gen_params.clip_on_cpu) {
+                set_progress_phase("Encoding Prompt (CLIP CPU)...");
+            } else {
+                set_progress_phase("Sampling...");
+            }
             log_vram_status("Sampling Start");
             float vram_before = get_current_process_vram_usage_gb();
             results     = generate_image(ctx.sd_ctx.get(), &img_gen_params);

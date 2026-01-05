@@ -7,7 +7,7 @@
 
 namespace mysti {
 
-ServiceController::ServiceController(std::shared_ptr<Database> db, 
+ServiceController::ServiceController(std::shared_ptr<Database> db,
                                      std::shared_ptr<ResourceManager> res_mgr,
                                      std::shared_ptr<WsManager> ws_mgr,
                                      std::shared_ptr<ToolService> tool_svc,
@@ -162,6 +162,170 @@ void ServiceController::generate_model_preview(std::string model_id, std::string
     } catch (...) {}
 }
 
+bool ServiceController::ensure_sd_model_loaded(const std::string& model_id, const SDSvrParams& params) {
+    if (model_id.empty()) return false;
+    
+    std::unique_lock<std::mutex> lock(m_load_mutex);
+    if (m_active_sd_model == model_id && m_sd_loaded) return true;
+
+    // Check if another thread is already loading this model
+    if (m_currently_loading_sd == model_id) {
+        LOG_INFO("[SmartQueue] Waiting for SD model load: %s", model_id.c_str());
+        m_load_cv.wait_for(lock, std::chrono::seconds(60), [this, &model_id]() {
+            return m_active_sd_model == model_id && m_sd_loaded;
+        });
+        return m_active_sd_model == model_id && m_sd_loaded;
+    }
+
+    // Start loading
+    m_currently_loading_sd = model_id;
+    m_sd_loaded = false;
+    lock.unlock();
+
+    LOG_INFO("[SmartQueue] Triggering lazy load for SD model: %s", model_id.c_str());
+    mysti::json load_req;
+    load_req["model_id"] = model_id;
+    
+    // Check for preset metadata (VAE etc)
+    if (m_db) {
+        auto meta = m_db->get_model_metadata(model_id);
+        if (!meta.empty()) {
+            if (meta.contains("vae")) load_req["vae"] = meta["vae"];
+            if (meta.contains("clip_l")) load_req["clip_l"] = meta["clip_l"];
+            if (meta.contains("clip_g")) load_req["clip_g"] = meta["clip_g"];
+            if (meta.contains("t5xxl")) load_req["t5xxl"] = meta["t5xxl"];
+        }
+    }
+
+    httplib::Client cli("127.0.0.1", m_sd_port);
+    cli.set_read_timeout(120);
+    httplib::Headers h;
+    if (!m_token.empty()) h.emplace("X-Internal-Token", m_token);
+    
+    auto res = cli.Post("/v1/models/load", h, load_req.dump(), "application/json");
+    
+    lock.lock();
+    m_currently_loading_sd = "";
+    if (res && res->status == 200) {
+        m_active_sd_model = model_id;
+        m_sd_loaded = true;
+        m_last_sd_model_req_body = load_req.dump();
+        LOG_INFO("[SmartQueue] SD model loaded: %s", model_id.c_str());
+        m_load_cv.notify_all();
+        return true;
+    } else {
+        LOG_ERROR("[SmartQueue] Failed to lazy load SD model: %s", model_id.c_str());
+        m_load_cv.notify_all();
+        return false;
+    }
+}
+
+bool ServiceController::ensure_llm_loaded(const std::string& model_id, const SDSvrParams& params) {
+    if (model_id.empty()) return false;
+    
+    std::unique_lock<std::mutex> lock(m_load_mutex);
+    if (m_active_llm_model == model_id && m_llm_loaded) return true;
+
+    if (m_currently_loading_llm == model_id) {
+        m_load_cv.wait_for(lock, std::chrono::seconds(60), [this, &model_id]() {
+            return m_active_llm_model == model_id && m_llm_loaded;
+        });
+        return m_active_llm_model == model_id && m_llm_loaded;
+    }
+
+    m_currently_loading_llm = model_id;
+    m_llm_loaded = false;
+    lock.unlock();
+
+    LOG_INFO("[SmartQueue] Triggering lazy load for LLM: %s", model_id.c_str());
+    
+    // Estimate size for arbitration
+    float estimated_gb = 4.0f;
+    uint64_t model_bytes = get_file_size((fs::path(params.model_dir) / model_id).string());
+    if (model_bytes > 0) {
+        estimated_gb = ((float)model_bytes / (1024.0f * 1024.0f * 1024.0f)) + 1.0f;
+    }
+
+    if (!m_res_mgr->prepare_for_llm_load(estimated_gb)) {
+        lock.lock();
+        m_currently_loading_llm = "";
+        m_load_cv.notify_all();
+        return false;
+    }
+
+    mysti::json load_req;
+    load_req["model_id"] = model_id;
+    
+    // Attempt to lookup preset config for full context (mmproj etc)
+    if (m_db) {
+        auto presets = m_db->get_llm_presets();
+        for (const auto& p : presets) {
+            if (p.is_object() && (p["model_path"] == model_id || p["model_path"] == (fs::path(params.model_dir) / model_id).string())) {
+                if (p.contains("mmproj_path") && !p["mmproj_path"].get<std::string>().empty()) {
+                    load_req["mmproj_id"] = p["mmproj_path"];
+                }
+                if (p.contains("n_ctx")) {
+                    load_req["n_ctx"] = p["n_ctx"];
+                }
+                LOG_INFO("[SmartQueue] Using preset config for %s", model_id.c_str());
+                break;
+            }
+        }
+    }
+    
+    httplib::Client cli("127.0.0.1", m_llm_port);
+    cli.set_read_timeout(120);
+    httplib::Headers h;
+    if (!m_token.empty()) h.emplace("X-Internal-Token", m_token);
+    
+    auto res = cli.Post("/v1/llm/load", h, load_req.dump(), "application/json");
+    
+    // Uncommit after worker has finished loading (polling will pick it up soon)
+    m_res_mgr->uncommit_vram(estimated_gb * 1.1f);
+
+    lock.lock();
+    m_currently_loading_llm = "";
+    if (res && res->status == 200) {
+        m_active_llm_model = model_id;
+        m_llm_loaded = true;
+        m_last_llm_model_req_body = load_req.dump();
+        LOG_INFO("[SmartQueue] LLM model loaded: %s", model_id.c_str());
+        m_load_cv.notify_all();
+        return true;
+    } else {
+        m_load_cv.notify_all();
+        return false;
+    }
+}
+
+void ServiceController::notify_model_loaded(const std::string& type, const std::string& model_id) {
+    {
+        std::lock_guard<std::mutex> lock(m_load_mutex);
+        if (type == "sd") {
+            m_active_sd_model = model_id;
+            m_sd_loaded = !model_id.empty();
+        } else if (type == "llm") {
+            m_active_llm_model = model_id;
+            m_llm_loaded = !model_id.empty();
+        }
+        m_load_cv.notify_all();
+    }
+    
+    // Sync tracking state for restoration
+    if (!model_id.empty()) {
+        std::lock_guard<std::mutex> lock(m_state_mutex);
+        mysti::json j;
+        j["model_id"] = model_id;
+        if (type == "sd") {
+            // Only update if empty to avoid overwriting detailed params from a real request
+            if (m_last_sd_model_req_body.empty()) m_last_sd_model_req_body = j.dump();
+        } else if (type == "llm") {
+             // Only update if empty to avoid overwriting detailed params (n_ctx etc)
+            if (m_last_llm_model_req_body.empty()) m_last_llm_model_req_body = j.dump();
+        }
+    }
+}
+
 void ServiceController::register_routes(httplib::Server& svr, const SDSvrParams& params) {
     if (!svr.set_mount_point("/app", params.app_dir)) {
         LOG_WARN("failed to mount %s directory", params.app_dir.c_str());
@@ -203,75 +367,50 @@ void ServiceController::register_routes(httplib::Server& svr, const SDSvrParams&
         Proxy::forward_request(req, res, "127.0.0.1", m_llm_port, "", m_token);
     };
 
-    svr.Post("/v1/models/load", [this](const httplib::Request& req, httplib::Response& res) {
+    svr.Post("/v1/models/load", [this, params](const httplib::Request& req, httplib::Response& res) {
         LOG_INFO("Request: POST /v1/models/load, Body: %s", req.body.c_str());
-        std::string modified_body = req.body;
-        if (m_db) {
-            try {
-                auto j = mysti::json::parse(req.body);
-                std::string model_id = j.value("model_id", "");
-                if (!model_id.empty()) {
-                    auto meta = m_db->get_model_metadata(model_id);
-                    if (!meta.empty()) {
-                        if (meta.contains("vae") && !meta["vae"].get<std::string>().empty()) j["vae"] = meta["vae"];
-                        if (meta.contains("llm") && !meta["llm"].get<std::string>().empty()) j["llm"] = meta["llm"];
-                        modified_body = j.dump();
-                        LOG_DEBUG("Model metadata applied. Modified body: %s", modified_body.c_str());
-                    }
-                }
-            } catch(...) {}
+        std::string model_id = "";
+        try {
+            auto j = mysti::json::parse(req.body);
+            model_id = j.value("model_id", "");
+        } catch(...) {}
+
+        if (model_id.empty()) {
+            res.status = 400;
+            res.set_content(R"({\"error\":\"model_id required\"})", "application/json");
+            return;
         }
-        httplib::Request mod_req = req;
-        mod_req.body = modified_body;
-        Proxy::forward_request(mod_req, res, "127.0.0.1", m_sd_port, "", m_token);
-        if (res.status == 200) {
-            LOG_INFO("Model loaded successfully: %s", modified_body.c_str());
-            std::lock_guard<std::mutex> lock(m_state_mutex);
-            m_last_sd_model_req_body = modified_body;
+
+        // Use ensure helper which handles queueing
+        if (ensure_sd_model_loaded(model_id, params)) {
+            res.status = 200;
+            res.set_content(R"({\"status\":\"success\"})", "application/json");
         } else {
-            LOG_ERROR("Failed to load model. Status: %d", res.status);
+            res.status = 500;
+            res.set_content(R"({\"error\":\"Failed to load SD model\"})", "application/json");
         }
     });
 
     svr.Post("/v1/llm/load", [this, params](const httplib::Request& req, httplib::Response& res) {
         LOG_INFO("Request: POST /v1/llm/load, Body: %s", req.body.c_str());
-        
-        // 1. Estimate Size
-        float estimated_gb = 4.0f; // Default conservative estimate
+        std::string model_id = "";
         try {
             auto j = mysti::json::parse(req.body);
-            std::string model_id = j.value("model_id", "");
-            std::string mmproj_id = j.value("mmproj_id", "");
-            int n_ctx = j.value("n_ctx", 2048);
-            
-            if (!model_id.empty()) {
-                uint64_t model_bytes = get_file_size((fs::path(params.model_dir) / model_id).string());
-                uint64_t proj_bytes = mmproj_id.empty() ? 0 : get_file_size((fs::path(params.model_dir) / mmproj_id).string());
-                
-                if (model_bytes > 0) {
-                    // Weights + KV Cache estimate
-                    // KV Cache ~ 2 * n_layers * n_heads * head_dim * n_ctx * 2 bytes (f16)
-                    // Rough heuristic: 0.5 GB per 4k context for 7B models
-                    float kv_gb = (float)n_ctx / 8192.0f; 
-                    estimated_gb = ((float)(model_bytes + proj_bytes) / (1024.0f * 1024.0f * 1024.0f)) + kv_gb + 0.5f; // +0.5GB runtime overhead
-                }
-            }
+            model_id = j.value("model_id", "");
         } catch(...) {}
 
-        // 2. Arbitrate
-        if (!m_res_mgr->prepare_for_llm_load(estimated_gb)) {
-            res.status = 503; // Service Unavailable / Overloaded
-            res.set_content(R"({\"error\":\"Insufficient VRAM to load this LLM. Try unloading the Image model first.\"})", "application/json");
+        if (model_id.empty()) {
+            res.status = 400;
+            res.set_content(R"({\"error\":\"model_id required\"})", "application/json");
             return;
         }
 
-        Proxy::forward_request(req, res, "127.0.0.1", m_llm_port, "", m_token);
-        if (res.status == 200) {
-            LOG_INFO("LLM model loaded successfully.");
-            std::lock_guard<std::mutex> lock(m_state_mutex);
-            m_last_llm_model_req_body = req.body;
+        if (ensure_llm_loaded(model_id, params)) {
+            res.status = 200;
+            res.set_content(R"({\"status\":\"success\"})", "application/json");
         } else {
-            LOG_ERROR("Failed to load LLM model. Status: %d", res.status);
+            res.status = 500;
+            res.set_content(R"({\"error\":\"Failed to load LLM model\"})", "application/json");
         }
     });
 
@@ -287,15 +426,36 @@ void ServiceController::register_routes(httplib::Server& svr, const SDSvrParams&
 
         LOG_INFO("Request: POST /v1/images/generations");
         std::string modified_body = req.body;
-        httplib::Headers h;
-        if (!m_token.empty()) h.emplace("X-Internal-Token", m_token);
+        
+        // 1. Ensure Model is Loaded (Lazy Load)
+        std::string requested_model_id = "";
+        {
+            std::lock_guard<std::mutex> lock(m_state_mutex);
+            if (!m_last_sd_model_req_body.empty()) {
+                try {
+                    requested_model_id = mysti::json::parse(m_last_sd_model_req_body).value("model_id", "");
+                } catch(...) {}
+            }
+        }
+        
+        // Check if request body overrides model (usually not in our UI, but for API compatibility)
+        try {
+            auto j_req = mysti::json::parse(req.body);
+            if (j_req.contains("model_id")) requested_model_id = j_req["model_id"];
+        } catch(...) {}
 
-        int req_width = 512;
-        int req_height = 512;
-        int req_batch = 1;
+        if (!requested_model_id.empty()) {
+            if (!ensure_sd_model_loaded(requested_model_id, params)) {
+                res.status = 503;
+                res.set_content(R"({\"error\":\"Model not loaded and lazy load failed.\"})", "application/json");
+                return;
+            }
+        }
+
+        // 2. Estimate VRAM and Arbitrate
+        int req_width = 512, req_height = 512, req_batch = 1;
         bool req_hires = false;
         float req_hires_factor = 2.0f;
-
         try {
             auto j = mysti::json::parse(req.body);
             req_width = j.value("width", 512);
@@ -305,149 +465,57 @@ void ServiceController::register_routes(httplib::Server& svr, const SDSvrParams&
             req_hires_factor = j.value("hires_upscale_factor", 2.0f);
         } catch(...) {}
 
-        // Simple heuristic for Needed VRAM (GB)
-        // Base overhead (model weights + basic context) + resolution overhead
-        
-        // Determine current model_id from cache (avoid extra HTTP call)
-        std::string active_model_id = "";
-        {
-            std::lock_guard<std::mutex> lock(m_state_mutex);
-            if (!m_last_sd_model_req_body.empty()) {
-                try {
-                    active_model_id = mysti::json::parse(m_last_sd_model_req_body).value("model_id", "");
-                } catch(...) {}
-            }
-        }
-
-        float base_gb = 4.5f; // Default fallback
+        float base_gb = 4.5f;
         float clip_gb = 0.0f;
-        if (!active_model_id.empty()) {
-            fs::path model_path = fs::path(params.model_dir) / active_model_id;
-            uint64_t size_bytes = get_file_size(model_path.string());
-            
-            // Add size of CLIP/T5 encoders if present
-            try {
-                if (!m_last_sd_model_req_body.empty()) {
-                    auto j_req = mysti::json::parse(m_last_sd_model_req_body);
-                    uint64_t clip_bytes = 0;
-                    auto add_size = [&](const std::string& key) {
-                        std::string path = j_req.value(key, "");
-                        if (!path.empty()) {
-                            uint64_t s = get_file_size((fs::path(params.model_dir) / path).string());
-                            size_bytes += s;
-                            clip_bytes += s;
-                        }
-                    };
-                    add_size("clip_l");
-                    add_size("clip_g");
-                    add_size("t5xxl");
-                    add_size("llm");
-                    
-                    if (clip_bytes > 0) {
-                        clip_gb = (float)clip_bytes / (1024.0f * 1024.0f * 1024.0f);
-                    }
-                }
-            } catch (...) {}
-
-            if (size_bytes > 0) {
-                base_gb = (float)size_bytes / (1024.0f * 1024.0f * 1024.0f);
-                base_gb += 0.5f; // Add 0.5GB for context/runtime overhead
-                LOG_DEBUG("Using actual model size (Weights+Encoders) for base VRAM: %.2f GB (CLIP: %.2f GB)", base_gb, clip_gb);
-            }
+        fs::path model_path = fs::path(params.model_dir) / requested_model_id;
+        uint64_t size_bytes = get_file_size(model_path.string());
+        if (size_bytes > 0) {
+            base_gb = (float)size_bytes / (1024.0f * 1024.0f * 1024.0f) + 0.5f;
         }
 
         float mp = (float)(req_width * req_height) / (1024.0f * 1024.0f);
-        
-        // Non-linear scaling to account for quadratic attention at high resolutions
-        // For resolutions > 2MP, we previously used a massive 8.0 factor which was too conservative.
-        // With VAE tiling, the actual bottleneck is usually the U-Net attention blocks.
-        // Adjusted scaling. Flash Attention (Z-Image) is closer to 1.2 GB/MP. Standard is closer to 2.5 GB/MP.
         float per_mp_factor = 1.5f; 
-        
-        // Z-Image / optimized models use Flash Attention which is much more memory efficient
-        std::string model_id_lower = active_model_id;
-        // Simple manual tolower to avoid header dependency issues if <algorithm> missing
-        for (auto& c : model_id_lower) c = tolower(c);
-
-        if (model_id_lower.find("z_image") != std::string::npos || model_id_lower.find("turbo") != std::string::npos) {
+        if (requested_model_id.find("z_image") != std::string::npos || requested_model_id.find("turbo") != std::string::npos) {
              per_mp_factor = 1.2f;
         }
-
-        if (mp > 2.0f && per_mp_factor > 1.5f) { 
-            // Minimal increase for high res, assuming tiling takes over
-            per_mp_factor += (mp - 2.0f) * 0.2f; 
-            if (per_mp_factor > 3.0f) per_mp_factor = 3.0f; 
-        }
-        // Hard cap for arbitration to prevent blocking valid tiled generations
-        if (per_mp_factor > 2.5f) per_mp_factor = 2.5f;
-        
-        LOG_DEBUG("Model ID for VRAM calc: %s, Factor: %.2f", active_model_id.c_str(), per_mp_factor);
         
         float resolution_gb = mp * per_mp_factor * req_batch; 
         if (req_hires) resolution_gb += (mp * req_hires_factor * req_hires_factor) * 1.5f;
 
-        float estimated_needed = base_gb + resolution_gb;
-        
-        try {
-            // Arbitration
-            ArbitrationResult arb = m_res_mgr->prepare_for_sd_generation(estimated_needed, mp, active_model_id, base_gb, clip_gb);
+        // Arbitration (this now COMMITS the VRAM if successful)
+        ArbitrationResult arb = m_res_mgr->prepare_for_sd_generation(base_gb + resolution_gb, mp, requested_model_id, base_gb, clip_gb);
 
-            if (!arb.success) {
-                res.status = 400;
-                res.set_content(R"({\"error\":\"Resource arbitration failed. Resolution may be too high (limit 2.5MP) or VRAM exhausted.\"})", "application/json");
-                return;
-            }
-
-            try {
-                auto j = mysti::json::parse(modified_body);
-                j["clip_on_cpu"] = arb.request_clip_offload;
-                j["vae_tiling"] = arb.request_vae_tiling;
-                modified_body = j.dump();
-            } catch(...) {}
-
-            if (m_db) {
-                try {
-                    mysti::json req_j = mysti::json::parse(modified_body);
-                    if (!modified_body.empty() && modified_body.size() < 10000 && modified_body.front() == '{') {
-                        LOG_DEBUG("Generation params: %s", redact_json(req_j).dump(2).c_str());
-                    } else if (modified_body.size() >= 10000) {
-                        LOG_DEBUG("Generation params: [too large to log]");
-                    }
-                    
-                    if (!active_model_id.empty()) {
-                        auto meta = m_db->get_model_metadata(active_model_id);
-                        if (!meta.empty()) {
-                            if (!req_j.contains("width") || req_j["width"] == 512) { if (meta.contains("width")) req_j["width"] = meta["width"]; }
-                            if (!req_j.contains("height") || req_j["height"] == 512) { if (meta.contains("height")) req_j["height"] = meta["height"]; }
-                            int current_steps = req_j.contains("sample_steps") ? req_j["sample_steps"].get<int>() : (req_j.contains("steps") ? req_j["steps"].get<int>() : 0);
-                            if (current_steps == 0 || current_steps == 20 || current_steps == 15) {
-                                if (meta.contains("sample_steps")) {
-                                    req_j["sample_steps"] = meta["sample_steps"];
-                                    req_j["steps"] = meta["sample_steps"];
-                                }
-                            }
-                            if (!req_j.contains("cfg_scale") || req_j["cfg_scale"] == 7.0) { if (meta.contains("cfg_scale")) req_j["cfg_scale"] = meta["cfg_scale"]; }
-                            modified_body = req_j.dump();
-                            LOG_DEBUG("Applied model defaults for generation.");
-                        }
-                    }
-                } catch(...) {}
-            }
-        } catch (const std::exception& e) {
-            LOG_ERROR("Exception during generation preparation: %s", e.what());
-            res.status = 500;
-            res.set_content(R"({\"error\":\"Internal Orchestrator Error during preparation\"})", "application/json");
-            return;
-        } catch (...) {
-            LOG_ERROR("Unknown exception during generation preparation.");
-            res.status = 500;
-            res.set_content(R"({\"error\":\"Unknown Internal Orchestrator Error\"})", "application/json");
+        if (!arb.success) {
+            res.status = 503;
+            res.set_content(R"({\"error\":\"Resource arbitration failed. VRAM exhausted.\"})", "application/json");
             return;
         }
+
+        // 3. Apply Mitigations and Proxy
+        try {
+            auto j = mysti::json::parse(modified_body);
+            j["clip_on_cpu"] = arb.request_clip_offload;
+            j["vae_tiling"] = arb.request_vae_tiling;
+
+            // Apply Preset Overrides
+            if (m_db) {
+                auto meta = m_db->get_model_metadata(requested_model_id);
+                if (meta.contains("memory")) {
+                    auto mem = meta["memory"];
+                    if (mem.value("force_clip_cpu", false)) j["clip_on_cpu"] = true;
+                    if (mem.value("force_vae_tiling", false)) j["vae_tiling"] = true;
+                }
+            }
+            
+            modified_body = j.dump();
+        } catch(...) {}
 
         httplib::Request mod_req = req;
         mod_req.body = modified_body;
         Proxy::forward_request(mod_req, res, "127.0.0.1", m_sd_port, "", m_token);
+        
+        // 4. Uncommit VRAM
+        m_res_mgr->uncommit_vram(arb.committed_gb);
         
         if (res.status == 200 && m_db) {
             try {
@@ -505,6 +573,38 @@ void ServiceController::register_routes(httplib::Server& svr, const SDSvrParams&
             } catch (...) {}
         }
     });
+
+    svr.Post("/v1/chat/completions", [this, params](const httplib::Request& req, httplib::Response& res) {
+        std::string model_id = "";
+        try {
+            auto j = mysti::json::parse(req.body);
+            model_id = j.value("model", "");
+        } catch(...) {}
+
+        if (!model_id.empty()) {
+            ensure_llm_loaded(model_id, params);
+        }
+        Proxy::forward_request(req, res, "127.0.0.1", m_llm_port, "", m_token);
+    });
+
+    svr.Post("/v1/completions", [this, params](const httplib::Request& req, httplib::Response& res) {
+        std::string model_id = "";
+        try {
+            auto j = mysti::json::parse(req.body);
+            model_id = j.value("model", "");
+        } catch(...) {}
+
+        if (!model_id.empty()) {
+            ensure_llm_loaded(model_id, params);
+        }
+        Proxy::forward_request(req, res, "127.0.0.1", m_llm_port, "", m_token);
+    });
+
+    svr.Post("/v1/embeddings", proxy_llm);
+    svr.Post("/v1/tokenize", proxy_llm);
+    svr.Post("/v1/detokenize", proxy_llm);
+    svr.Post("/v1/llm/unload", proxy_llm);
+    svr.Post("/v1/llm/offload", proxy_llm);
 
     svr.Get("/v1/models", proxy_sd);
     svr.Get("/v1/config", proxy_sd);
@@ -812,13 +912,7 @@ void ServiceController::register_routes(httplib::Server& svr, const SDSvrParams&
 
     svr.Get("/outputs/(.*)", proxy_sd);
     svr.Get("/v1/llm/models", proxy_llm);
-    svr.Post("/v1/chat/completions", proxy_llm);
-    svr.Post("/v1/completions", proxy_llm);
-    svr.Post("/v1/embeddings", proxy_llm);
-    svr.Post("/v1/tokenize", proxy_llm);
-    svr.Post("/v1/detokenize", proxy_llm);
-    svr.Post("/v1/llm/unload", proxy_llm);
-
+    
     svr.Get("/health", [this](const httplib::Request&, httplib::Response& res) {
         auto status = m_res_mgr->get_vram_status();
         status["status"] = "ok";
@@ -906,7 +1000,7 @@ void ServiceController::register_routes(httplib::Server& svr, const SDSvrParams&
         res.set_content(R"({\"status\":\"success\"})", "application/json");
     });
 
-    svr.Post("/v1/presets/image/load", [this](const httplib::Request& req, httplib::Response& res) {
+    svr.Post("/v1/presets/image/load", [this, params](const httplib::Request& req, httplib::Response& res) {
         if (!m_db) { res.status = 500; return; }
         try {
             auto j = mysti::json::parse(req.body);
@@ -919,19 +1013,14 @@ void ServiceController::register_routes(httplib::Server& svr, const SDSvrParams&
                 res.set_content(R"({\"error\":\"preset not found\"})", "application/json");
                 return;
             }
-            mysti::json load_req;
-            load_req["model_id"] = selected["unet_path"];
-            if (!selected["vae_path"].get<std::string>().empty()) load_req["vae"] = selected["vae_path"];
-            if (!selected["clip_l_path"].get<std::string>().empty()) load_req["clip_l"] = selected["clip_l_path"];
-            if (!selected["clip_g_path"].get<std::string>().empty()) load_req["clip_g"] = selected["clip_g_path"];
-            if (!selected["t5xxl_path"].get<std::string>().empty()) load_req["t5xxl"] = selected["t5xxl_path"];
-            httplib::Request mod_req = req;
-            mod_req.path = "/v1/models/load";
-            mod_req.body = load_req.dump();
-            Proxy::forward_request(mod_req, res, "127.0.0.1", m_sd_port, "", m_token);
-            if (res.status == 200) {
-                std::lock_guard<std::mutex> lock(m_state_mutex);
-                m_last_sd_model_req_body = mod_req.body;
+            
+            std::string model_id = selected["unet_path"];
+            if (ensure_sd_model_loaded(model_id, params)) {
+                res.status = 200;
+                res.set_content(R"({\"status\":\"success\"})", "application/json");
+            } else {
+                res.status = 500;
+                res.set_content(R"({\"error\":\"failed to load preset model\"})", "application/json");
             }
         } catch(...) { res.status = 400; }
     });
@@ -975,7 +1064,7 @@ void ServiceController::register_routes(httplib::Server& svr, const SDSvrParams&
                 {"type", "function"},
                 {"function", {
                     {"name", "search_history"},
-                    {"description", "Search through past generations using keywords."},
+                    {"description", "Search through past generations using keywords."} ,
                     {"parameters", {
                         {"type", "object"},
                         {"properties", {
@@ -989,7 +1078,7 @@ void ServiceController::register_routes(httplib::Server& svr, const SDSvrParams&
                 {"type", "function"},
                 {"function", {
                     {"name", "get_vram_status"},
-                    {"description", "Get the current VRAM usage and capacity."},
+                    {"description", "Get the current VRAM usage and capacity."} ,
                     {"parameters", {
                         {"type", "object"},
                         {"properties", {}}
@@ -1000,7 +1089,7 @@ void ServiceController::register_routes(httplib::Server& svr, const SDSvrParams&
                 {"type", "function"},
                 {"function", {
                     {"name", "update_generation_params"},
-                    {"description", "Update the image generation parameters (prompt, steps, size, etc.) in the UI."},
+                    {"description", "Update the image generation parameters (prompt, steps, size, etc.) in the UI."} ,
                     {"parameters", {
                         {"type", "object"},
                         {"properties", {

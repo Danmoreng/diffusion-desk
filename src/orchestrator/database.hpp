@@ -73,6 +73,11 @@ struct ImagePreset {
     int vram_weights_mb_measured = 0;
     mysti::json default_params;
     mysti::json preferred_params;
+
+    struct MemoryOptimizations {
+        bool force_clip_cpu = false;
+        bool force_vae_tiling = false;
+    } memory_settings;
 };
 
 struct LlmPreset {
