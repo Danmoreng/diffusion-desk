@@ -87,7 +87,10 @@ struct LlmPreset {
     std::string mmproj_path;
     int n_ctx = 2048;
     std::vector<std::string> capabilities;
-    std::string role;
+    // Removed role, replaced with specific system prompts
+    std::string system_prompt_assistant;
+    std::string system_prompt_tagging;
+    std::string system_prompt_style;
 };
 
 class Database {
@@ -182,6 +185,7 @@ private:
     void migrate_to_v2();
     void migrate_to_v3();
     void migrate_to_v4();
+    void migrate_to_v5();
 
     SQLite::Database m_db;
     std::recursive_mutex m_mutex; // Protects access to m_db, recursive to allow nested calls

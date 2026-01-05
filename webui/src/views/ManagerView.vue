@@ -29,7 +29,9 @@ interface LlmPreset {
   model_path: string
   mmproj_path: string
   n_ctx: number
-  role: string
+  system_prompt_assistant?: string
+  system_prompt_tagging?: string
+  system_prompt_style?: string
 }
 
 const router = useRouter()
@@ -65,7 +67,7 @@ const editingImagePreset = ref<ImagePreset>({
   id: 0, name: '', unet_path: '', vae_path: '', clip_l_path: '', clip_g_path: '', t5xxl_path: '', vram_weights_mb_estimate: 0, default_params: {}
 })
 const editingLlmPreset = ref<LlmPreset>({
-  id: 0, name: '', model_path: '', mmproj_path: '', n_ctx: 2048, role: 'Assistant'
+  id: 0, name: '', model_path: '', mmproj_path: '', n_ctx: 2048
 })
 
 // Helper lists for dropdowns
@@ -316,7 +318,7 @@ function openPresetModal(type: 'image' | 'llm', preset?: any) {
     else editingImagePreset.value = { id: 0, name: '', unet_path: '', vae_path: '', clip_l_path: '', clip_g_path: '', t5xxl_path: '', vram_weights_mb_estimate: 0, default_params: {} }
   } else {
     if (preset) editingLlmPreset.value = { ...preset }
-    else editingLlmPreset.value = { id: 0, name: '', model_path: '', mmproj_path: '', n_ctx: 2048, role: 'Assistant' }
+    else editingLlmPreset.value = { id: 0, name: '', model_path: '', mmproj_path: '', n_ctx: 2048, system_prompt_assistant: '', system_prompt_tagging: '', system_prompt_style: '' }
   }
   
   if (presetModalRef.value) {
@@ -522,7 +524,6 @@ onUnmounted(() => {
                         <div class="card-body">
                             <div class="d-flex justify-content-between">
                                 <h5 class="card-title">{{ preset.name }}</h5>
-                                <span class="badge bg-secondary">{{ preset.role }}</span>
                             </div>
                             <div class="small text-muted mb-2 mt-2">
                                 <div class="text-truncate fw-bold" title="Model"><i class="bi bi-chat-text"></i> {{ preset.model_path.split('/').pop() }}</div>
@@ -996,15 +997,6 @@ onUnmounted(() => {
                  <input type="text" v-model="editingLlmPreset.name" class="form-control" placeholder="e.g. Qwen2-VL Vision">
                </div>
                
-               <div class="col-md-6">
-                 <label class="form-label small text-uppercase fw-bold">Role</label>
-                 <select v-model="editingLlmPreset.role" class="form-select">
-                    <option value="Assistant">Assistant (Chat/Tools)</option>
-                    <option value="Vision">Vision (Tagging/Analysis)</option>
-                    <option value="Roleplay">Roleplay</option>
-                 </select>
-               </div>
-               
                <div class="col-12"><hr class="my-2"></div>
                
                <div class="col-12">
@@ -1024,6 +1016,29 @@ onUnmounted(() => {
                <div class="col-md-6">
                  <label class="form-label small text-uppercase fw-bold">Context Size</label>
                  <input type="number" v-model="editingLlmPreset.n_ctx" class="form-control" step="1024">
+               </div>
+
+               <div class="col-12"><hr class="my-2"></div>
+               <div class="col-12">
+                   <div class="d-flex justify-content-between align-items-center mb-2">
+                       <label class="form-label small text-uppercase fw-bold mb-0">System Prompts</label>
+                       <button class="btn btn-xs btn-outline-secondary" type="button" @click="editingLlmPreset.system_prompt_assistant=''; editingLlmPreset.system_prompt_tagging=''; editingLlmPreset.system_prompt_style=''">
+                           <i class="bi bi-arrow-counterclockwise"></i> Reset to Defaults
+                       </button>
+                   </div>
+                   
+                   <div class="mb-3">
+                       <label class="form-label x-small text-muted">Assistant Role</label>
+                       <textarea v-model="editingLlmPreset.system_prompt_assistant" class="form-control form-control-sm" rows="2" placeholder="Default: You are an integrated creative assistant..."></textarea>
+                   </div>
+                   <div class="mb-3">
+                       <label class="form-label x-small text-muted">Image Tagging</label>
+                       <textarea v-model="editingLlmPreset.system_prompt_tagging" class="form-control form-control-sm" rows="2" placeholder="Default: Analyze the image and provide JSON tags..."></textarea>
+                   </div>
+                   <div class="mb-3">
+                       <label class="form-label x-small text-muted">Style Extraction</label>
+                       <textarea v-model="editingLlmPreset.system_prompt_style" class="form-control form-control-sm" rows="2" placeholder="Default: Extract artistic styles from prompt..."></textarea>
+                   </div>
                </div>
             </div>
 

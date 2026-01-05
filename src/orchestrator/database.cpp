@@ -91,6 +91,12 @@ void Database::init_schema() {
             std::cout << "[Database] Migrated to version 4 (App Config)" << std::endl;
         }
 
+        if (current_version < 5) {
+            migrate_to_v5();
+            set_schema_version(5);
+            std::cout << "[Database] Migrated to version 5 (LLM Preset Prompts)" << std::endl;
+        }
+
         std::cout << "[Database] Schema initialized successfully." << std::endl;
 
     } catch (const std::exception& e) {
@@ -337,6 +343,18 @@ void Database::migrate_to_v4() {
         );
     )");
 
+    transaction.commit();
+}
+
+void Database::migrate_to_v5() {
+    SQLite::Transaction transaction(m_db);
+    try {
+        m_db.exec("ALTER TABLE llm_presets ADD COLUMN system_prompt_assistant TEXT DEFAULT ''");
+        m_db.exec("ALTER TABLE llm_presets ADD COLUMN system_prompt_tagging TEXT DEFAULT ''");
+        m_db.exec("ALTER TABLE llm_presets ADD COLUMN system_prompt_style TEXT DEFAULT ''");
+    } catch (const std::exception& e) {
+        std::cerr << "[Database] migrate_to_v5 warning (columns might exist): " << e.what() << std::endl;
+    }
     transaction.commit();
 }
 
@@ -789,8 +807,9 @@ void Database::save_llm_preset(const LlmPreset& p) {
     try {
         SQLite::Statement query(m_db, R"(
             INSERT OR REPLACE INTO llm_presets (
-                id, name, model_path, mmproj_path, n_ctx, capabilities, role
-            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                id, name, model_path, mmproj_path, n_ctx, capabilities, role,
+                system_prompt_assistant, system_prompt_tagging, system_prompt_style
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         )");
         if (p.id > 0) query.bind(1, p.id); else query.bind(1);
         query.bind(2, p.name);
@@ -798,7 +817,10 @@ void Database::save_llm_preset(const LlmPreset& p) {
         query.bind(4, p.mmproj_path);
         query.bind(5, p.n_ctx);
         query.bind(6, mysti::json(p.capabilities).dump());
-        query.bind(7, p.role);
+        query.bind(7, ""); // Role is deprecated, store empty
+        query.bind(8, p.system_prompt_assistant);
+        query.bind(9, p.system_prompt_tagging);
+        query.bind(10, p.system_prompt_style);
         query.exec();
     } catch (...) {}
 }
@@ -807,7 +829,7 @@ mysti::json Database::get_llm_presets() {
     std::lock_guard<std::recursive_mutex> lock(m_mutex);
     mysti::json results = mysti::json::array();
     try {
-        SQLite::Statement query(m_db, "SELECT id, name, model_path, mmproj_path, n_ctx, capabilities, role FROM llm_presets ORDER BY name ASC");
+        SQLite::Statement query(m_db, "SELECT id, name, model_path, mmproj_path, n_ctx, capabilities, role, system_prompt_assistant, system_prompt_tagging, system_prompt_style FROM llm_presets ORDER BY name ASC");
         while (query.executeStep()) {
             mysti::json p;
             p["id"] = query.getColumn(0).getInt();
@@ -816,7 +838,10 @@ mysti::json Database::get_llm_presets() {
             p["mmproj_path"] = query.getColumn(3).getText();
             p["n_ctx"] = query.getColumn(4).getInt();
             p["capabilities"] = mysti::json::parse(query.getColumn(5).getText());
-            p["role"] = query.getColumn(6).getText();
+            p["role"] = query.getColumn(6).getText(); // Deprecated but returned for compatibility
+            p["system_prompt_assistant"] = query.getColumn(7).getText();
+            p["system_prompt_tagging"] = query.getColumn(8).getText();
+            p["system_prompt_style"] = query.getColumn(9).getText();
             results.push_back(p);
         }
     } catch (...) {}

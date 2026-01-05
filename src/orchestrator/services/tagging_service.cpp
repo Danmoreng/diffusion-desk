@@ -326,9 +326,28 @@ void TaggingService::loop() {
 
             std::string data_uri = "data:" + mime_type + ";base64," + b64;
             
+            // Resolve System Prompt
+            std::string active_prompt = m_system_prompt;
+            if (m_db) {
+                std::string last_llm = m_db->get_config("last_llm_preset_id");
+                if (!last_llm.empty()) {
+                    try {
+                        int pid = std::stoi(last_llm);
+                        auto presets = m_db->get_llm_presets();
+                        for (const auto& p : presets) {
+                            if (p.value("id", 0) == pid) {
+                                std::string custom = p.value("system_prompt_tagging", "");
+                                if (!custom.empty()) active_prompt = custom;
+                                break;
+                            }
+                        }
+                    } catch(...) {}
+                }
+            }
+
             mysti::json chat_req;
             chat_req["messages"] = mysti::json::array();
-            chat_req["messages"].push_back({{"role", "system"}, {"content", m_system_prompt}});
+            chat_req["messages"].push_back({{"role", "system"}, {"content", active_prompt}});
             
             if (!loaded_mmproj.empty()) {
                 // Vision Request
