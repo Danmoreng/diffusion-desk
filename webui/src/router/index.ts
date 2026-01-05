@@ -7,7 +7,6 @@ import ExplorationView from '../views/ExplorationView.vue'
 import SettingsView from '../views/SettingsView.vue'
 import GalleryView from '../views/GalleryView.vue'
 import ManagerView from '../views/ManagerView.vue'
-import VisionDebugView from '../views/VisionDebugView.vue'
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -16,11 +15,6 @@ const router = createRouter({
       path: '/',
       name: 'Text-to-Image',
       component: TextToImageView
-    },
-    {
-      path: '/vision',
-      name: 'Vision Debugger',
-      component: VisionDebugView
     },
     {
       path: '/exploration',

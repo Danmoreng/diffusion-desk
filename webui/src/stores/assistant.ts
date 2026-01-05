@@ -24,6 +24,7 @@ export const useAssistantStore = defineStore('assistant', () => {
       timestamp: Date.now()
     }
   ])
+  const attachedImage = ref<string | null>(null)
 
   const generationStore = useGenerationStore()
 
@@ -230,13 +231,22 @@ export const useAssistantStore = defineStore('assistant', () => {
     ]
   }
 
+  function attachImage(image: string) {
+    attachedImage.value = image
+    if (!isOpen.value) {
+      isOpen.value = true
+    }
+  }
+
   return {
     isOpen,
     isLoading,
     messages,
     lastUsage,
+    attachedImage,
     toggleAssistant,
     sendMessage,
+    attachImage,
     clearHistory
   }
 })

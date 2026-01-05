@@ -15,7 +15,7 @@ const generationStore = useGenerationStore()
 const newMessage = ref('')
 const scrollContainer = ref<HTMLElement | null>(null)
 const fileInput = ref<HTMLInputElement | null>(null)
-const attachedImage = ref<string | null>(null)
+const isDragging = ref(false)
 
 const scrollToBottom = async () => {
   await nextTick()
@@ -25,10 +25,10 @@ const scrollToBottom = async () => {
 }
 
 const handleSend = () => {
-  if ((!newMessage.value.trim() && !attachedImage.value) || assistantStore.isLoading) return
-  assistantStore.sendMessage(newMessage.value, attachedImage.value || undefined)
+  if ((!newMessage.value.trim() && !assistantStore.attachedImage) || assistantStore.isLoading) return
+  assistantStore.sendMessage(newMessage.value, assistantStore.attachedImage || undefined)
   newMessage.value = ''
-  attachedImage.value = null
+  assistantStore.attachedImage = null
 }
 
 const handleFileUpload = (event: Event) => {
@@ -36,7 +36,7 @@ const handleFileUpload = (event: Event) => {
   if (target.files && target.files[0]) {
     const reader = new FileReader()
     reader.onload = (e) => {
-      attachedImage.value = e.target?.result as string
+      assistantStore.attachedImage = e.target?.result as string
     }
     reader.readAsDataURL(target.files[0])
   }
@@ -44,7 +44,74 @@ const handleFileUpload = (event: Event) => {
 }
 
 const clearAttachment = () => {
-  attachedImage.value = null
+  assistantStore.attachedImage = null
+}
+
+const attachLastImage = async () => {
+  if (generationStore.imageUrls.length > 0) {
+    const url = generationStore.imageUrls[0]
+    try {
+      const response = await fetch(url)
+      const blob = await response.blob()
+      const reader = new FileReader()
+      reader.onloadend = () => {
+        assistantStore.attachImage(reader.result as string)
+      }
+      reader.readAsDataURL(blob)
+    } catch (e) {
+      console.error("Failed to attach last image", e)
+    }
+  }
+}
+
+const handleDrop = async (e: DragEvent) => {
+  isDragging.value = false
+  e.preventDefault()
+  
+  const files = e.dataTransfer?.files
+  if (files && files.length > 0) {
+    const file = files[0]
+    if (file.type.startsWith('image/')) {
+      const reader = new FileReader()
+      reader.onload = (event) => {
+        assistantStore.attachImage(event.target?.result as string)
+      }
+      reader.readAsDataURL(file)
+      return
+    }
+  }
+
+  // Handle image URLs (e.g. dragging from elsewhere in the app)
+  const html = e.dataTransfer?.getData('text/html')
+  if (html) {
+    const doc = new DOMParser().parseFromString(html, 'text/html')
+    const img = doc.querySelector('img')
+    if (img && img.src) {
+      // If it's a blob URL from our own app, we should ideally convert it to base64
+      // or just use it as is if the backend can handle it.
+      // But for better compatibility, let's try to fetch and convert to base64.
+      try {
+        const response = await fetch(img.src)
+        const blob = await response.blob()
+        const reader = new FileReader()
+        reader.onloadend = () => {
+          assistantStore.attachImage(reader.result as string)
+        }
+        reader.readAsDataURL(blob)
+      } catch (err) {
+        console.error("Failed to process dropped image URL", err)
+      }
+    }
+  }
+}
+
+const onDragOver = (e: DragEvent) => {
+  e.preventDefault()
+  isDragging.value = true
+}
+
+const onDragLeave = () => {
+  isDragging.value = false
 }
 
 // Markdown formatter using markdown-it
@@ -67,7 +134,13 @@ onMounted(scrollToBottom)
 
 <template>
   <div class="assistant-panel bg-body d-flex flex-column shadow-sm" 
-       :class="[generationStore.assistantPosition === 'right' ? 'border-start' : 'border-end']">
+       :class="[
+         generationStore.assistantPosition === 'right' ? 'border-start' : 'border-end',
+         { 'drag-over': isDragging }
+       ]"
+       @dragover="onDragOver"
+       @dragleave="onDragLeave"
+       @drop="handleDrop">
     <!-- Header -->
     <div class="p-3 border-bottom d-flex justify-content-between align-items-center bg-body-tertiary">
       <div class="d-flex align-items-center gap-2">
@@ -86,6 +159,14 @@ onMounted(scrollToBottom)
         </button>
         <button class="btn-close" @click="assistantStore.toggleAssistant"></button>
       </div>
+    </div>
+
+    <!-- Drop Overlay -->
+    <div v-if="isDragging" class="drop-overlay d-flex align-items-center justify-content-center">
+        <div class="text-center">
+            <i class="bi bi-cloud-arrow-down fs-1 text-primary"></i>
+            <p class="mb-0 fw-bold">Drop image to attach</p>
+        </div>
     </div>
 
     <!-- Chat Area -->
@@ -162,8 +243,8 @@ onMounted(scrollToBottom)
          :class="[generationStore.actionBarPosition === 'top' ? 'border-bottom' : 'border-top']">
       
       <!-- Image Preview -->
-      <div v-if="attachedImage" class="attachment-preview mb-2 position-relative d-inline-block">
-        <img :src="attachedImage" class="rounded border bg-body" style="height: 60px; width: auto;" />
+      <div v-if="assistantStore.attachedImage" class="attachment-preview mb-2 position-relative d-inline-block">
+        <img :src="assistantStore.attachedImage" class="rounded border bg-body" style="height: 60px; width: auto;" />
         <button class="btn btn-danger btn-sm position-absolute top-0 start-100 translate-middle rounded-circle p-0 d-flex align-items-center justify-content-center" 
                 style="width: 20px; height: 20px;" 
                 @click="clearAttachment">
@@ -172,8 +253,17 @@ onMounted(scrollToBottom)
       </div>
 
       <form @submit.prevent="handleSend" class="input-group">
-        <button class="btn btn-outline-secondary assistant-btn" type="button" @click="fileInput?.click()" title="Attach Image">
+        <button class="btn btn-outline-secondary assistant-btn" type="button" @click="fileInput?.click()" title="Attach Image from File">
           <i class="bi bi-image"></i>
+        </button>
+        <button 
+          class="btn btn-outline-secondary assistant-btn" 
+          type="button" 
+          @click="attachLastImage" 
+          title="Attach Last Generated Image"
+          :disabled="generationStore.imageUrls.length === 0"
+        >
+          <i class="bi bi-magic"></i>
         </button>
         <input 
           type="file" 
@@ -193,7 +283,7 @@ onMounted(scrollToBottom)
         <button 
           class="btn btn-primary assistant-btn px-3" 
           type="submit" 
-          :disabled="( !newMessage.trim() && !attachedImage ) || assistantStore.isLoading"
+          :disabled="( !newMessage.trim() && !assistantStore.attachedImage ) || assistantStore.isLoading"
         >
           <i class="bi bi-send"></i>
         </button>
@@ -229,6 +319,24 @@ onMounted(scrollToBottom)
   flex-direction: column;
   background-image: radial-gradient(var(--bs-border-color) 1px, transparent 1px);
   background-size: 20px 20px;
+  min-height: 0; /* Critical for shrinking when input grows */
+}
+
+.assistant-panel.drag-over {
+  border: 2px dashed var(--bs-primary) !important;
+  background-color: var(--bs-primary-bg-subtle) !important;
+}
+
+.drop-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(var(--bs-primary-rgb), 0.1);
+  backdrop-filter: blur(2px);
+  z-index: 100;
+  pointer-events: none;
 }
 
 .message-bubble {
