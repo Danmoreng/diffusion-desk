@@ -11,6 +11,7 @@ struct ArbitrationResult {
     bool success = true;
     bool request_clip_offload = false;
     bool request_vae_tiling = false;
+    float committed_gb = 0.0f;
 };
 
 class ResourceManager {
@@ -34,6 +35,10 @@ public:
     void update_model_footprint(const std::string& model_id, float vram_gb);
     float get_model_footprint(const std::string& model_id);
 
+    // Committed VRAM management
+    void commit_vram(float gb);
+    void uncommit_vram(float gb);
+
 private:
     int m_sd_port;
     int m_llm_port;
@@ -41,6 +46,7 @@ private:
     std::mutex m_mutex;
     float m_last_sd_vram_gb = 0.0f;
     float m_last_llm_vram_gb = 0.0f;
+    std::atomic<float> m_committed_vram_gb{0.0f};
     std::map<std::string, float> m_model_footprints;
 };
 

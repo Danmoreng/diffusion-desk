@@ -76,6 +76,23 @@ bool LlamaServer::load_model(const std::string& model_path, const std::string& m
     return true;
 }
 
+void LlamaServer::offload_to_cpu() {
+    std::lock_guard<std::mutex> lock(state_mutex);
+    if (!server_ctx) return;
+    
+    // Backup current params
+    std::string path = llama_params.model.path;
+    std::string mm_path = llama_params.mmproj.path;
+    int ctx = llama_params.n_ctx;
+    int img_tokens = llama_params.image_max_tokens;
+
+    LOG_INFO("Moving LLM model to RAM (n_gpu_layers=0)...");
+    
+    // We cannot easily move an existing context, so we reload with 0 GPU layers.
+    // Since weights are likely in OS file cache, this is much faster than first load.
+    load_model(path, mm_path, 0, ctx, img_tokens);
+}
+
 void LlamaServer::stop() {
     // Note: state_mutex should be held by caller or we need a internal_stop
     if (server_ctx) {

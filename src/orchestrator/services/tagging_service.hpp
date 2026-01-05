@@ -13,7 +13,7 @@ namespace mysti {
 
 class TaggingService {
 public:
-    TaggingService(std::shared_ptr<Database> db, int llm_port, const std::string& token, const std::string& system_prompt);
+    TaggingService(std::shared_ptr<Database> db, int llm_port, int orchestrator_port, const std::string& token, const std::string& system_prompt);
     ~TaggingService();
 
     void start();
@@ -33,6 +33,7 @@ private:
 
     std::shared_ptr<Database> m_db;
     int m_llm_port;
+    int m_orchestrator_port;
     std::string m_token;
     std::string m_system_prompt;
     

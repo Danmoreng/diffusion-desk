@@ -30,6 +30,9 @@ public:
     void set_on_generation_callback(std::function<void()> cb) { m_on_generation = cb; }
     void set_generation_active_callback(std::function<void(bool)> cb) { m_generation_active_cb = cb; }
 
+    // Smart Queue: Notify from external metrics if needed
+    void notify_model_loaded(const std::string& type, const std::string& model_id);
+
 private:
     std::shared_ptr<Database> m_db;
     std::shared_ptr<ResourceManager> m_res_mgr;
@@ -43,12 +46,26 @@ private:
     std::string m_last_llm_model_req_body;
     std::mutex m_state_mutex;
 
-    std::function<void()> m_on_generation;
-    std::function<void(bool)> m_generation_active_cb;
+    // Smart Queue State
+    std::mutex m_load_mutex;
+    std::condition_variable m_load_cv;
+    std::string m_currently_loading_sd;
+    std::string m_currently_loading_llm;
+    std::string m_active_sd_model;
+    std::string m_active_llm_model;
+    bool m_sd_loaded = false;
+    bool m_llm_loaded = false;
 
     // Helper for generating previews (moved from main)
     void generate_style_preview(Style style, std::string output_dir);
     void generate_model_preview(std::string model_id, std::string output_dir);
+
+    // Internal Smart Queue helpers
+    bool ensure_sd_model_loaded(const std::string& model_id, const SDSvrParams& params);
+    bool ensure_llm_loaded(const std::string& model_id, const SDSvrParams& params);
+
+    std::function<void()> m_on_generation;
+    std::function<void(bool)> m_generation_active_cb;
 };
 
 } // namespace mysti

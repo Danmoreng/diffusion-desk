@@ -129,7 +129,7 @@ int run_orchestrator(int argc, const char** argv, SDSvrParams& svr_params) {
     g_job_svc = std::make_shared<mysti::JobService>(g_db);
     g_thumb_svc = std::make_unique<mysti::ThumbnailService>(g_job_svc, g_db);
     g_job_svc->start();
-    g_tagging_svc = std::make_unique<mysti::TaggingService>(g_db, llm_port, g_internal_token, svr_params.tagger_system_prompt);
+    g_tagging_svc = std::make_unique<mysti::TaggingService>(g_db, llm_port, svr_params.listen_port, g_internal_token, svr_params.tagger_system_prompt);
     g_tagging_svc->set_model_provider([]() { return g_controller->get_last_llm_model_req(); });
     g_tagging_svc->start();
     g_controller->set_on_generation_callback([]() { if (g_tagging_svc) g_tagging_svc->notify_new_generation(); });
@@ -196,6 +196,9 @@ int run_orchestrator(int argc, const char** argv, SDSvrParams& svr_params) {
                     bool sd_loaded = j.value("model_loaded", false);
                     if (sd_loaded && !sd_model.empty()) {
                          g_res_mgr->update_model_footprint(sd_model, sd_vram);
+                         g_controller->notify_model_loaded("sd", sd_model);
+                    } else if (!sd_loaded) {
+                         g_controller->notify_model_loaded("sd", "");
                     }
                 }
 
@@ -207,6 +210,9 @@ int run_orchestrator(int argc, const char** argv, SDSvrParams& svr_params) {
                     llm_loaded = j.value("model_loaded", false);
                     if (llm_loaded && !llm_model.empty()) {
                         g_res_mgr->update_model_footprint(llm_model, llm_vram);
+                        g_controller->notify_model_loaded("llm", llm_model);
+                    } else if (!llm_loaded) {
+                        g_controller->notify_model_loaded("llm", "");
                     }
                     if (!llm_model.empty()) {
                         fs::path mp(llm_model);

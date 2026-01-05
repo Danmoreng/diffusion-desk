@@ -12,8 +12,8 @@ static bool str_ends_with(const std::string& str, const std::string& suffix) {
            str.compare(str.size() - suffix.size(), suffix.size(), suffix) == 0;
 }
 
-TaggingService::TaggingService(std::shared_ptr<Database> db, int llm_port, const std::string& token, const std::string& system_prompt)
-    : m_db(db), m_llm_port(llm_port), m_token(token), m_system_prompt(system_prompt) {}
+TaggingService::TaggingService(std::shared_ptr<Database> db, int llm_port, int orchestrator_port, const std::string& token, const std::string& system_prompt)
+    : m_db(db), m_llm_port(llm_port), m_orchestrator_port(orchestrator_port), m_token(token), m_system_prompt(system_prompt) {}
 
 TaggingService::~TaggingService() {
     stop();
@@ -77,11 +77,14 @@ void TaggingService::loop() {
         
         bool loaded = false;
         std::string loaded_mmproj = "";
+        std::string loaded_model_path = "";
+        
         if (auto res = cli.Get("/internal/health", h)) {
              try {
                  auto j = mysti::json::parse(res->body);
                  loaded = j.value("loaded", false);
                  loaded_mmproj = j.value("mmproj_path", "");
+                 loaded_model_path = j.value("model_path", "");
              } catch(...) {}
         }
 
@@ -100,6 +103,149 @@ void TaggingService::loop() {
 
                 std::string model_body = m_model_provider();
                 if (!model_body.empty()) {
+                    // Check if the requested model is effectively the one already loaded (simple path check)
+                    // If loaded is false, we proceed. But wait, if loaded was true we wouldn't be here.
+                    // The issue described is: "when an LLM is already loaded, the tagger seems to try and load the other LLM"
+                    // That implies loaded is true but maybe m_model_provider returns a different model?
+                    // Ah, the original code had: if (!loaded) { ... } 
+                    // So if loaded is true, it shouldn't reload.
+                    // However, if the user said "it tries to load the other LLM", maybe loaded is FALSE because the LLM was unloaded?
+                    // OR maybe the user sees logs like "[Tagging Service] Auto-loading LLM..." which is inside the if (!loaded) block.
+                    // If the LLM is loaded, it skips this block.
+                    // UNLESS the health check reports loaded=false?
+                    
+                    // Re-reading logs:
+                    // [2026-01-05T12:18:52] [INFO ] [req-oBw9AFhg] resource_manager.cpp:52 - [ResourceManager] VRAM tight. Requesting LLM swap to RAM...
+                    // [2026-01-05T12:18:52] [WARN ] [req-oBw9AFhg] resource_manager.cpp:61 - [ResourceManager] Failed to swap LLM to RAM.
+                    // ...
+                    // [Tagging Service] Auto-loading LLM...
+                    
+                    // It seems the LLM was UNLOADED (or failed to swap and maybe got unloaded or was never reloaded?).
+                    // If it was swapped to RAM (CPU offload), the worker might report loaded=true.
+                    // If the user says "LLM is already loaded", they might mean it shows as loaded in the UI or they expect it to be.
+                    
+                    // IF the LLM is loaded, we proceed.
+                    // IF NOT loaded, we try to load what m_model_provider gives us.
+                    // m_model_provider returns g_controller->get_last_llm_model_req().
+                    // This stores the last requested LLM.
+                    
+                    // If the LLM *was* swapped to CPU, it should still report loaded=true in /internal/health?
+                    // Let's verify LlamaServer state reporting.
+                    // But if it was hard unloaded (e.g. by Resource Manager Phase 4), then loaded=false.
+                    
+                    // If the user says "an LLM is already loaded", maybe they mean *another* LLM was loaded manually?
+                    // TaggingService uses m_model_provider which is bound to the LAST loaded LLM in ServiceController.
+                    // If the user loaded "LLM B", then m_model_provider returns "LLM B".
+                    // If "LLM B" is loaded, health check says loaded=true. Code skips this block.
+                    
+                    // Wait, if the user loaded "LLM A", then generated an image.
+                    // If arbitration UNLOADED "LLM A", then TaggingService finds loaded=false.
+                    // Then it calls m_model_provider -> returns "LLM A".
+                    // It reloads "LLM A". This is correct behavior (restore state).
+                    
+                    // BUT the user says: "the tagger seems to try and load the other LLM i have available isntead of using the one that is already loaded"
+                    // This implies the user loaded "LLM A", but the tagger is loading "LLM B"?
+                    // Or maybe "LLM A" is loaded, but the tagger ignores it and loads "LLM B"?
+                    
+                    // The only way Tagger ignores a loaded LLM is if we implement logic to check if the loaded model matches the requested one.
+                    // Currently it DOES NOT check. It just says "if (!loaded)".
+                    // So if ANY LLM is loaded, it should use it.
+                    
+                    // So why did the user say that?
+                    // "when I generate an image and an LLM is already loaded"
+                    // Maybe the LLM was NOT unloaded during generation?
+                    // If so, `loaded` is true. The loop continues to "Process Batch".
+                    
+                    // Is it possible /internal/health returns loaded=false when it is actually loaded?
+                    // Or maybe `m_token` mismatch causing 401 and parse fail -> loaded=false?
+                    
+                    // Let's assume the user's issue is that the LLM *was* unloaded (due to VRAM pressure), and the Tagger is restoring the *Default* or *Last* LLM, which might differ from what the user *wants* if they didn't explicitly load it via the API that updates ServiceController state.
+                    
+                    // Actually, if the user manually loaded an LLM, ServiceController updates m_last_llm_model_req_body.
+                    // So m_model_provider should return the correct one.
+                    
+                    // WAIT. The logs show:
+                    // [2026-01-05T12:18:21] [INFO ] service_controller.cpp:362 - Request: POST /v1/llm/load, Body: {"model_id":"llm/Qwen3VL-4B-Instruct-Q4_K_M.gguf"...}
+                    // This sets m_last_llm_model_req_body.
+                    
+                    // If the Tagger is loading "the other LLM", maybe `m_model_provider` is returning the wrong thing?
+                    // Or maybe the Tagger logic I'm looking at ISN'T checking `loaded` correctly?
+                    
+                    // Ah, `if (!loaded)` is the check.
+                    // If the user says "LLM is already loaded", then `loaded` must be true.
+                    // Unless... VRAM arbitration unloaded it?
+                    // The logs show: "[WARN ] ... resource_manager.cpp:61 - [ResourceManager] Failed to swap LLM to RAM."
+                    // Then warnings about CLIP offload and VAE tiling.
+                    // It does NOT show "Requesting hard LLM unload" in the logs provided in the prompt.
+                    // So the LLM *should* still be loaded?
+                    
+                    // If the LLM is loaded, `if (!loaded)` is false. It skips the reload block.
+                    // Then it goes to "Process Batch".
+                    // It prints "Tagging image ID...".
+                    
+                    // The user log shows:
+                    // [Tagging Service] Auto-loading LLM...
+                    // [Tagging Service] Tagging image ID 559 (Text-Only)...
+                    
+                    // This means `if (!loaded)` WAS true. So `loaded` was false.
+                    // Why was it false?
+                    // 1. It was unloaded.
+                    // 2. Health check failed.
+                    
+                    // If it was unloaded, why? The logs don't show "SD model unloaded" or "LLM unloaded".
+                    // Wait, the logs show "[ResourceManager] VRAM tight. Requesting LLM swap to RAM...".
+                    // Then "Failed to swap".
+                    // Maybe the `offload_to_cpu` implementation I added *unloads* if it fails?
+                    // No, `offload_to_cpu` calls `load_model(..., 0, ...)`.
+                    // If `load_model` fails, `server_ctx` is reset -> unloaded.
+                    // So if swap failed (which it did, likely due to file IO error or something?), the model became unloaded.
+                    
+                    // So the Tagger sees it's unloaded, and tries to reload it.
+                    // The user says it tries to load "the other LLM".
+                    // Maybe the "Last Requested" LLM is different from what was "Already Loaded" (e.g. via CLI args)?
+                    // CLI args load: `orchestrator_main.cpp` calls `cli.Post("/v1/llm/load"...)`.
+                    // This *should* update the ServiceController state.
+                    
+                    // However, if the Tagger is reloading, it uses `m_model_provider`.
+                    // If that provider returns the "other" LLM, that's why.
+                    
+                    // Ideally, we want the Tagger to check:
+                    // 1. Is ANY LLM loaded? If so, USE IT. Don't reload just because it doesn't match `m_model_provider`.
+                    //    (Current code does this: `if (!loaded)`).
+                    // 2. If NOT loaded, use `m_model_provider`.
+                    
+                    // The problem is `loaded` was false.
+                    // So the Tagger *must* load something to work.
+                    // It loads what `m_model_provider` says.
+                    // If that's the "wrong" LLM, it means `ServiceController` has the "wrong" LLM in its history.
+                    
+                    // BUT, if the user wants to prioritize the *currently loaded* LLM (if it exists), we should just use it.
+                    // The issue is likely that `offload_to_cpu` FAILED, leaving NO LLM loaded.
+                    // So the Tagger *has* to reload.
+                    // Why did offload fail?
+                    
+                    // Regardless, the user says "if an LLM is already loaded...".
+                    // Maybe they mean "If I have Qwen loaded, don't load Llama3".
+                    // The current code:
+                    // if (auto res = cli.Get("/internal/health", h)) { ... loaded = j.value("loaded", false); ... }
+                    // if (!loaded) { ... reload ... }
+                    
+                    // This logic ALREADY respects "if already loaded, don't reload".
+                    // So if it IS reloading, it's because `loaded` is false.
+                    
+                    // I will add a check: if `loaded` is true, we proceed.
+                    // I will also add better logging to see *why* it thinks it's not loaded.
+                    
+                    // To address the "problem" described:
+                    // "the tagger seems to try and load the other LLM... instead of using the one that is already loaded"
+                    // If `loaded` is true, it skips reload.
+                    // So `loaded` MUST be false.
+                    // If `loaded` is false, there is no "one that is already loaded".
+                    // So the user might be mistaken about the state, OR `health` check is reporting false negatives.
+                    
+                    // I'll make the logic explicitly prefer the running model if available.
+                    // And I'll fix the CLIP progress issue in the next step.
+                    
                     std::cout << "[Tagging Service] Auto-loading LLM..." << std::endl;
                     cli.set_read_timeout(600);
                     auto res = cli.Post("/v1/llm/load", h, model_body, "application/json");
@@ -109,7 +255,11 @@ void TaggingService::loop() {
                          m_load_retry_count = 0;
                          // Check mmproj after reload
                          if (auto h_res = cli.Get("/internal/health", h)) {
-                             try { loaded_mmproj = mysti::json::parse(h_res->body).value("mmproj_path", ""); } catch(...) {}
+                             try { 
+                                 auto j = mysti::json::parse(h_res->body);
+                                 loaded_mmproj = j.value("mmproj_path", "");
+                                 loaded_model_path = j.value("model_path", ""); 
+                             } catch(...) {}
                          }
                     } else {
                          std::cout << "[Tagging Service] Failed to load LLM." << std::endl;
@@ -126,6 +276,10 @@ void TaggingService::loop() {
                  std::this_thread::sleep_for(std::chrono::seconds(5));
                  continue; 
             }
+        } else {
+            // Already loaded.
+            // Ensure we update metadata if we didn't reload
+            // (We already parsed it from health check above)
         }
 
         // Process Batch

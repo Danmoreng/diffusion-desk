@@ -705,9 +705,16 @@ std::vector<std::string> Database::get_generation_files(int generation_id, const
     return results;
 }
 
-void Database::save_image_preset(const ImagePreset& p) {
+void Database::save_image_preset(const ImagePreset& p_in) {
     std::lock_guard<std::recursive_mutex> lock(m_mutex);
+    ImagePreset p = p_in;
     try {
+        // Serialize memory settings into preferred_params
+        mysti::json mem;
+        mem["force_clip_cpu"] = p.memory_settings.force_clip_cpu;
+        mem["force_vae_tiling"] = p.memory_settings.force_vae_tiling;
+        p.preferred_params["memory"] = mem;
+
         SQLite::Statement query(m_db, R"(
             INSERT OR REPLACE INTO image_presets (
                 id, name, unet_path, vae_path, clip_l_path, clip_g_path, t5xxl_path,
@@ -735,19 +742,19 @@ mysti::json Database::get_image_presets() {
     try {
         SQLite::Statement query(m_db, "SELECT id, name, unet_path, vae_path, clip_l_path, clip_g_path, t5xxl_path, vram_weights_mb_estimate, vram_weights_mb_measured, default_params, preferred_params FROM image_presets ORDER BY name ASC");
         while (query.executeStep()) {
-            mysti::json p;
-            p["id"] = query.getColumn(0).getInt();
-            p["name"] = query.getColumn(1).getText();
-            p["unet_path"] = query.getColumn(2).getText();
-            p["vae_path"] = query.getColumn(3).getText();
-            p["clip_l_path"] = query.getColumn(4).getText();
-            p["clip_g_path"] = query.getColumn(5).getText();
-            p["t5xxl_path"] = query.getColumn(6).getText();
-            p["vram_weights_mb_estimate"] = query.getColumn(7).getInt();
-            p["vram_weights_mb_measured"] = query.getColumn(8).getInt();
-            p["default_params"] = mysti::json::parse(query.getColumn(9).getText());
-            p["preferred_params"] = mysti::json::parse(query.getColumn(10).getText());
-            results.push_back(p);
+            mysti::json p_json;
+            p_json["id"] = query.getColumn(0).getInt();
+            p_json["name"] = query.getColumn(1).getText();
+            p_json["unet_path"] = query.getColumn(2).getText();
+            p_json["vae_path"] = query.getColumn(3).getText();
+            p_json["clip_l_path"] = query.getColumn(4).getText();
+            p_json["clip_g_path"] = query.getColumn(5).getText();
+            p_json["t5xxl_path"] = query.getColumn(6).getText();
+            p_json["vram_weights_mb_estimate"] = query.getColumn(7).getInt();
+            p_json["vram_weights_mb_measured"] = query.getColumn(8).getInt();
+            p_json["default_params"] = mysti::json::parse(query.getColumn(9).getText());
+            p_json["preferred_params"] = mysti::json::parse(query.getColumn(10).getText());
+            results.push_back(p_json);
         }
     } catch (...) {}
     return results;
