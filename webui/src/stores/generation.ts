@@ -549,27 +549,24 @@ export const useGenerationStore = defineStore('generation', () => {
   async function loadLlmPreset(id: number) {
       isLlmLoading.value = true
       try {
-        // Find preset to get params
-        const p = llmPresets.value.find(p => p.id === id)
-        if (!p) throw new Error("Preset not found")
-        
-        const res = await fetch('/v1/llm/load', {
+        const res = await fetch('/v1/presets/llm/load', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ 
-                model_id: p.model_path, 
-                mmproj_id: p.mmproj_path, 
-                n_ctx: p.n_ctx 
-            })
+            body: JSON.stringify({ id })
         })
         if (!res.ok) {
              const err = await res.json()
              throw new Error(err.error || 'Failed to load LLM preset')
         }
-        currentLlmPresetId.value = id
-        currentLlmModel.value = p.model_path
-        isLlmLoaded.value = true
-        llmContextSize.value = p.n_ctx || 2048
+        
+        // Find preset to update local state
+        const p = llmPresets.value.find(p => p.id === id)
+        if (p) {
+            currentLlmPresetId.value = id
+            currentLlmModel.value = p.model_path
+            isLlmLoaded.value = true
+            llmContextSize.value = p.n_ctx || 2048
+        }
       } catch(e: any) { error.value = e.message } finally { isLlmLoading.value = false }
   }
 

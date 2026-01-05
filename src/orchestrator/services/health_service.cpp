@@ -14,13 +14,15 @@ HealthService::HealthService(ProcessManager& pm,
              const std::vector<std::string>& sd_args, const std::vector<std::string>& llm_args,
              const std::string& sd_log, const std::string& llm_log,
              const std::string& token,
-             std::shared_ptr<WsManager> ws_mgr)
+             std::shared_ptr<WsManager> ws_mgr,
+             std::atomic<bool>* external_shutdown)
     : m_pm(pm), m_sd_proc(sd_proc), m_llm_proc(llm_proc),
       m_sd_port(sd_port), m_llm_port(llm_port),
       m_sd_exe(sd_exe), m_llm_exe(llm_exe),
       m_sd_args(sd_args), m_llm_args(llm_args),
       m_sd_log(sd_log), m_llm_log(llm_log),
-      m_token(token), m_ws_mgr(ws_mgr)
+      m_token(token), m_ws_mgr(ws_mgr),
+      m_external_shutdown(external_shutdown)
 {}
 
 HealthService::~HealthService() {
@@ -83,7 +85,7 @@ bool HealthService::wait_for_health(int port, int timeout_sec) {
 }
 
 void HealthService::restart_sd_worker() {
-    if (!m_running) return;
+    if (!m_running || (m_external_shutdown && m_external_shutdown->load())) return;
     LOG_WARN("Detected SD Worker failure. Restarting...");
     
     if (m_ws_mgr) {
@@ -156,7 +158,7 @@ void HealthService::restart_sd_worker() {
 }
 
 void HealthService::restart_llm_worker() {
-    if (!m_running) return;
+    if (!m_running || (m_external_shutdown && m_external_shutdown->load())) return;
     LOG_WARN("Detected LLM Worker failure. Restarting...");
     
     if (m_ws_mgr) {
@@ -221,6 +223,7 @@ void HealthService::loop() {
 
     while (m_running) {
         std::this_thread::sleep_for(std::chrono::seconds(2));
+        if (m_external_shutdown && m_external_shutdown->load()) break;
 
         httplib::Headers headers;
         if (!m_token.empty()) headers.emplace("X-Internal-Token", m_token);

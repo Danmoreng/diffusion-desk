@@ -21,6 +21,9 @@ public:
     
     void register_routes(httplib::Server& svr, const SDSvrParams& params);
 
+    // Startup / State Restoration
+    void load_last_presets(const SDSvrParams& params);
+
     // State accessors for recovery
     std::string get_last_sd_model_req() { std::lock_guard<std::mutex> lock(m_state_mutex); return m_last_sd_model_req_body; }
     std::string get_last_llm_model_req() { std::lock_guard<std::mutex> lock(m_state_mutex); return m_last_llm_model_req_body; }
@@ -32,6 +35,11 @@ public:
 
     // Smart Queue: Notify from external metrics if needed
     void notify_model_loaded(const std::string& type, const std::string& model_id);
+
+    // Internal Smart Queue helpers
+    bool ensure_sd_model_loaded(const std::string& model_id, const SDSvrParams& params);
+    bool ensure_llm_loaded(const std::string& model_id, const SDSvrParams& params);
+    bool load_llm_preset(int preset_id, const SDSvrParams& params);
 
 private:
     std::shared_ptr<Database> m_db;
@@ -46,6 +54,9 @@ private:
     std::string m_last_llm_model_req_body;
     std::mutex m_state_mutex;
 
+    int m_last_image_preset_id = -1;
+    int m_last_llm_preset_id = -1;
+
     // Smart Queue State
     std::mutex m_load_mutex;
     std::condition_variable m_load_cv;
@@ -59,10 +70,6 @@ private:
     // Helper for generating previews (moved from main)
     void generate_style_preview(Style style, std::string output_dir);
     void generate_model_preview(std::string model_id, std::string output_dir);
-
-    // Internal Smart Queue helpers
-    bool ensure_sd_model_loaded(const std::string& model_id, const SDSvrParams& params);
-    bool ensure_llm_loaded(const std::string& model_id, const SDSvrParams& params);
 
     std::function<void()> m_on_generation;
     std::function<void(bool)> m_generation_active_cb;

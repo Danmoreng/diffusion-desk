@@ -298,6 +298,53 @@ bool ServiceController::ensure_llm_loaded(const std::string& model_id, const SDS
     }
 }
 
+bool ServiceController::load_llm_preset(int preset_id, const SDSvrParams& params) {
+    if (!m_db) return false;
+    auto presets = m_db->get_llm_presets();
+    mysti::json selected = nullptr;
+    for (auto& p : presets) { if (p["id"] == preset_id) { selected = p; break; } }
+    if (selected == nullptr) return false;
+
+    std::string model_id = selected["model_path"];
+    LOG_INFO("Loading LLM Preset %d: %s", preset_id, model_id.c_str());
+    
+    if (ensure_llm_loaded(model_id, params)) {
+        m_last_llm_preset_id = preset_id;
+        m_db->set_config("last_llm_preset_id", std::to_string(preset_id));
+        return true;
+    }
+    return false;
+}
+
+void ServiceController::load_last_presets(const SDSvrParams& params) {
+    if (!m_db) return;
+
+    std::string last_img = m_db->get_config("last_image_preset_id");
+    std::string last_llm = m_db->get_config("last_llm_preset_id");
+
+    if (!last_img.empty()) {
+        try {
+            int id = std::stoi(last_img);
+            auto presets = m_db->get_image_presets();
+            for (auto& p : presets) {
+                if (p["id"] == id) {
+                    LOG_INFO("Restoring last Image Preset: %s", p.value("name", "unnamed").c_str());
+                    ensure_sd_model_loaded(p["unet_path"], params);
+                    m_last_image_preset_id = id;
+                    break;
+                }
+            }
+        } catch(...) {}
+    }
+
+    if (!last_llm.empty()) {
+        try {
+            int id = std::stoi(last_llm);
+            load_llm_preset(id, params);
+        } catch(...) {}
+    }
+}
+
 void ServiceController::notify_model_loaded(const std::string& type, const std::string& model_id) {
     {
         std::lock_guard<std::mutex> lock(m_load_mutex);
@@ -317,11 +364,39 @@ void ServiceController::notify_model_loaded(const std::string& type, const std::
         mysti::json j;
         j["model_id"] = model_id;
         if (type == "sd") {
-            // Only update if empty to avoid overwriting detailed params from a real request
             if (m_last_sd_model_req_body.empty()) m_last_sd_model_req_body = j.dump();
+            
+            // Auto-detect matching preset
+            if (m_db) {
+                auto presets = m_db->get_image_presets();
+                for (auto& p : presets) {
+                    if (p["unet_path"] == model_id) {
+                        int id = p["id"];
+                        if (id != m_last_image_preset_id) {
+                            m_last_image_preset_id = id;
+                            m_db->set_config("last_image_preset_id", std::to_string(id));
+                        }
+                        break;
+                    }
+                }
+            }
         } else if (type == "llm") {
-             // Only update if empty to avoid overwriting detailed params (n_ctx etc)
             if (m_last_llm_model_req_body.empty()) m_last_llm_model_req_body = j.dump();
+
+            // Auto-detect matching preset
+            if (m_db) {
+                auto presets = m_db->get_llm_presets();
+                for (auto& p : presets) {
+                    if (p["model_path"] == model_id) {
+                        int id = p["id"];
+                        if (id != m_last_llm_preset_id) {
+                            m_last_llm_preset_id = id;
+                            m_db->set_config("last_llm_preset_id", std::to_string(id));
+                        }
+                        break;
+                    }
+                }
+            }
         }
     }
 }
@@ -1016,11 +1091,28 @@ void ServiceController::register_routes(httplib::Server& svr, const SDSvrParams&
             
             std::string model_id = selected["unet_path"];
             if (ensure_sd_model_loaded(model_id, params)) {
+                m_last_image_preset_id = id;
+                m_db->set_config("last_image_preset_id", std::to_string(id));
                 res.status = 200;
                 res.set_content(R"({\"status\":\"success\"})", "application/json");
             } else {
                 res.status = 500;
                 res.set_content(R"({\"error\":\"failed to load preset model\"})", "application/json");
+            }
+        } catch(...) { res.status = 400; }
+    });
+
+    svr.Post("/v1/presets/llm/load", [this, params](const httplib::Request& req, httplib::Response& res) {
+        if (!m_db) { res.status = 500; return; }
+        try {
+            auto j = mysti::json::parse(req.body);
+            int id = j.value("id", 0);
+            if (load_llm_preset(id, params)) {
+                res.status = 200;
+                res.set_content(R"({\"status\":\"success\"})", "application/json");
+            } else {
+                res.status = 500;
+                res.set_content(R"({\"error\":\"failed to load llm preset\"})", "application/json");
             }
         } catch(...) { res.status = 400; }
     });
