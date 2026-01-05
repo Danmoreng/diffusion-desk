@@ -53,6 +53,10 @@ const formatMessage = (text: string | null | Array<any>) => {
   return md.render(text)
 }
 
+const getToolResult = (toolId: string) => {
+  return assistantStore.messages.find(m => m.role === 'tool' && m.tool_call_id === toolId)
+}
+
 watch(() => assistantStore.messages.length, scrollToBottom)
 watch(() => assistantStore.isOpen, (val) => {
   if (val) scrollToBottom()
@@ -90,36 +94,64 @@ onMounted(scrollToBottom)
            class="mb-3 d-flex flex-column"
            :class="msg.role === 'user' ? 'align-items-end' : 'align-items-start'">
         
-        <div v-if="msg.role !== 'tool'" 
-             class="message-bubble p-2 rounded-3 shadow-sm" 
+        <!-- 1. Text Content (User or Assistant) -->
+        <div v-if="msg.role === 'user' || (msg.role === 'assistant' && msg.content)" 
+             class="message-bubble p-2 rounded-3 shadow-sm mb-1" 
              :class="msg.role === 'user' ? 'bg-primary text-white' : 'bg-secondary-subtle text-body'">
-          <div class="small fw-bold mb-1" v-if="msg.role === 'assistant'">Assistant</div>
+          
+          <!-- Show Name only if it's a pure text message from assistant (not part of a tool sequence usually) -->
+          <div class="small fw-bold mb-1" v-if="msg.role === 'assistant' && !msg.tool_calls">Assistant</div>
           
           <!-- Image in history -->
           <img v-if="msg.image" :src="msg.image" class="img-fluid rounded mb-2" style="max-height: 200px;" alt="User upload" />
           
           <div class="text-break" v-html="formatMessage(msg.content)"></div>
+
+          <div class="message-time text-end opacity-75 mt-1" style="font-size: 0.7em;">
+            {{ new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }}
+          </div>
         </div>
 
-        <!-- Tool Call Indicator & Response -->
-        <div v-else class="w-100 mb-2 px-2">
-          <details class="tool-details border rounded bg-body-tertiary">
-            <summary class="px-2 py-1 small text-muted cursor-pointer d-flex align-items-center">
-              <i class="bi bi-gear-fill me-2"></i> 
-              <span class="fw-bold me-1">Tool:</span> <code>{{ msg.name }}</code>
-            </summary>
-            <div class="p-2 border-top bg-body">
-              <pre class="m-0 small text-muted text-wrap text-break" style="max-height: 200px; overflow-y: auto; white-space: pre-wrap;">{{ msg.content }}</pre>
-            </div>
-          </details>
-        </div>
+        <!-- 2. Tool Calls (Combined Box: Input + Output) -->
+        <div v-if="msg.role === 'assistant' && msg.tool_calls" class="w-100 px-2 my-1">
+          <div v-for="(tool, tIdx) in msg.tool_calls" :key="tIdx" class="border rounded bg-body-tertiary mb-2 overflow-hidden shadow-sm">
+             <details class="tool-combined-details">
+                <!-- Header -->
+                <summary class="px-2 py-2 small cursor-pointer d-flex align-items-center justify-content-between bg-body-tertiary hover-bg-secondary text-body">
+                    <div class="d-flex align-items-center">
+                        <i class="bi bi-gear-wide-connected me-2 text-primary"></i>
+                        <span class="fw-bold me-1">Tool Call:</span> 
+                        <code class="text-primary">{{ tool.function.name }}</code>
+                    </div>
+                    <!-- Status Indicator -->
+                    <i v-if="getToolResult(tool.id)" class="bi bi-check-circle-fill text-success" title="Completed"></i>
+                    <div v-else class="spinner-border spinner-border-sm text-secondary" style="width: 0.8rem; height: 0.8rem;"></div>
+                </summary>
+                
+                <!-- Content -->
+                <div class="p-2 bg-body border-top">
+                    <!-- Input -->
+                    <div class="mb-0">
+                        <div class="small fw-bold text-secondary mb-1 text-uppercase" style="font-size: 0.7rem;">Input</div>
+                        <div class="font-monospace small text-body p-2 rounded border bg-body-secondary text-break" style="white-space: pre-wrap;">{{ tool.function.arguments }}</div>
+                    </div>
 
-        <div class="message-time text-muted mt-1" v-if="msg.role !== 'tool'">
-          {{ new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }}
+                    <!-- Output (if available) -->
+                    <div v-if="getToolResult(tool.id)">
+                        <hr class="my-2 opacity-25">
+                        <div class="small fw-bold text-secondary mb-1 text-uppercase" style="font-size: 0.7rem;">Output</div>
+                        <pre class="m-0 small text-body text-wrap text-break p-2 rounded border bg-body-secondary" style="max-height: 200px; overflow-y: auto; white-space: pre-wrap;">{{ getToolResult(tool.id)?.content }}</pre>
+                    </div>
+                </div>
+             </details>
+          </div>
         </div>
+        
+        <!-- Standalone Tool messages are hidden, as they are rendered inside the assistant block above -->
+
       </div>
 
-      <div v-if="assistantStore.isLoading" class="d-flex align-items-center text-muted px-2">
+      <div v-if="assistantStore.isLoading" class="d-flex align-items-center text-muted px-2 mt-2">
         <div class="spinner-border spinner-border-sm me-2" role="status"></div>
         <small>Thinking...</small>
       </div>
