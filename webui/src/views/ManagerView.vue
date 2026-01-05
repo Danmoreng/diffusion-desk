@@ -1057,7 +1057,7 @@ onUnmounted(() => {
                 <select v-model="editingModelMetadata.metadata.type" class="form-select">
                   <option value="stable-diffusion">Stable Diffusion (Standard)</option>
                   <option value="lora">LoRA</option>
-                  <option value="llm">LLM (Chat/Vision)</option>
+                  <option value="llm">LLM (Assistant)</option>
                   <option value="flux">Flux (GGUF)</option>
                   <option value="sd3">SD3 (GGUF)</option>
                   <option value="upscaler">Upscaler (ESRGAN)</option>
