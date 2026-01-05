@@ -165,6 +165,11 @@ public:
     // Returns list of (id, uuid, prompt, file_path)
     std::vector<std::tuple<int, std::string, std::string, std::string>> get_untagged_generations(int limit = 10);
     void mark_as_tagged(int id);
+    
+    // Application Config / State
+    void set_config(const std::string& key, const std::string& value);
+    std::string get_config(const std::string& key);
+
     // Accessor
     SQLite::Database& get_db() { return m_db; }
 
@@ -176,6 +181,7 @@ private:
     void migrate_to_v1();
     void migrate_to_v2();
     void migrate_to_v3();
+    void migrate_to_v4();
 
     SQLite::Database m_db;
     std::recursive_mutex m_mutex; // Protects access to m_db, recursive to allow nested calls

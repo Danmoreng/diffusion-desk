@@ -85,6 +85,12 @@ void Database::init_schema() {
             std::cout << "[Database] Migrated to version 3 (Presets)" << std::endl;
         }
 
+        if (current_version < 4) {
+            migrate_to_v4();
+            set_schema_version(4);
+            std::cout << "[Database] Migrated to version 4 (App Config)" << std::endl;
+        }
+
         std::cout << "[Database] Schema initialized successfully." << std::endl;
 
     } catch (const std::exception& e) {
@@ -315,6 +321,19 @@ void Database::migrate_to_v3() {
             capabilities TEXT,
             role TEXT DEFAULT 'Assistant',
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
+    )");
+
+    transaction.commit();
+}
+
+void Database::migrate_to_v4() {
+    SQLite::Transaction transaction(m_db);
+
+    m_db.exec(R"(
+        CREATE TABLE IF NOT EXISTS app_config (
+            key TEXT PRIMARY KEY,
+            value TEXT
         );
     )");
 
@@ -989,6 +1008,30 @@ std::vector<std::tuple<int, std::string, std::string, std::string>> Database::ge
 void Database::mark_as_tagged(int id) {
     std::lock_guard<std::recursive_mutex> lock(m_mutex);
     try { m_db.exec("UPDATE generations SET auto_tagged = 1 WHERE id = " + std::to_string(id)); } catch (...) {}
+}
+
+void Database::set_config(const std::string& key, const std::string& value) {
+    std::lock_guard<std::recursive_mutex> lock(m_mutex);
+    try {
+        SQLite::Statement query(m_db, "INSERT OR REPLACE INTO app_config (key, value) VALUES (?, ?)");
+        query.bind(1, key);
+        query.bind(2, value);
+        query.exec();
+    } catch (const std::exception& e) {
+        std::cerr << "[Database] set_config failed: " << e.what() << std::endl;
+    }
+}
+
+std::string Database::get_config(const std::string& key) {
+    std::lock_guard<std::recursive_mutex> lock(m_mutex);
+    try {
+        SQLite::Statement query(m_db, "SELECT value FROM app_config WHERE key = ?");
+        query.bind(1, key);
+        if (query.executeStep()) {
+            return query.getColumn(0).getText();
+        }
+    } catch (...) {}
+    return "";
 }
 
 } // namespace mysti

@@ -16,7 +16,8 @@ public:
                  const std::vector<std::string>& sd_args, const std::vector<std::string>& llm_args,
                  const std::string& sd_log, const std::string& llm_log,
                  const std::string& token,
-                 std::shared_ptr<WsManager> ws_mgr);
+                 std::shared_ptr<WsManager> ws_mgr,
+                 std::atomic<bool>* external_shutdown = nullptr);
                      ~HealthService();
                  
                      void start();
@@ -58,6 +59,7 @@ public:
     std::function<std::string()> m_get_llm_state;
 
     std::atomic<bool> m_running{false};
+    std::atomic<bool>* m_external_shutdown = nullptr;
     std::thread m_thread;
     mutable std::mutex m_proc_mutex; // Protects process spawning/killing logic
 };

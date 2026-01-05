@@ -123,7 +123,7 @@ int run_orchestrator(int argc, const char** argv, SDSvrParams& svr_params) {
     if (!g_internal_token.empty()) { llm_args.push_back("--internal-token"); llm_args.push_back(g_internal_token); }
     if (!pm.spawn(sd_exe_path, sd_args, sd_process, "sd_worker.log") || !pm.spawn(llm_exe_path, llm_args, llm_process, "llm_worker.log")) return 1;
     
-    g_health_svc = std::make_unique<mysti::HealthService>(pm, sd_process, llm_process, sd_port, llm_port, sd_exe_path, llm_exe_path, sd_args, llm_args, "sd_worker.log", "llm_worker.log", g_internal_token, g_ws_mgr);
+    g_health_svc = std::make_unique<mysti::HealthService>(pm, sd_process, llm_process, sd_port, llm_port, sd_exe_path, llm_exe_path, sd_args, llm_args, "sd_worker.log", "llm_worker.log", g_internal_token, g_ws_mgr, &is_shutting_down);
     g_health_svc->set_model_state_callbacks([]() { return g_controller->get_last_sd_model_req(); }, []() { return g_controller->get_last_llm_model_req(); });
     g_health_svc->start();
     g_job_svc = std::make_shared<mysti::JobService>(g_db);
@@ -136,7 +136,16 @@ int run_orchestrator(int argc, const char** argv, SDSvrParams& svr_params) {
     g_controller->set_generation_active_callback([](bool active) { if (g_tagging_svc) g_tagging_svc->set_generation_active(active); });
     g_ws_mgr->start();
 
-    // Auto-initialize SD Model State from Args
+    // Restoration of state (Presets)
+    // We do this in a separate thread to not block the main server startup
+    std::thread([svr_params]() {
+        // Wait a bit for workers to be ready
+        if (wait_for_health_simple(sd_port, g_internal_token, 10)) {
+            g_controller->load_last_presets(svr_params);
+        }
+    }).detach();
+
+    // Auto-initialize SD Model State from Args (Legacy override)
     std::string initial_sd_model;
     for (int i = 1; i < argc; ++i) {
         std::string arg = argv[i];

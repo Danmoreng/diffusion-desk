@@ -31,26 +31,27 @@ if ($null -eq $ServerExe) {
 
 # Configuration
 $ModelBase = "C:\StableDiffusion\Models"
-$LLMPath = "$ModelBase\llm\Qwen3-1.7B-Q8_0.gguf"
-$SDPath = "$ModelBase\stable-diffusion\z_image_turbo-Q8_0.gguf" 
+# Optional: Hardcode these if you want to override the last used preset on startup
+$LLMPath = ""
+$SDPath = "" 
 
 $IdleTimeout = 600  # 10 minutes
 
 Write-Host "Starting MystiCanvas Server..." -ForegroundColor Cyan
 Write-Host "Executable: $ServerExe"
 Write-Host "Model Directory: $ModelBase"
-Write-Host "SD Model: $SDPath"
-Write-Host "LLM Model: $LLMPath"
+if ($SDPath) { Write-Host "SD Model Override: $SDPath" }
+else { Write-Host "SD Model: (Restoring Last Preset)" }
+if ($LLMPath) { Write-Host "LLM Model Override: $LLMPath" }
+else { Write-Host "LLM Model: (Restoring Last Preset)" }
 Write-Host "-------------------------------------------"
 
 # Execute
 # We don't need Push-Location if we use absolute path to exe, 
 # BUT the server might expect CWD to be project root for assets (./public).
 Set-Location $ProjectRoot
-& $ServerExe `
-    --model-dir "$ModelBase" `
-    --diffusion-model "$SDPath" `
-    --llm-model "$LLMPath" `
-    --llm-idle-timeout $IdleTimeout `
-    --listen-port 1234 `
-    --verbose
+$Args = @("--model-dir", "$ModelBase", "--llm-idle-timeout", $IdleTimeout, "--listen-port", 1234, "--verbose")
+if ($SDPath) { $Args += "--diffusion-model"; $Args += "$SDPath" }
+if ($LLMPath) { $Args += "--llm-model"; $Args += "$LLMPath" }
+
+& $ServerExe $Args
