@@ -27,7 +27,7 @@ private:
     std::unique_ptr<server_routes> routes;
     std::thread loop_thread;
     std::thread idle_thread;
-    std::mutex state_mutex;
+    std::recursive_mutex state_mutex;
     std::mutex* ggml_mutex = nullptr;
     common_params llama_params;
 

@@ -12,7 +12,7 @@ LlamaServer::LlamaServer() {
 
 LlamaServer::~LlamaServer() {
     {
-        std::lock_guard<std::mutex> lock(state_mutex);
+        std::lock_guard<std::recursive_mutex> lock(state_mutex);
         running = false;
     }
     if (idle_thread.joinable()) {
@@ -22,7 +22,7 @@ LlamaServer::~LlamaServer() {
 }
 
 bool LlamaServer::load_model(const std::string& model_path, const std::string& mmproj_path, int n_gpu_layers, int n_ctx, int image_max_tokens) {
-    std::lock_guard<std::mutex> lock(state_mutex);
+    std::lock_guard<std::recursive_mutex> lock(state_mutex);
     stop();
 
     llama_params = common_params();
@@ -77,7 +77,7 @@ bool LlamaServer::load_model(const std::string& model_path, const std::string& m
 }
 
 void LlamaServer::offload_to_cpu() {
-    std::lock_guard<std::mutex> lock(state_mutex);
+    std::lock_guard<std::recursive_mutex> lock(state_mutex);
     if (!server_ctx) return;
     
     // Backup current params
@@ -114,7 +114,7 @@ void LlamaServer::idle_check_loop() {
     while (true) {
         std::this_thread::sleep_for(std::chrono::seconds(10));
         
-        std::lock_guard<std::mutex> lock(state_mutex);
+        std::lock_guard<std::recursive_mutex> lock(state_mutex);
         if (!running) break;
         
         if (server_ctx && idle_timeout_seconds > 0) {
