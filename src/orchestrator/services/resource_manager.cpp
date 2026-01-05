@@ -54,6 +54,7 @@ ArbitrationResult ResourceManager::prepare_for_sd_generation(float estimated_tot
         LOG_INFO("[ResourceManager] VRAM tight. Requesting LLM swap to RAM...");
         httplib::Client cli("127.0.0.1", m_llm_port);
         cli.set_connection_timeout(2);
+        cli.set_read_timeout(20);
         auto ures = cli.Post("/v1/llm/offload", headers, "", "application/json");
         if (ures && ures->status == 200) {
             LOG_INFO("[ResourceManager] LLM swapped to RAM successfully.");
