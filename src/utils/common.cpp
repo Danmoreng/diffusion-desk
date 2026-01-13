@@ -205,6 +205,12 @@ void log_print(DDLogLevel level, const char* log, bool verbose, bool color) {
     }
 
     print_utf8(out_stream, log);
+
+    size_t len = strlen(log);
+    if (len == 0 || log[len - 1] != '\n') {
+        fputc('\n', out_stream);
+    }
+
     fflush(out_stream);
 }
 
