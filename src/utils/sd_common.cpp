@@ -33,13 +33,13 @@ void sd_log_cb(enum sd_log_level_t level, const char* log, void* data) {
 ArgOptions SDContextParams::get_options() {
     ArgOptions options;
     options.string_options = {
-        {"-", "--model", "path to full model", &model_path},
+        {"-m", "--model", "path to full model", &model_path},
         {"", "--clip_l", "path to the clip-l text encoder", &clip_l_path},
         {"", "--clip_g", "path to the clip-g text encoder", &clip_g_path},
         {"", "--clip_vision", "path to the clip-vision encoder", &clip_vision_path},
         {"", "--t5xxl", "path to the t5xxl text encoder", &t5xxl_path},
         {"", "--llm", "path to the llm text encoder. For example: (qwenvl2.5 for qwen-image, mistral-small3.2 for flux2, ...)", &llm_path},
-        {"-", "--llm-model", "path to the chat/instruct LLM model to load on startup", &llm_model_path},
+        {"-lm", "--llm-model", "path to the chat/instruct LLM model to load on startup", &llm_model_path},
         {"", "--llm_vision", "path to the llm vit", &llm_vision_path},
         {"", "--qwen2vl", "alias of --llm. Deprecated.", &llm_path},
         {"", "--qwen2vl_vision", "alias of --llm_vision. Deprecated.", &llm_vision_path},
@@ -57,7 +57,7 @@ ArgOptions SDContextParams::get_options() {
     };
 
     options.int_options = {
-        {"-", "--threads", "number of threads to use during computation (default: -1). If threads <= 0, then threads will be set to the number of CPU physical cores", &n_threads},
+        {"-t", "--threads", "number of threads to use during computation (default: -1). If threads <= 0, then threads will be set to the number of CPU physical cores", &n_threads},
         {"", "--chroma-t5-mask-pad", "t5 mask pad size of chroma", &chroma_t5_mask_pad},
     };
 
@@ -274,16 +274,99 @@ ArgOptions SDGenerationParams::get_options() {
 }
 
 bool SDGenerationParams::from_json_str(const std::string& json_str) {
+    diffusion_desk::json j;
     try {
-        auto j = diffusion_desk::json::parse(json_str);
-        if (j.contains("prompt")) prompt = j["prompt"];
-        if (j.contains("negative_prompt")) negative_prompt = j["negative_prompt"];
-        if (j.contains("width")) width = j["width"];
-        if (j.contains("height")) height = j["height"];
-        if (j.contains("sample_steps")) sample_params.sample_steps = j["sample_steps"];
-        if (j.contains("seed")) seed = j["seed"];
-        return true;
-    } catch (...) { return false; }
+        j = diffusion_desk::json::parse(json_str);
+    } catch (...) {
+        DD_LOG_ERROR("json parse failed %s", json_str.c_str());
+        return false;
+    }
+
+    auto load_if_exists = [&](const char* key, auto& out) {
+        if (j.contains(key)) {
+            using T = std::decay_t<decltype(out)>;
+            if constexpr (std::is_same_v<T, std::string>) {
+                if (j[key].is_string())
+                    out = j[key];
+            } else if constexpr (std::is_same_v<T, int> || std::is_same_v<T, int64_t>) {
+                if (j[key].is_number_integer())
+                    out = j[key];
+            } else if constexpr (std::is_same_v<T, float>) {
+                if (j[key].is_number())
+                    out = j[key].get<float>();
+            } else if constexpr (std::is_same_v<T, bool>) {
+                if (j[key].is_boolean())
+                    out = j[key];
+            } else if constexpr (std::is_same_v<T, std::vector<int>>) {
+                if (j[key].is_array())
+                    out = j[key].get<std::vector<int>>();
+            } else if constexpr (std::is_same_v<T, std::vector<std::string>>) {
+                if (j[key].is_array())
+                    out = j[key].get<std::vector<std::string>>();
+            }
+        }
+    };
+
+    auto load_with_alias = [&](const std::string& key, const std::vector<std::string>& aliases, auto& out) {
+        if (j.contains(key)) {
+            load_if_exists(key.c_str(), out);
+        } else {
+            for (const auto& alias : aliases) {
+                if (j.contains(alias)) {
+                    load_if_exists(alias.c_str(), out);
+                    break;
+                }
+            }
+        }
+    };
+
+    load_if_exists("prompt", prompt);
+    load_if_exists("negative_prompt", negative_prompt);
+    load_if_exists("easycache_option", easycache_option);
+
+    load_if_exists("clip_skip", clip_skip);
+    load_if_exists("width", width);
+    load_if_exists("height", height);
+    load_if_exists("batch_count", batch_count);
+    load_if_exists("video_frames", video_frames);
+    load_if_exists("fps", fps);
+    load_if_exists("upscale_repeats", upscale_repeats);
+    load_if_exists("seed", seed);
+
+    load_if_exists("hires_fix", hires_fix);
+    load_if_exists("hires_upscale_model", hires_upscale_model);
+    load_if_exists("hires_upscale_factor", hires_upscale_factor);
+    load_if_exists("hires_denoising_strength", hires_denoising_strength);
+    load_if_exists("hires_steps", hires_steps);
+
+    load_if_exists("strength", strength);
+    load_if_exists("control_strength", control_strength);
+    load_if_exists("pm_style_strength", pm_style_strength);
+    load_if_exists("clip_on_cpu", clip_on_cpu);
+    load_if_exists("moe_boundary", moe_boundary);
+    load_if_exists("vace_strength", vace_strength);
+
+    load_if_exists("auto_resize_ref_image", auto_resize_ref_image);
+    load_if_exists("increase_ref_index", increase_ref_index);
+
+    load_if_exists("skip_layers", skip_layers);
+    load_if_exists("high_noise_skip_layers", high_noise_skip_layers);
+
+    load_with_alias("cfg_scale", {"guidance_scale"}, sample_params.guidance.txt_cfg);
+    load_if_exists("sample_steps", sample_params.sample_steps);
+    load_if_exists("img_cfg_scale", sample_params.guidance.img_cfg);
+    load_if_exists("guidance", sample_params.guidance.distilled_guidance);
+
+    if (j.contains("sampling_method") && j["sampling_method"].is_string()) {
+        std::string sm              = j["sampling_method"];
+        sample_params.sample_method = str_to_sample_method(sm.c_str());
+    }
+    if (j.contains("scheduler") && j["scheduler"].is_string()) {
+        std::string s           = j["scheduler"];
+        sample_params.scheduler = str_to_scheduler(s.c_str());
+    }
+
+    return true;
 }
 
 static bool is_abs_path(const std::string& p) {
