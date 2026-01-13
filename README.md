@@ -44,7 +44,7 @@ Unlike simple generation frontends, DiffusionDesk functions as a complete **Asse
 - **C++ Compiler:** MSVC 2022 (Windows), GCC, or Clang.
 - **CMake:** Version 3.14 or higher.
 - **Node.js & NPM:** For building the frontend.
-- **CUDA Toolkit:** (Optional) For GPU acceleration.
+- **CUDA Toolkit:** Required for GPU acceleration (Project is configured for CUDA by default).
 
 ### Build Instructions
 
@@ -53,18 +53,38 @@ Unlike simple generation frontends, DiffusionDesk functions as a complete **Asse
    git clone --recursive https://github.com/Danmoreng/diffusion-desk.git
    cd diffusion-desk
    ```
+   *If you have already cloned the repository without submodules, initialize them manually:*
+   ```bash
+   git submodule update --init --recursive
+   ```
 
 2. **Run the One-Click Build Script:**
-   The provided PowerShell script handles NPM installation, Vue compilation, and C++ build:
+   The provided scripts handle NPM installation, Vue compilation, and C++ build.
+
+   **Windows:**
    ```powershell
    .\scripts\build.ps1
+   ```
+
+   **Linux:**
+   ```bash
+   chmod +x scripts/build.sh
+   ./scripts/build.sh
    ```
 
 ### Running the Server
 
 Start the server using the launch script or directly via the binary:
+
+**Windows:**
 ```powershell
 .\scripts\run.ps1
+```
+
+**Linux:**
+```bash
+chmod +x scripts/run.sh
+./scripts/run.sh
 ```
 The server will initialize the SQLite database (`history.db`) and start the WebUI at `http://localhost:1234/app/`.
 
