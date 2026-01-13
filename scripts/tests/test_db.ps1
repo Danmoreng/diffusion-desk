@@ -3,12 +3,12 @@ $baseUrl = "http://127.0.0.1:1234"
 Write-Host "--- DiffusionDesk Database Diagnostic ---" -ForegroundColor Cyan
 
 # 1. Check DB File
-$dbPath = "mysti.db"
+$dbPath = "diffusion_desk.db"
 if (Test-Path $dbPath) {
     $size = (Get-Item $dbPath).Length / 1KB
     Write-Host "[OK] Database file found: $dbPath ($($size.ToString('F2')) KB)" -ForegroundColor Green
 } else {
-    Write-Host "[ERROR] Database file 'mysti.db' not found in current directory!" -ForegroundColor Red
+    Write-Host "[ERROR] Database file 'diffusion_desk.db' not found in current directory!" -ForegroundColor Red
 }
 
 # 2. Check API

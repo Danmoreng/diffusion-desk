@@ -34,8 +34,8 @@ DiffusionDesk is a high-performance, self-hosted Creative AI server that integra
 
 1. **Clone the repository with submodules:**
    ```bash
-   git clone --recursive https://github.com/Danmoreng/DiffusionDesk.git
-   cd DiffusionDesk
+   git clone --recursive https://github.com/Danmoreng/diffusion-desk.git
+   cd diffusion-desk
    ```
 
 2. **Run the One-Click Build Script:**
