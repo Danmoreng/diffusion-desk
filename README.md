@@ -14,9 +14,11 @@ Unlike simple generation frontends, DiffusionDesk functions as a complete **Asse
 - **Dynamic Exploration:** Generate variations of prompts and seeds to explore the latent space and discover new styles.
 
 ### Smart Asset Management
-- **SQLite Database:** Automatically persists every generation, prompt, and setting. No more lost history.
+- **SQLite Database:** Stores all your creative assets, including:
+    - **History:** Every generation prompt and result.
+    - **Presets:** Saved model configurations (Model + VAE + CLIP + Settings).
+    - **Styles & Prompts:** Your personal library of reusable styles.
 - **Smart Tagging:** Runs a background **Tagging Service** that uses your loaded LLM to analyze generated images and automatically assign descriptive tags (Subject, Style, Mood).
-- **Prompt Library & Styles:** Save, organize, and reuse your best prompts and style configurations.
 - **Advanced Filtering:** Search your history by date, model, rating, or specific tags.
 
 ### System Architecture
@@ -65,6 +67,20 @@ Start the server using the launch script or directly via the binary:
 .\scripts\run.ps1
 ```
 The server will initialize the SQLite database (`history.db`) and start the WebUI at `http://localhost:1234/app/`.
+
+### Configuration
+
+DiffusionDesk uses two systems for configuration:
+
+1.  **`config.json`:** Manages **infrastructure settings** such as:
+    *   Server listening IP and Port.
+    *   Paths to the `models` and `outputs` directories.
+    *   Default LLM to load on startup.
+    *   System resource limits (timeouts, threads).
+
+2.  **SQLite Database (`history.db`):** Manages **creative configurations** such as:
+    *   **Image Presets:** Saved combinations of Checkpoints, VAEs, and CLIP models.
+    *   **Generation Parameters:** Your default steps, CFG scale, and sampler choices.
 
 ## Model Organization
 
