@@ -1,6 +1,6 @@
-# MystiCanvas Architecture
+# Diffusion Desk Architecture
 
-MystiCanvas is a local, privacy-focused AI sandbox that integrates Large Language Models (LLM) and Stable Diffusion (SD) image generation. It uses a **multi-process architecture** to manage resource-intensive AI tasks efficiently, ensuring system stability and UI responsiveness.
+Diffusion Desk is a local, privacy-focused AI sandbox that integrates Large Language Models (LLM) and Stable Diffusion (SD) image generation. It uses a **multi-process architecture** to manage resource-intensive AI tasks efficiently, ensuring system stability and UI responsiveness.
 
 ## High-Level Overview
 
@@ -31,7 +31,7 @@ graph TD
 Initially, the project attempted to run both engines in a single process. This was abandoned due to CUDA context conflicts and responsiveness issues. Isolating image generation in a separate worker allows the Orchestrator to remain responsive and broadcast metrics.
 
 ### The Orchestrator (`src/orchestrator/`)
-The Orchestrator is the main entry point (`mysti_server`).
+The Orchestrator is the main entry point (`diffusion_desk_server`).
 - **Unified Namespacing:** 
   - `/app/` -> Static Vue.js frontend assets.
   - `/v1/` -> Proxied API routes.
@@ -72,5 +72,5 @@ Centralized `config.json` allows overriding default ports, paths, and performanc
 | `libs/` | Git submodules for `llama.cpp` and `stable-diffusion.cpp`. |
 
 ## Build System
-- **CMake:** Used for the C++ backend. It compiles `mysti_server` and links against `llama` and `stable-diffusion` static libraries.
+- **CMake:** Used for the C++ backend. It compiles `diffusion_desk_server` and links against `llama` and `stable-diffusion` static libraries.
 - **NPM/Vite:** Used for the Frontend. Assets are built and copied to the `public/` directory, which the C++ server serves.
