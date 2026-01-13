@@ -9,17 +9,17 @@ function Log-Message {
 }
 
 # 1. Kill any existing instances
-Log-Message "Killing existing mysti_server..."
-Get-Process mysti_server -ErrorAction SilentlyContinue | Stop-Process -Force
-Get-Process mysti_sd_worker -ErrorAction SilentlyContinue | Stop-Process -Force
-Get-Process mysti_llm_worker -ErrorAction SilentlyContinue | Stop-Process -Force
+Log-Message "Killing existing diffusion_desk_server..."
+Get-Process diffusion_desk_server -ErrorAction SilentlyContinue | Stop-Process -Force
+Get-Process diffusion_desk_sd_worker -ErrorAction SilentlyContinue | Stop-Process -Force
+Get-Process diffusion_desk_llm_worker -ErrorAction SilentlyContinue | Stop-Process -Force
 Start-Sleep -Seconds 2
 
 # 2. Start Server
 Log-Message "Starting Server on port 5555..."
-$ServerExe = Join-Path (Join-Path $ProjectRoot "build") "bin\mysti_server.exe"
-if (!(Test-Path $ServerExe)) { $ServerExe = Join-Path (Join-Path $ProjectRoot "build") "mysti_server.exe" }
-$serverProcess = Start-Process -FilePath $ServerExe -ArgumentList "--listen-port 5555 --verbose --model-dir ""C:\StableDiffusion\Models"" --output-dir ""C:\StableDiffusion\MystiCanvas\outputs""" -PassThru -NoNewWindow
+$ServerExe = Join-Path (Join-Path $ProjectRoot "build") "bin\diffusion_desk_server.exe"
+if (!(Test-Path $ServerExe)) { $ServerExe = Join-Path (Join-Path $ProjectRoot "build") "diffusion_desk_server.exe" }
+$serverProcess = Start-Process -FilePath $ServerExe -ArgumentList "--listen-port 5555 --verbose --model-dir ""C:\StableDiffusion\Models"" --output-dir ""C:\StableDiffusion\DiffusionDesk\outputs""" -PassThru -NoNewWindow
 Start-Sleep -Seconds 5
 
 # 3. Wait for Health
@@ -163,5 +163,5 @@ $results | Format-Table -AutoSize
 # 7. Cleanup
 Log-Message "Test Complete. Stopping processes..."
 Stop-Process -Id $serverProcess.Id -Force
-Get-Process mysti_sd_worker -ErrorAction SilentlyContinue | Stop-Process -Force
-Get-Process mysti_llm_worker -ErrorAction SilentlyContinue | Stop-Process -Force
+Get-Process diffusion_desk_sd_worker -ErrorAction SilentlyContinue | Stop-Process -Force
+Get-Process diffusion_desk_llm_worker -ErrorAction SilentlyContinue | Stop-Process -Force

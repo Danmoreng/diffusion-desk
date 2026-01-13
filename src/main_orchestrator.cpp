@@ -1,12 +1,12 @@
 #include <iostream>
 #include <vector>
 
-#include "utils/common.hpp"
+#include "utils/sd_common.hpp"
 #include "orchestrator/orchestrator_main.hpp"
 
 // Forward declaration of print_usage (or implement locally)
 void print_usage(int argc, const char* argv[], const std::vector<ArgOptions>& options_list) {
-    std::cout << "MystiCanvas Orchestrator v0.2\n";
+    std::cout << "DiffusionDesk Orchestrator v0.2\n";
     std::cout << "Usage: " << argv[0] << " [options]\n\n";
     std::cout << "Svr Options:\n";
     options_list[0].print();
@@ -45,13 +45,13 @@ int main(int argc, const char** argv) {
 #ifdef _WIN32
     char* appdata = getenv("APPDATA");
     if (appdata) {
-        config_search_paths.push_back(fs::path(appdata) / "MystiCanvas" / "config.json");
+        config_search_paths.push_back(fs::path(appdata) / "DiffusionDesk" / "config.json");
     }
 #endif
 
     for (const auto& p : config_search_paths) {
         if (fs::exists(p)) {
-            LOG_INFO("Loading config from %s", p.string().c_str());
+            DD_LOG_INFO("Loading config from %s", p.string().c_str());
             if (svr_params.load_from_file(p.string())) {
                 break;
             }
@@ -64,7 +64,7 @@ int main(int argc, const char** argv) {
 
     if (svr_params.internal_token.empty()) {
         svr_params.internal_token = generate_random_token();
-        LOG_INFO("Generated transient internal token for worker security.");
+        DD_LOG_INFO("Generated transient internal token for worker security.");
     }
     
     set_log_verbose(svr_params.verbose);

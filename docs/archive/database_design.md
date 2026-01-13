@@ -1,6 +1,6 @@
-# MystiCanvas Database & Smart Library Concept
+# DiffusionDesk Database & Smart Library Concept
 
-This document outlines the design for a local persistence layer using SQLite to transform MystiCanvas from a generation tool into a searchable, AI-augmented creative asset manager.
+This document outlines the design for a local persistence layer using SQLite to transform DiffusionDesk from a generation tool into a searchable, AI-augmented creative asset manager.
 
 ## 1. Technology Choice: SQLite
 - **Why:** Zero-configuration, serverless, single-file storage (`mysti.db`).

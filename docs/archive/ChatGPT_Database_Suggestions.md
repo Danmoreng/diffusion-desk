@@ -1,4 +1,4 @@
-SQLite 3 is a solid call for MystiCanvas, and there are a bunch of “DB design” upgrades that tend to pay off \*a lot\* in local-first creative tools like yours (gallery browsing, tags, lineage, reproducibility, and fast search). I’ll anchor these suggestions to the schema + workflows you already sketched (generations/tags/image\_tags/templates, Orchestrator as central DB host, import from `outputs/`). 
+SQLite 3 is a solid call for DiffusionDesk, and there are a bunch of “DB design” upgrades that tend to pay off \*a lot\* in local-first creative tools like yours (gallery browsing, tags, lineage, reproducibility, and fast search). I’ll anchor these suggestions to the schema + workflows you already sketched (generations/tags/image\_tags/templates, Orchestrator as central DB host, import from `outputs/`). 
 
 
 

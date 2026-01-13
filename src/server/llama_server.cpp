@@ -45,22 +45,22 @@ bool LlamaServer::load_model(const std::string& model_path, const std::string& m
     llama_params.fit_params = false; // Disable fitting to prevent crashes in multi-process env
     // llama_params.fit_params_target = 4ULL * 1024 * 1024 * 1024; 
 
-    LOG_INFO("Initializing LLM server context: ctx=%d, parallel=%d, predict=%d, gpu_layers=%d", 
+    DD_LOG_INFO("Initializing LLM server context: ctx=%d, parallel=%d, predict=%d, gpu_layers=%d", 
              llama_params.n_ctx, llama_params.n_parallel, llama_params.n_predict, llama_params.n_gpu_layers);
 
     server_ctx = std::make_unique<server_context>();
     try {
         if (!server_ctx->load_model(llama_params)) {
-            LOG_ERROR("Failed to load LLM model: %s", model_path.c_str());
+            DD_LOG_ERROR("Failed to load LLM model: %s", model_path.c_str());
             server_ctx.reset();
             return false;
         }
     } catch (const std::exception& e) {
-        LOG_ERROR("Exception during LLM load_model: %s", e.what());
+        DD_LOG_ERROR("Exception during LLM load_model: %s", e.what());
         server_ctx.reset();
         return false;
     } catch (...) {
-        LOG_ERROR("Unknown exception during LLM load_model");
+        DD_LOG_ERROR("Unknown exception during LLM load_model");
         server_ctx.reset();
         return false;
     }
@@ -72,7 +72,7 @@ bool LlamaServer::load_model(const std::string& model_path, const std::string& m
     });
 
     update_last_access();
-    LOG_INFO("LLM Server logic initialized with model: %s", model_path.c_str());
+    DD_LOG_INFO("LLM Server logic initialized with model: %s", model_path.c_str());
     return true;
 }
 
@@ -86,7 +86,7 @@ void LlamaServer::offload_to_cpu() {
     int ctx = llama_params.n_ctx;
     int img_tokens = llama_params.image_max_tokens;
 
-    LOG_INFO("Moving LLM model to RAM (n_gpu_layers=0)...");
+    DD_LOG_INFO("Moving LLM model to RAM (n_gpu_layers=0)...");
     
     // We cannot easily move an existing context, so we reload with 0 GPU layers.
     // Since weights are likely in OS file cache, this is much faster than first load.
@@ -102,7 +102,7 @@ void LlamaServer::stop() {
         }
         routes.reset();
         server_ctx.reset();
-        LOG_INFO("LLM Model unloaded.");
+        DD_LOG_INFO("LLM Model unloaded.");
     }
 }
 
@@ -121,7 +121,7 @@ void LlamaServer::idle_check_loop() {
             auto now = std::chrono::steady_clock::now();
             auto duration = std::chrono::duration_cast<std::chrono::seconds>(now - last_access).count();
             if (duration > idle_timeout_seconds) {
-                LOG_INFO("LLM idle timeout reached (%d seconds). Unloading...", idle_timeout_seconds);
+                DD_LOG_INFO("LLM idle timeout reached (%d seconds). Unloading...", idle_timeout_seconds);
                 stop();
             }
         }
@@ -135,7 +135,7 @@ void LlamaServer::bridge_handler(httplib::Server& svr, const std::string& method
         }
         update_last_access();
         
-        LOG_INFO("LLM Request: %s %s", method.c_str(), path.c_str());
+        DD_LOG_INFO("LLM Request: %s %s", method.c_str(), path.c_str());
 
         // Ensure we don't conflict with SD's GGML usage
         std::unique_ptr<std::lock_guard<std::mutex>> lock;
@@ -145,7 +145,7 @@ void LlamaServer::bridge_handler(httplib::Server& svr, const std::string& method
         
         auto handler = get_handler(this);
         if (!handler) {
-            LOG_ERROR("LLM handler not found for %s", path.c_str());
+            DD_LOG_ERROR("LLM handler not found for %s", path.c_str());
             res.status = 503;
             res.set_content(R"({\"error\":\"LLM model not loaded and no default available\"})", "application/json");
             return;
@@ -169,15 +169,15 @@ void LlamaServer::bridge_handler(httplib::Server& svr, const std::string& method
             llama_req.headers[h.first] = h.second;
         }
 
-        LOG_DEBUG("LLM calling native handler...");
+        DD_LOG_DEBUG("LLM calling native handler...");
         auto llama_res = handler(llama_req);
         if (!llama_res) {
-            LOG_ERROR("LLM native handler returned null");
+            DD_LOG_ERROR("LLM native handler returned null");
             res.status = 500;
             return;
         }
 
-        LOG_INFO("LLM Response status: %d", llama_res->status);
+        DD_LOG_INFO("LLM Response status: %d", llama_res->status);
         res.status = llama_res->status;
         for (auto& h : llama_res->headers) {
             res.set_header(h.first, h.second);

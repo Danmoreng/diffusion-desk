@@ -1,4 +1,4 @@
-# MystiCanvas Build Script (Step-by-Step)
+# DiffusionDesk Build Script (Step-by-Step)
 
 function Import-VSEnv {
     Write-Host "Loading Visual Studio Environment..."
@@ -83,7 +83,7 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 Write-Host "Building Main Server (Orchestrator)..."
-cmake --build . --config Release --target mysti_server --parallel > build_server.log 2>&1
+cmake --build . --config Release --target diffusion_desk_server --parallel > build_server.log 2>&1
 if ($LASTEXITCODE -ne 0) {
     Write-Host "Server build failed!" -ForegroundColor Red
     Get-Content build_server.log -Tail 20
@@ -91,7 +91,7 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 Write-Host "Building SD Worker..."
-cmake --build . --config Release --target mysti_sd_worker --parallel > build_sd_worker.log 2>&1
+cmake --build . --config Release --target diffusion_desk_sd_worker --parallel > build_sd_worker.log 2>&1
 if ($LASTEXITCODE -ne 0) {
     Write-Host "SD Worker build failed!" -ForegroundColor Red
     Get-Content build_sd_worker.log -Tail 20
@@ -99,7 +99,7 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 Write-Host "Building LLM Worker..."
-cmake --build . --config Release --target mysti_llm_worker --parallel > build_llm_worker.log 2>&1
+cmake --build . --config Release --target diffusion_desk_llm_worker --parallel > build_llm_worker.log 2>&1
 if ($LASTEXITCODE -ne 0) {
     Write-Host "LLM Worker build failed!" -ForegroundColor Red
     Get-Content build_llm_worker.log -Tail 20

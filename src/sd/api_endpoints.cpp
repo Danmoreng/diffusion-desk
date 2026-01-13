@@ -16,11 +16,11 @@ void log_vram_status(const std::string& phase) {
     float total = get_total_vram_gb();
     float other = total - free - proc;
     std::string msg = "[VRAM] " + phase + " | Process: " + std::to_string(proc).substr(0, 4) + " GB, Free: " + std::to_string(free).substr(0, 4) + " GB, Other: " + std::to_string(std::max(0.0f, other)).substr(0, 4) + " GB, Total: " + std::to_string(total).substr(0, 4) + " GB\n";
-    log_print(SD_LOG_INFO, msg.c_str(), true, true);
+    log_print(DDLogLevel::DD_LEVEL_INFO, msg.c_str(), true, true);
 }
 
 void handle_health(const httplib::Request&, httplib::Response& res, ServerContext& ctx) {
-    mysti::json j;
+    diffusion_desk::json j;
     j["ok"] = true;
     j["service"] = "sd";
     j["version"] = version_string();
@@ -34,7 +34,7 @@ void handle_health(const httplib::Request&, httplib::Response& res, ServerContex
 }
 
 void handle_get_config(const httplib::Request&, httplib::Response& res, ServerContext& ctx) {
-    mysti::json c;
+    diffusion_desk::json c;
     c["output_dir"] = ctx.svr_params.output_dir;
     c["model_dir"] = ctx.svr_params.model_dir;
     
@@ -48,14 +48,14 @@ void handle_get_config(const httplib::Request&, httplib::Response& res, ServerCo
 
 void handle_post_config(const httplib::Request& req, httplib::Response& res, ServerContext& ctx) {
     try {
-        mysti::json body = mysti::json::parse(req.body);
+        diffusion_desk::json body = diffusion_desk::json::parse(req.body);
         if (body.contains("output_dir")) {
             ctx.svr_params.output_dir = body["output_dir"];
-            LOG_INFO("Config updated: output_dir = %s", ctx.svr_params.output_dir.c_str());
+            DD_LOG_INFO("Config updated: output_dir = %s", ctx.svr_params.output_dir.c_str());
         }
         if (body.contains("model_dir")) {
             ctx.svr_params.model_dir = body["model_dir"];
-            LOG_INFO("Config updated: model_dir = %s", ctx.svr_params.model_dir.c_str());
+            DD_LOG_INFO("Config updated: model_dir = %s", ctx.svr_params.model_dir.c_str());
         }
         res.set_content(R"({\"status\":\"success\"})", "application/json");
     } catch (const std::exception& e) {
@@ -65,7 +65,7 @@ void handle_post_config(const httplib::Request& req, httplib::Response& res, Ser
 }
 
 void handle_get_progress(const httplib::Request&, httplib::Response& res) {
-    mysti::json r;
+    diffusion_desk::json r;
     {
         std::lock_guard<std::mutex> lock(progress_state.mutex);
         r["step"] = progress_state.step;
@@ -77,7 +77,7 @@ void handle_get_progress(const httplib::Request&, httplib::Response& res) {
 }
 
 void handle_stream_progress(const httplib::Request& req, httplib::Response& res) {
-    LOG_INFO("New progress stream subscription from %s", req.remote_addr.c_str());
+    DD_LOG_INFO("New progress stream subscription from %s", req.remote_addr.c_str());
     res.set_header("Cache-Control", "no-cache");
     res.set_header("Connection", "keep-alive");
     res.set_header("X-Accel-Buffering", "no"); // Disable proxy buffering
@@ -101,7 +101,7 @@ void handle_stream_progress(const httplib::Request& req, httplib::Response& res)
             message = progress_state.message;
         }
         
-        mysti::json initial_j;
+        diffusion_desk::json initial_j;
         initial_j["step"] = step;
         initial_j["steps"] = steps;
         initial_j["time"] = time;
@@ -129,7 +129,7 @@ void handle_stream_progress(const httplib::Request& req, httplib::Response& res)
             last_version = progress_state.version;
             lock.unlock();
 
-            mysti::json j;
+            diffusion_desk::json j;
             j["step"] = step;
             j["steps"] = steps;
             j["time"] = time;
@@ -166,8 +166,8 @@ void handle_get_outputs(const httplib::Request& req, httplib::Response& res, Ser
 }
 
 void handle_get_models(const httplib::Request&, httplib::Response& res, ServerContext& ctx) {
-    mysti::json r;
-    r["data"] = mysti::json::array();
+    diffusion_desk::json r;
+    r["data"] = diffusion_desk::json::array();
     
     std::string current_model_name = fs::path(ctx.ctx_params.diffusion_model_path).filename().string();
     if (current_model_name.empty()) {
@@ -181,7 +181,7 @@ void handle_get_models(const httplib::Request&, httplib::Response& res, ServerCo
                 if (entry.is_regular_file()) {
                     auto ext = entry.path().extension().string();
                     if (ext == ".gguf" || ext == ".safetensors" || ext == ".ckpt" || ext == ".pth") {
-                        mysti::json model;
+                        diffusion_desk::json model;
                         // Use relative path from model_dir as ID for easy loading
                         std::string rel_path = fs::relative(entry.path(), ctx.svr_params.model_dir).string();
                         std::replace(rel_path.begin(), rel_path.end(), '\\', '/');
@@ -228,7 +228,7 @@ void handle_get_models(const httplib::Request&, httplib::Response& res, ServerCo
                 if (entry.is_regular_file()) {
                     auto ext = entry.path().extension().string();
                     if (ext == ".gguf" || ext == ".safetensors" || ext == ".ckpt") {
-                        mysti::json model;
+                        diffusion_desk::json model;
                         model["id"] = entry.path().filename().string();
                         model["name"] = entry.path().filename().string();
                         model["type"] = "root";
@@ -241,7 +241,7 @@ void handle_get_models(const httplib::Request&, httplib::Response& res, ServerCo
             }
         }
     } catch (const std::exception& e) {
-        LOG_ERROR("failed to list models: %s", e.what());
+        DD_LOG_ERROR("failed to list models: %s", e.what());
     }
 
     res.set_content(r.dump(), "application/json");
@@ -249,7 +249,7 @@ void handle_get_models(const httplib::Request&, httplib::Response& res, ServerCo
 
 void handle_load_model(const httplib::Request& req, httplib::Response& res, ServerContext& ctx) {
     try {
-        mysti::json body = mysti::json::parse(req.body);
+        diffusion_desk::json body = diffusion_desk::json::parse(req.body);
         if (!body.contains("model_id")) {
             res.status = 400;
             res.set_content(make_error_json("invalid_request", "model_id (relative path) required"), "application/json");
@@ -264,7 +264,7 @@ void handle_load_model(const httplib::Request& req, httplib::Response& res, Serv
             return;
         }
 
-        LOG_INFO("Loading new model: %s", model_path.string().c_str());
+        DD_LOG_INFO("Loading new model: %s", model_path.string().c_str());
 
         {
             std::lock_guard<std::mutex> lock(ctx.sd_ctx_mutex);
@@ -310,14 +310,14 @@ void handle_load_model(const httplib::Request& req, httplib::Response& res, Serv
         res.set_content(R"({\"status\":\"success\",\"model\":\")" + model_id + R"("})", "application/json");
 
     } catch (const std::exception& e) {
-        LOG_ERROR("error loading model: %s", e.what());
+        DD_LOG_ERROR("error loading model: %s", e.what());
         res.status = 500;
         res.set_content(R"({\"error\":\")" + std::string(e.what()) + R"("})", "application/json");
     }
 }
 
 void handle_unload_model(httplib::Response& res, ServerContext& ctx) {
-    LOG_INFO("Unloading Image model to free VRAM.");
+    DD_LOG_INFO("Unloading Image model to free VRAM.");
     try {
         std::lock_guard<std::mutex> lock(ctx.sd_ctx_mutex);
         ctx.sd_ctx.reset();
@@ -332,14 +332,14 @@ void handle_unload_model(httplib::Response& res, ServerContext& ctx) {
         
         res.set_content(R"({\"status\":\"success\",\"message\":\"Model unloaded\"})", "application/json");
     } catch (const std::exception& e) {
-        LOG_ERROR("Failed to unload model: %s", e.what());
+        DD_LOG_ERROR("Failed to unload model: %s", e.what());
         res.status = 500;
         res.set_content(R"({\"error\":\")" + std::string(e.what()) + R"("})", "application/json");
     }
 }
 
 void handle_offload_model(httplib::Response& res, ServerContext& ctx) {
-    LOG_INFO("Offloading Image model to CPU/RAM.");
+    DD_LOG_INFO("Offloading Image model to CPU/RAM.");
     try {
         std::lock_guard<std::mutex> lock(ctx.sd_ctx_mutex);
         if (!ctx.sd_ctx) {
@@ -351,7 +351,7 @@ void handle_offload_model(httplib::Response& res, ServerContext& ctx) {
         auto params = ctx.ctx_params;
         params.offload_params_to_cpu = true;
         
-        LOG_INFO("Re-initializing SD context with CPU offloading...");
+        DD_LOG_INFO("Re-initializing SD context with CPU offloading...");
         auto sd_params = params.to_sd_ctx_params_t(false, false, false);
         ctx.sd_ctx.reset(new_sd_ctx(&sd_params));
         
@@ -363,7 +363,7 @@ void handle_offload_model(httplib::Response& res, ServerContext& ctx) {
             res.set_content(R"({\"error\":\"Failed to re-initialize model for offloading\"})", "application/json");
         }
     } catch (const std::exception& e) {
-        LOG_ERROR("Failed to offload model: %s", e.what());
+        DD_LOG_ERROR("Failed to offload model: %s", e.what());
         res.status = 500;
         res.set_content(R"({\"error\":\")" + std::string(e.what()) + R"("})", "application/json");
     }
@@ -371,7 +371,7 @@ void handle_offload_model(httplib::Response& res, ServerContext& ctx) {
 
 void handle_load_upscale_model(const httplib::Request& req, httplib::Response& res, ServerContext& ctx) {
     try {
-        mysti::json body = mysti::json::parse(req.body);
+        diffusion_desk::json body = diffusion_desk::json::parse(req.body);
         if (!body.contains("model_id")) {
             res.status = 400;
             res.set_content(make_error_json("invalid_request", "model_id required"), "application/json");
@@ -386,7 +386,7 @@ void handle_load_upscale_model(const httplib::Request& req, httplib::Response& r
             return;
         }
 
-        LOG_INFO("Loading upscale model: %s", model_path.string().c_str());
+        DD_LOG_INFO("Loading upscale model: %s", model_path.string().c_str());
 
         {
             std::lock_guard<std::mutex> lock(ctx.sd_ctx_mutex);
@@ -404,7 +404,7 @@ void handle_load_upscale_model(const httplib::Request& req, httplib::Response& r
 
         res.set_content(R"({\"status\":\"success\",\"model\":\")" + model_id + R"("})", "application/json");
     } catch (const std::exception& e) {
-        LOG_ERROR("error loading upscale model: %s", e.what());
+        DD_LOG_ERROR("error loading upscale model: %s", e.what());
         res.status = 500;
         res.set_content(R"({\"error\":\")" + std::string(e.what()) + R"("})", "application/json");
     }
@@ -412,7 +412,7 @@ void handle_load_upscale_model(const httplib::Request& req, httplib::Response& r
 
 void handle_upscale_image(const httplib::Request& req, httplib::Response& res, ServerContext& ctx) {
     try {
-        mysti::json body = mysti::json::parse(req.body);
+        diffusion_desk::json body = diffusion_desk::json::parse(req.body);
         std::string image_data;
         std::string image_name;
 
@@ -475,7 +475,7 @@ void handle_upscale_image(const httplib::Request& req, httplib::Response& res, S
                 upscale_factor = get_upscale_factor(ctx.upscaler_ctx.get());
             }
 
-            LOG_INFO("Upscaling image: %dx%d -> factor %d", input_image.width, input_image.height, upscale_factor);
+            DD_LOG_INFO("Upscaling image: %dx%d -> factor %d", input_image.width, input_image.height, upscale_factor);
             upscaled_image = upscale(ctx.upscaler_ctx.get(), input_image, upscale_factor);
         }
 
@@ -501,7 +501,7 @@ void handle_upscale_image(const httplib::Request& req, httplib::Response& res, S
             return;
         }
 
-        mysti::json out;
+        diffusion_desk::json out;
         out["width"] = upscaled_image.width;
         out["height"] = upscaled_image.height;
 
@@ -528,12 +528,12 @@ void handle_upscale_image(const httplib::Request& req, httplib::Response& res, S
         
         out["url"] = url_prefix + out_name;
         out["name"] = out_name;
-        LOG_INFO("Saved upscaled image to %s", out_path.string().c_str());
+        DD_LOG_INFO("Saved upscaled image to %s", out_path.string().c_str());
 
         res.set_content(out.dump(), "application/json");
 
     } catch (const std::exception& e) {
-        LOG_ERROR("error during upscaling: %s", e.what());
+        DD_LOG_ERROR("error during upscaling: %s", e.what());
         res.status = 500;
         res.set_content(R"({\"error\":\")" + std::string(e.what()) + R"("})", "application/json");
     }
@@ -541,7 +541,7 @@ void handle_upscale_image(const httplib::Request& req, httplib::Response& res, S
 
 void handle_get_history(const httplib::Request&, httplib::Response& res, ServerContext& ctx) {
     const std::string output_dir = ctx.svr_params.output_dir;
-    mysti::json image_list = mysti::json::array();
+    diffusion_desk::json image_list = diffusion_desk::json::array();
     try {
         if (fs::exists(output_dir) && fs::is_directory(output_dir)) {
             std::vector<fs::path> image_paths;
@@ -558,7 +558,7 @@ void handle_get_history(const httplib::Request&, httplib::Response& res, ServerC
             });
 
             for(const auto& img_path : image_paths) {
-                mysti::json item;
+                diffusion_desk::json item;
                 item["name"] = img_path.filename().string();
                 
                 auto txt_path = img_path;
@@ -570,7 +570,7 @@ void handle_get_history(const httplib::Request&, httplib::Response& res, ServerC
                                             (std::istreambuf_iterator<char>()));
                         item["params"] = parse_image_params(content);
                     } catch (...) {
-                        LOG_WARN("failed to parse txt metadata: %s", txt_path.string().c_str());
+                        DD_LOG_WARN("failed to parse txt metadata: %s", txt_path.string().c_str());
                     }
                 } else {
                     auto json_path = img_path;
@@ -578,9 +578,9 @@ void handle_get_history(const httplib::Request&, httplib::Response& res, ServerC
                     if (fs::exists(json_path)) {
                         try {
                             std::ifstream json_file(json_path);
-                            item["params"] = mysti::json::parse(json_file);
+                            item["params"] = diffusion_desk::json::parse(json_file);
                         } catch (...) {
-                            LOG_WARN("failed to parse json metadata: %s", json_path.string().c_str());
+                            DD_LOG_WARN("failed to parse json metadata: %s", json_path.string().c_str());
                         }
                     }
                 }
@@ -588,7 +588,7 @@ void handle_get_history(const httplib::Request&, httplib::Response& res, ServerC
             }
         }
     } catch (const std::exception& e) {
-        LOG_ERROR("failed to list image history: %s", e.what());
+        DD_LOG_ERROR("failed to list image history: %s", e.what());
         res.status = 500;
         res.set_content(make_error_json("server_error", "failed to list image history"), "application/json");
         return;
@@ -598,7 +598,7 @@ void handle_get_history(const httplib::Request&, httplib::Response& res, ServerC
 
 void handle_generate_image(const httplib::Request& req, httplib::Response& res, ServerContext& ctx) {
     reset_progress();
-    LOG_INFO("New generation request received");
+    DD_LOG_INFO("New generation request received");
     try {
         if (req.body.empty()) {
             res.status = 400;
@@ -606,7 +606,7 @@ void handle_generate_image(const httplib::Request& req, httplib::Response& res, 
             return;
         }
 
-        mysti::json j             = mysti::json::parse(req.body);
+        diffusion_desk::json j             = diffusion_desk::json::parse(req.body);
         std::string prompt        = j.value("prompt", "");
         int n                     = std::max(1, (int)j.value("n", 1));
         std::string size          = j.value("size", "");
@@ -648,9 +648,9 @@ void handle_generate_image(const httplib::Request& req, httplib::Response& res, 
         }
 
         double total_generation_time = 0;
-        mysti::json out;
+        diffusion_desk::json out;
         out["created"]       = iso_timestamp_now();
-        out["data"]          = mysti::json::array();
+        out["data"]          = diffusion_desk::json::array();
         out["output_format"] = output_format;
         out["generation_time"] = total_generation_time;
 
@@ -668,7 +668,7 @@ void handle_generate_image(const httplib::Request& req, httplib::Response& res, 
 
         // B2.5: Dynamic Text Encoder Offloading
         if (gen_params.clip_on_cpu != ctx.ctx_params.clip_on_cpu) {
-            LOG_INFO("Switching CLIP to %s for this generation...", gen_params.clip_on_cpu ? "CPU" : "GPU");
+            DD_LOG_INFO("Switching CLIP to %s for this generation...", gen_params.clip_on_cpu ? "CPU" : "GPU");
             std::lock_guard<std::mutex> lock(ctx.sd_ctx_mutex);
             ctx.sd_ctx.reset();
             ctx.ctx_params.clip_on_cpu = gen_params.clip_on_cpu;
@@ -680,19 +680,19 @@ void handle_generate_image(const httplib::Request& req, httplib::Response& res, 
         bool request_vae_on_cpu = j.value("vae_on_cpu", false);
         float mp_check = (float)(width * height) / (1024.0f * 1024.0f);
         if (mp_check >= 3.0f && !request_vae_on_cpu) {
-             LOG_INFO("High resolution detected (%.2f MP). Forcing VAE to CPU to avoid NaN/static artifacts.", mp_check);
+             DD_LOG_INFO("High resolution detected (%.2f MP). Forcing VAE to CPU to avoid NaN/static artifacts.", mp_check);
              request_vae_on_cpu = true;
         }
 
         // B2.7: Dynamic Model Weight Offloading (Crucial for ultra-high res)
         bool request_offload = j.value("offload_to_cpu", false);
         if (mp_check >= 4.0f && !request_offload) {
-             LOG_INFO("Ultra-high resolution detected (%.2f MP). Enabling model weight offloading to prevent OOM.", mp_check);
+             DD_LOG_INFO("Ultra-high resolution detected (%.2f MP). Enabling model weight offloading to prevent OOM.", mp_check);
              request_offload = true;
         }
 
         if (request_vae_on_cpu != ctx.ctx_params.vae_on_cpu || request_offload != ctx.ctx_params.offload_params_to_cpu) {
-            LOG_INFO("Context update required: VAE on CPU: %s, Offload: %s", request_vae_on_cpu ? "Yes" : "No", request_offload ? "Yes" : "No");
+            DD_LOG_INFO("Context update required: VAE on CPU: %s, Offload: %s", request_vae_on_cpu ? "Yes" : "No", request_offload ? "Yes" : "No");
             std::lock_guard<std::mutex> lock(ctx.sd_ctx_mutex);
             ctx.sd_ctx.reset();
             ctx.ctx_params.vae_on_cpu = request_vae_on_cpu;
@@ -714,7 +714,7 @@ void handle_generate_image(const httplib::Request& req, httplib::Response& res, 
             return;
         }
 
-        LOG_DEBUG("%s\n", gen_params.to_string().c_str());
+        DD_LOG_DEBUG("%s\n", gen_params.to_string().c_str());
 
         sd_image_t init_image    = {(uint32_t)gen_params.width, (uint32_t)gen_params.height, 3, nullptr};
         
@@ -735,9 +735,9 @@ void handle_generate_image(const httplib::Request& req, httplib::Response& res, 
                 init_image.width = (uint32_t)img_w;
                 init_image.height = (uint32_t)img_h;
                 if (!init_image.data) {
-                    LOG_ERROR("failed to load init_image from base64");
+                    DD_LOG_ERROR("failed to load init_image from base64");
                 } else {
-                    LOG_INFO("loaded init_image for img2img: %dx%d", img_w, img_h);
+                    DD_LOG_INFO("loaded init_image for img2img: %dx%d", img_w, img_h);
                 }
             }
         }
@@ -762,9 +762,9 @@ void handle_generate_image(const httplib::Request& req, httplib::Response& res, 
                 mask_image.width = (uint32_t)mask_w;
                 mask_image.height = (uint32_t)mask_h;
                 if (!mask_image.data) {
-                    LOG_ERROR("failed to load mask_image from base64");
+                    DD_LOG_ERROR("failed to load mask_image from base64");
                 } else {
-                    LOG_INFO("loaded mask_image for inpainting: %dx%d", mask_w, mask_h);
+                    DD_LOG_INFO("loaded mask_image for inpainting: %dx%d", mask_w, mask_h);
                 }
             }
         }
@@ -827,12 +827,12 @@ void handle_generate_image(const httplib::Request& req, httplib::Response& res, 
             float estimated_vae_vram = (float(gen_params.width) * gen_params.height) / (512.0f * 512.0f) * 1.5f;
             float mp = (float)(gen_params.width * gen_params.height) / (1024.0f * 1024.0f);
             
-            LOG_INFO("VAE VRAM Check: Free=%.2fGB, Estimated Needed=%.2fGB", free_vram, estimated_vae_vram);
+            DD_LOG_INFO("VAE VRAM Check: Free=%.2fGB, Estimated Needed=%.2fGB", free_vram, estimated_vae_vram);
             
             bool request_vae_tiling = j.value("vae_tiling", false);
             
             if (request_vae_tiling) {
-                LOG_INFO("VAE tiling enabled by request.");
+                DD_LOG_INFO("VAE tiling enabled by request.");
                 img_gen_params.vae_tiling_params.enabled = true;
             } 
             else if (img_gen_params.vae_tiling_params.enabled) {
@@ -840,12 +840,12 @@ void handle_generate_image(const httplib::Request& req, httplib::Response& res, 
             }
             else if (mp > 1.25f) { 
                 // > 1.25 MP (e.g. above 1024x1024/1152x1152) -> Auto-tile to prevent grey images/NaNs
-                LOG_INFO("High resolution (%.2f MP) detected. Auto-enabling VAE tiling.", mp);
+                DD_LOG_INFO("High resolution (%.2f MP) detected. Auto-enabling VAE tiling.", mp);
                 img_gen_params.vae_tiling_params.enabled = true;
                 set_progress_message("High-res: VAE tiling enabled");
             }
             else if (estimated_vae_vram > free_vram * 0.6f) {
-                LOG_WARN("High VRAM usage predicted. Auto-enabling VAE tiling.");
+                DD_LOG_WARN("High VRAM usage predicted. Auto-enabling VAE tiling.");
                 img_gen_params.vae_tiling_params.enabled = true;
                 set_progress_message("VRAM low: VAE tiling enabled");
             } else {
@@ -871,7 +871,7 @@ void handle_generate_image(const httplib::Request& req, httplib::Response& res, 
                 }
                 progress_state.sampling_steps = sampling_steps;
                 progress_state.base_step = 0;
-                LOG_INFO("Total expected steps: %d", progress_state.total_steps);
+                DD_LOG_INFO("Total expected steps: %d", progress_state.total_steps);
             }
 
             if (gen_params.clip_on_cpu) {
@@ -885,7 +885,7 @@ void handle_generate_image(const httplib::Request& req, httplib::Response& res, 
             float vram_after = get_current_process_vram_usage_gb();
             float vram_delta = vram_after - vram_before;
             log_vram_status("Sampling End");
-            LOG_INFO("Generation Sampling finished. Delta: %+.2f GB", vram_delta);
+            DD_LOG_INFO("Generation Sampling finished. Delta: %+.2f GB", vram_delta);
             num_results = gen_params.batch_count;
 
             // B0.1 & B0.2: Fail Loudly + Conservative Retry
@@ -901,7 +901,7 @@ void handle_generate_image(const httplib::Request& req, httplib::Response& res, 
             }
 
             if (!first_pass_success) {
-                LOG_WARN("First pass generation failed (empty results or invalid/grey image). Retrying with conservative settings (VAE tiling)...");
+                DD_LOG_WARN("First pass generation failed (empty results or invalid/grey image). Retrying with conservative settings (VAE tiling)...");
                 set_progress_message("Retrying with VAE tiling...");
 
                 free_sd_images(results, num_results);
@@ -927,7 +927,7 @@ void handle_generate_image(const httplib::Request& req, httplib::Response& res, 
                     
                                 if (!first_pass_success) {
                     
-                    LOG_ERROR("Generation failed after retry.");
+                    DD_LOG_ERROR("Generation failed after retry.");
                     res.status = 500;
                     res.set_content(make_error_json("generation_failed", "Stable diffusion generation failed even after retry with conservative settings."), "application/json");
                     free_sd_images(results, num_results);
@@ -943,24 +943,24 @@ void handle_generate_image(const httplib::Request& req, httplib::Response& res, 
                 progress_state.base_step = gen_params.sample_params.sample_steps;
             }
 
-            LOG_INFO("Generation done, num_results: %d, hires_fix: %s", num_results, gen_params.hires_fix ? "true" : "false");
+            DD_LOG_INFO("Generation done, num_results: %d, hires_fix: %s", num_results, gen_params.hires_fix ? "true" : "false");
 
             if (gen_params.hires_fix && num_results > 0) {
-                LOG_INFO("Performing highres-fix for %d images...", num_results);
+                DD_LOG_INFO("Performing highres-fix for %d images...", num_results);
                 
                 if (!gen_params.hires_upscale_model.empty() && 
                     ctx.current_upscale_model_path != gen_params.hires_upscale_model) {
                     
                     fs::path upscaler_path = fs::path(ctx.svr_params.model_dir) / gen_params.hires_upscale_model;
-                    LOG_INFO("Attempting to load upscaler: %s", upscaler_path.string().c_str());
+                    DD_LOG_INFO("Attempting to load upscaler: %s", upscaler_path.string().c_str());
                     if (fs::exists(upscaler_path)) {
                         ctx.upscaler_ctx.reset(new_upscaler_ctx(upscaler_path.string().c_str(), 
                                                         ctx.ctx_params.offload_params_to_cpu,
                                                         false, ctx.ctx_params.n_threads, 512));
                         ctx.current_upscale_model_path = gen_params.hires_upscale_model;
-                        LOG_INFO("Upscaler loaded successfully.");
+                        DD_LOG_INFO("Upscaler loaded successfully.");
                     } else {
-                        LOG_WARN("Upscaler model not found: %s", upscaler_path.string().c_str());
+                        DD_LOG_WARN("Upscaler model not found: %s", upscaler_path.string().c_str());
                     }
                 }
 
@@ -971,10 +971,10 @@ void handle_generate_image(const httplib::Request& req, httplib::Response& res, 
                     sd_image_t upscaled_img = {0};
 
                     if (ctx.upscaler_ctx) {
-                        LOG_INFO("Upscaling for highres-fix (factor %.2f)...", gen_params.hires_upscale_factor);
+                        DD_LOG_INFO("Upscaling for highres-fix (factor %.2f)...", gen_params.hires_upscale_factor);
                         upscaled_img = upscale(ctx.upscaler_ctx.get(), base_img, (uint32_t)gen_params.hires_upscale_factor);
                     } else {
-                        LOG_INFO("Resizing for highres-fix (factor %.2f) using simple resize...", gen_params.hires_upscale_factor);
+                        DD_LOG_INFO("Resizing for highres-fix (factor %.2f) using simple resize...", gen_params.hires_upscale_factor);
                         upscaled_img.width = (uint32_t)(base_img.width * gen_params.hires_upscale_factor);
                         upscaled_img.height = (uint32_t)(base_img.height * gen_params.hires_upscale_factor);
                         upscaled_img.channel = base_img.channel;
@@ -990,7 +990,7 @@ void handle_generate_image(const httplib::Request& req, httplib::Response& res, 
                     uint32_t target_height = (uint32_t)(base_img.height * gen_params.hires_upscale_factor);
 
                     if (upscaled_img.width != target_width || upscaled_img.height != target_height) {
-                        LOG_INFO("Resizing upscaled image to target size: %dx%d", target_width, target_height);
+                        DD_LOG_INFO("Resizing upscaled image to target size: %dx%d", target_width, target_height);
                         sd_image_t resized_img = { target_width, target_height, upscaled_img.channel, nullptr };
                         resized_img.data = (uint8_t*)malloc(target_width * target_height * resized_img.channel);
                         stbir_resize_uint8(upscaled_img.data, (int)upscaled_img.width, (int)upscaled_img.height, 0,
@@ -1084,12 +1084,12 @@ void handle_generate_image(const httplib::Request& req, httplib::Response& res, 
                                                         (int)results[i].channel,
                                                         output_compression);
             if (image_bytes.empty()) {
-                LOG_ERROR("write image to mem failed");
+                DD_LOG_ERROR("write image to mem failed");
                 continue;
             }
 
             int64_t current_seed = gen_params.seed + i;
-            mysti::json item;
+            diffusion_desk::json item;
             item["seed"] = current_seed;
 
             // Always save to disk (temp or permanent) to serve via URL
@@ -1115,7 +1115,7 @@ void handle_generate_image(const httplib::Request& req, httplib::Response& res, 
                 
                 std::ofstream file(img_filename, std::ios::binary);
                 file.write(reinterpret_cast<const char*>(image_bytes.data()), image_bytes.size());
-                LOG_INFO("saved image to %s", img_filename.c_str());
+                DD_LOG_INFO("saved image to %s", img_filename.c_str());
 
                 // Only save metadata txt if saving permanently
                 if (save_image) {
@@ -1130,14 +1130,14 @@ void handle_generate_image(const httplib::Request& req, httplib::Response& res, 
                 item["name"] = base_filename + ".png";
 
             } catch (const std::exception& e) {
-                LOG_ERROR("failed to save image or metadata: %s", e.what());
+                DD_LOG_ERROR("failed to save image or metadata: %s", e.what());
             }
 
             out["data"].push_back(item);
         }
 
         if (successful_generations == 0) {
-            LOG_ERROR("All generated images were null (VAE decoding pass).");
+            DD_LOG_ERROR("All generated images were null (VAE decoding pass).");
             res.status = 500;
             res.set_content(make_error_json("generation_failed", "Stable diffusion returned only null images. This can happen if the VAE failed or the model is corrupted."), "application/json");
             free_sd_images(results, num_results);
@@ -1276,7 +1276,7 @@ void handle_edit_image(const httplib::Request& req, httplib::Response& res, Serv
             return;
         }
 
-        LOG_DEBUG("%s\n", gen_params.to_string().c_str());
+        DD_LOG_DEBUG("%s\n", gen_params.to_string().c_str());
 
         sd_image_t init_image    = {(uint32_t)gen_params.width, (uint32_t)gen_params.height, 3, nullptr};
         sd_image_t control_image = {(uint32_t)gen_params.width, (uint32_t)gen_params.height, 3, nullptr};
@@ -1376,7 +1376,7 @@ void handle_edit_image(const httplib::Request& req, httplib::Response& res, Serv
         float vram_after = get_current_process_vram_usage_gb();
         float vram_delta = vram_after - vram_before;
         log_vram_status("Edit End");
-        LOG_INFO("Edit Sampling finished. Delta: %+.2f GB", vram_delta);
+        DD_LOG_INFO("Edit Sampling finished. Delta: %+.2f GB", vram_delta);
         num_results = gen_params.batch_count;
 
         // B0.1 & B0.2: Fail Loudly + Conservative Retry
@@ -1402,7 +1402,7 @@ void handle_edit_image(const httplib::Request& req, httplib::Response& res, Serv
         }
 
         if (!success) {
-            LOG_WARN("Edit generation failed (empty results). Retrying with conservative settings (VAE tiling)...");
+            DD_LOG_WARN("Edit generation failed (empty results). Retrying with conservative settings (VAE tiling)...");
             set_progress_message("Retrying with VAE tiling...");
             
             free_sd_images(results, num_results);
@@ -1437,7 +1437,7 @@ void handle_edit_image(const httplib::Request& req, httplib::Response& res, Serv
             }
             
             if (!success) {
-                LOG_ERROR("Edit generation failed after retry.");
+                DD_LOG_ERROR("Edit generation failed after retry.");
                 res.status = 500;
                 res.set_content(make_error_json("generation_failed", "Stable diffusion generation failed even after retry with conservative settings."), "application/json");
                 free_sd_images(results, num_results);
@@ -1452,9 +1452,9 @@ void handle_edit_image(const httplib::Request& req, httplib::Response& res, Serv
     }
 
     set_progress_phase("VAE Decoding...");
-    mysti::json out;
+    diffusion_desk::json out;
     out["created"]       = iso_timestamp_now();
-    out["data"]          = mysti::json::array();
+    out["data"]          = diffusion_desk::json::array();
     out["output_format"] = output_format;
 
     int successful_generations = 0;
@@ -1470,7 +1470,7 @@ void handle_edit_image(const httplib::Request& req, httplib::Response& res, Serv
                                                     output_compression);
         
         int64_t current_seed = gen_params.seed + i;
-        mysti::json item;
+        diffusion_desk::json item;
         item["seed"] = current_seed;
 
         // Always save edits to temp to serve via URL (Edits are usually transient unless saved by user)
@@ -1490,14 +1490,14 @@ void handle_edit_image(const httplib::Request& req, httplib::Response& res, Serv
             item["url"] = "/outputs/temp/" + base_filename + ".png";
             item["name"] = base_filename + ".png";
         } catch (...) {
-            LOG_ERROR("failed to save edit image to temp");
+            DD_LOG_ERROR("failed to save edit image to temp");
         }
 
         out["data"].push_back(item);
     }
 
     if (successful_generations == 0) {
-        LOG_ERROR("All generated images were null (VAE decoding pass).");
+        DD_LOG_ERROR("All generated images were null (VAE decoding pass).");
         res.status = 500;
         res.set_content(make_error_json("generation_failed", "Stable diffusion returned only null images."), "application/json");
         free_sd_images(results, num_results);

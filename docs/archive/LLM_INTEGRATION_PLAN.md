@@ -17,11 +17,11 @@ Integrate the native `llama.cpp` server logic into the `mysti_server` backend to
 - **Solved: Dependencies**: Disabled `LLAMA_CURL` and added `ws2_32` for Windows network compatibility.
 - **In-Progress: JSON Symbol Conflict**: 
     - `llama.cpp` defines `json` globally as `nlohmann::ordered_json`.
-    - `MystiCanvas` previously used a global `using json = nlohmann::json`.
+    - `DiffusionDesk` previously used a global `using json = nlohmann::json`.
     - **Latest Change**: Removed all global `using json` declarations. Scoped all local JSON usage to `mysti::json`.
 
 ## 4. Next Steps for New Session
-1. **Verify Build**: Run `.\MystiCanvas\scripts\build.ps1` to confirm the namespacing resolved the `C2371` redefinition errors.
+1. **Verify Build**: Run `.\DiffusionDesk\scripts\build.ps1` to confirm the namespacing resolved the `C2371` redefinition errors.
 2. **Runtime Test**:
     - Load an LLM (e.g., `models/text-encoder/Qwen3...`).
     - Run a completion test from the Settings UI.

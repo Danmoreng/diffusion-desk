@@ -6,7 +6,7 @@ set -e
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
 PROJECT_ROOT="$(dirname "$(dirname "$SCRIPT_DIR")")"
 BUILD_DIR="$PROJECT_ROOT/build"
-SERVER_EXE="$BUILD_DIR/bin/mysti_server"
+SERVER_EXE="$BUILD_DIR/bin/diffusion_desk_server"
 
 # --- Configuration ---
 MODEL_BASE="/home/sebastian/Development/models" 
@@ -25,9 +25,9 @@ NC='\033[0m' # No Color
 
 cleanup() {
     echo "Cleaning up..."
-    pkill -f "mysti_server" || true
-    pkill -f "mysti_sd_worker" || true
-    pkill -f "mysti_llm_worker" || true
+    pkill -f "diffusion_desk_server" || true
+    pkill -f "diffusion_desk_sd_worker" || true
+    pkill -f "diffusion_desk_llm_worker" || true
 }
 
 trap cleanup EXIT

@@ -1,4 +1,4 @@
-# MystiCanvas Launch Script
+# DiffusionDesk Launch Script
 
 # Robustly resolve paths relative to the script location
 $ScriptDir = $PSScriptRoot
@@ -7,10 +7,10 @@ $BuildDir = Join-Path $ProjectRoot "build"
 
 # Define possible executable locations
 $PotentialPaths = @(
-    "$BuildDir\bin\mysti_server.exe",
-    "$BuildDir\mysti_server.exe",
-    "$BuildDir\bin\Debug\mysti_server.exe",
-    "$BuildDir\Debug\mysti_server.exe"
+    "$BuildDir\bin\diffusion_desk_server.exe",
+    "$BuildDir\diffusion_desk_server.exe",
+    "$BuildDir\bin\Debug\diffusion_desk_server.exe",
+    "$BuildDir\Debug\diffusion_desk_server.exe"
 )
 
 $ServerExe = $null
@@ -22,7 +22,7 @@ foreach ($path in $PotentialPaths) {
 }
 
 if ($null -eq $ServerExe) {
-    Write-Host "Error: mysti_server.exe not found in build directories." -ForegroundColor Red
+    Write-Host "Error: diffusion_desk_server.exe not found in build directories." -ForegroundColor Red
     Write-Host "Searched locations:"
     $PotentialPaths | ForEach-Object { Write-Host " - $_" }
     Write-Host "Please run scripts/build.ps1 first." -ForegroundColor Yellow
@@ -37,7 +37,7 @@ $SDPath = ""
 
 $IdleTimeout = 600  # 10 minutes
 
-Write-Host "Starting MystiCanvas Server..." -ForegroundColor Cyan
+Write-Host "Starting DiffusionDesk Server..." -ForegroundColor Cyan
 Write-Host "Executable: $ServerExe"
 Write-Host "Model Directory: $ModelBase"
 if ($SDPath) { Write-Host "SD Model Override: $SDPath" }

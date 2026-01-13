@@ -8,11 +8,11 @@
 #include <memory>
 #include <mutex>
 
-namespace mysti {
+namespace diffusion_desk {
 
 class JobService {
 public:
-    using JobHandler = std::function<bool(const mysti::json&)>;
+    using JobHandler = std::function<bool(const diffusion_desk::json&)>;
 
     JobService(std::shared_ptr<Database> db);
     ~JobService();
@@ -33,4 +33,4 @@ private:
     std::mutex m_handlers_mutex;
 };
 
-} // namespace mysti
+} // namespace diffusion_desk

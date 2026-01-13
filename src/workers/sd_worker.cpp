@@ -4,14 +4,14 @@
 #include "httplib.h"
 
 int run_sd_worker(SDSvrParams& svr_params, SDContextParams& ctx_params, SDGenerationParams& default_gen_params) {
-    LOG_INFO("Starting SD Worker on port %d...", svr_params.listen_port);
+    DD_LOG_INFO("Starting SD Worker on port %d...", svr_params.listen_port);
 
     sd_set_log_callback(sd_log_cb, (void*)&svr_params);
     sd_set_progress_callback(on_progress, &progress_state);
     set_log_verbose(svr_params.verbose);
     set_log_color(svr_params.color);
 
-    LOG_INFO("SD Info: %s", sd_get_system_info());
+    DD_LOG_INFO("SD Info: %s", sd_get_system_info());
 
     // Load config if available (e.g. for z_image_turbo)
     if (!ctx_params.model_path.empty()) {
@@ -28,7 +28,7 @@ int run_sd_worker(SDSvrParams& svr_params, SDContextParams& ctx_params, SDGenera
     if (!ctx_params.model_path.empty() || !ctx_params.diffusion_model_path.empty()) {
         sd_ctx.reset(new_sd_ctx(&sd_ctx_params_raw));
         if (!sd_ctx) {
-            LOG_ERROR("new_sd_ctx failed for initial model - starting with empty context");
+            DD_LOG_ERROR("new_sd_ctx failed for initial model - starting with empty context");
             // Do not exit, allow loading another model later
         }
     }
@@ -60,7 +60,7 @@ int run_sd_worker(SDSvrParams& svr_params, SDContextParams& ctx_params, SDGenera
                     auto now = std::chrono::steady_clock::now();
                     auto duration = std::chrono::duration_cast<std::chrono::seconds>(now - ctx.last_access).count();
                     if (duration > ctx.svr_params.sd_idle_timeout) {
-                        LOG_INFO("SD idle timeout reached (%d seconds). Unloading...", ctx.svr_params.sd_idle_timeout);
+                        DD_LOG_INFO("SD idle timeout reached (%d seconds). Unloading...", ctx.svr_params.sd_idle_timeout);
                         ctx.sd_ctx.reset();
                     }
                 }
@@ -75,7 +75,7 @@ int run_sd_worker(SDSvrParams& svr_params, SDContextParams& ctx_params, SDGenera
         if (!svr_params.internal_token.empty()) {
             std::string token = req.get_header_value("X-Internal-Token");
             if (token != svr_params.internal_token) {
-                LOG_WARN("Blocked unauthorized internal request from %s. Expected: %s..., Received: %s...", 
+                DD_LOG_WARN("Blocked unauthorized internal request from %s. Expected: %s..., Received: %s...", 
                     req.remote_addr.c_str(),
                     svr_params.internal_token.substr(0, 4).c_str(),
                     token.empty() ? "None" : token.substr(0, 4).c_str());
@@ -94,7 +94,7 @@ int run_sd_worker(SDSvrParams& svr_params, SDContextParams& ctx_params, SDGenera
     // Internal endpoint for Orchestrator to update LLM status for handle_get_models
     svr.Post("/internal/llm_status", [&](const httplib::Request& req, httplib::Response& res) {
         try {
-            auto j = mysti::json::parse(req.body);
+            auto j = diffusion_desk::json::parse(req.body);
             ctx.active_llm_model_path = j.value("path", "");
             ctx.active_llm_model_loaded = j.value("loaded", false);
             res.set_content("{\"status\":\"ok\"}", "application/json");
@@ -170,7 +170,7 @@ int run_sd_worker(SDSvrParams& svr_params, SDContextParams& ctx_params, SDGenera
     });
 
 // ...
-    LOG_INFO("SD Worker listening on: %s:%d\n", svr_params.listen_ip.c_str(), svr_params.listen_port);
+    DD_LOG_INFO("SD Worker listening on: %s:%d\n", svr_params.listen_ip.c_str(), svr_params.listen_port);
     svr.listen(svr_params.listen_ip, svr_params.listen_port);
 
     worker_running = false;

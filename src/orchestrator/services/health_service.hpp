@@ -4,7 +4,7 @@
 #include "orchestrator/ws_manager.hpp"
 #include <atomic>
 
-namespace mysti {
+namespace diffusion_desk {
 
 class HealthService {
 public:
@@ -64,4 +64,4 @@ public:
     mutable std::mutex m_proc_mutex; // Protects process spawning/killing logic
 };
 
-} // namespace mysti
+} // namespace diffusion_desk

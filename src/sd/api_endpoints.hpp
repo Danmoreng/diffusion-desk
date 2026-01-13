@@ -3,6 +3,7 @@
 #include "httplib.h"
 #include <string>
 #include "utils/common.hpp"
+#include "utils/sd_common.hpp"
 #include "server_state.hpp"
 #include <mutex>
 

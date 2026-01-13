@@ -1,11 +1,11 @@
-# MystiCanvas Architectural Review & Improvement Plan
+# DiffusionDesk Architectural Review & Improvement Plan
 
 **Date:** December 30, 2025  
 **Reviewer:** Gemini (AI Software Engineer)
 
 ## 1. Executive Summary
 
-The MystiCanvas project employs a robust **Orchestrator-Worker** architecture. By separating the Orchestrator, Stable Diffusion (SD) Worker, and LLM Worker into distinct processes, the system achieves high stability and resource isolation. A crash in the experimental LLM worker does not bring down the main application.
+The DiffusionDesk project employs a robust **Orchestrator-Worker** architecture. By separating the Orchestrator, Stable Diffusion (SD) Worker, and LLM Worker into distinct processes, the system achieves high stability and resource isolation. A crash in the experimental LLM worker does not bring down the main application.
 
 However, as the project grows, several areas require attention to maintain maintainability, safety, and performance. This document outlines specific, actionable improvements.
 

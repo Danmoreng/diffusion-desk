@@ -11,7 +11,7 @@
 
 namespace fs = std::filesystem;
 
-namespace mysti {
+namespace diffusion_desk {
 
 ThumbnailService::ThumbnailService(std::shared_ptr<JobService> job_svc, std::shared_ptr<Database> db)
     : m_job_svc(job_svc), m_db(db) {
@@ -19,7 +19,7 @@ ThumbnailService::ThumbnailService(std::shared_ptr<JobService> job_svc, std::sha
     ensure_preview_dir();
     
     if (m_job_svc) {
-        m_job_svc->register_handler("generate_thumbnail", [this](const mysti::json& payload) {
+        m_job_svc->register_handler("generate_thumbnail", [this](const diffusion_desk::json& payload) {
             return this->handle_job(payload);
         });
     }
@@ -33,10 +33,10 @@ void ThumbnailService::ensure_preview_dir() {
     } catch (...) {}
 }
 
-bool ThumbnailService::handle_job(const mysti::json& payload) {
+bool ThumbnailService::handle_job(const diffusion_desk::json& payload) {
     try {
         if (!payload.contains("generation_id") || !payload.contains("image_path")) {
-            LOG_ERROR("Thumbnail Job missing required fields.");
+            DD_LOG_ERROR("Thumbnail Job missing required fields.");
             return false;
         }
 
@@ -58,7 +58,7 @@ bool ThumbnailService::handle_job(const mysti::json& payload) {
             if (fs::exists(raw_path)) {
                 img_path = fs::absolute(raw_path);
             } else {
-                 LOG_ERROR("Thumbnail source image not found: %s (tried: %s)", rel_path.c_str(), img_path.string().c_str());
+                 DD_LOG_ERROR("Thumbnail source image not found: %s (tried: %s)", rel_path.c_str(), img_path.string().c_str());
                  return false;
             }
         }
@@ -66,7 +66,7 @@ bool ThumbnailService::handle_job(const mysti::json& payload) {
         int width, height, channels;
         unsigned char* img = stbi_load(img_path.string().c_str(), &width, &height, &channels, 3); // Force 3 channels (RGB)
         if (!img) {
-            LOG_ERROR("Failed to load image for thumbnail: %s", img_path.string().c_str());
+            DD_LOG_ERROR("Failed to load image for thumbnail: %s", img_path.string().c_str());
             return false;
         }
 
@@ -115,7 +115,7 @@ bool ThumbnailService::handle_job(const mysti::json& payload) {
         fs::path thumb_path = fs::path("outputs") / "previews" / thumb_filename;
         
         if (!stbi_write_jpg(thumb_path.string().c_str(), target_w, target_h, 3, thumb.data(), 85)) {
-             LOG_ERROR("Failed to write thumbnail: %s", thumb_path.string().c_str());
+             DD_LOG_ERROR("Failed to write thumbnail: %s", thumb_path.string().c_str());
              return false;
         }
 
@@ -124,13 +124,13 @@ bool ThumbnailService::handle_job(const mysti::json& payload) {
         std::string db_path = "/outputs/previews/" + thumb_filename;
         m_db->add_generation_file(id, "thumbnail", db_path);
         
-        LOG_INFO("Generated thumbnail for ID %d", id);
+        DD_LOG_INFO("Generated thumbnail for ID %d", id);
         return true;
 
     } catch (const std::exception& e) {
-        LOG_ERROR("Thumbnail exception: %s", e.what());
+        DD_LOG_ERROR("Thumbnail exception: %s", e.what());
         return false;
     }
 }
 
-} // namespace mysti
+} // namespace diffusion_desk

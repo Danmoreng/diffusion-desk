@@ -2,11 +2,11 @@
 #include <iostream>
 #include <algorithm>
 
-namespace mysti {
+namespace diffusion_desk {
 
 // Internal helper to parse a generation row from a query (assumes all columns are selected)
-static mysti::json parse_generation_row(SQLite::Statement& q, SQLite::Database& db) {
-    mysti::json gen;
+static diffusion_desk::json parse_generation_row(SQLite::Statement& q, SQLite::Database& db) {
+    diffusion_desk::json gen;
     std::string file_path = q.getColumn("file_path").getText();
     std::string name = file_path;
     size_t last_slash = file_path.find_last_of("/\\");
@@ -18,10 +18,10 @@ static mysti::json parse_generation_row(SQLite::Statement& q, SQLite::Database& 
     gen["file_path"] = file_path;
     gen["timestamp"] = q.getColumn("timestamp").getText();
 
-    mysti::json params;
+    diffusion_desk::json params;
     try {
         std::string pjson = q.getColumn("params_json").getText();
-        if (!pjson.empty()) params = mysti::json::parse(pjson);
+        if (!pjson.empty()) params = diffusion_desk::json::parse(pjson);
     } catch (...) {}
 
     params["prompt"] = q.getColumn("prompt").getText();
@@ -37,7 +37,7 @@ static mysti::json parse_generation_row(SQLite::Statement& q, SQLite::Database& 
     gen["is_favorite"] = q.getColumn("is_favorite").getInt() != 0;
     try { gen["rating"] = q.getColumn("rating").getInt(); } catch (...) { gen["rating"] = 0; }
 
-    mysti::json tags_arr = mysti::json::array();
+    diffusion_desk::json tags_arr = diffusion_desk::json::array();
     SQLite::Statement tag_query(db, "SELECT t.name FROM tags t JOIN image_tags it ON t.id = it.tag_id WHERE it.generation_id = ?");
     tag_query.bind(1, q.getColumn("id").getInt());
     while (tag_query.executeStep()) {
@@ -358,7 +358,7 @@ void Database::migrate_to_v5() {
     transaction.commit();
 }
 
-void Database::save_generation(const mysti::json& j) {
+void Database::save_generation(const diffusion_desk::json& j) {
     std::lock_guard<std::recursive_mutex> lock(m_mutex);
     try {
         std::string uuid = j.value("uuid", "");
@@ -450,10 +450,10 @@ std::string Database::get_generation_filepath(const std::string& uuid) {
     return "";
 }
 
-mysti::json Database::get_generations(int limit, const std::string& cursor, const std::vector<std::string>& tags, const std::string& model, int min_rating) {
+diffusion_desk::json Database::get_generations(int limit, const std::string& cursor, const std::vector<std::string>& tags, const std::string& model, int min_rating) {
     std::lock_guard<std::recursive_mutex> lock(m_mutex);
-    mysti::json response;
-    mysti::json items = mysti::json::array();
+    diffusion_desk::json response;
+    diffusion_desk::json items = diffusion_desk::json::array();
     
     try {
         std::string sql = "SELECT g.* FROM generations g WHERE 1=1 ";
@@ -525,9 +525,9 @@ mysti::json Database::get_generations(int limit, const std::string& cursor, cons
     return response;
 }
 
-mysti::json Database::search_generations(const std::string& query, int limit) {
+diffusion_desk::json Database::search_generations(const std::string& query, int limit) {
     std::lock_guard<std::recursive_mutex> lock(m_mutex);
-    mysti::json results = mysti::json::array();
+    diffusion_desk::json results = diffusion_desk::json::array();
     try {
         SQLite::Statement q(m_db, R"(
             SELECT g.* 
@@ -555,13 +555,13 @@ mysti::json Database::search_generations(const std::string& query, int limit) {
     return results;
 }
 
-mysti::json Database::get_tags() {
+diffusion_desk::json Database::get_tags() {
     std::lock_guard<std::recursive_mutex> lock(m_mutex);
-    mysti::json results = mysti::json::array();
+    diffusion_desk::json results = diffusion_desk::json::array();
     try {
         SQLite::Statement query(m_db, "SELECT name, category, COUNT(it.tag_id) as count FROM tags t LEFT JOIN image_tags it ON t.id = it.tag_id GROUP BY t.id ORDER BY count DESC");
         while (query.executeStep()) {
-            mysti::json tag;
+            diffusion_desk::json tag;
             tag["name"] = query.getColumn(0).getText();
             tag["category"] = query.getColumn(1).getText();
             tag["count"] = query.getColumn(2).getInt();
@@ -587,13 +587,13 @@ void Database::save_style(const Style& style) {
     }
 }
 
-mysti::json Database::get_styles() {
+diffusion_desk::json Database::get_styles() {
     std::lock_guard<std::recursive_mutex> lock(m_mutex);
-    mysti::json results = mysti::json::array();
+    diffusion_desk::json results = diffusion_desk::json::array();
     try {
         SQLite::Statement query(m_db, "SELECT name, prompt, negative_prompt, preview_path FROM styles ORDER BY name ASC");
         while (query.executeStep()) {
-            mysti::json s;
+            diffusion_desk::json s;
             s["name"] = query.getColumn(0).getText();
             s["prompt"] = query.getColumn(1).getText();
             s["negative_prompt"] = query.getColumn(2).getText();
@@ -631,9 +631,9 @@ void Database::add_library_item(const LibraryItem& item) {
     }
 }
 
-mysti::json Database::get_library_items(const std::string& category) {
+diffusion_desk::json Database::get_library_items(const std::string& category) {
     std::lock_guard<std::recursive_mutex> lock(m_mutex);
-    mysti::json results = mysti::json::array();
+    diffusion_desk::json results = diffusion_desk::json::array();
     try {
         std::string sql = "SELECT id, label, content, category, preview_path, usage_count FROM prompt_library ";
         if (!category.empty()) sql += "WHERE category = ? ";
@@ -641,7 +641,7 @@ mysti::json Database::get_library_items(const std::string& category) {
         SQLite::Statement query(m_db, sql);
         if (!category.empty()) query.bind(1, category);
         while (query.executeStep()) {
-            mysti::json item;
+            diffusion_desk::json item;
             item["id"] = query.getColumn(0).getInt();
             item["label"] = query.getColumn(1).getText();
             item["content"] = query.getColumn(2).getText();
@@ -670,7 +670,7 @@ void Database::increment_library_usage(int id) {
     } catch (...) {}
 }
 
-int Database::add_job(const std::string& type, const mysti::json& payload, int priority) {
+int Database::add_job(const std::string& type, const diffusion_desk::json& payload, int priority) {
     std::lock_guard<std::recursive_mutex> lock(m_mutex);
     try {
         SQLite::Statement query(m_db, "INSERT INTO jobs (type, payload, priority) VALUES (?, ?, ?)");
@@ -690,7 +690,7 @@ std::optional<Job> Database::get_next_job() {
             Job job;
             job.id = query.getColumn(0).getInt();
             job.type = query.getColumn(1).getText();
-            job.payload = mysti::json::parse(query.getColumn(2).getText());
+            job.payload = diffusion_desk::json::parse(query.getColumn(2).getText());
             job.status = query.getColumn(3).getText();
             job.error = query.getColumn(4).getText();
             job.priority = query.getColumn(5).getInt();
@@ -747,7 +747,7 @@ void Database::save_image_preset(const ImagePreset& p_in) {
     ImagePreset p = p_in;
     try {
         // Serialize memory settings into preferred_params
-        mysti::json mem;
+        diffusion_desk::json mem;
         mem["force_clip_cpu"] = p.memory_settings.force_clip_cpu;
         mem["force_vae_tiling"] = p.memory_settings.force_vae_tiling;
         p.preferred_params["memory"] = mem;
@@ -773,13 +773,13 @@ void Database::save_image_preset(const ImagePreset& p_in) {
     } catch (...) {}
 }
 
-mysti::json Database::get_image_presets() {
+diffusion_desk::json Database::get_image_presets() {
     std::lock_guard<std::recursive_mutex> lock(m_mutex);
-    mysti::json results = mysti::json::array();
+    diffusion_desk::json results = diffusion_desk::json::array();
     try {
         SQLite::Statement query(m_db, "SELECT id, name, unet_path, vae_path, clip_l_path, clip_g_path, t5xxl_path, vram_weights_mb_estimate, vram_weights_mb_measured, default_params, preferred_params FROM image_presets ORDER BY name ASC");
         while (query.executeStep()) {
-            mysti::json p_json;
+            diffusion_desk::json p_json;
             p_json["id"] = query.getColumn(0).getInt();
             p_json["name"] = query.getColumn(1).getText();
             p_json["unet_path"] = query.getColumn(2).getText();
@@ -789,8 +789,8 @@ mysti::json Database::get_image_presets() {
             p_json["t5xxl_path"] = query.getColumn(6).getText();
             p_json["vram_weights_mb_estimate"] = query.getColumn(7).getInt();
             p_json["vram_weights_mb_measured"] = query.getColumn(8).getInt();
-            p_json["default_params"] = mysti::json::parse(query.getColumn(9).getText());
-            p_json["preferred_params"] = mysti::json::parse(query.getColumn(10).getText());
+            p_json["default_params"] = diffusion_desk::json::parse(query.getColumn(9).getText());
+            p_json["preferred_params"] = diffusion_desk::json::parse(query.getColumn(10).getText());
             results.push_back(p_json);
         }
     } catch (...) {}
@@ -816,7 +816,7 @@ void Database::save_llm_preset(const LlmPreset& p) {
         query.bind(3, p.model_path);
         query.bind(4, p.mmproj_path);
         query.bind(5, p.n_ctx);
-        query.bind(6, mysti::json(p.capabilities).dump());
+        query.bind(6, diffusion_desk::json(p.capabilities).dump());
         query.bind(7, ""); // Role is deprecated, store empty
         query.bind(8, p.system_prompt_assistant);
         query.bind(9, p.system_prompt_tagging);
@@ -825,19 +825,19 @@ void Database::save_llm_preset(const LlmPreset& p) {
     } catch (...) {}
 }
 
-mysti::json Database::get_llm_presets() {
+diffusion_desk::json Database::get_llm_presets() {
     std::lock_guard<std::recursive_mutex> lock(m_mutex);
-    mysti::json results = mysti::json::array();
+    diffusion_desk::json results = diffusion_desk::json::array();
     try {
         SQLite::Statement query(m_db, "SELECT id, name, model_path, mmproj_path, n_ctx, capabilities, role, system_prompt_assistant, system_prompt_tagging, system_prompt_style FROM llm_presets ORDER BY name ASC");
         while (query.executeStep()) {
-            mysti::json p;
+            diffusion_desk::json p;
             p["id"] = query.getColumn(0).getInt();
             p["name"] = query.getColumn(1).getText();
             p["model_path"] = query.getColumn(2).getText();
             p["mmproj_path"] = query.getColumn(3).getText();
             p["n_ctx"] = query.getColumn(4).getInt();
-            p["capabilities"] = mysti::json::parse(query.getColumn(5).getText());
+            p["capabilities"] = diffusion_desk::json::parse(query.getColumn(5).getText());
             p["role"] = query.getColumn(6).getText(); // Deprecated but returned for compatibility
             p["system_prompt_assistant"] = query.getColumn(7).getText();
             p["system_prompt_tagging"] = query.getColumn(8).getText();
@@ -853,7 +853,7 @@ void Database::delete_llm_preset(int id) {
     try { m_db.exec("DELETE FROM llm_presets WHERE id = " + std::to_string(id)); } catch (...) {}
 }
 
-void Database::save_model_metadata(const std::string& model_id, const mysti::json& metadata) {
+void Database::save_model_metadata(const std::string& model_id, const diffusion_desk::json& metadata) {
     std::lock_guard<std::recursive_mutex> lock(m_mutex);
     try {
         SQLite::Statement query(m_db, "INSERT OR REPLACE INTO models (id, metadata, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)");
@@ -863,12 +863,12 @@ void Database::save_model_metadata(const std::string& model_id, const mysti::jso
     } catch (...) {}
 }
 
-mysti::json Database::get_model_metadata(const std::string& model_id) {
+diffusion_desk::json Database::get_model_metadata(const std::string& model_id) {
     std::lock_guard<std::recursive_mutex> lock(m_mutex);
     try {
         SQLite::Statement query(m_db, "SELECT metadata FROM models WHERE id = ?");
         query.bind(1, model_id);
-        if (query.executeStep()) return mysti::json::parse(query.getColumn(0).getText());
+        if (query.executeStep()) return diffusion_desk::json::parse(query.getColumn(0).getText());
 
         SQLite::Statement all_ids(m_db, "SELECT id, metadata FROM models");
         std::string normalized_id = model_id;
@@ -879,23 +879,23 @@ mysti::json Database::get_model_metadata(const std::string& model_id) {
             std::replace(normalized_stored.begin(), normalized_stored.end(), '\\', '/');
             if (normalized_id.length() >= normalized_stored.length()) {
                 if (normalized_id.substr(normalized_id.length() - normalized_stored.length()) == normalized_stored) {
-                    return mysti::json::parse(all_ids.getColumn(1).getText());
+                    return diffusion_desk::json::parse(all_ids.getColumn(1).getText());
                 }
             }
         }
     } catch (...) {}
-    return mysti::json::object();
+    return diffusion_desk::json::object();
 }
 
-mysti::json Database::get_all_models_metadata() {
+diffusion_desk::json Database::get_all_models_metadata() {
     std::lock_guard<std::recursive_mutex> lock(m_mutex);
-    mysti::json results = mysti::json::array();
+    diffusion_desk::json results = diffusion_desk::json::array();
     try {
         SQLite::Statement query(m_db, "SELECT id, metadata FROM models ORDER BY id ASC");
         while (query.executeStep()) {
-            mysti::json m;
+            diffusion_desk::json m;
             m["id"] = query.getColumn(0).getText();
-            m["metadata"] = mysti::json::parse(query.getColumn(1).getText());
+            m["metadata"] = diffusion_desk::json::parse(query.getColumn(1).getText());
             results.push_back(m);
         }
     } catch (...) {}
@@ -1059,4 +1059,4 @@ std::string Database::get_config(const std::string& key) {
     return "";
 }
 
-} // namespace mysti
+} // namespace diffusion_desk

@@ -35,7 +35,7 @@ Write-Host ""
 
 if (-not $ModelReady) {
     Write-Host "SD Worker failed to load model." -ForegroundColor Red
-    Stop-Process -Name "mysti_server", "mysti_sd_worker", "mysti_llm_worker" -ErrorAction SilentlyContinue -Force
+    Stop-Process -Name "diffusion_desk_server", "diffusion_desk_sd_worker", "diffusion_desk_llm_worker" -ErrorAction SilentlyContinue -Force
     Stop-Job $Job
     Remove-Job $Job
     exit 1
@@ -97,6 +97,6 @@ if (Test-Path $LogFile) {
 
 # Cleanup
 Write-Host "Stopping Server..."
-Stop-Process -Name "mysti_server", "mysti_sd_worker", "mysti_llm_worker" -ErrorAction SilentlyContinue -Force
+Stop-Process -Name "diffusion_desk_server", "diffusion_desk_sd_worker", "diffusion_desk_llm_worker" -ErrorAction SilentlyContinue -Force
 Stop-Job $Job
 Remove-Job $Job

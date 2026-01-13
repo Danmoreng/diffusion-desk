@@ -12,7 +12,7 @@ static int last_image_max_tokens = -1;
 
 void handle_load_llm_model(const httplib::Request& req, httplib::Response& res, SDSvrParams& svr_params, LlamaServer& llm_server) {
     try {
-        mysti::json body = mysti::json::parse(req.body);
+        diffusion_desk::json body = diffusion_desk::json::parse(req.body);
         if (!body.contains("model_id")) {
             res.status = 400;
             res.set_content(make_error_json("invalid_request", "model_id required"), "application/json");
@@ -42,7 +42,7 @@ void handle_load_llm_model(const httplib::Request& req, httplib::Response& res, 
             }
         }
 
-        LOG_INFO("Loading LLM model: %s (mmproj: %s, gpu_layers: %d, ctx: %d, img_max_tokens: %d)", 
+        DD_LOG_INFO("Loading LLM model: %s (mmproj: %s, gpu_layers: %d, ctx: %d, img_max_tokens: %d)", 
                  model_path.string().c_str(), mmproj_path.string().c_str(), n_gpu_layers, n_ctx, image_max_tokens);
 
         if (llm_server.load_model(model_path.string(), mmproj_path.string(), n_gpu_layers, n_ctx, image_max_tokens)) {
@@ -57,14 +57,14 @@ void handle_load_llm_model(const httplib::Request& req, httplib::Response& res, 
             res.set_content(make_error_json("load_failed", "failed to load LLM model"), "application/json");
         }
     } catch (const std::exception& e) {
-        LOG_ERROR("error loading LLM model: %s", e.what());
+        DD_LOG_ERROR("error loading LLM model: %s", e.what());
         res.status = 500;
         res.set_content(make_error_json("server_error", e.what()), "application/json");
     }
 }
 
 void handle_unload_llm_model(httplib::Response& res, LlamaServer& llm_server) {
-    LOG_INFO("Unloading LLM model...");
+    DD_LOG_INFO("Unloading LLM model...");
     llm_server.stop();
     res.set_content(R"({\"status\":\"success\"})", "application/json");
 }
@@ -73,7 +73,7 @@ void ensure_llm_loaded(SDSvrParams& svr_params, LlamaServer& llm_server) {
     if (llm_server.is_loaded()) return;
 
     if (!last_loaded_model_path.empty()) {
-        LOG_INFO("Auto-reloading last LLM: %s", last_loaded_model_path.c_str());
+        DD_LOG_INFO("Auto-reloading last LLM: %s", last_loaded_model_path.c_str());
         llm_server.load_model(last_loaded_model_path, last_loaded_mmproj_path, last_n_gpu_layers, last_n_ctx, last_image_max_tokens);
         return;
     }
@@ -81,16 +81,16 @@ void ensure_llm_loaded(SDSvrParams& svr_params, LlamaServer& llm_server) {
     if (!svr_params.default_llm_model.empty()) {
         fs::path model_path = fs::path(svr_params.model_dir) / svr_params.default_llm_model;
         if (fs::exists(model_path)) {
-            LOG_INFO("Auto-loading default LLM: %s", svr_params.default_llm_model.c_str());
+            DD_LOG_INFO("Auto-loading default LLM: %s", svr_params.default_llm_model.c_str());
             llm_server.load_model(model_path.string(), "", 0, 2048, -1);
         } else {
-            LOG_WARN("Default LLM model not found: %s", model_path.string().c_str());
+            DD_LOG_WARN("Default LLM model not found: %s", model_path.string().c_str());
         }
     }
 }
 
-int run_llm_worker(SDSvrParams& svr_params, SDContextParams& ctx_params) {
-    LOG_INFO("Starting LLM Worker on port %d...", svr_params.listen_port);
+int run_llm_worker(SDSvrParams& svr_params, LLMContextParams& ctx_params) {
+    DD_LOG_INFO("Starting LLM Worker on port %d...", svr_params.listen_port);
 
     set_log_verbose(svr_params.verbose);
     set_log_color(svr_params.color);
@@ -106,7 +106,7 @@ int run_llm_worker(SDSvrParams& svr_params, SDContextParams& ctx_params) {
         if (!svr_params.internal_token.empty()) {
             std::string token = req.get_header_value("X-Internal-Token");
             if (token != svr_params.internal_token) {
-                LOG_WARN("Blocked unauthorized internal request from %s", req.remote_addr.c_str());
+                DD_LOG_WARN("Blocked unauthorized internal request from %s", req.remote_addr.c_str());
                 res.status = 401;
                 res.set_content(make_error_json("unauthorized", "Unauthorized internal request"), "application/json");
                 return httplib::Server::HandlerResponse::Handled;
@@ -121,7 +121,7 @@ int run_llm_worker(SDSvrParams& svr_params, SDContextParams& ctx_params) {
     }, nullptr);
 
     svr.Get("/internal/health", [&](const httplib::Request&, httplib::Response& res) {
-        mysti::json j;
+        diffusion_desk::json j;
         j["ok"] = true;
         j["service"] = "llm";
         j["version"] = version_string();
@@ -147,12 +147,12 @@ int run_llm_worker(SDSvrParams& svr_params, SDContextParams& ctx_params) {
     });
 
     svr.Post("/v1/llm/offload", [&](const httplib::Request& req, httplib::Response& res) { 
-        LOG_INFO("Offloading LLM to CPU...");
+        DD_LOG_INFO("Offloading LLM to CPU...");
         llm_server.offload_to_cpu();
         res.set_content(R"({\"status\":\"success\"})", "application/json");
     });
 
-    LOG_INFO("LLM Worker listening on: %s:%d\n", svr_params.listen_ip.c_str(), svr_params.listen_port);
+    DD_LOG_INFO("LLM Worker listening on: %s:%d\n", svr_params.listen_ip.c_str(), svr_params.listen_port);
     svr.listen(svr_params.listen_ip, svr_params.listen_port);
 
     return 0;

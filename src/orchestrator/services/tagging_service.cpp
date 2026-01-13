@@ -5,7 +5,7 @@
 #include <fstream>
 #include <chrono>
 
-namespace mysti {
+namespace diffusion_desk {
 
 static bool str_ends_with(const std::string& str, const std::string& suffix) {
     return str.size() >= suffix.size() && 
@@ -81,7 +81,7 @@ void TaggingService::loop() {
         
         if (auto res = cli.Get("/internal/health", h)) {
              try {
-                 auto j = mysti::json::parse(res->body);
+                 auto j = diffusion_desk::json::parse(res->body);
                  loaded = j.value("loaded", false);
                  loaded_mmproj = j.value("mmproj_path", "");
                  loaded_model_path = j.value("model_path", "");
@@ -256,7 +256,7 @@ void TaggingService::loop() {
                          // Check mmproj after reload
                          if (auto h_res = cli.Get("/internal/health", h)) {
                              try { 
-                                 auto j = mysti::json::parse(h_res->body);
+                                 auto j = diffusion_desk::json::parse(h_res->body);
                                  loaded_mmproj = j.value("mmproj_path", "");
                                  loaded_model_path = j.value("model_path", ""); 
                              } catch(...) {}
@@ -345,13 +345,13 @@ void TaggingService::loop() {
                 }
             }
 
-            mysti::json chat_req;
-            chat_req["messages"] = mysti::json::array();
+            diffusion_desk::json chat_req;
+            chat_req["messages"] = diffusion_desk::json::array();
             chat_req["messages"].push_back({{"role", "system"}, {"content", active_prompt}});
             
             if (!loaded_mmproj.empty()) {
                 // Vision Request
-                mysti::json user_content = mysti::json::array();
+                diffusion_desk::json user_content = diffusion_desk::json::array();
                 user_content.push_back({{"type", "text"}, {"text", "Analyze this image and provide descriptive tags (Subject, Style, Mood). Return JSON."}});
                 user_content.push_back({{"type", "image_url"}, {"image_url", {{"url", data_uri}}}});
                 chat_req["messages"].push_back({{"role", "user"}, {"content", user_content}});
@@ -371,7 +371,7 @@ void TaggingService::loop() {
             
             if (chat_res && chat_res->status == 200) {
                 try {
-                    auto rj = mysti::json::parse(chat_res->body);
+                    auto rj = diffusion_desk::json::parse(chat_res->body);
                     if (!rj.contains("choices") || rj["choices"].empty()) {
                         m_db->mark_as_tagged(id); 
                         continue;
@@ -386,8 +386,8 @@ void TaggingService::loop() {
                     std::string json_part = extract_json_block(content);
 
                     if (!json_part.empty()) {
-                        auto tags_json = mysti::json::parse(json_part);
-                        mysti::json tags_arr = mysti::json::array();
+                        auto tags_json = diffusion_desk::json::parse(json_part);
+                        diffusion_desk::json tags_arr = diffusion_desk::json::array();
 
                         if (tags_json.is_array()) {
                             tags_arr = tags_json;
@@ -431,4 +431,4 @@ void TaggingService::loop() {
     }
 }
 
-} // namespace mysti
+} // namespace diffusion_desk

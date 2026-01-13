@@ -5,7 +5,7 @@
 #include <chrono>
 #include "httplib.h"
 
-namespace mysti {
+namespace diffusion_desk {
 
 ResourceManager::ResourceManager(int sd_port, int llm_port, const std::string& internal_token)
     : m_sd_port(sd_port), m_llm_port(llm_port), m_token(internal_token) {}
@@ -38,7 +38,7 @@ ArbitrationResult ResourceManager::prepare_for_sd_generation(float estimated_tot
     bool sd_has_model = (m_last_sd_vram_gb > base_gb * 0.7f);
     float actually_needed_additional = sd_has_model ? resolution_overhead : (base_gb + resolution_overhead);
 
-    LOG_INFO("[ResourceManager] Arbitration | Effective Free: %.2f GB (Committed: %.2f), SD is using: %.2f GB (Base: %.2f), Add.Needed: %.2f GB", 
+    DD_LOG_INFO("[ResourceManager] Arbitration | Effective Free: %.2f GB (Committed: %.2f), SD is using: %.2f GB (Base: %.2f), Add.Needed: %.2f GB", 
              free_vram, m_committed_vram_gb.load(), m_last_sd_vram_gb, base_gb, actually_needed_additional);
 
     httplib::Headers headers;
@@ -51,26 +51,26 @@ ArbitrationResult ResourceManager::prepare_for_sd_generation(float estimated_tot
     
     // Phase 1: If tight, try Swapping LLM to RAM (CPU Offload)
     if (free_vram < actually_needed_additional + 0.5f && llm_seems_loaded) {
-        LOG_INFO("[ResourceManager] VRAM tight. Requesting LLM swap to RAM...");
+        DD_LOG_INFO("[ResourceManager] VRAM tight. Requesting LLM swap to RAM...");
         httplib::Client cli("127.0.0.1", m_llm_port);
         cli.set_connection_timeout(2);
         cli.set_read_timeout(20);
         auto ures = cli.Post("/v1/llm/offload", headers, "", "application/json");
         if (ures && ures->status == 200) {
-            LOG_INFO("[ResourceManager] LLM swapped to RAM successfully.");
+            DD_LOG_INFO("[ResourceManager] LLM swapped to RAM successfully.");
             std::this_thread::sleep_for(std::chrono::milliseconds(500));
             // Update local tracking
             free_vram = get_free_vram_gb() - m_committed_vram_gb.load();
             if (free_vram < 0.0f) free_vram = 0.0f;
         } else {
-            LOG_WARN("[ResourceManager] Failed to swap LLM to RAM.");
+            DD_LOG_WARN("[ResourceManager] Failed to swap LLM to RAM.");
         }
     }
 
     // Phase 2: Hard Unload LLM (Prioritized over CLIP Offload)
     // If still tight after attempted swap, or if swap failed
     if (free_vram < actually_needed_additional + 0.5f && llm_seems_loaded) {
-        LOG_WARN("[ResourceManager] VRAM still tight. Requesting hard LLM unload to avoid CPU CLIP...");
+        DD_LOG_WARN("[ResourceManager] VRAM still tight. Requesting hard LLM unload to avoid CPU CLIP...");
         httplib::Client cli("127.0.0.1", m_llm_port);
         auto ures = cli.Post("/v1/llm/unload", headers, "", "application/json");
         if (ures && ures->status == 200) {
@@ -82,13 +82,13 @@ ArbitrationResult ResourceManager::prepare_for_sd_generation(float estimated_tot
 
     // Phase 3: CLIP Offloading (if still tight or high res)
     if (free_vram < actually_needed_additional + 0.5f || megapixels > 2.0f) {
-        LOG_WARN("[ResourceManager] VRAM tight or High Res. Recommending CLIP offload.");
+        DD_LOG_WARN("[ResourceManager] VRAM tight or High Res. Recommending CLIP offload.");
         result.request_clip_offload = true;
     }
 
     // Phase 4: VAE Tiling (if VERY tight or very high res)
     if (free_vram < actually_needed_additional + 0.5f || megapixels > 2.5f) {
-        LOG_WARN("[ResourceManager] VRAM very tight or high res. Recommending VAE tiling.");
+        DD_LOG_WARN("[ResourceManager] VRAM very tight or high res. Recommending VAE tiling.");
         result.request_vae_tiling = true;
     }
     
@@ -103,7 +103,7 @@ ArbitrationResult ResourceManager::prepare_for_sd_generation(float estimated_tot
     if (checked_needed < 0.5f) checked_needed = 0.5f;
 
     if (free_vram < checked_needed) {
-        LOG_ERROR("[ResourceManager] Insufficient VRAM! Free: %.2f GB, Needed: %.2f GB. Aborting.", 
+        DD_LOG_ERROR("[ResourceManager] Insufficient VRAM! Free: %.2f GB, Needed: %.2f GB. Aborting.", 
                   free_vram, checked_needed);
         result.success = false;
     } else {
@@ -123,7 +123,7 @@ bool ResourceManager::prepare_for_llm_load(float estimated_needed_gb) {
 
     // Phase 1: Single LLM policy - always unload current LLM
     if (m_last_llm_vram_gb > 0.1f) {
-        LOG_INFO("[ResourceManager] Unloading current LLM for new load.");
+        DD_LOG_INFO("[ResourceManager] Unloading current LLM for new load.");
         httplib::Client cli("127.0.0.1", m_llm_port);
         cli.Post("/v1/llm/unload", headers, "", "application/json");
         std::this_thread::sleep_for(std::chrono::milliseconds(500));
@@ -138,7 +138,7 @@ bool ResourceManager::prepare_for_llm_load(float estimated_needed_gb) {
     } else {
         // Phase 2: Try Offloading SD to CPU if tight
         if (m_last_sd_vram_gb > 0.5f) {
-            LOG_WARN("[ResourceManager] VRAM tight for LLM. Requesting SD model offload to CPU...");
+            DD_LOG_WARN("[ResourceManager] VRAM tight for LLM. Requesting SD model offload to CPU...");
             httplib::Client cli("127.0.0.1", m_sd_port);
             auto ures = cli.Post("/v1/models/offload", headers, "", "application/json");
             if (ures && ures->status == 200) {
@@ -150,7 +150,7 @@ bool ResourceManager::prepare_for_llm_load(float estimated_needed_gb) {
 
         // Phase 3: Hard Unload SD (Last resort)
         if (!can_fit && m_last_sd_vram_gb > 0.5f) {
-            LOG_WARN("[ResourceManager] VRAM still tight. Requesting hard SD unload...");
+            DD_LOG_WARN("[ResourceManager] VRAM still tight. Requesting hard SD unload...");
             httplib::Client cli("127.0.0.1", m_sd_port);
             cli.Post("/v1/models/unload", headers, "", "application/json");
             std::this_thread::sleep_for(std::chrono::milliseconds(1000));
@@ -164,7 +164,7 @@ bool ResourceManager::prepare_for_llm_load(float estimated_needed_gb) {
         return true;
     }
 
-    LOG_ERROR("[ResourceManager] Insufficient VRAM for LLM. Need %.2f GB, have %.2f GB.", safety_needed, free_vram);
+    DD_LOG_ERROR("[ResourceManager] Insufficient VRAM for LLM. Need %.2f GB, have %.2f GB.", safety_needed, free_vram);
     return false;
 }
 
@@ -181,7 +181,7 @@ bool ResourceManager::is_llm_loaded() {
     if (auto hres = cli.Get("/internal/health", headers)) {
         if (hres->status == 200) {
             try {
-                auto j = mysti::json::parse(hres->body);
+                auto j = diffusion_desk::json::parse(hres->body);
                 return j.value("model_loaded", false);
             } catch (...) {}
         }
@@ -189,9 +189,9 @@ bool ResourceManager::is_llm_loaded() {
     return false;
 }
 
-mysti::json ResourceManager::get_vram_status() {
+diffusion_desk::json ResourceManager::get_vram_status() {
     std::lock_guard<std::mutex> lock(m_mutex);
-    mysti::json status;
+    diffusion_desk::json status;
     status["total_gb"] = get_total_vram_gb();
     status["free_gb"] = get_free_vram_gb();
     status["committed_gb"] = m_committed_vram_gb.load();
@@ -234,4 +234,4 @@ void ResourceManager::uncommit_vram(float gb) {
     if (m_committed_vram_gb.load() < 0.0f) m_committed_vram_gb.store(0.0f);
 }
 
-} // namespace mysti
+} // namespace diffusion_desk

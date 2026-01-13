@@ -1,4 +1,4 @@
-# MystiCanvas: Comprehensive Architecture & Intelligence Plan
+# DiffusionDesk: Comprehensive Architecture & Intelligence Plan
 
 **Date:** December 30, 2025
 **Status:** Orchestrator Refactor Complete; Transitioning to Model Preset & Assistant Architecture.
@@ -6,7 +6,7 @@
 ---
 
 ## 1. Executive Summary
-MystiCanvas is evolving from a Stable Diffusion/LLM UI into an **Integrated Creative AI Sandbox**. The core philosophy is **Isolation for Stability**: using a multi-process architecture where an Orchestrator manages specialized Workers. 
+DiffusionDesk is evolving from a Stable Diffusion/LLM UI into an **Integrated Creative AI Sandbox**. The core philosophy is **Isolation for Stability**: using a multi-process architecture where an Orchestrator manages specialized Workers. 
 
 We have successfully refactored the Orchestrator from a monolithic "God Function" into a Service-based architecture (`ServiceController`, `ResourceManager`). The next phase focuses on **Data Formalization** (Model Bundles) and **Agentic Intelligence** (The Creative Assistant).
 

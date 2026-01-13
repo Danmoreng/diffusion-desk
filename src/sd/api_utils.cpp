@@ -61,11 +61,11 @@ std::vector<uint8_t> base64_decode(const std::string& encoded_string) {
 }
 
 // JSON utilities
-mysti::json redact_json_impl(const mysti::json& j, int depth) {
+diffusion_desk::json redact_json_impl(const diffusion_desk::json& j, int depth) {
     if (depth > 10) return "[MAX DEPTH]"; // Safety break
 
     if (j.is_object()) {
-        mysti::json redacted = j;
+        diffusion_desk::json redacted = j;
         const std::vector<std::string> keys_to_redact = {"image", "init_image", "mask_image"};
         for (auto& element : redacted.items()) {
             bool should_redact = false;
@@ -89,7 +89,7 @@ mysti::json redact_json_impl(const mysti::json& j, int depth) {
         }
         return redacted;
     } else if (j.is_array()) {
-        mysti::json redacted = mysti::json::array();
+        diffusion_desk::json redacted = diffusion_desk::json::array();
         for (const auto& item : j) {
             redacted.push_back(redact_json_impl(item, depth + 1));
         }
@@ -98,14 +98,14 @@ mysti::json redact_json_impl(const mysti::json& j, int depth) {
     return j;
 }
 
-mysti::json redact_json(const mysti::json& j) {
+diffusion_desk::json redact_json(const diffusion_desk::json& j) {
     return redact_json_impl(j, 0);
 }
 
 // Image params
 
-mysti::json parse_image_params(const std::string& txt) {
-    mysti::json j;
+diffusion_desk::json parse_image_params(const std::string& txt) {
+    diffusion_desk::json j;
     std::regex param_re(R"(([^:]+):\s*(.*))");
     std::stringstream ss(txt);
     std::string line;
@@ -196,7 +196,7 @@ bool is_image_valid(const sd_image_t& img) {
     
     int channels = img.channel;
     if (channels <= 0) {
-        LOG_WARN("Image validation failed: invalid channel count (%d).", channels);
+        DD_LOG_WARN("Image validation failed: invalid channel count (%d).", channels);
         return false;
     }
 
@@ -224,9 +224,9 @@ bool is_image_valid(const sd_image_t& img) {
     
     if (identical_count > total_pixels * 0.95f) {
         if (channels >= 3) {
-            LOG_WARN("Image validation failed: Flat color detected (R:%d G:%d B:%d). Possible VAE failure.", ref_pixel[0], ref_pixel[1], ref_pixel[2]);
+            DD_LOG_WARN("Image validation failed: Flat color detected (R:%d G:%d B:%d). Possible VAE failure.", ref_pixel[0], ref_pixel[1], ref_pixel[2]);
         } else {
-            LOG_WARN("Image validation failed: Flat color detected (Value:%d). Possible VAE failure.", ref_pixel[0]);
+            DD_LOG_WARN("Image validation failed: Flat color detected (Value:%d). Possible VAE failure.", ref_pixel[0]);
         }
         return false;
     }
@@ -234,9 +234,4 @@ bool is_image_valid(const sd_image_t& img) {
     return true;
 }
 
-std::string make_error_json(const std::string& error, const std::string& message) {
-    mysti::json j;
-    j["error"] = error;
-    if (!message.empty()) j["message"] = message;
-    return j.dump();
-}
+
