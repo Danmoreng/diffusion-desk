@@ -227,6 +227,17 @@ int run_orchestrator(int argc, const char** argv, SDSvrParams& svr_params) {
                     sd_vram = j.value("vram_allocated_mb", 0.0f) / 1024.0f;
                     std::string sd_model = j.value("model_path", "");
                     bool sd_loaded = j.value("model_loaded", false);
+
+                    if (!sd_model.empty()) {
+                        fs::path mp(sd_model);
+                        if (mp.is_absolute()) {
+                            try { 
+                                sd_model = fs::relative(mp, svr_params.model_dir).string(); 
+                                std::replace(sd_model.begin(), sd_model.end(), '\\', '/'); 
+                            } catch(...) { sd_model = mp.filename().string(); }
+                        }
+                    }
+
                     if (sd_loaded && !sd_model.empty()) {
                          g_res_mgr->update_model_footprint(sd_model, sd_vram);
                          g_controller->notify_model_loaded("sd", sd_model);
@@ -241,12 +252,7 @@ int run_orchestrator(int argc, const char** argv, SDSvrParams& svr_params) {
                     llm_vram = j.value("vram_allocated_mb", 0.0f) / 1024.0f; 
                     llm_model = j.value("model_path", ""); 
                     llm_loaded = j.value("model_loaded", false);
-                    if (llm_loaded && !llm_model.empty()) {
-                        g_res_mgr->update_model_footprint(llm_model, llm_vram);
-                        g_controller->notify_model_loaded("llm", llm_model);
-                    } else if (!llm_loaded) {
-                        g_controller->notify_model_loaded("llm", "");
-                    }
+
                     if (!llm_model.empty()) {
                         fs::path mp(llm_model);
                         if (mp.is_absolute()) {
@@ -255,6 +261,13 @@ int run_orchestrator(int argc, const char** argv, SDSvrParams& svr_params) {
                                 std::replace(llm_model.begin(), llm_model.end(), '\\', '/'); 
                             } catch(...) { llm_model = mp.filename().string(); }
                         }
+                    }
+
+                    if (llm_loaded && !llm_model.empty()) {
+                        g_res_mgr->update_model_footprint(llm_model, llm_vram);
+                        g_controller->notify_model_loaded("llm", llm_model);
+                    } else if (!llm_loaded) {
+                        g_controller->notify_model_loaded("llm", "");
                     }
                 }
 

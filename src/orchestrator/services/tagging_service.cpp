@@ -82,7 +82,7 @@ void TaggingService::loop() {
         if (auto res = cli.Get("/internal/health", h)) {
              try {
                  auto j = diffusion_desk::json::parse(res->body);
-                 loaded = j.value("loaded", false);
+                 loaded = j.value("model_loaded", false);
                  loaded_mmproj = j.value("mmproj_path", "");
                  loaded_model_path = j.value("model_path", "");
              } catch(...) {}
