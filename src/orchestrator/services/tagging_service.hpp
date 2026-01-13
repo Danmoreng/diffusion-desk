@@ -9,7 +9,7 @@
 #include <mutex>
 #include <functional>
 
-namespace mysti {
+namespace diffusion_desk {
 
 class TaggingService {
 public:
@@ -50,4 +50,4 @@ private:
     int m_load_retry_count = 0;
 };
 
-} // namespace mysti
+} // namespace diffusion_desk

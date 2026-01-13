@@ -1,7 +1,7 @@
-# Developer Journal: MystiCanvas Migration
+# Developer Journal: DiffusionDesk Migration
 
 ## 1. Project Goal
-Transform `MystiCanvas` into a standalone, unified AI server that provides:
+Transform `DiffusionDesk` into a standalone, unified AI server that provides:
 1.  **Image Generation:** Powered by `stable-diffusion.cpp`.
 2.  **Text Generation:** Powered by `llama.cpp` (for prompt enhancement/creative assistance).
 3.  **User Interface:** A Vue.js WebUI.

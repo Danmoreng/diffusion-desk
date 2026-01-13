@@ -3,7 +3,7 @@
 #include <fstream>
 #include <json.hpp>
 
-using json = mysti::json;
+using json = diffusion_desk::json;
 namespace fs = std::filesystem;
 
 void load_model_config(SDContextParams& ctx_params, const std::string& model_path_str, const std::string& model_dir) {
@@ -20,7 +20,7 @@ void load_model_config(SDContextParams& ctx_params, const std::string& model_pat
     config_path += ".json";
 
     if (fs::exists(config_path)) {
-        LOG_INFO("Loading model config: %s", config_path.string().c_str());
+        DD_LOG_INFO("Loading model config: %s", config_path.string().c_str());
         try {
             std::ifstream f(config_path);
             json cfg = json::parse(f);
@@ -61,22 +61,22 @@ void load_model_config(SDContextParams& ctx_params, const std::string& model_pat
             if (cfg.contains("prediction")) {
                 std::string pred = cfg["prediction"];
                 ctx_params.prediction = str_to_prediction(pred.c_str());
-                LOG_INFO("Config: forced prediction type: %s (%d)", pred.c_str(), ctx_params.prediction);
+                DD_LOG_INFO("Config: forced prediction type: %s (%d)", pred.c_str(), ctx_params.prediction);
             }
             if (cfg.contains("flow_shift")) {
                 ctx_params.flow_shift = cfg["flow_shift"];
-                LOG_INFO("Config: forced flow_shift: %.3f", ctx_params.flow_shift);
+                DD_LOG_INFO("Config: forced flow_shift: %.3f", ctx_params.flow_shift);
             }
             if (cfg.contains("scale_factor")) {
                 ctx_params.scale_factor = cfg["scale_factor"];
-                LOG_INFO("Config: forced scale_factor: %.3f", ctx_params.scale_factor);
+                DD_LOG_INFO("Config: forced scale_factor: %.3f", ctx_params.scale_factor);
             }
             if (cfg.contains("shift_factor")) {
                 ctx_params.shift_factor = cfg["shift_factor"];
-                LOG_INFO("Config: forced shift_factor: %.3f", ctx_params.shift_factor);
+                DD_LOG_INFO("Config: forced shift_factor: %.3f", ctx_params.shift_factor);
             }
 
-            LOG_INFO("Config applied: vae=%s, clip_l=%s, t5=%s, llm=%s, clip_on_cpu=%s, flash_attn=%s",
+            DD_LOG_INFO("Config applied: vae=%s, clip_l=%s, t5=%s, llm=%s, clip_on_cpu=%s, flash_attn=%s",
                      ctx_params.vae_path.c_str(),
                      ctx_params.clip_l_path.c_str(),
                      ctx_params.t5xxl_path.c_str(),
@@ -85,7 +85,7 @@ void load_model_config(SDContextParams& ctx_params, const std::string& model_pat
                      ctx_params.diffusion_flash_attn ? "true" : "false");
 
         } catch (const std::exception& e) {
-            LOG_WARN("Failed to parse model config: %s", e.what());
+            DD_LOG_WARN("Failed to parse model config: %s", e.what());
         }
     }
 }

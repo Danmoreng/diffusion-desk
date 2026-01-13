@@ -1,6 +1,6 @@
-# MystiCanvas
+# DiffusionDesk
 
-MystiCanvas is a high-performance, self-hosted Creative AI server that integrates the best of image generation and large language model capabilities. It leverages `stable-diffusion.cpp` for state-of-the-art image synthesis and `llama.cpp` for efficient LLM processing, all within a unified C++ backend.
+DiffusionDesk is a high-performance, self-hosted Creative AI server that integrates the best of image generation and large language model capabilities. It leverages `stable-diffusion.cpp` for state-of-the-art image synthesis and `llama.cpp` for efficient LLM processing, all within a unified C++ backend.
 
 ## Features
 
@@ -34,8 +34,8 @@ MystiCanvas is a high-performance, self-hosted Creative AI server that integrate
 
 1. **Clone the repository with submodules:**
    ```bash
-   git clone --recursive https://github.com/Danmoreng/MystiCanvas.git
-   cd MystiCanvas
+   git clone --recursive https://github.com/Danmoreng/DiffusionDesk.git
+   cd DiffusionDesk
    ```
 
 2. **Run the One-Click Build Script:**
@@ -54,7 +54,7 @@ The server will use the settings defined in `config.json`. By default, the UI is
 
 ## Model Organization
 
-MystiCanvas expects models to be organized in the following subdirectories:
+DiffusionDesk expects models to be organized in the following subdirectories:
 - `models/stable-diffusion/`: Main model files (`.gguf`, `.safetensors`).
 - `models/vae/`: Variational Autoencoders.
 - `models/text-encoder/`: CLIP and T5 encoders.
@@ -78,4 +78,4 @@ Every main model in `stable-diffusion/` requires a `.json` sidecar file (e.g., `
 
 ## License
 
-MystiCanvas is released under the [MIT License](LICENSE).
+DiffusionDesk is released under the [MIT License](LICENSE).

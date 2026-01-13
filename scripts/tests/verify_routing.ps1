@@ -1,8 +1,8 @@
-# Verify Routing & Security Script for MystiCanvas
+# Verify Routing & Security Script for DiffusionDesk
 $ScriptDir = $PSScriptRoot
 $ProjectRoot = Split-Path (Split-Path $ScriptDir)
-$ServerExe = Join-Path (Join-Path $ProjectRoot "build") "bin\mysti_server.exe"
-if (!(Test-Path $ServerExe)) { $ServerExe = Join-Path (Join-Path $ProjectRoot "build") "mysti_server.exe" }
+$ServerExe = Join-Path (Join-Path $ProjectRoot "build") "bin\diffusion_desk_server.exe"
+if (!(Test-Path $ServerExe)) { $ServerExe = Join-Path (Join-Path $ProjectRoot "build") "diffusion_desk_server.exe" }
 
 Write-Host "Starting server for routing & security test..."
 # Generate a known token for testing
@@ -67,7 +67,7 @@ foreach ($test in $tests) {
 
 Write-Host "Cleaning up..."
 # Kill all related processes just to be sure
-taskkill /F /IM mysti_server.exe /IM mysti_sd_worker.exe /IM mysti_llm_worker.exe /T
+taskkill /F /IM diffusion_desk_server.exe /IM diffusion_desk_sd_worker.exe /IM diffusion_desk_llm_worker.exe /T
 
 if ($allPassed) {
     Write-Host "`nAll routing & security tests passed!" -ForegroundColor Green

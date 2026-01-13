@@ -1,8 +1,8 @@
-# MystiCanvas VRAM Management & Arbitration (v2.0)
+# DiffusionDesk VRAM Management & Arbitration (v2.0)
 
 ## Overview
 
-MystiCanvas implements a proactive, centralized VRAM management system designed to allow Stable Diffusion (SD) and Large Language Models (LLM) to coexist efficiently on consumer hardware. 
+DiffusionDesk implements a proactive, centralized VRAM management system designed to allow Stable Diffusion (SD) and Large Language Models (LLM) to coexist efficiently on consumer hardware. 
 
 Version 2.0 introduces a **Smart Queue** system and **VRAM Commitment**, moving from a reactive "reject-on-tight-resources" approach to a "wait-and-escalate" model.
 

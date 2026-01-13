@@ -1,6 +1,6 @@
 # Build Fix for Arch Linux
 
-This document outlines the changes required to successfully build the MystiCanvas project on Arch Linux with GCC. The original codebase had issues related to the inclusion and implementation of the `stb_image_write.h` single-header library.
+This document outlines the changes required to successfully build the DiffusionDesk project on Arch Linux with GCC. The original codebase had issues related to the inclusion and implementation of the `stb_image_write.h` single-header library.
 
 ## Problem
 

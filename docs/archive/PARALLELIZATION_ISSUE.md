@@ -3,7 +3,7 @@ I need your help: I am developing a StableDiffusion UI that uses stable-diffusio
 # Parallel Execution Analysis: Stable Diffusion & Llama.cpp
 
 ## 1. Executive Summary
-**Current Status:** The MystiCanvas server explicitly prevents parallel execution of Stable Diffusion (image generation) and Llama (text generation) on the same GPU.
+**Current Status:** The DiffusionDesk server explicitly prevents parallel execution of Stable Diffusion (image generation) and Llama (text generation) on the same GPU.
 **Mechanism:** A global `std::mutex` (`sd_ctx_mutex`) is shared between the SD generation endpoints and the Llama server bridge.
 **Goal:** Enable true parallel execution to allow "Chat while Generating" or "Prompt Enhancement during Generation" workflows.
 **Constraint:** Both models run on the same GPU (sharing VRAM and Compute) and share the same underlying `ggml` library code (linked via `llama.cpp` submodule).
@@ -105,7 +105,7 @@ To safely enable parallel execution, we need to ask an expert (ChatGPT Pro / Dee
 ### CMakeLists.txt
 ```cmake
 cmake_minimum_required(VERSION 3.14) # SD cpp needs at least 3.14
-project(MystiCanvas)
+project(DiffusionDesk)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -217,7 +217,7 @@ add_custom_command(TARGET mysti_server POST_BUILD
 namespace fs = std::filesystem;
 
 void print_usage(int argc, const char* argv[], const std::vector<ArgOptions>& options_list) {
-    std::cout << "MystiCanvas Server v0.1\n";
+    std::cout << "DiffusionDesk Server v0.1\n";
     std::cout << "Usage: " << argv[0] << " [options]\n\n";
     std::cout << "Svr Options:\n";
     options_list[0].print();
@@ -278,7 +278,7 @@ int main(int argc, const char** argv) {
     set_log_verbose(svr_params.verbose);
     set_log_color(svr_params.color);
 
-    LOG_INFO("MystiCanvas Server Starting...");
+    LOG_INFO("DiffusionDesk Server Starting...");
     LOG_INFO("SD Info: %s", sd_get_system_info());
     // LOG_INFO("LLM Info: %s", llama_print_system_info());
 
@@ -967,7 +967,7 @@ Below is an instruction document you can hand to your Gemini agent to implement 
 
 ## 0) Goal
 
-Refactor MystiCanvas into a **single distributed app** (one executable, three run modes):
+Refactor DiffusionDesk into a **single distributed app** (one executable, three run modes):
 
 1. **Orchestrator** (public HTTP server)
 

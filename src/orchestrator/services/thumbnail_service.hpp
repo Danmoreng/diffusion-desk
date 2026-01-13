@@ -5,7 +5,7 @@
 #include <memory>
 #include <string>
 
-namespace mysti {
+namespace diffusion_desk {
 
 class ThumbnailService {
 public:
@@ -13,11 +13,11 @@ public:
     ~ThumbnailService() = default;
 
 private:
-    bool handle_job(const mysti::json& payload);
+    bool handle_job(const diffusion_desk::json& payload);
     void ensure_preview_dir();
 
     std::shared_ptr<JobService> m_job_svc;
     std::shared_ptr<Database> m_db;
 };
 
-} // namespace mysti
+} // namespace diffusion_desk

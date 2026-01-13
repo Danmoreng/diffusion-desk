@@ -6,7 +6,7 @@
 ---
 
 ## 1. Executive Summary
-We have successfully transitioned MystiCanvas from a **monolithic process** with serialized GPU access (via mutex) to a **distributed multi-process architecture**. This resolves the fundamental conflict where the `ggml-cuda` backend's global state prevented concurrent execution within a single process.
+We have successfully transitioned DiffusionDesk from a **monolithic process** with serialized GPU access (via mutex) to a **distributed multi-process architecture**. This resolves the fundamental conflict where the `ggml-cuda` backend's global state prevented concurrent execution within a single process.
 
 ## 2. Key Achievements
 

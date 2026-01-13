@@ -1,7 +1,7 @@
 # Integration Plan: VLLM Support for Image Analysis & Tagging
 
 ## Overview
-This plan outlines the steps to integrate Vision-Language Models (VLLMs) like Qwen2-VL and Pixtral (Mistral Vision) into MystiCanvas. This will enable advanced features such as auto-tagging generated images using visual content, analyzing existing images, and extracting styles, replacing the text-only LLM approach.
+This plan outlines the steps to integrate Vision-Language Models (VLLMs) like Qwen2-VL and Pixtral (Mistral Vision) into DiffusionDesk. This will enable advanced features such as auto-tagging generated images using visual content, analyzing existing images, and extracting styles, replacing the text-only LLM approach.
 
 ## Objectives
 1.  **Enable VLLM Loading:** Update the LLM Worker to support loading multimodal projectors (`mmproj`) required for vision models.

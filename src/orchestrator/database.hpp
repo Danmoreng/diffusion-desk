@@ -8,7 +8,7 @@
 #include <optional>
 #include <mutex>
 
-namespace mysti {
+namespace diffusion_desk {
 
 struct Generation {
     std::string uuid;
@@ -54,7 +54,7 @@ struct LibraryItem {
 struct Job {
     int id = 0;
     std::string type;
-    mysti::json payload;
+    diffusion_desk::json payload;
     std::string status;
     std::string error;
     int priority = 0;
@@ -71,8 +71,8 @@ struct ImagePreset {
     std::string t5xxl_path;
     int vram_weights_mb_estimate = 0;
     int vram_weights_mb_measured = 0;
-    mysti::json default_params;
-    mysti::json preferred_params;
+    diffusion_desk::json default_params;
+    diffusion_desk::json preferred_params;
 
     struct MemoryOptimizations {
         bool force_clip_cpu = false;
@@ -106,28 +106,28 @@ public:
     void init_schema();
 
     // Generations
-    void save_generation(const mysti::json& data);
+    void save_generation(const diffusion_desk::json& data);
     void set_favorite(const std::string& uuid, bool favorite);
     void set_rating(const std::string& uuid, int rating);
     void remove_generation(const std::string& uuid);
     std::string get_generation_filepath(const std::string& uuid);
-    mysti::json get_generations(int limit = 50, const std::string& cursor = "", const std::vector<std::string>& tags = {}, const std::string& model = "", int min_rating = 0);
-    mysti::json search_generations(const std::string& query, int limit = 50);
-    mysti::json get_tags();
+    diffusion_desk::json get_generations(int limit = 50, const std::string& cursor = "", const std::vector<std::string>& tags = {}, const std::string& model = "", int min_rating = 0);
+    diffusion_desk::json search_generations(const std::string& query, int limit = 50);
+    diffusion_desk::json get_tags();
     
     // Styles
     void save_style(const Style& style);
-    mysti::json get_styles();
+    diffusion_desk::json get_styles();
     void delete_style(const std::string& name);
 
     // Prompt Library
     void add_library_item(const LibraryItem& item);
-    mysti::json get_library_items(const std::string& category = "");
+    diffusion_desk::json get_library_items(const std::string& category = "");
     void delete_library_item(int id);
     void increment_library_usage(int id);
 
     // Job Queue
-    int add_job(const std::string& type, const mysti::json& payload, int priority = 0);
+    int add_job(const std::string& type, const diffusion_desk::json& payload, int priority = 0);
     std::optional<Job> get_next_job();
     void update_job_status(int id, const std::string& status, const std::string& error = "");
 
@@ -137,17 +137,17 @@ public:
 
     // Presets
     void save_image_preset(const ImagePreset& preset);
-    mysti::json get_image_presets();
+    diffusion_desk::json get_image_presets();
     void delete_image_preset(int id);
 
     void save_llm_preset(const LlmPreset& preset);
-    mysti::json get_llm_presets();
+    diffusion_desk::json get_llm_presets();
     void delete_llm_preset(int id);
     
     // Model Metadata
-    void save_model_metadata(const std::string& model_id, const mysti::json& metadata);
-    mysti::json get_model_metadata(const std::string& model_id);
-    mysti::json get_all_models_metadata();
+    void save_model_metadata(const std::string& model_id, const diffusion_desk::json& metadata);
+    diffusion_desk::json get_model_metadata(const std::string& model_id);
+    diffusion_desk::json get_all_models_metadata();
     
     // Existence Check
     bool generation_exists(const std::string& file_path);
@@ -191,4 +191,4 @@ private:
     std::recursive_mutex m_mutex; // Protects access to m_db, recursive to allow nested calls
 };
 
-} // namespace mysti
+} // namespace diffusion_desk

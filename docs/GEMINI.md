@@ -1,7 +1,7 @@
-# MystiCanvas Project Context
+# DiffusionDesk Project Context
 
 ## Overview
-MystiCanvas is a high-performance, self-hosted Creative AI server that integrates image generation (Stable Diffusion) and text generation (LLM) into a unified local application.
+DiffusionDesk is a high-performance, self-hosted Creative AI server that integrates image generation (Stable Diffusion) and text generation (LLM) into a unified local application.
 
 ## Architecture
 The system uses a **multi-process architecture** to handle resource-intensive AI tasks:

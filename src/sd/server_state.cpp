@@ -17,7 +17,7 @@ void on_progress(int step, int steps, float time, void* data) {
             progress_state.phase = "VAE Decoding...";
             progress_state.base_step = 0;
             progress_state.total_steps = steps;
-            LOG_INFO("Phase transition detected: %s (steps: %d)", progress_state.phase.c_str(), steps);
+            DD_LOG_INFO("Phase transition detected: %s (steps: %d)", progress_state.phase.c_str(), steps);
         }
     }
 
@@ -28,7 +28,7 @@ void on_progress(int step, int steps, float time, void* data) {
     progress_state.cv.notify_all();
     
     if (progress_state.step % 5 == 0 || progress_state.step >= progress_state.steps) {
-        LOG_INFO("Progress: step %d/%d (phase: %s, time: %.2fs)", 
+        DD_LOG_INFO("Progress: step %d/%d (phase: %s, time: %.2fs)", 
                  progress_state.step, progress_state.steps, 
                  progress_state.phase.c_str(), progress_state.time);
     }

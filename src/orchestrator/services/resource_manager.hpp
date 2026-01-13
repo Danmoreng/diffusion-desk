@@ -5,7 +5,7 @@
 #include <mutex>
 #include <atomic>
 
-namespace mysti {
+namespace diffusion_desk {
 
 struct ArbitrationResult {
     bool success = true;
@@ -28,7 +28,7 @@ public:
     bool is_llm_loaded();
 
     // Statistics
-    mysti::json get_vram_status();
+    diffusion_desk::json get_vram_status();
 
     // Track actual measured usage
     void update_worker_usage(float sd_gb, float llm_gb);
@@ -50,4 +50,4 @@ private:
     std::map<std::string, float> m_model_footprints;
 };
 
-} // namespace mysti
+} // namespace diffusion_desk

@@ -74,7 +74,7 @@ void Proxy::forward_request(const httplib::Request& req, httplib::Response& res,
     bool use_streaming = is_sse_path || (is_stream_req && path.find("/completions") != std::string::npos) || is_long_running;
     
     if (use_streaming) {
-        LOG_DEBUG("Using streaming proxy for %s", path.c_str());
+        DD_LOG_DEBUG("Using streaming proxy for %s", path.c_str());
         auto queue = std::make_shared<ChunkQueue>();
         auto status = std::make_shared<std::atomic<int>>(0);
         auto content_type = std::make_shared<std::string>("application/json");
@@ -142,7 +142,7 @@ void Proxy::forward_request(const httplib::Request& req, httplib::Response& res,
         }
 
         if (*status == 0) {
-            LOG_ERROR("Proxy timeout waiting for headers from %s:%d%s", host.c_str(), port, path.c_str());
+            DD_LOG_ERROR("Proxy timeout waiting for headers from %s:%d%s", host.c_str(), port, path.c_str());
             res.status = 504;
             res.set_content("{\"error\":\"Worker timeout during header wait\"}", "application/json");
             return;
@@ -188,7 +188,7 @@ void Proxy::forward_request(const httplib::Request& req, httplib::Response& res,
                 }
             }
         } else {
-            LOG_ERROR("Proxy failed to connect to worker at %s:%d", host.c_str(), port);
+            DD_LOG_ERROR("Proxy failed to connect to worker at %s:%d", host.c_str(), port);
             res.status = 502;
             res.set_content("{\"error\":\"Proxy failed to connect to worker\"}", "application/json");
         }

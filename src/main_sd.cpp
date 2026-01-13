@@ -2,14 +2,14 @@
 #include <vector>
 #include <filesystem>
 
-#include "utils/common.hpp"
+#include "utils/sd_common.hpp"
 #include "sd/model_loader.hpp"
 #include "workers/sd_worker.hpp"
 
 namespace fs = std::filesystem;
 
 void print_usage(int argc, const char* argv[], const std::vector<ArgOptions>& options_list) {
-    std::cout << "MystiCanvas SD Worker v0.2\n";
+    std::cout << "DiffusionDesk SD Worker v0.2\n";
     std::cout << "Usage: " << argv[0] << " [options]\n\n";
     std::cout << "Svr Options:\n";
     options_list[0].print();
@@ -52,7 +52,7 @@ void parse_args(int argc, const char** argv, SDSvrParams& svr_params, SDContextP
         if (ctx_params.diffusion_model_path.empty() && !ctx_params.model_path.empty()) {
             std::string ext = fs::path(ctx_params.model_path).extension().string();
             if (ext == ".gguf") {
-                LOG_INFO("Smart fallback: Moving GGUF from model_path to diffusion_model_path");
+                DD_LOG_INFO("Smart fallback: Moving GGUF from model_path to diffusion_model_path");
                 ctx_params.diffusion_model_path = ctx_params.model_path;
                 ctx_params.model_path = "";
                 active_path = ctx_params.diffusion_model_path;

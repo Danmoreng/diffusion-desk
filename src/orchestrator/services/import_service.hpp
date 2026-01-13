@@ -5,7 +5,7 @@
 #include <memory>
 #include <vector>
 
-namespace mysti {
+namespace diffusion_desk {
 
 class ImportService {
 public:
@@ -18,4 +18,4 @@ private:
     std::shared_ptr<Database> m_db;
 };
 
-} // namespace mysti
+} // namespace diffusion_desk

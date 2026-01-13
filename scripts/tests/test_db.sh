@@ -3,7 +3,7 @@
 BASE_URL="http://127.0.0.1:1234"
 DB_PATH="mysti.db"
 
-echo "--- MystiCanvas Database Diagnostic ---"
+echo "--- DiffusionDesk Database Diagnostic ---"
 
 # 1. Check DB File
 if [ -f "$DB_PATH" ]; then

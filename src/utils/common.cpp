@@ -158,41 +158,29 @@ static void print_utf8(FILE* stream, const char* utf8) {
     fputs(utf8, stream);
 }
 
-std::string sd_basename(const std::string& path) {
-    size_t pos = path.find_last_of('/');
-    if (pos != std::string::npos) {
-        return path.substr(pos + 1);
-    }
-    pos = path.find_last_of('\\');
-    if (pos != std::string::npos) {
-        return path.substr(pos + 1);
-    }
-    return path;
-}
-
-void log_print(enum sd_log_level_t level, const char* log, bool verbose, bool color) {
+void log_print(DDLogLevel level, const char* log, bool verbose, bool color) {
     int tag_color;
     const char* level_str;
-    FILE* out_stream = (level == SD_LOG_ERROR) ? stderr : stdout;
+    FILE* out_stream = (level == DDLogLevel::DD_LEVEL_ERROR) ? stderr : stdout;
 
-    if (!log || (!verbose && level <= SD_LOG_DEBUG)) {
+    if (!log || (!verbose && level == DDLogLevel::DD_LEVEL_DEBUG)) {
         return;
     }
 
     switch (level) {
-        case SD_LOG_DEBUG:
+        case DDLogLevel::DD_LEVEL_DEBUG:
             tag_color = 37;
             level_str = "DEBUG";
             break;
-        case SD_LOG_INFO:
+        case DDLogLevel::DD_LEVEL_INFO:
             tag_color = 34;
             level_str = "INFO";
             break;
-        case SD_LOG_WARN:
+        case DDLogLevel::DD_LEVEL_WARN:
             tag_color = 35;
             level_str = "WARN";
             break;
-        case SD_LOG_ERROR:
+        case DDLogLevel::DD_LEVEL_ERROR:
             tag_color = 31;
             level_str = "ERROR";
             break;
@@ -226,11 +214,6 @@ void set_log_verbose(bool verbose) {
 
 void set_log_color(bool color) {
     log_color = color;
-}
-
-void sd_log_cb(enum sd_log_level_t level, const char* log, void* data) {
-    SDSvrParams* svr_params = (SDSvrParams*)data;
-    log_print(level, log, svr_params->verbose, svr_params->color);
 }
 
 std::string generate_random_token(size_t length) {
@@ -472,12 +455,12 @@ bool parse_options(int argc, const char** argv, const std::vector<ArgOptions>& o
 
 
         if (invalid_arg) {
-            LOG_ERROR("error: invalid parameter for argument: %s", arg.c_str());
+            DD_LOG_ERROR("error: invalid parameter for argument: %s", arg.c_str());
             return false;
         }
 
         if (!found_arg) {
-            LOG_ERROR("error: unknown argument: %s", arg.c_str());
+            DD_LOG_ERROR("error: unknown argument: %s", arg.c_str());
             return false;
         }
     }
@@ -489,7 +472,7 @@ bool parse_options(int argc, const char** argv, const std::vector<ArgOptions>& o
 }
 
 std::string version_string() {
-    return std::string("stable-diffusion.cpp version ") + sd_version() + ", commit " + sd_commit();
+    return std::string("DiffusionDesk v0.2");
 }
 
 float get_total_vram_gb() {
@@ -619,7 +602,7 @@ uint8_t* load_image_common(bool from_memory,
         image_buffer = (uint8_t*)stbi_load(image_path_or_bytes, &width, &height, &c, expected_channel);
     }
     if (image_buffer == nullptr) {
-        LOG_ERROR("load image from '%s' failed", image_path);
+        DD_LOG_ERROR("load image from '%s' failed", image_path);
         return nullptr;
     }
     if (c < expected_channel) {
@@ -630,12 +613,12 @@ uint8_t* load_image_common(bool from_memory,
         return nullptr;
     }
     if (width <= 0) {
-        LOG_ERROR("error: the width of image must be greater than 0, image_path = %s", image_path);
+        DD_LOG_ERROR("error: the width of image must be greater than 0, image_path = %s", image_path);
         free(image_buffer);
         return nullptr;
     }
     if (height <= 0) {
-        LOG_ERROR("error: the height of image must be greater than 0, image_path = %s", image_path);
+        DD_LOG_ERROR("error: the height of image must be greater than 0, image_path = %s", image_path);
         free(image_buffer);
         return nullptr;
     }
@@ -657,10 +640,10 @@ uint8_t* load_image_common(bool from_memory,
         }
 
         if (crop_x != 0 || crop_y != 0) {
-            LOG_INFO("crop input image from %dx%d to %dx%d, image_path = %s", width, height, crop_w, crop_h, image_path);
+            DD_LOG_INFO("crop input image from %dx%d to %dx%d, image_path = %s", width, height, crop_w, crop_h, image_path);
             uint8_t* cropped_image_buffer = (uint8_t*)malloc(crop_w * crop_h * expected_channel);
             if (cropped_image_buffer == nullptr) {
-                LOG_ERROR("error: allocate memory for crop\n");
+                DD_LOG_ERROR("error: allocate memory for crop\n");
                 free(image_buffer);
                 return nullptr;
             }
@@ -676,13 +659,13 @@ uint8_t* load_image_common(bool from_memory,
             image_buffer = cropped_image_buffer;
         }
 
-        LOG_INFO("resize input image from %dx%d to %dx%d", width, height, expected_width, expected_height);
+        DD_LOG_INFO("resize input image from %dx%d to %dx%d", width, height, expected_width, expected_height);
         int resized_height = expected_height;
         int resized_width  = expected_width;
 
         uint8_t* resized_image_buffer = (uint8_t*)malloc(resized_height * resized_width * expected_channel);
         if (resized_image_buffer == nullptr) {
-            LOG_ERROR("error: allocate memory for resize input image\n");
+            DD_LOG_ERROR("error: allocate memory for resize input image\n");
             free(image_buffer);
             return nullptr;
         }
@@ -816,12 +799,12 @@ ArgOptions SDSvrParams::get_options() {
 
 bool SDSvrParams::process_and_check() {
     if (listen_ip.empty()) {
-        LOG_ERROR("error: the following arguments are required: listen_ip");
+        DD_LOG_ERROR("error: the following arguments are required: listen_ip");
         return false;
     }
 
     if (listen_port < 0 || listen_port > 65535) {
-        LOG_ERROR("error: listen_port should be in the range [0, 65535]");
+        DD_LOG_ERROR("error: listen_port should be in the range [0, 65535]");
         return false;
     }
     return true;
@@ -846,7 +829,7 @@ bool SDSvrParams::load_from_file(const std::string& path) {
     }
 
     try {
-        mysti::json j = mysti::json::parse(f);
+        diffusion_desk::json j = diffusion_desk::json::parse(f);
         
         if (j.contains("server")) {
             auto& s = j["server"];
@@ -880,7 +863,7 @@ bool SDSvrParams::load_from_file(const std::string& path) {
 
         return true;
     } catch (const std::exception& e) {
-        LOG_ERROR("Failed to parse config file: %s", e.what());
+        DD_LOG_ERROR("Failed to parse config file: %s", e.what());
         return false;
     }
 }
@@ -939,4 +922,19 @@ std::string base64_encode(const unsigned char* buf, unsigned int bufLen) {
         while (i++ < 3) ret += '=';
     }
     return ret;
+}
+void dd_log_printf(DDLogLevel level, const char* format, ...) {
+    va_list args;
+    va_start(args, format);
+    char buffer[4096];
+    vsnprintf(buffer, sizeof(buffer), format, args);
+    va_end(args);
+    log_print(level, buffer, log_verbose, log_color);
+}
+
+std::string make_error_json(const std::string& error, const std::string& message) {
+    diffusion_desk::json j;
+    j["error"] = error;
+    if (!message.empty()) j["message"] = message;
+    return j.dump();
 }

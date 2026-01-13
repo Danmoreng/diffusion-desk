@@ -1,9 +1,9 @@
-# MystiCanvas Development Plan (Consolidated)
+# DiffusionDesk Development Plan (Consolidated)
 
 **Last Updated:** January 1, 2026
 **Status:** Active Development
 
-This document outlines the roadmap for MystiCanvas, merging original milestones with architectural review recommendations and the "Model Presets + Creative Assistant" vision.
+This document outlines the roadmap for DiffusionDesk, merging original milestones with architectural review recommendations and the "Model Presets + Creative Assistant" vision.
 
 ---
 

@@ -1,15 +1,15 @@
 #!/bin/bash
 
-# MystiCanvas Launch Script for Linux
+# DiffusionDesk Launch Script for Linux
 
 # Get the directory of this script
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 BUILD_DIR="$PROJECT_ROOT/build"
-SERVER_EXE="$BUILD_DIR/bin/mysti_server"
+SERVER_EXE="$BUILD_DIR/bin/diffusion_desk_server"
 
 if [ ! -f "$SERVER_EXE" ]; then
-    echo "Error: mysti_server not found at $SERVER_EXE"
+    echo "Error: diffusion_desk_server not found at $SERVER_EXE"
     echo "Please build the project first."
     exit 1
 fi
@@ -29,7 +29,7 @@ SD_PATH="$MODEL_BASE/stable-diffusion/z_image_turbo-Q8_0.gguf"
 
 IDLE_TIMEOUT=600  # 10 minutes
 
-echo "Starting MystiCanvas Server..."
+echo "Starting DiffusionDesk Server..."
 echo "Executable: $SERVER_EXE"
 echo "Model Directory: $MODEL_BASE"
 echo "SD Model: $SD_PATH"

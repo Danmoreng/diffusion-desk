@@ -5,7 +5,7 @@
 #include <iostream>
 #include <regex>
 
-namespace mysti {
+namespace diffusion_desk {
 
 ServiceController::ServiceController(std::shared_ptr<Database> db,
                                      std::shared_ptr<ResourceManager> res_mgr,
@@ -37,7 +37,7 @@ void ServiceController::generate_style_preview(Style style, std::string output_d
         float preview_cfg = 7.0f;
 
         if (auto c_res = cli.Get("/v1/config", h)) {
-            auto c_j = mysti::json::parse(c_res->body);
+            auto c_j = diffusion_desk::json::parse(c_res->body);
             std::string model_path = c_j.value("model", "");
             if (!model_path.empty() && m_db) {
                 auto meta = m_db->get_model_metadata(model_path);
@@ -48,7 +48,7 @@ void ServiceController::generate_style_preview(Style style, std::string output_d
             }
         }
         
-        mysti::json req;
+        diffusion_desk::json req;
         req["prompt"] = final_prompt;
         req["negative_prompt"] = style.negative_prompt;
         req["width"] = 512;
@@ -60,7 +60,7 @@ void ServiceController::generate_style_preview(Style style, std::string output_d
 
         auto res = cli.Post("/v1/images/generations", h, req.dump(), "application/json");
         if (res && res->status == 200) {
-            auto j = mysti::json::parse(res->body);
+            auto j = diffusion_desk::json::parse(res->body);
             if (j.contains("data") && !j["data"].empty()) {
                 std::string url = j["data"][0].value("url", "");
                 if (!url.empty()) {
@@ -117,7 +117,7 @@ void ServiceController::generate_model_preview(std::string model_id, std::string
         httplib::Headers h;
         if (!m_token.empty()) h.emplace("X-Internal-Token", m_token);
 
-        mysti::json req;
+        diffusion_desk::json req;
         req["prompt"] = prompt;
         req["width"] = 512;
         req["height"] = 512;
@@ -127,7 +127,7 @@ void ServiceController::generate_model_preview(std::string model_id, std::string
 
         auto res = cli.Post("/v1/images/generations", h, req.dump(), "application/json");
         if (res && res->status == 200) {
-            auto j = mysti::json::parse(res->body);
+            auto j = diffusion_desk::json::parse(res->body);
             if (j.contains("data") && !j["data"].empty()) {
                 std::string url = j["data"][0].value("url", "");
                 if (!url.empty()) {
@@ -170,7 +170,7 @@ bool ServiceController::ensure_sd_model_loaded(const std::string& model_id, cons
 
     // Check if another thread is already loading this model
     if (m_currently_loading_sd == model_id) {
-        LOG_INFO("[SmartQueue] Waiting for SD model load: %s", model_id.c_str());
+        DD_LOG_INFO("[SmartQueue] Waiting for SD model load: %s", model_id.c_str());
         m_load_cv.wait_for(lock, std::chrono::seconds(60), [this, &model_id]() {
             return m_active_sd_model == model_id && m_sd_loaded;
         });
@@ -182,8 +182,8 @@ bool ServiceController::ensure_sd_model_loaded(const std::string& model_id, cons
     m_sd_loaded = false;
     lock.unlock();
 
-    LOG_INFO("[SmartQueue] Triggering lazy load for SD model: %s", model_id.c_str());
-    mysti::json load_req;
+    DD_LOG_INFO("[SmartQueue] Triggering lazy load for SD model: %s", model_id.c_str());
+    diffusion_desk::json load_req;
     load_req["model_id"] = model_id;
     
     // Check for preset metadata (VAE etc)
@@ -210,11 +210,11 @@ bool ServiceController::ensure_sd_model_loaded(const std::string& model_id, cons
         m_active_sd_model = model_id;
         m_sd_loaded = true;
         m_last_sd_model_req_body = load_req.dump();
-        LOG_INFO("[SmartQueue] SD model loaded: %s", model_id.c_str());
+        DD_LOG_INFO("[SmartQueue] SD model loaded: %s", model_id.c_str());
         m_load_cv.notify_all();
         return true;
     } else {
-        LOG_ERROR("[SmartQueue] Failed to lazy load SD model: %s", model_id.c_str());
+        DD_LOG_ERROR("[SmartQueue] Failed to lazy load SD model: %s", model_id.c_str());
         m_load_cv.notify_all();
         return false;
     }
@@ -237,7 +237,7 @@ bool ServiceController::ensure_llm_loaded(const std::string& model_id, const SDS
     m_llm_loaded = false;
     lock.unlock();
 
-    LOG_INFO("[SmartQueue] Triggering lazy load for LLM: %s", model_id.c_str());
+    DD_LOG_INFO("[SmartQueue] Triggering lazy load for LLM: %s", model_id.c_str());
     
     // Estimate size for arbitration
     float estimated_gb = 4.0f;
@@ -253,7 +253,7 @@ bool ServiceController::ensure_llm_loaded(const std::string& model_id, const SDS
         return false;
     }
 
-    mysti::json load_req;
+    diffusion_desk::json load_req;
     load_req["model_id"] = model_id;
     
     // Attempt to lookup preset config for full context (mmproj etc)
@@ -267,7 +267,7 @@ bool ServiceController::ensure_llm_loaded(const std::string& model_id, const SDS
                 if (p.contains("n_ctx")) {
                     load_req["n_ctx"] = p["n_ctx"];
                 }
-                LOG_INFO("[SmartQueue] Using preset config for %s", model_id.c_str());
+                DD_LOG_INFO("[SmartQueue] Using preset config for %s", model_id.c_str());
                 break;
             }
         }
@@ -289,7 +289,7 @@ bool ServiceController::ensure_llm_loaded(const std::string& model_id, const SDS
         m_active_llm_model = model_id;
         m_llm_loaded = true;
         m_last_llm_model_req_body = load_req.dump();
-        LOG_INFO("[SmartQueue] LLM model loaded: %s", model_id.c_str());
+        DD_LOG_INFO("[SmartQueue] LLM model loaded: %s", model_id.c_str());
         m_load_cv.notify_all();
         return true;
     } else {
@@ -301,12 +301,12 @@ bool ServiceController::ensure_llm_loaded(const std::string& model_id, const SDS
 bool ServiceController::load_llm_preset(int preset_id, const SDSvrParams& params) {
     if (!m_db) return false;
     auto presets = m_db->get_llm_presets();
-    mysti::json selected = nullptr;
+    diffusion_desk::json selected = nullptr;
     for (auto& p : presets) { if (p["id"] == preset_id) { selected = p; break; } }
     if (selected == nullptr) return false;
 
     std::string model_id = selected["model_path"];
-    LOG_INFO("Loading LLM Preset %d: %s", preset_id, model_id.c_str());
+    DD_LOG_INFO("Loading LLM Preset %d: %s", preset_id, model_id.c_str());
     
     if (ensure_llm_loaded(model_id, params)) {
         m_last_llm_preset_id = preset_id;
@@ -328,7 +328,7 @@ void ServiceController::load_last_presets(const SDSvrParams& params) {
             auto presets = m_db->get_image_presets();
             for (auto& p : presets) {
                 if (p["id"] == id) {
-                    LOG_INFO("Restoring last Image Preset: %s", p.value("name", "unnamed").c_str());
+                    DD_LOG_INFO("Restoring last Image Preset: %s", p.value("name", "unnamed").c_str());
                     ensure_sd_model_loaded(p["unet_path"], params);
                     m_last_image_preset_id = id;
                     break;
@@ -361,7 +361,7 @@ void ServiceController::notify_model_loaded(const std::string& type, const std::
     // Sync tracking state for restoration
     if (!model_id.empty()) {
         std::lock_guard<std::mutex> lock(m_state_mutex);
-        mysti::json j;
+        diffusion_desk::json j;
         j["model_id"] = model_id;
         if (type == "sd") {
             if (m_last_sd_model_req_body.empty()) m_last_sd_model_req_body = j.dump();
@@ -403,7 +403,7 @@ void ServiceController::notify_model_loaded(const std::string& type, const std::
 
 void ServiceController::register_routes(httplib::Server& svr, const SDSvrParams& params) {
     if (!svr.set_mount_point("/app", params.app_dir)) {
-        LOG_WARN("failed to mount %s directory", params.app_dir.c_str());
+        DD_LOG_WARN("failed to mount %s directory", params.app_dir.c_str());
     }
 
     svr.Get("/", [](const httplib::Request&, httplib::Response& res) {
@@ -443,10 +443,10 @@ void ServiceController::register_routes(httplib::Server& svr, const SDSvrParams&
     };
 
     svr.Post("/v1/models/load", [this, params](const httplib::Request& req, httplib::Response& res) {
-        LOG_INFO("Request: POST /v1/models/load, Body: %s", req.body.c_str());
+        DD_LOG_INFO("Request: POST /v1/models/load, Body: %s", req.body.c_str());
         std::string model_id = "";
         try {
-            auto j = mysti::json::parse(req.body);
+            auto j = diffusion_desk::json::parse(req.body);
             model_id = j.value("model_id", "");
         } catch(...) {}
 
@@ -467,10 +467,10 @@ void ServiceController::register_routes(httplib::Server& svr, const SDSvrParams&
     });
 
     svr.Post("/v1/llm/load", [this, params](const httplib::Request& req, httplib::Response& res) {
-        LOG_INFO("Request: POST /v1/llm/load, Body: %s", req.body.c_str());
+        DD_LOG_INFO("Request: POST /v1/llm/load, Body: %s", req.body.c_str());
         std::string model_id = "";
         try {
-            auto j = mysti::json::parse(req.body);
+            auto j = diffusion_desk::json::parse(req.body);
             model_id = j.value("model_id", "");
         } catch(...) {}
 
@@ -499,7 +499,7 @@ void ServiceController::register_routes(httplib::Server& svr, const SDSvrParams&
         };
         GenActiveGuard gen_guard(m_generation_active_cb);
 
-        LOG_INFO("Request: POST /v1/images/generations");
+        DD_LOG_INFO("Request: POST /v1/images/generations");
         std::string modified_body = req.body;
         
         // 1. Ensure Model is Loaded (Lazy Load)
@@ -508,14 +508,14 @@ void ServiceController::register_routes(httplib::Server& svr, const SDSvrParams&
             std::lock_guard<std::mutex> lock(m_state_mutex);
             if (!m_last_sd_model_req_body.empty()) {
                 try {
-                    requested_model_id = mysti::json::parse(m_last_sd_model_req_body).value("model_id", "");
+                    requested_model_id = diffusion_desk::json::parse(m_last_sd_model_req_body).value("model_id", "");
                 } catch(...) {}
             }
         }
         
         // Check if request body overrides model (usually not in our UI, but for API compatibility)
         try {
-            auto j_req = mysti::json::parse(req.body);
+            auto j_req = diffusion_desk::json::parse(req.body);
             if (j_req.contains("model_id")) requested_model_id = j_req["model_id"];
         } catch(...) {}
 
@@ -532,7 +532,7 @@ void ServiceController::register_routes(httplib::Server& svr, const SDSvrParams&
         bool req_hires = false;
         float req_hires_factor = 2.0f;
         try {
-            auto j = mysti::json::parse(req.body);
+            auto j = diffusion_desk::json::parse(req.body);
             req_width = j.value("width", 512);
             req_height = j.value("height", 512);
             req_batch = j.value("n", 1);
@@ -568,7 +568,7 @@ void ServiceController::register_routes(httplib::Server& svr, const SDSvrParams&
 
         // 3. Apply Mitigations and Proxy
         try {
-            auto j = mysti::json::parse(modified_body);
+            auto j = diffusion_desk::json::parse(modified_body);
             j["clip_on_cpu"] = arb.request_clip_offload;
             j["vae_tiling"] = arb.request_vae_tiling;
 
@@ -594,16 +594,16 @@ void ServiceController::register_routes(httplib::Server& svr, const SDSvrParams&
         
         if (res.status == 200 && m_db) {
             try {
-                auto res_json = mysti::json::parse(res.body);
+                auto res_json = diffusion_desk::json::parse(res.body);
                 float peak_vram = res_json.value("vram_peak_gb", 0.0f);
                 float delta_vram = res_json.value("vram_delta_gb", 0.0f);
                 if (peak_vram > 0) {
-                    LOG_INFO("Image generation completed. Peak VRAM: %.2f GB (Delta: %+.2f GB)", peak_vram, delta_vram);
+                    DD_LOG_INFO("Image generation completed. Peak VRAM: %.2f GB (Delta: %+.2f GB)", peak_vram, delta_vram);
                 } else {
-                    LOG_INFO("Image generation completed successfully.");
+                    DD_LOG_INFO("Image generation completed successfully.");
                 }
 
-                auto req_json = mysti::json::parse(modified_body);
+                auto req_json = diffusion_desk::json::parse(modified_body);
                 if (res_json.contains("data") && res_json["data"].is_array()) {
                     for (const auto& item : res_json["data"]) {
                         std::string file_path = item.value("url", "");
@@ -631,12 +631,12 @@ void ServiceController::register_routes(httplib::Server& svr, const SDSvrParams&
                             {
                                 std::lock_guard<std::mutex> lock(m_state_mutex);
                                 if (!m_last_sd_model_req_body.empty()) {
-                                    try { gen.model_id = mysti::json::parse(m_last_sd_model_req_body).value("model_id", ""); } catch(...) {}
+                                    try { gen.model_id = diffusion_desk::json::parse(m_last_sd_model_req_body).value("model_id", ""); } catch(...) {}
                                 }
                             }
                             int gen_id = m_db->insert_generation(gen);
                             if (gen_id > 0) {
-                                mysti::json job_payload;
+                                diffusion_desk::json job_payload;
                                 job_payload["generation_id"] = gen_id;
                                 job_payload["image_path"] = gen.file_path;
                                 m_db->add_job("generate_thumbnail", job_payload, 10);
@@ -652,7 +652,7 @@ void ServiceController::register_routes(httplib::Server& svr, const SDSvrParams&
     svr.Post("/v1/chat/completions", [this, params](const httplib::Request& req, httplib::Response& res) {
         std::string model_id = "";
         try {
-            auto j = mysti::json::parse(req.body);
+            auto j = diffusion_desk::json::parse(req.body);
             model_id = j.value("model", "");
         } catch(...) {}
 
@@ -665,7 +665,7 @@ void ServiceController::register_routes(httplib::Server& svr, const SDSvrParams&
     svr.Post("/v1/completions", [this, params](const httplib::Request& req, httplib::Response& res) {
         std::string model_id = "";
         try {
-            auto j = mysti::json::parse(req.body);
+            auto j = diffusion_desk::json::parse(req.body);
             model_id = j.value("model", "");
         } catch(...) {}
 
@@ -728,7 +728,7 @@ void ServiceController::register_routes(httplib::Server& svr, const SDSvrParams&
     svr.Post("/v1/models/metadata", [this](const httplib::Request& req, httplib::Response& res) {
         if (!m_db) { res.status = 500; return; }
         try {
-            auto j = mysti::json::parse(req.body);
+            auto j = diffusion_desk::json::parse(req.body);
             std::string model_id = j.value("id", "");
             if (model_id.empty()) { res.status = 400; return; }
             m_db->save_model_metadata(model_id, j["metadata"]);
@@ -739,7 +739,7 @@ void ServiceController::register_routes(httplib::Server& svr, const SDSvrParams&
     svr.Post("/v1/models/metadata/preview", [this, params](const httplib::Request& req, httplib::Response& res) {
         if (!m_db) { res.status = 500; return; }
         try {
-            auto j = mysti::json::parse(req.body);
+            auto j = diffusion_desk::json::parse(req.body);
             std::string model_id = j.value("id", "");
             if (model_id.empty()) { res.status = 400; return; }
             std::thread(&ServiceController::generate_model_preview, this, model_id, params.output_dir).detach();
@@ -755,7 +755,7 @@ void ServiceController::register_routes(httplib::Server& svr, const SDSvrParams&
     svr.Post("/v1/styles", [this, params](const httplib::Request& req, httplib::Response& res) {
         if (!m_db) { res.status = 500; return; }
         try {
-            auto j = mysti::json::parse(req.body);
+            auto j = diffusion_desk::json::parse(req.body);
             Style s;
             s.name = j.value("name", "");
             s.prompt = j.value("prompt", "");
@@ -771,7 +771,7 @@ void ServiceController::register_routes(httplib::Server& svr, const SDSvrParams&
     svr.Post("/v1/styles/extract", [this, params](const httplib::Request& req, httplib::Response& res) {
         if (!m_db) { res.status = 500; return; }
         try {
-            auto j = mysti::json::parse(req.body);
+            auto j = diffusion_desk::json::parse(req.body);
             std::string input_prompt = j.value("prompt", "");
             if (input_prompt.empty()) {
                 res.status = 400;
@@ -796,8 +796,8 @@ void ServiceController::register_routes(httplib::Server& svr, const SDSvrParams&
                 }
             }
 
-            mysti::json chat_req;
-            chat_req["messages"] = mysti::json::array({
+            diffusion_desk::json chat_req;
+            chat_req["messages"] = diffusion_desk::json::array({
                 {{"role", "system"}, {"content", sys_prompt}},
                 {{"role", "user"}, {"content", input_prompt}}
             });
@@ -809,15 +809,15 @@ void ServiceController::register_routes(httplib::Server& svr, const SDSvrParams&
             auto chat_res = cli.Post("/v1/chat/completions", h, chat_req.dump(), "application/json");
 
             if (chat_res && chat_res->status == 200) {
-                auto rj = mysti::json::parse(chat_res->body);
+                auto rj = diffusion_desk::json::parse(chat_res->body);
                 if (rj.contains("choices") && !rj["choices"].empty()) {
                     std::string content = rj["choices"][0]["message"].value("content", "");
                     std::string json_part = extract_json_block(content);
 
                     if (!json_part.empty()) {
-                        mysti::json styles_arr = mysti::json::array();
+                        diffusion_desk::json styles_arr = diffusion_desk::json::array();
                         try {
-                            auto styles_json = mysti::json::parse(json_part);
+                            auto styles_json = diffusion_desk::json::parse(json_part);
                             if (styles_json.is_array()) {
                                 styles_arr = styles_json;
                             } else if (styles_json.is_object()) {
@@ -829,10 +829,10 @@ void ServiceController::register_routes(httplib::Server& svr, const SDSvrParams&
                             }
                         } catch (...) { throw; } 
 
-                        std::vector<mysti::Style> new_styles;
+                        std::vector<diffusion_desk::Style> new_styles;
                         for (const auto& s_obj : styles_arr) {
                             if (!s_obj.is_object()) continue;
-                            mysti::Style s;
+                            diffusion_desk::Style s;
                             s.name = s_obj.value("name", "");
                             s.prompt = s_obj.value("prompt", "");
                             s.negative_prompt = s_obj.value("negative_prompt", "");
@@ -864,7 +864,7 @@ void ServiceController::register_routes(httplib::Server& svr, const SDSvrParams&
             res.set_content(R"({\"error\":\"Failed to extract styles from LLM\"})", "application/json");
         } catch(const std::exception& e) {
             res.status = 500;
-            mysti::json err; err["error"] = e.what();
+            diffusion_desk::json err; err["error"] = e.what();
             res.set_content(err.dump(), "application/json");
         }
     });
@@ -872,10 +872,10 @@ void ServiceController::register_routes(httplib::Server& svr, const SDSvrParams&
     svr.Post("/v1/styles/previews/fix", [this, params](const httplib::Request&, httplib::Response& res) {
         if (!m_db) { res.status = 500; return; }
         auto all_styles_json = m_db->get_styles();
-        std::vector<mysti::Style> missing;
+        std::vector<diffusion_desk::Style> missing;
         for (auto& sj : all_styles_json) {
             if (sj.value("preview_path", "").empty()) {
-                mysti::Style s;
+                diffusion_desk::Style s;
                 s.name = sj["name"];
                 s.prompt = sj["prompt"];
                 s.negative_prompt = sj.value("negative_prompt", "");
@@ -889,13 +889,13 @@ void ServiceController::register_routes(httplib::Server& svr, const SDSvrParams&
                 }
             }).detach();
         }
-        res.set_content(mysti::json({{"count", missing.size()}}).dump(), "application/json");
+        res.set_content(diffusion_desk::json({{"count", missing.size()}}).dump(), "application/json");
     });
 
     svr.Delete("/v1/styles", [this](const httplib::Request& req, httplib::Response& res) {
         if (!m_db) { res.status = 500; return; }
         try {
-            auto j = mysti::json::parse(req.body);
+            auto j = diffusion_desk::json::parse(req.body);
             std::string name = j.value("name", "");
             if (name.empty()) { res.status = 400; return; }
             m_db->delete_style(name);
@@ -906,7 +906,7 @@ void ServiceController::register_routes(httplib::Server& svr, const SDSvrParams&
     svr.Post("/v1/history/tags", [this](const httplib::Request& req, httplib::Response& res) {
         if (!m_db) { res.status = 500; return; }
         try {
-            auto j = mysti::json::parse(req.body);
+            auto j = diffusion_desk::json::parse(req.body);
             std::string uuid = j.value("uuid", "");
             std::string tag = j.value("tag", "");
             if (uuid.empty() || tag.empty()) { res.status = 400; return; }
@@ -918,7 +918,7 @@ void ServiceController::register_routes(httplib::Server& svr, const SDSvrParams&
     svr.Delete("/v1/history/tags", [this](const httplib::Request& req, httplib::Response& res) {
         if (!m_db) { res.status = 500; return; }
         try {
-            auto j = mysti::json::parse(req.body);
+            auto j = diffusion_desk::json::parse(req.body);
             std::string uuid = j.value("uuid", "");
             std::string tag = j.value("tag", "");
             if (uuid.empty() || tag.empty()) { res.status = 400; return; }
@@ -937,7 +937,7 @@ void ServiceController::register_routes(httplib::Server& svr, const SDSvrParams&
     svr.Post("/v1/history/favorite", [this](const httplib::Request& req, httplib::Response& res) {
         if (!m_db) { res.status = 500; return; }
         try {
-            auto j = mysti::json::parse(req.body);
+            auto j = diffusion_desk::json::parse(req.body);
             std::string uuid = j.value("uuid", "");
             bool favorite = j.value("favorite", false);
             if (uuid.empty()) { res.status = 400; return; }
@@ -949,7 +949,7 @@ void ServiceController::register_routes(httplib::Server& svr, const SDSvrParams&
     svr.Post("/v1/history/rating", [this](const httplib::Request& req, httplib::Response& res) {
         if (!m_db) { res.status = 500; return; }
         try {
-            auto j = mysti::json::parse(req.body);
+            auto j = diffusion_desk::json::parse(req.body);
             std::string uuid = j.value("uuid", "");
             int rating = j.value("rating", 0);
             if (uuid.empty()) { res.status = 400; return; }
@@ -1016,7 +1016,7 @@ void ServiceController::register_routes(httplib::Server& svr, const SDSvrParams&
     svr.Post("/v1/presets/image", [this, params](const httplib::Request& req, httplib::Response& res) {
         if (!m_db) { res.status = 500; return; }
         try {
-            auto j = mysti::json::parse(req.body);
+            auto j = diffusion_desk::json::parse(req.body);
             ImagePreset p;
             p.id = j.value("id", 0);
             p.name = j.value("name", "");
@@ -1026,8 +1026,8 @@ void ServiceController::register_routes(httplib::Server& svr, const SDSvrParams&
             p.clip_g_path = j.value("clip_g_path", "");
             p.t5xxl_path = j.value("t5xxl_path", "");
             p.vram_weights_mb_estimate = j.value("vram_weights_mb_estimate", 0);
-            p.default_params = j.value("default_params", mysti::json::object());
-            p.preferred_params = j.value("preferred_params", mysti::json::object());
+            p.default_params = j.value("default_params", diffusion_desk::json::object());
+            p.preferred_params = j.value("preferred_params", diffusion_desk::json::object());
             
             if (p.name.empty()) { res.status = 400; return; }
 
@@ -1065,7 +1065,7 @@ void ServiceController::register_routes(httplib::Server& svr, const SDSvrParams&
     svr.Post("/v1/presets/llm", [this](const httplib::Request& req, httplib::Response& res) {
         if (!m_db) { res.status = 500; return; }
         try {
-            auto j = mysti::json::parse(req.body);
+            auto j = diffusion_desk::json::parse(req.body);
             LlmPreset p;
             p.id = j.value("id", 0);
             p.name = j.value("name", "");
@@ -1093,10 +1093,10 @@ void ServiceController::register_routes(httplib::Server& svr, const SDSvrParams&
     svr.Post("/v1/presets/image/load", [this, params](const httplib::Request& req, httplib::Response& res) {
         if (!m_db) { res.status = 500; return; }
         try {
-            auto j = mysti::json::parse(req.body);
+            auto j = diffusion_desk::json::parse(req.body);
             int id = j.value("id", 0);
             auto presets = m_db->get_image_presets();
-            mysti::json selected = nullptr;
+            diffusion_desk::json selected = nullptr;
             for (auto& p : presets) { if (p["id"] == id) { selected = p; break; } }
             if (selected == nullptr) {
                 res.status = 404;
@@ -1120,7 +1120,7 @@ void ServiceController::register_routes(httplib::Server& svr, const SDSvrParams&
     svr.Post("/v1/presets/llm/load", [this, params](const httplib::Request& req, httplib::Response& res) {
         if (!m_db) { res.status = 500; return; }
         try {
-            auto j = mysti::json::parse(req.body);
+            auto j = diffusion_desk::json::parse(req.body);
             int id = j.value("id", 0);
             if (load_llm_preset(id, params)) {
                 res.status = 200;
@@ -1139,9 +1139,9 @@ void ServiceController::register_routes(httplib::Server& svr, const SDSvrParams&
             return; 
         }
         try {
-            auto j = mysti::json::parse(req.body);
+            auto j = diffusion_desk::json::parse(req.body);
             std::string name = j.value("name", "");
-            auto args = j.value("arguments", mysti::json::object());
+            auto args = j.value("arguments", diffusion_desk::json::object());
             auto result = m_tool_svc->execute_tool(name, args);
             res.set_content(result.dump(), "application/json");
         } catch(...) { 
@@ -1151,7 +1151,7 @@ void ServiceController::register_routes(httplib::Server& svr, const SDSvrParams&
     });
 
     svr.Get("/v1/assistant/config", [this, params](const httplib::Request&, httplib::Response& res) {
-        mysti::json c;
+        diffusion_desk::json c;
         std::string prompt = params.assistant_system_prompt;
         
         if (m_db && m_last_llm_preset_id > 0) {
@@ -1228,4 +1228,4 @@ void ServiceController::register_routes(httplib::Server& svr, const SDSvrParams&
     });
 }
 
-} // namespace mysti
+} // namespace diffusion_desk

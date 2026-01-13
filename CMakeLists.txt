@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.14)
-project(MystiCanvas)
+project(DiffusionDesk)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -70,9 +70,9 @@ set(COMMON_SOURCES
     src/stb_image_writer.cpp
 )
 
-# --- Orchestrator (mysti_server) ---
+# --- Orchestrator (diffusion_desk_server) ---
 # Light executable, no heavy CUDA/Model dependencies linked
-add_executable(mysti_server
+add_executable(diffusion_desk_server
     src/main_orchestrator.cpp
     src/orchestrator/process_manager.cpp
     src/orchestrator/proxy.cpp
@@ -88,11 +88,12 @@ add_executable(mysti_server
     src/orchestrator/services/service_controller.cpp
     src/orchestrator/services/tool_service.cpp
     src/sd/api_utils.cpp
+    src/utils/sd_common.cpp
     ${COMMON_SOURCES}
 )
 
 # Include paths for dependencies
-target_include_directories(mysti_server PRIVATE
+target_include_directories(diffusion_desk_server PRIVATE
     src
     src/utils
     src/orchestrator
@@ -107,31 +108,32 @@ target_include_directories(mysti_server PRIVATE
 
 # Only link system libs, no SD/LLM libs - wait, we need SD for common.cpp symbols
 if(WIN32)
-    target_link_libraries(mysti_server PRIVATE stable-diffusion ixwebsocket SQLiteCpp ws2_32 shell32)
+    target_link_libraries(diffusion_desk_server PRIVATE stable-diffusion ixwebsocket SQLiteCpp ws2_32 shell32)
 else()
-    target_link_libraries(mysti_server PRIVATE stable-diffusion ixwebsocket SQLiteCpp)
+    target_link_libraries(diffusion_desk_server PRIVATE stable-diffusion ixwebsocket SQLiteCpp)
 endif()
 
 # Copy WebUI assets to build directory
-add_custom_command(TARGET mysti_server POST_BUILD
+add_custom_command(TARGET diffusion_desk_server POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_directory
     ${CMAKE_SOURCE_DIR}/public
-    $<TARGET_FILE_DIR:mysti_server>/public
+    $<TARGET_FILE_DIR:diffusion_desk_server>/public
     COMMENT "Copying WebUI assets to output directory"
 )
 
-# --- SD Worker (mysti_sd_worker) ---
-add_executable(mysti_sd_worker
+# --- SD Worker (diffusion_desk_sd_worker) ---
+add_executable(diffusion_desk_sd_worker
     src/main_sd.cpp
     src/workers/sd_worker.cpp
     src/sd/api_endpoints.cpp
     src/sd/api_utils.cpp
     src/sd/server_state.cpp
     src/sd/model_loader.cpp
+    src/utils/sd_common.cpp
     ${COMMON_SOURCES}
 )
 
-target_include_directories(mysti_sd_worker PRIVATE
+target_include_directories(diffusion_desk_sd_worker PRIVATE
     src
     src/sd
     src/utils
@@ -143,25 +145,24 @@ target_include_directories(mysti_sd_worker PRIVATE
     libs/llama.cpp/ggml/include
 )
 
-target_link_libraries(mysti_sd_worker PRIVATE
+target_link_libraries(diffusion_desk_sd_worker PRIVATE
     stable-diffusion
     common # llama.cpp common
 )
 
 if(WIN32)
-    target_link_libraries(mysti_sd_worker PRIVATE ws2_32)
+    target_link_libraries(diffusion_desk_sd_worker PRIVATE ws2_32)
 endif()
 
-# --- LLM Worker (mysti_llm_worker) ---
-add_executable(mysti_llm_worker
+# --- LLM Worker (diffusion_desk_llm_worker) ---
+add_executable(diffusion_desk_llm_worker
     src/main_llm.cpp
     src/workers/llm_worker.cpp
     src/server/llama_server.cpp
-    src/sd/api_utils.cpp
     ${COMMON_SOURCES}
 )
 
-target_include_directories(mysti_llm_worker PRIVATE
+target_include_directories(diffusion_desk_llm_worker PRIVATE
     src
     src/server
     src/utils
@@ -178,13 +179,12 @@ target_include_directories(mysti_llm_worker PRIVATE
     ${CMAKE_BINARY_DIR}/libs/llama.cpp/tools/server
 )
 
-target_link_libraries(mysti_llm_worker PRIVATE
+target_link_libraries(diffusion_desk_llm_worker PRIVATE
     llama
     server-context
     common # This is llama's common library
-    stable-diffusion # For utility symbols in common.cpp
 )
 
 if(WIN32)
-    target_link_libraries(mysti_llm_worker PRIVATE ws2_32)
+    target_link_libraries(diffusion_desk_llm_worker PRIVATE ws2_32)
 endif()

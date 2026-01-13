@@ -4,7 +4,7 @@
 #include <iostream>
 #include <chrono>
 
-namespace mysti {
+namespace diffusion_desk {
 
 HealthService::HealthService(ProcessManager& pm, 
              ProcessManager::ProcessInfo& sd_proc, 
@@ -86,10 +86,10 @@ bool HealthService::wait_for_health(int port, int timeout_sec) {
 
 void HealthService::restart_sd_worker() {
     if (!m_running || (m_external_shutdown && m_external_shutdown->load())) return;
-    LOG_WARN("Detected SD Worker failure. Restarting...");
+    DD_LOG_WARN("Detected SD Worker failure. Restarting...");
     
     if (m_ws_mgr) {
-        mysti::json alert;
+        diffusion_desk::json alert;
         alert["type"] = "system_alert";
         alert["level"] = "warning";
         alert["message"] = "SD Worker crashed! Restarting and attempting to restore model state...";
@@ -112,23 +112,23 @@ void HealthService::restart_sd_worker() {
     if (m_sd_crash_count < m_max_sd_crashes && m_get_sd_state) {
         model_body = m_get_sd_state();
     } else if (m_sd_crash_count >= m_max_sd_crashes) {
-        LOG_WARN("SD Worker entered Safe Mode (Model auto-load disabled).");
+        DD_LOG_WARN("SD Worker entered Safe Mode (Model auto-load disabled).");
     }
 
     {
         std::lock_guard<std::mutex> lock(m_proc_mutex);
         m_pm.terminate(m_sd_proc);
         if (!m_pm.spawn(m_sd_exe, current_sd_args, m_sd_proc, m_sd_log)) {
-            LOG_ERROR("Failed to respawn SD Worker!");
+            DD_LOG_ERROR("Failed to respawn SD Worker!");
             return;
         }
     }
 
     if (wait_for_health(m_sd_port)) {
-        LOG_INFO("SD Worker back online.");
+        DD_LOG_INFO("SD Worker back online.");
         
         if (m_ws_mgr) {
-            mysti::json alert;
+            diffusion_desk::json alert;
             alert["type"] = "system_alert";
             alert["level"] = "success";
             alert["message"] = "SD Worker recovered successfully.";
@@ -136,7 +136,7 @@ void HealthService::restart_sd_worker() {
         }
 
         if (!model_body.empty()) {
-            LOG_INFO("Restoring SD model...");
+            DD_LOG_INFO("Restoring SD model...");
             httplib::Client cli("127.0.0.1", m_sd_port);
             cli.set_read_timeout(300);
             httplib::Headers headers;
@@ -144,25 +144,25 @@ void HealthService::restart_sd_worker() {
             
             auto res = cli.Post("/v1/models/load", headers, model_body, "application/json");
             if (res && res->status == 200) {
-                LOG_INFO("SD model restored successfully.");
+                DD_LOG_INFO("SD model restored successfully.");
                 m_sd_crash_count = 0; 
             } else {
-                LOG_ERROR("Failed to restore SD model.");
+                DD_LOG_ERROR("Failed to restore SD model.");
             }
         } else {
             m_sd_crash_count = 0;
         }
     } else {
-        LOG_ERROR("SD Worker failed to recover within timeout.");
+        DD_LOG_ERROR("SD Worker failed to recover within timeout.");
     }
 }
 
 void HealthService::restart_llm_worker() {
     if (!m_running || (m_external_shutdown && m_external_shutdown->load())) return;
-    LOG_WARN("Detected LLM Worker failure. Restarting...");
+    DD_LOG_WARN("Detected LLM Worker failure. Restarting...");
     
     if (m_ws_mgr) {
-        mysti::json alert;
+        diffusion_desk::json alert;
         alert["type"] = "system_alert";
         alert["level"] = "warning";
         alert["message"] = "LLM Worker crashed! Restarting...";
@@ -173,16 +173,16 @@ void HealthService::restart_llm_worker() {
         std::lock_guard<std::mutex> lock(m_proc_mutex);
         m_pm.terminate(m_llm_proc);
         if (!m_pm.spawn(m_llm_exe, m_llm_args, m_llm_proc, m_llm_log)) {
-            LOG_ERROR("Failed to respawn LLM Worker!");
+            DD_LOG_ERROR("Failed to respawn LLM Worker!");
             return;
         }
     }
 
     if (wait_for_health(m_llm_port)) {
-        LOG_INFO("LLM Worker back online.");
+        DD_LOG_INFO("LLM Worker back online.");
 
         if (m_ws_mgr) {
-            mysti::json alert;
+            diffusion_desk::json alert;
             alert["type"] = "system_alert";
             alert["level"] = "success";
             alert["message"] = "LLM Worker recovered successfully.";
@@ -193,7 +193,7 @@ void HealthService::restart_llm_worker() {
         if (m_get_llm_state) model_body = m_get_llm_state();
 
         if (!model_body.empty()) {
-            LOG_INFO("Restoring LLM model...");
+            DD_LOG_INFO("Restoring LLM model...");
             httplib::Client cli("127.0.0.1", m_llm_port);
             cli.set_read_timeout(300);
             httplib::Headers headers;
@@ -201,13 +201,13 @@ void HealthService::restart_llm_worker() {
 
             auto res = cli.Post("/v1/llm/load", headers, model_body, "application/json");
             if (res && res->status == 200) {
-                LOG_INFO("LLM model restored successfully.");
+                DD_LOG_INFO("LLM model restored successfully.");
             } else {
-                LOG_ERROR("Failed to restore LLM model.");
+                DD_LOG_ERROR("Failed to restore LLM model.");
             }
         }
     } else {
-        LOG_ERROR("LLM Worker failed to recover within timeout.");
+        DD_LOG_ERROR("LLM Worker failed to recover within timeout.");
     }
 }
 
@@ -241,7 +241,7 @@ void HealthService::loop() {
             } else {
                 sd_fail_count++;
                 if (sd_fail_count >= MAX_FAILURES) {
-                    LOG_WARN("SD Worker unresponsive (HTTP).");
+                    DD_LOG_WARN("SD Worker unresponsive (HTTP).");
                     sd_alive = false; 
                 }
             }
@@ -265,7 +265,7 @@ void HealthService::loop() {
             } else {
                 llm_fail_count++;
                 if (llm_fail_count >= MAX_FAILURES) {
-                    LOG_WARN("LLM Worker unresponsive (HTTP).");
+                    DD_LOG_WARN("LLM Worker unresponsive (HTTP).");
                     llm_alive = false;
                 }
             }
@@ -278,4 +278,4 @@ void HealthService::loop() {
     }
 }
 
-} // namespace mysti
+} // namespace diffusion_desk

@@ -1,7 +1,7 @@
 #include "ws_manager.hpp"
 #include <iostream>
 
-namespace mysti {
+namespace diffusion_desk {
 
 WsManager::WsManager(int port, const std::string& host)
     : _port(port), _host(host) {
@@ -32,11 +32,11 @@ WsManager::~WsManager() {
 bool WsManager::start() {
     auto res = _server->listen();
     if (!res.first) {
-        LOG_ERROR("WebSocket server failed to listen on port %d: %s", _port, res.second.c_str());
+        DD_LOG_ERROR("WebSocket server failed to listen on port %d: %s", _port, res.second.c_str());
         return false;
     }
     _server->start();
-    LOG_INFO("WebSocket server started on %s:%d", _host.c_str(), _port);
+    DD_LOG_INFO("WebSocket server started on %s:%d", _host.c_str(), _port);
     return true;
 }
 
@@ -53,13 +53,13 @@ void WsManager::broadcast(const json& msg) {
 
 void WsManager::onMessage(std::shared_ptr<ix::ConnectionState> connectionState, ix::WebSocket& webSocket, const ix::WebSocketMessagePtr& msg) {
     if (msg->type == ix::WebSocketMessageType::Open) {
-        LOG_DEBUG("New WebSocket client connected.");
+        DD_LOG_DEBUG("New WebSocket client connected.");
     } else if (msg->type == ix::WebSocketMessageType::Close) {
-        LOG_DEBUG("WebSocket client disconnected.");
+        DD_LOG_DEBUG("WebSocket client disconnected.");
     } else if (msg->type == ix::WebSocketMessageType::Message) {
         // Handle incoming messages from clients if needed
-        LOG_DEBUG("Received message from WS client: %s", msg->str.c_str());
+        DD_LOG_DEBUG("Received message from WS client: %s", msg->str.c_str());
     }
 }
 
-} // namespace mysti
+} // namespace diffusion_desk

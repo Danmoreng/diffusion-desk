@@ -6,19 +6,19 @@
 #include <memory>
 #include <string>
 
-namespace mysti {
+namespace diffusion_desk {
 
 class ToolService {
 public:
     ToolService(std::shared_ptr<Database> db, int sd_port, int llm_port, const std::string& token);
 
     // Main entry point for tool execution from LLM
-    mysti::json execute_tool(const std::string& name, const mysti::json& arguments);
+    diffusion_desk::json execute_tool(const std::string& name, const diffusion_desk::json& arguments);
 
     // Tool Definitions
-    mysti::json get_library_items(const std::string& category);
-    mysti::json search_history(const std::string& query);
-    mysti::json get_vram_status();
+    diffusion_desk::json get_library_items(const std::string& category);
+    diffusion_desk::json search_history(const std::string& query);
+    diffusion_desk::json get_vram_status();
 
 private:
     std::shared_ptr<Database> m_db;
@@ -27,4 +27,4 @@ private:
     std::string m_token;
 };
 
-} // namespace mysti
+} // namespace diffusion_desk

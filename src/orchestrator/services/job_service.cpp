@@ -3,7 +3,7 @@
 #include <iostream>
 #include <chrono>
 
-namespace mysti {
+namespace diffusion_desk {
 
 JobService::JobService(std::shared_ptr<Database> db) : m_db(db) {}
 
@@ -86,4 +86,4 @@ void JobService::process_job(const Job& job) {
     }
 }
 
-} // namespace mysti
+} // namespace diffusion_desk

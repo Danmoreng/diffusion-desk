@@ -8,7 +8,7 @@
 #include <memory>
 #include "utils/common.hpp"
 
-namespace mysti {
+namespace diffusion_desk {
 
 class WsManager {
 public:
@@ -28,4 +28,4 @@ private:
     void onMessage(std::shared_ptr<ix::ConnectionState> connectionState, ix::WebSocket& webSocket, const ix::WebSocketMessagePtr& msg);
 };
 
-} // namespace mysti
+} // namespace diffusion_desk

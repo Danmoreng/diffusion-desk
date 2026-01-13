@@ -8,7 +8,7 @@
 #include "utils/common.hpp"
 #include <memory>
 
-namespace mysti {
+namespace diffusion_desk {
 
 class ServiceController {
 public:
@@ -75,4 +75,4 @@ private:
     std::function<void(bool)> m_generation_active_cb;
 };
 
-} // namespace mysti
+} // namespace diffusion_desk

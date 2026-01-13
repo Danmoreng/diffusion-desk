@@ -7,17 +7,17 @@
 
 namespace fs = std::filesystem;
 
-namespace mysti {
+namespace diffusion_desk {
 
 ImportService::ImportService(std::shared_ptr<Database> db) : m_db(db) {}
 
 void ImportService::auto_import_outputs(const std::string& output_dir) {
     if (!m_db) return;
-    LOG_INFO("Scanning %s for images to import to DB...", output_dir.c_str());
+    DD_LOG_INFO("Scanning %s for images to import to DB...", output_dir.c_str());
     try {
         fs::path out_path_abs = fs::absolute(output_dir);
         if (!fs::exists(out_path_abs) || !fs::is_directory(out_path_abs)) {
-            LOG_WARN("Output directory %s does not exist or is not a directory.", out_path_abs.string().c_str());
+            DD_LOG_WARN("Output directory %s does not exist or is not a directory.", out_path_abs.string().c_str());
             return;
         }
 
@@ -48,7 +48,7 @@ void ImportService::auto_import_outputs(const std::string& output_dir) {
                             try {
                                 std::ifstream f(json_path);
                                 std::string raw_json((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
-                                auto j = mysti::json::parse(raw_json);
+                                auto j = diffusion_desk::json::parse(raw_json);
                                 prompt = j.value("prompt", "");
                                 neg_prompt = j.value("negative_prompt", "");
                                 seed = j.value("seed", 0LL);
@@ -85,7 +85,7 @@ void ImportService::auto_import_outputs(const std::string& output_dir) {
                         // Generate a UUID if missing (use filename as seed for deterministic UUID or just random)
                         std::string uuid = "legacy-" + filename;
 
-                        mysti::Generation gen;
+                        diffusion_desk::Generation gen;
                         gen.uuid = uuid;
                         gen.file_path = file_url;
                         gen.prompt = prompt;
@@ -104,10 +104,10 @@ void ImportService::auto_import_outputs(const std::string& output_dir) {
                 }
             }
         }
-        LOG_INFO("Migration: Checked %d files, imported %d new records.", checked, imported);
+        DD_LOG_INFO("Migration: Checked %d files, imported %d new records.", checked, imported);
     } catch (const std::exception& e) {
-        LOG_ERROR("Auto-import failed: %s", e.what());
+        DD_LOG_ERROR("Auto-import failed: %s", e.what());
     }
 }
 
-} // namespace mysti
+} // namespace diffusion_desk

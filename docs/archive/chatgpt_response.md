@@ -22,7 +22,7 @@ Iâ€™ve structured it as \*\*releases/iterations\*\* with clear deliverables + â€
 
 
 
-\# MystiCanvas Improved Development Plan
+\# DiffusionDesk Improved Development Plan
 
 
 
@@ -670,7 +670,7 @@ Your roadmap lists \*\*Named Pipes IPC\*\* as Milestone 5. The architectural rev
 
 
 
-\* A non-developer can install and run MystiCanvas with minimal manual setup.
+\* A non-developer can install and run DiffusionDesk with minimal manual setup.
 
 
 

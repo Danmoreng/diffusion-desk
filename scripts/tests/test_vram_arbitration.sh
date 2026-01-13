@@ -6,7 +6,7 @@ set -e
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
 PROJECT_ROOT="$(dirname "$(dirname "$SCRIPT_DIR")")"
 BUILD_DIR="$PROJECT_ROOT/build"
-SERVER_EXE="$BUILD_DIR/bin/mysti_server"
+SERVER_EXE="$BUILD_DIR/bin/diffusion_desk_server"
 
 # --- Configuration ---
 # Matching scripts/run.sh defaults
@@ -31,16 +31,16 @@ echo "Build dir: $BUILD_DIR"
 echo "Server exe: $SERVER_EXE"
 
 if [ ! -f "$SERVER_EXE" ]; then
-    echo -e "${RED}Error: mysti_server not found at $SERVER_EXE${NC}"
+    echo -e "${RED}Error: diffusion_desk_server not found at $SERVER_EXE${NC}"
     exit 1
 fi
 
 # Cleanup function
 cleanup() {
     echo "Cleaning up..."
-    pkill -f "mysti_server" || true
-    pkill -f "mysti_sd_worker" || true
-    pkill -f "mysti_llm_worker" || true
+    pkill -f "diffusion_desk_server" || true
+    pkill -f "diffusion_desk_sd_worker" || true
+    pkill -f "diffusion_desk_llm_worker" || true
 }
 
 # Trap cleanup on exit

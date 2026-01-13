@@ -1,13 +1,13 @@
 #!/bin/bash
 set -e
 
-# Script to compare mysti_server vs sd-cli generation
+# Script to compare diffusion_desk_server vs sd-cli generation
 # Goal: Reproduce failing pattern at 1152x1728
 
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
 PROJECT_ROOT="$(dirname "$(dirname "$SCRIPT_DIR")")"
 BUILD_DIR="$PROJECT_ROOT/build"
-SERVER_EXE="$BUILD_DIR/bin/mysti_server"
+SERVER_EXE="$BUILD_DIR/bin/diffusion_desk_server"
 SD_CLI_EXE="/home/sebastian/Development/benchmark_sd_backends/sdcp/build/bin/sd-cli"
 
 # --- Configuration ---
@@ -33,9 +33,9 @@ NC='\033[0m' # No Color
 
 cleanup() {
     echo "Cleaning up..."
-    pkill -f "mysti_server" || true
-    pkill -f "mysti_sd_worker" || true
-    pkill -f "mysti_llm_worker" || true
+    pkill -f "diffusion_desk_server" || true
+    pkill -f "diffusion_desk_sd_worker" || true
+    pkill -f "diffusion_desk_llm_worker" || true
 }
 
 trap cleanup EXIT
@@ -116,8 +116,8 @@ CFG=1.0
 SEED=42
 SAMPLER="euler"
 
-echo -e "${BLUE}--- Running mysti_server generation ---${NC}"
-SERVER_OUTPUT="$OUTPUT_DIR/mysti_server_output.png" 
+echo -e "${BLUE}--- Running diffusion_desk_server generation ---${NC}"
+SERVER_OUTPUT="$OUTPUT_DIR/diffusion_desk_server_output.png" 
 
 JSON_DATA=$(cat <<EOF
 {
@@ -147,9 +147,9 @@ IMG_URL=$(echo "$RESPONSE" | sed -n 's/.*"url": "\([^"]*\)".*/\1/p')
 if [ -n "$IMG_URL" ]; then
     echo "Downloading image from $URL$IMG_URL..."
     curl -s -o "$SERVER_OUTPUT" "$URL$IMG_URL"
-    echo -e "${GREEN}[SUCCESS] mysti_server generation complete: $SERVER_OUTPUT${NC}"
+    echo -e "${GREEN}[SUCCESS] diffusion_desk_server generation complete: $SERVER_OUTPUT${NC}"
 else
-    echo -e "${RED}[FAILURE] mysti_server generation failed or no URL returned.${NC}"
+    echo -e "${RED}[FAILURE] diffusion_desk_server generation failed or no URL returned.${NC}"
     echo "Response: $RESPONSE"
     # Don't exit yet, run CLI tests for comparison
 fi

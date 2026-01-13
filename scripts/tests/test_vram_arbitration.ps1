@@ -8,12 +8,12 @@ $BuildDir = Join-Path $ProjectRoot "build"
 
 # Locate Executable
 $PotentialPaths = @(
-    "$BuildDir\bin\mysti_server.exe",
-    "$BuildDir\mysti_server.exe",
-    "$BuildDir\bin\Debug\mysti_server.exe",
-    "$BuildDir\Debug\mysti_server.exe",
-    "$BuildDir\bin\Release\mysti_server.exe",
-    "$BuildDir\Release\mysti_server.exe"
+    "$BuildDir\bin\diffusion_desk_server.exe",
+    "$BuildDir\diffusion_desk_server.exe",
+    "$BuildDir\bin\Debug\diffusion_desk_server.exe",
+    "$BuildDir\Debug\diffusion_desk_server.exe",
+    "$BuildDir\bin\Release\diffusion_desk_server.exe",
+    "$BuildDir\Release\diffusion_desk_server.exe"
 )
 
 $ServerExe = $null
@@ -25,7 +25,7 @@ foreach ($path in $PotentialPaths) {
 }
 
 if ($null -eq $ServerExe) {
-    Write-Host "Error: mysti_server.exe not found." -ForegroundColor Red
+    Write-Host "Error: diffusion_desk_server.exe not found." -ForegroundColor Red
     exit 1
 }
 
@@ -45,7 +45,7 @@ $LogErr = "$ScriptDir\test_vram_server.err.log"
 
 # Cleanup previous run
 function Kill-Processes {
-    $Names = @("mysti_server", "mysti_sd_worker", "mysti_llm_worker")
+    $Names = @("diffusion_desk_server", "diffusion_desk_sd_worker", "diffusion_desk_llm_worker")
     foreach ($Name in $Names) {
         $Existing = Get-Process -Name $Name -ErrorAction SilentlyContinue
         if ($Existing) {
