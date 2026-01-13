@@ -1,7 +1,7 @@
 #!/bin/bash
 
 BASE_URL="http://127.0.0.1:1234"
-DB_PATH="mysti.db"
+DB_PATH="diffusion_desk.db"
 
 echo "--- DiffusionDesk Database Diagnostic ---"
 
@@ -10,7 +10,7 @@ if [ -f "$DB_PATH" ]; then
     SIZE=$(du -h "$DB_PATH" | cut -f1)
     echo "[OK] Database file found: $DB_PATH ($SIZE)"
 else
-    echo "[ERROR] Database file 'mysti.db' not found in current directory!"
+    echo "[ERROR] Database file 'diffusion_desk.db' not found in current directory!"
     # Don't exit, as it might be created on startup
 fi
 

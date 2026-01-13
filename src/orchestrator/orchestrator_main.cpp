@@ -83,7 +83,7 @@ int run_orchestrator(int argc, const char** argv, SDSvrParams& svr_params) {
 #endif
     sd_set_log_callback(sd_log_cb, (void*)&svr_params);
     try {
-        g_db = std::make_shared<diffusion_desk::Database>("mysti.db");
+        g_db = std::make_shared<diffusion_desk::Database>("diffusion_desk.db");
         g_db->init_schema();
         sd_port = svr_params.listen_port + 1;
         llm_port = svr_params.listen_port + 2;
