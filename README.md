@@ -1,25 +1,39 @@
 # DiffusionDesk
 
-DiffusionDesk is a high-performance, self-hosted Creative AI server that integrates the best of image generation and large language model capabilities. It leverages `stable-diffusion.cpp` for state-of-the-art image synthesis and `llama.cpp` for efficient LLM processing, all within a unified C++ backend.
+DiffusionDesk is a high-performance, self-hosted **Creative AI Workstation** built on the power of [stable-diffusion.cpp](https://github.com/leejet/stable-diffusion.cpp) and [llama.cpp](https://github.com/ggml-org/llama.cpp/). It integrates state-of-the-art image generation and large language model capabilities into a unified, local application.
 
-## Features
+Unlike simple generation frontends, DiffusionDesk functions as a complete **Asset Management System**. It persists your creative history, uses local LLMs to intelligently analyze and tag your images, and provides advanced workflows for refinement and exploration.
 
-- **Multi-Process Architecture:** Orchestrator-Worker design allows simultaneous Image and Text generation without resource conflicts or UI freezing.
-- **WebSocket Hub:** Real-time generation progress and system-wide VRAM monitoring via a robust WebSocket connection.
-- **Internal Security:** Automatic transient token authentication between the Orchestrator and backend workers.
-- **Dual-Backend Power:** Seamlessly links against both `stable-diffusion.cpp` and `llama.cpp` using a shared GGML foundation.
+## Key Capabilities
+
+### Generation & Editing
+- **Dual-Backend Power:** Seamlessly links against [stable-diffusion.cpp](https://github.com/leejet/stable-diffusion.cpp) and [llama.cpp](https://github.com/ggml-org/llama.cpp/) using a shared GGML foundation.
 - **Image Generation:** Supports FLUX, Z-Image, SDXL, and more with full GPU acceleration (CUDA).
+- **Inpainting Canvas:** Integrated editor for masking and regenerating specific parts of an image.
 - **Built-in Upscaling:** Native integration of ESRGAN for high-quality image enhancement.
-- **Modern WebUI:** A fast, responsive Vue.js (Vite) frontend with a server-side SPA fallback for a seamless experience.
-- **Centralized Config:** Manage paths and ports via `config.json` with support for environment variables.
+- **Dynamic Exploration:** Generate variations of prompts and seeds to explore the latent space and discover new styles.
+
+### Smart Asset Management
+- **SQLite Database:** Automatically persists every generation, prompt, and setting. No more lost history.
+- **Smart Tagging:** Runs a background **Tagging Service** that uses your loaded LLM to analyze generated images and automatically assign descriptive tags (Subject, Style, Mood).
+- **Prompt Library & Styles:** Save, organize, and reuse your best prompts and style configurations.
+- **Advanced Filtering:** Search your history by date, model, rating, or specific tags.
+
+### System Architecture
+- **Multi-Process Design:** Orchestrator-Worker architecture allowing simultaneous Image and Text generation without resource conflicts or UI freezing.
+- **Job Queue:** Asynchronous background processing for tasks like auto-tagging and batch generation.
+- **WebSocket Hub:** Real-time generation progress and system-wide VRAM monitoring.
+- **Internal Security:** Automatic transient token authentication between the Orchestrator and backend workers.
 
 ## Project Structure
 
-- `src/`: C++ Backend source code (httplib server, SD/Llama wrappers, WebSocket hub).
-- `webui/`: Vue.js 3 + TypeScript frontend.
-- `libs/`: Submodules for `stable-diffusion.cpp`, `llama.cpp`, and `ixwebsocket`.
+- `src/`: C++ Backend source code.
+    - `orchestrator/`: Main server, database management, tagging service, and job queue.
+    - `workers/`: Wrappers for SD and LLM inference.
+- `webui/`: Vue.js 3 + TypeScript frontend with specialized views for History, Inpainting, and Settings.
+- `libs/`: Submodules for `stable-diffusion.cpp`, `llama.cpp`, `ixwebsocket`, and `SQLiteCpp`.
 - `scripts/`: Build and automation scripts.
-- `public/`: Static assets and compiled frontend location (`/app/`).
+- `models/`: Directory structure for AI models.
 
 ## Quick Start
 
@@ -50,14 +64,14 @@ Start the server using the launch script or directly via the binary:
 ```powershell
 .\scripts\run.ps1
 ```
-The server will use the settings defined in `config.json`. By default, the UI is available at `http://localhost:1234/app/`.
+The server will initialize the SQLite database (`history.db`) and start the WebUI at `http://localhost:1234/app/`.
 
 ## Model Organization
 
 DiffusionDesk expects models to be organized in the following subdirectories:
 - `models/stable-diffusion/`: Main model files (`.gguf`, `.safetensors`).
 - `models/vae/`: Variational Autoencoders.
-- `models/text-encoder/`: CLIP and T5 encoders.
+- `models/text-encoder/`: CLIP and T5 encoders (used for SD and as standalone LLMs for tagging).
 - `models/lora/`: Low-Rank Adaptations.
 - `models/esrgan/`: Upscaler models.
 
