@@ -299,12 +299,14 @@ onMounted(scrollToBottom)
   height: 100%;
   flex-shrink: 0;
   z-index: 1000;
+  overflow: hidden;
 }
 
 .assistant-input-area {
   min-height: 57px;
   background-color: var(--bs-body-bg) !important;
   transition: all 0.3s ease;
+  flex-shrink: 0;
 }
 
 .assistant-btn, .assistant-input {
