@@ -107,24 +107,25 @@ DiffusionDesk uses two systems for configuration:
 DiffusionDesk expects models to be organized in the following subdirectories:
 - `models/stable-diffusion/`: Main model files (`.gguf`, `.safetensors`).
 - `models/vae/`: Variational Autoencoders.
-- `models/text-encoder/`: CLIP and T5 encoders (used for SD and as standalone LLMs for tagging).
+- `models/text-encoder/`: CLIP, T5, and LLM encoders (including those used for tagging).
 - `models/lora/`: Low-Rank Adaptations.
 - `models/esrgan/`: Upscaler models.
 
-Every main model in `stable-diffusion/` requires a `.json` sidecar file (e.g., `model.gguf.json`) to define its architecture and associated components.
+### Signature-Based Presets
+DiffusionDesk uses a **Signature-Based Loading System**. Instead of relying on static `.json` sidecar files (which are now deprecated), all model configurations are managed via **Image Presets** in the Library Manager.
 
-### Example Configuration (`z_image_turbo.gguf.json`)
-```json
-{
-  "vae": "vae/ae.safetensors",
-  "llm": "text-encoder/Qwen3-4B-Instruct-2507-Q8_0.gguf",
-  "flash_attn": true
-}
-```
+When you load a preset, the Orchestrator computes a unique signature based on:
+- The main **UNet/Diffusion** model path.
+- Associated **VAE** and **CLIP** (L/G) models.
+- **T5XXL** or **LLM Text Encoders** (for architectures like Flux or Z-Image).
+- **Optimization Flags** (Flash Attention, VAE Tiling, CPU Offloading).
 
-### Supported Configuration Keys
-- **Paths (relative to model-dir):** `vae`, `clip_l`, `clip_g`, `t5xxl`, `llm`.
-- **Performance Flags:** `clip_on_cpu` (bool), `vae_on_cpu` (bool), `offload_to_cpu` (bool), `flash_attn` (bool), `vae_tiling` (bool).
+This ensures that the system correctly reloads all necessary components when switching between presets, even if they share the same base model.
+
+### Support for Modern Architectures
+DiffusionDesk natively supports complex multi-model pipelines:
+- **Flux / SD3 Support:** Dedicated slots for T5XXL and multiple CLIP encoders.
+- **Z-Image / LLM-Encoding:** Models requiring LLM-based text encoders (like Qwen) can be configured using the **LLM Text Encoder 3** slot in the preset editor.
 
 ## License
 
