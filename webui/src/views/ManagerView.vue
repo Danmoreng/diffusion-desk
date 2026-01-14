@@ -19,6 +19,7 @@ interface ImagePreset {
   clip_l_path: string
   clip_g_path: string
   t5xxl_path: string
+  llm_path: string
   vram_weights_mb_estimate: number
   default_params?: any
 }
@@ -56,7 +57,6 @@ const activeTab = computed({
 const tags = ref<TagInfo[]>([])
 const isLoading = ref(false)
 const searchQuery = ref('')
-
 // Presets State
 const imagePresets = ref<ImagePreset[]>([])
 const llmPresets = ref<LlmPreset[]>([])
@@ -64,7 +64,7 @@ const presetModalRef = ref<HTMLElement | null>(null)
 let presetModalInstance: Modal | null = null
 const isEditingPreset = ref(false)
 const editingImagePreset = ref<ImagePreset>({
-  id: 0, name: '', unet_path: '', vae_path: '', clip_l_path: '', clip_g_path: '', t5xxl_path: '', vram_weights_mb_estimate: 0, default_params: {}
+  id: 0, name: '', unet_path: '', vae_path: '', clip_l_path: '', clip_g_path: '', t5xxl_path: '', llm_path: '', vram_weights_mb_estimate: 0, default_params: {}
 })
 const editingLlmPreset = ref<LlmPreset>({
   id: 0, name: '', model_path: '', mmproj_path: '', n_ctx: 2048
@@ -75,6 +75,8 @@ const availableModels = computed(() => store.models.filter(m => m.type !== 'llm'
 const availableVaEs = computed(() => store.models.filter(m => m.type === 'vae'))
 const availableClips = computed(() => store.models.filter(m => m.type === 'text-encoder' || m.type === 'clip'))
 const availableLlms = computed(() => store.models.filter(m => m.type === 'llm'))
+const availableLlmEncoders = computed(() => store.models.filter(m => m.type === 'text-encoder' || m.type === 'llm'))
+const availableProjectors = computed(() => store.models.filter(m => m.name.toLowerCase().includes('mmproj') || m.id.toLowerCase().includes('mmproj')))
 
 const modalRef = ref<HTMLElement | null>(null)
 let modalInstance: Modal | null = null
@@ -315,7 +317,7 @@ function openPresetModal(type: 'image' | 'llm', preset?: any) {
   isEditingPreset.value = !!preset
   if (type === 'image') {
     if (preset) editingImagePreset.value = { ...preset }
-    else editingImagePreset.value = { id: 0, name: '', unet_path: '', vae_path: '', clip_l_path: '', clip_g_path: '', t5xxl_path: '', vram_weights_mb_estimate: 0, default_params: {} }
+    else editingImagePreset.value = { id: 0, name: '', unet_path: '', vae_path: '', clip_l_path: '', clip_g_path: '', t5xxl_path: '', llm_path: '', vram_weights_mb_estimate: 0, default_params: {} }
   } else {
     if (preset) editingLlmPreset.value = { ...preset }
     else editingLlmPreset.value = { id: 0, name: '', model_path: '', mmproj_path: '', n_ctx: 2048, system_prompt_assistant: '', system_prompt_tagging: '', system_prompt_style: '' }
@@ -968,6 +970,14 @@ onUnmounted(() => {
                     <option v-for="m in availableClips" :key="m.id" :value="m.id">{{ m.name }}</option>
                  </select>
                </div>
+
+               <div class="col-md-6">
+                 <label class="form-label small text-uppercase fw-bold">LLM Text Encoder 3 (Optional)</label>
+                 <select v-model="editingImagePreset.llm_path" class="form-select">
+                    <option value="">None</option>
+                    <option v-for="m in availableLlmEncoders" :key="m.id" :value="m.id">{{ m.name }}</option>
+                 </select>
+               </div>
                
                <div class="col-md-6">
                  <label class="form-label small text-uppercase fw-bold">CLIP L (Optional)</label>
@@ -1009,8 +1019,11 @@ onUnmounted(() => {
                
                <div class="col-12">
                  <label class="form-label small text-uppercase fw-bold">Vision Projector (mmproj) (Optional)</label>
-                 <input type="text" v-model="editingLlmPreset.mmproj_path" class="form-control" placeholder="e.g. mmproj-model-f16.gguf">
-                 <div class="form-text x-small">Filename of the projector in the 'models' directory.</div>
+                 <select v-model="editingLlmPreset.mmproj_path" class="form-select">
+                    <option value="">None</option>
+                    <option v-for="m in availableProjectors" :key="m.id" :value="m.id">{{ m.name }}</option>
+                 </select>
+                 <div class="form-text x-small">Select a vision projector (must contain 'mmproj' in name).</div>
                </div>
                
                <div class="col-md-6">

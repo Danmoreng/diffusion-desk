@@ -295,8 +295,24 @@ void handle_load_model(const httplib::Request& req, httplib::Response& res, Serv
                     ctx.ctx_params.prediction = PREDICTION_COUNT;
                     ctx.ctx_params.flow_shift = INFINITY;
 
-                    // Use helper to load sidecar config
-                    load_model_config(ctx.ctx_params, ctx.ctx_params.diffusion_model_path, ctx.svr_params.model_dir);
+                    auto resolve_path = [&](const std::string& p, const std::string& base) -> std::string {
+                        if (p.empty()) return "";
+                        fs::path fp(p);
+                        if (fp.is_absolute()) return p;
+                        return (fs::path(base) / p).string();
+                    };
+
+                    // Parse config from request body (replaces load_model_config)
+                    if (body.contains("vae") && body["vae"].is_string()) ctx.ctx_params.vae_path = resolve_path(body["vae"].get<std::string>(), ctx.svr_params.model_dir);
+                    if (body.contains("clip_l") && body["clip_l"].is_string()) ctx.ctx_params.clip_l_path = resolve_path(body["clip_l"].get<std::string>(), ctx.svr_params.model_dir);
+                    if (body.contains("clip_g") && body["clip_g"].is_string()) ctx.ctx_params.clip_g_path = resolve_path(body["clip_g"].get<std::string>(), ctx.svr_params.model_dir);
+                    if (body.contains("t5xxl") && body["t5xxl"].is_string()) ctx.ctx_params.t5xxl_path = resolve_path(body["t5xxl"].get<std::string>(), ctx.svr_params.model_dir);
+                    if (body.contains("llm") && body["llm"].is_string()) ctx.ctx_params.llm_path = resolve_path(body["llm"].get<std::string>(), ctx.svr_params.model_dir);
+                    
+                    if (body.contains("vae_tiling")) ctx.ctx_params.vae_tiling_params.enabled = body["vae_tiling"];
+                    if (body.contains("clip_on_cpu")) ctx.ctx_params.clip_on_cpu = body["clip_on_cpu"];
+                    if (body.contains("vae_on_cpu")) ctx.ctx_params.vae_on_cpu = body["vae_on_cpu"];
+                    if (body.contains("flash_attn")) ctx.ctx_params.diffusion_flash_attn = body["flash_attn"];
             }
 
             sd_ctx_params_t sd_ctx_p = ctx.ctx_params.to_sd_ctx_params_t(false, false, false);

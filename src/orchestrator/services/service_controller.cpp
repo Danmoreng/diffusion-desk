@@ -162,54 +162,59 @@ void ServiceController::generate_model_preview(std::string model_id, std::string
     } catch (...) {}
 }
 
-bool ServiceController::ensure_sd_model_loaded(const std::string& model_id, const SDSvrParams& params) {
+std::string compute_sd_signature(const diffusion_desk::json& j) {
+    std::stringstream ss;
+    ss << j.value("model_id", "") << "|";
+    ss << j.value("vae", "") << "|";
+    ss << j.value("clip_l", "") << "|";
+    ss << j.value("clip_g", "") << "|";
+    ss << j.value("t5xxl", "") << "|";
+    ss << j.value("llm", "") << "|";
+    ss << j.value("vae_tiling", false) << "|";
+    ss << j.value("clip_on_cpu", false) << "|";
+    ss << j.value("vae_on_cpu", false) << "|";
+    ss << j.value("flash_attn", false) << "|";
+    return ss.str();
+}
+
+bool ServiceController::ensure_sd_model_loaded(const diffusion_desk::json& model_config, const SDSvrParams& params) {
+    std::string model_id = model_config.value("model_id", "");
     if (model_id.empty()) return false;
     
-    std::unique_lock<std::mutex> lock(m_load_mutex);
-    if (m_active_sd_model == model_id && m_sd_loaded) return true;
+    std::string signature = compute_sd_signature(model_config);
 
-    // Check if another thread is already loading this model
-    if (m_currently_loading_sd == model_id) {
-        DD_LOG_INFO("[SmartQueue] Waiting for SD model load: %s", model_id.c_str());
-        m_load_cv.wait_for(lock, std::chrono::seconds(60), [this, &model_id]() {
-            return m_active_sd_model == model_id && m_sd_loaded;
+    std::unique_lock<std::mutex> lock(m_load_mutex);
+    if (m_active_sd_signature == signature && m_sd_loaded) return true;
+
+    // Check if another thread is already loading this model config
+    if (m_currently_loading_sd == signature) {
+        DD_LOG_INFO("[SmartQueue] Waiting for SD model load: %s (Sig: %s)", model_id.c_str(), signature.c_str());
+        m_load_cv.wait_for(lock, std::chrono::seconds(60), [this, &signature]() {
+            return m_active_sd_signature == signature && m_sd_loaded;
         });
-        return m_active_sd_model == model_id && m_sd_loaded;
+        return m_active_sd_signature == signature && m_sd_loaded;
     }
 
     // Start loading
-    m_currently_loading_sd = model_id;
+    m_currently_loading_sd = signature;
     m_sd_loaded = false;
     lock.unlock();
 
-    DD_LOG_INFO("[SmartQueue] Triggering lazy load for SD model: %s", model_id.c_str());
-    diffusion_desk::json load_req;
-    load_req["model_id"] = model_id;
+    DD_LOG_INFO("[SmartQueue] Triggering lazy load for SD model: %s (Sig: %s)", model_id.c_str(), signature.c_str());
     
-    // Check for preset metadata (VAE etc)
-    if (m_db) {
-        auto meta = m_db->get_model_metadata(model_id);
-        if (!meta.empty()) {
-            if (meta.contains("vae")) load_req["vae"] = meta["vae"];
-            if (meta.contains("clip_l")) load_req["clip_l"] = meta["clip_l"];
-            if (meta.contains("clip_g")) load_req["clip_g"] = meta["clip_g"];
-            if (meta.contains("t5xxl")) load_req["t5xxl"] = meta["t5xxl"];
-        }
-    }
-
     httplib::Client cli("127.0.0.1", m_sd_port);
     cli.set_read_timeout(120);
     httplib::Headers h;
     if (!m_token.empty()) h.emplace("X-Internal-Token", m_token);
     
-    auto res = cli.Post("/v1/models/load", h, load_req.dump(), "application/json");
+    auto res = cli.Post("/v1/models/load", h, model_config.dump(), "application/json");
     
     lock.lock();
     m_currently_loading_sd = "";
     if (res && res->status == 200) {
-        m_active_sd_model = model_id;
+        m_active_sd_signature = signature;
         m_sd_loaded = true;
-        m_last_sd_model_req_body = load_req.dump();
+        m_last_sd_model_req_body = model_config.dump();
         DD_LOG_INFO("[SmartQueue] SD model loaded: %s", model_id.c_str());
         m_load_cv.notify_all();
         return true;
@@ -329,7 +334,16 @@ void ServiceController::load_last_presets(const SDSvrParams& params) {
             for (auto& p : presets) {
                 if (p["id"] == id) {
                     DD_LOG_INFO("Restoring last Image Preset: %s", p.value("name", "unnamed").c_str());
-                    ensure_sd_model_loaded(p["unet_path"], params);
+                    
+                    diffusion_desk::json config;
+                    config["model_id"] = p["unet_path"];
+                    config["vae"] = p["vae_path"];
+                    config["clip_l"] = p["clip_l_path"];
+                    config["clip_g"] = p["clip_g_path"];
+                    config["t5xxl"] = p["t5xxl_path"];
+                    config["llm"] = p["llm_path"];
+                    
+                    ensure_sd_model_loaded(config, params);
                     m_last_image_preset_id = id;
                     break;
                 }
@@ -349,8 +363,12 @@ void ServiceController::notify_model_loaded(const std::string& type, const std::
     {
         std::lock_guard<std::mutex> lock(m_load_mutex);
         if (type == "sd") {
-            m_active_sd_model = model_id;
-            m_sd_loaded = !model_id.empty();
+            if (model_id.empty()) {
+                m_active_sd_signature = ""; // Clear signature on unload
+                m_sd_loaded = false;
+            } else {
+                m_sd_loaded = true;
+            }
         } else if (type == "llm") {
             m_active_llm_model = model_id;
             m_llm_loaded = !model_id.empty();
@@ -444,12 +462,12 @@ void ServiceController::register_routes(httplib::Server& svr, const SDSvrParams&
 
     svr.Post("/v1/models/load", [this, params](const httplib::Request& req, httplib::Response& res) {
         DD_LOG_INFO("Request: POST /v1/models/load, Body: %s", req.body.c_str());
-        std::string model_id = "";
+        diffusion_desk::json config;
         try {
-            auto j = diffusion_desk::json::parse(req.body);
-            model_id = j.value("model_id", "");
+            config = diffusion_desk::json::parse(req.body);
         } catch(...) {}
 
+        std::string model_id = config.value("model_id", "");
         if (model_id.empty()) {
             res.status = 400;
             res.set_content(R"({\"error\":\"model_id required\"})", "application/json");
@@ -457,7 +475,7 @@ void ServiceController::register_routes(httplib::Server& svr, const SDSvrParams&
         }
 
         // Use ensure helper which handles queueing
-        if (ensure_sd_model_loaded(model_id, params)) {
+        if (ensure_sd_model_loaded(config, params)) {
             res.status = 200;
             res.set_content(R"({\"status\":\"success\"})", "application/json");
         } else {
@@ -503,27 +521,46 @@ void ServiceController::register_routes(httplib::Server& svr, const SDSvrParams&
         std::string modified_body = req.body;
         
         // 1. Ensure Model is Loaded (Lazy Load)
+        diffusion_desk::json requested_config;
         std::string requested_model_id = "";
-        {
-            std::lock_guard<std::mutex> lock(m_state_mutex);
-            if (!m_last_sd_model_req_body.empty()) {
-                try {
-                    requested_model_id = diffusion_desk::json::parse(m_last_sd_model_req_body).value("model_id", "");
-                } catch(...) {}
-            }
-        }
-        
-        // Check if request body overrides model (usually not in our UI, but for API compatibility)
+        bool explicit_load_request = false;
+
+        // Check if request body overrides model
         try {
             auto j_req = diffusion_desk::json::parse(req.body);
-            if (j_req.contains("model_id")) requested_model_id = j_req["model_id"];
+            if (j_req.contains("model_id")) {
+                requested_model_id = j_req["model_id"];
+                requested_config["model_id"] = requested_model_id;
+                // If user specifies model_id, they likely want a simple load unless they specified others
+                // But we don't have others in req.body usually.
+                // We'll treat this as "Load this model ID with defaults".
+                explicit_load_request = true;
+            }
         } catch(...) {}
 
-        if (!requested_model_id.empty()) {
-            if (!ensure_sd_model_loaded(requested_model_id, params)) {
+        if (explicit_load_request) {
+             // User requested specific model ID. Use basic config.
+             if (!ensure_sd_model_loaded(requested_config, params)) {
                 res.status = 503;
                 res.set_content(R"({\"error\":\"Model not loaded and lazy load failed.\"})", "application/json");
                 return;
+            }
+        } else {
+            // Restore last active config if available
+            std::lock_guard<std::mutex> lock(m_state_mutex);
+            if (!m_last_sd_model_req_body.empty()) {
+                try {
+                    requested_config = diffusion_desk::json::parse(m_last_sd_model_req_body);
+                    requested_model_id = requested_config.value("model_id", "");
+                } catch(...) {}
+            }
+            
+            if (!requested_model_id.empty()) {
+                if (!ensure_sd_model_loaded(requested_config, params)) {
+                    res.status = 503;
+                    res.set_content(R"({\"error\":\"Model not loaded and lazy load failed.\"})", "application/json");
+                    return;
+                }
             }
         }
 
@@ -1013,6 +1050,13 @@ void ServiceController::register_routes(httplib::Server& svr, const SDSvrParams&
         res.set_content(m_db->get_image_presets().dump(), "application/json");
     });
 
+    svr.Get("/v1/presets/active", [this](const httplib::Request&, httplib::Response& res) {
+        diffusion_desk::json j;
+        j["image_preset_id"] = m_last_image_preset_id;
+        j["llm_preset_id"] = m_last_llm_preset_id;
+        res.set_content(j.dump(), "application/json");
+    });
+
     svr.Post("/v1/presets/image", [this, params](const httplib::Request& req, httplib::Response& res) {
         if (!m_db) { res.status = 500; return; }
         try {
@@ -1025,6 +1069,7 @@ void ServiceController::register_routes(httplib::Server& svr, const SDSvrParams&
             p.clip_l_path = j.value("clip_l_path", "");
             p.clip_g_path = j.value("clip_g_path", "");
             p.t5xxl_path = j.value("t5xxl_path", "");
+            p.llm_path = j.value("llm_path", "");
             p.vram_weights_mb_estimate = j.value("vram_weights_mb_estimate", 0);
             p.default_params = j.value("default_params", diffusion_desk::json::object());
             p.preferred_params = j.value("preferred_params", diffusion_desk::json::object());
@@ -1104,8 +1149,15 @@ void ServiceController::register_routes(httplib::Server& svr, const SDSvrParams&
                 return;
             }
             
-            std::string model_id = selected["unet_path"];
-            if (ensure_sd_model_loaded(model_id, params)) {
+            diffusion_desk::json config;
+            config["model_id"] = selected["unet_path"];
+            config["vae"] = selected["vae_path"];
+            config["clip_l"] = selected["clip_l_path"];
+            config["clip_g"] = selected["clip_g_path"];
+            config["t5xxl"] = selected["t5xxl_path"];
+            config["llm"] = selected["llm_path"];
+            
+            if (ensure_sd_model_loaded(config, params)) {
                 m_last_image_preset_id = id;
                 m_db->set_config("last_image_preset_id", std::to_string(id));
                 res.status = 200;

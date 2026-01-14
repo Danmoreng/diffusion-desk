@@ -14,11 +14,12 @@ int run_sd_worker(SDSvrParams& svr_params, SDContextParams& ctx_params, SDGenera
     DD_LOG_INFO("SD Info: %s", sd_get_system_info());
 
     // Load config if available (e.g. for z_image_turbo)
-    if (!ctx_params.model_path.empty()) {
-        load_model_config(ctx_params, ctx_params.model_path, svr_params.model_dir);
-    } else if (!ctx_params.diffusion_model_path.empty()) {
-        load_model_config(ctx_params, ctx_params.diffusion_model_path, svr_params.model_dir);
-    }
+    // Deprecated: Model config is now passed via API.
+    // if (!ctx_params.model_path.empty()) {
+    //     load_model_config(ctx_params, ctx_params.model_path, svr_params.model_dir);
+    // } else if (!ctx_params.diffusion_model_path.empty()) {
+    //     load_model_config(ctx_params, ctx_params.diffusion_model_path, svr_params.model_dir);
+    // }
 
     sd_ctx_params_t sd_ctx_params_raw = ctx_params.to_sd_ctx_params_t(false, false, false);
     SdCtxPtr sd_ctx;

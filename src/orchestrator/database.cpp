@@ -97,6 +97,12 @@ void Database::init_schema() {
             std::cout << "[Database] Migrated to version 5 (LLM Preset Prompts)" << std::endl;
         }
 
+        if (current_version < 6) {
+            migrate_to_v6();
+            set_schema_version(6);
+            std::cout << "[Database] Migrated to version 6 (Image Preset LLM Path)" << std::endl;
+        }
+
         std::cout << "[Database] Schema initialized successfully." << std::endl;
 
     } catch (const std::exception& e) {
@@ -354,6 +360,16 @@ void Database::migrate_to_v5() {
         m_db.exec("ALTER TABLE llm_presets ADD COLUMN system_prompt_style TEXT DEFAULT ''");
     } catch (const std::exception& e) {
         std::cerr << "[Database] migrate_to_v5 warning (columns might exist): " << e.what() << std::endl;
+    }
+    transaction.commit();
+}
+
+void Database::migrate_to_v6() {
+    SQLite::Transaction transaction(m_db);
+    try {
+        m_db.exec("ALTER TABLE image_presets ADD COLUMN llm_path TEXT DEFAULT ''");
+    } catch (const std::exception& e) {
+        std::cerr << "[Database] migrate_to_v6 warning (column might exist): " << e.what() << std::endl;
     }
     transaction.commit();
 }
@@ -754,9 +770,9 @@ void Database::save_image_preset(const ImagePreset& p_in) {
 
         SQLite::Statement query(m_db, R"(
             INSERT OR REPLACE INTO image_presets (
-                id, name, unet_path, vae_path, clip_l_path, clip_g_path, t5xxl_path,
+                id, name, unet_path, vae_path, clip_l_path, clip_g_path, t5xxl_path, llm_path,
                 vram_weights_mb_estimate, vram_weights_mb_measured, default_params, preferred_params
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         )");
         if (p.id > 0) query.bind(1, p.id); else query.bind(1);
         query.bind(2, p.name);
@@ -765,10 +781,11 @@ void Database::save_image_preset(const ImagePreset& p_in) {
         query.bind(5, p.clip_l_path);
         query.bind(6, p.clip_g_path);
         query.bind(7, p.t5xxl_path);
-        query.bind(8, p.vram_weights_mb_estimate);
-        query.bind(9, p.vram_weights_mb_measured);
-        query.bind(10, p.default_params.dump());
-        query.bind(11, p.preferred_params.dump());
+        query.bind(8, p.llm_path);
+        query.bind(9, p.vram_weights_mb_estimate);
+        query.bind(10, p.vram_weights_mb_measured);
+        query.bind(11, p.default_params.dump());
+        query.bind(12, p.preferred_params.dump());
         query.exec();
     } catch (...) {}
 }
@@ -777,7 +794,7 @@ diffusion_desk::json Database::get_image_presets() {
     std::lock_guard<std::recursive_mutex> lock(m_mutex);
     diffusion_desk::json results = diffusion_desk::json::array();
     try {
-        SQLite::Statement query(m_db, "SELECT id, name, unet_path, vae_path, clip_l_path, clip_g_path, t5xxl_path, vram_weights_mb_estimate, vram_weights_mb_measured, default_params, preferred_params FROM image_presets ORDER BY name ASC");
+        SQLite::Statement query(m_db, "SELECT id, name, unet_path, vae_path, clip_l_path, clip_g_path, t5xxl_path, llm_path, vram_weights_mb_estimate, vram_weights_mb_measured, default_params, preferred_params FROM image_presets ORDER BY name ASC");
         while (query.executeStep()) {
             diffusion_desk::json p_json;
             p_json["id"] = query.getColumn(0).getInt();
@@ -787,10 +804,11 @@ diffusion_desk::json Database::get_image_presets() {
             p_json["clip_l_path"] = query.getColumn(4).getText();
             p_json["clip_g_path"] = query.getColumn(5).getText();
             p_json["t5xxl_path"] = query.getColumn(6).getText();
-            p_json["vram_weights_mb_estimate"] = query.getColumn(7).getInt();
-            p_json["vram_weights_mb_measured"] = query.getColumn(8).getInt();
-            p_json["default_params"] = diffusion_desk::json::parse(query.getColumn(9).getText());
-            p_json["preferred_params"] = diffusion_desk::json::parse(query.getColumn(10).getText());
+            p_json["llm_path"] = query.getColumn(7).getText();
+            p_json["vram_weights_mb_estimate"] = query.getColumn(8).getInt();
+            p_json["vram_weights_mb_measured"] = query.getColumn(9).getInt();
+            p_json["default_params"] = diffusion_desk::json::parse(query.getColumn(10).getText());
+            p_json["preferred_params"] = diffusion_desk::json::parse(query.getColumn(11).getText());
             results.push_back(p_json);
         }
     } catch (...) {}
