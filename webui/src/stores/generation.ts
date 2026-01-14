@@ -457,6 +457,17 @@ export const useGenerationStore = defineStore('generation', () => {
     return Math.round(avgStepTime * remainingSteps);
   });
 
+  async function fetchActivePresets() {
+    try {
+        const res = await fetch('/v1/presets/active')
+        if (res.ok) {
+            const data = await res.json()
+            if (data.image_preset_id > 0) currentImagePresetId.value = data.image_preset_id
+            if (data.llm_preset_id > 0) currentLlmPresetId.value = data.llm_preset_id
+        }
+    } catch(e) { console.error("Failed to fetch active presets", e) }
+  }
+
   async function fetchModels() {
     isModelsLoading.value = true
     fetchConfig() // Also fetch server config
@@ -492,6 +503,7 @@ export const useGenerationStore = defineStore('generation', () => {
 
       // Wait for presets and sync
       await presetsPromise
+      await fetchActivePresets()
       syncPresetsWithActiveModels()
 
     } catch (e) {
@@ -503,7 +515,7 @@ export const useGenerationStore = defineStore('generation', () => {
 
   function syncPresetsWithActiveModels() {
     // Sync Image Preset
-    if (currentModel.value) {
+    if (currentModel.value && currentImagePresetId.value <= 0) {
       const p = imagePresets.value.find(p => p.unet_path === currentModel.value)
       if (p) {
         currentImagePresetId.value = p.id
@@ -511,7 +523,7 @@ export const useGenerationStore = defineStore('generation', () => {
     }
 
     // Sync LLM Preset
-    if (currentLlmModel.value) {
+    if (currentLlmModel.value && currentLlmPresetId.value <= 0) {
       const p = llmPresets.value.find(p => p.model_path === currentLlmModel.value)
       if (p) {
         currentLlmPresetId.value = p.id

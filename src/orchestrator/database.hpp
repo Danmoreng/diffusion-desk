@@ -69,6 +69,7 @@ struct ImagePreset {
     std::string clip_l_path;
     std::string clip_g_path;
     std::string t5xxl_path;
+    std::string llm_path;
     int vram_weights_mb_estimate = 0;
     int vram_weights_mb_measured = 0;
     diffusion_desk::json default_params;
@@ -186,6 +187,7 @@ private:
     void migrate_to_v3();
     void migrate_to_v4();
     void migrate_to_v5();
+    void migrate_to_v6();
 
     SQLite::Database m_db;
     std::recursive_mutex m_mutex; // Protects access to m_db, recursive to allow nested calls

@@ -37,7 +37,7 @@ public:
     void notify_model_loaded(const std::string& type, const std::string& model_id);
 
     // Internal Smart Queue helpers
-    bool ensure_sd_model_loaded(const std::string& model_id, const SDSvrParams& params);
+    bool ensure_sd_model_loaded(const diffusion_desk::json& model_config, const SDSvrParams& params);
     bool ensure_llm_loaded(const std::string& model_id, const SDSvrParams& params);
     bool load_llm_preset(int preset_id, const SDSvrParams& params);
 
@@ -62,7 +62,7 @@ private:
     std::condition_variable m_load_cv;
     std::string m_currently_loading_sd;
     std::string m_currently_loading_llm;
-    std::string m_active_sd_model;
+    std::string m_active_sd_signature;
     std::string m_active_llm_model;
     bool m_sd_loaded = false;
     bool m_llm_loaded = false;

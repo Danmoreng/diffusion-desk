@@ -59,7 +59,8 @@ void parse_args(int argc, const char** argv, SDSvrParams& svr_params, SDContextP
             }
         }
         
-        load_model_config(ctx_params, active_path, svr_params.model_dir);
+        // Deprecated: Model config is now passed via API.
+        // load_model_config(ctx_params, active_path, svr_params.model_dir);
     }
 
     if (ctx_params.n_threads <= 0) {
