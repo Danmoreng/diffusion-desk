@@ -42,7 +42,7 @@ const applyAspectRatio = (ratio: { w: number, h: number }) => {
   setTimeout(() => { isInternalScaleUpdate = false }, 0)
 }
 
-const n = () => {
+const handleGenerate = () => {
   if (!store.prompt || store.isGenerating || store.isModelSwitching) return
       store.generateImage({
       prompt: store.prompt,
@@ -60,7 +60,8 @@ const n = () => {
       maskImage: props.mode === 'inpainting' ? store.maskImage : null
     })
   }
-  const onFileChange = (e: Event) => {
+
+const onFileChange = (e: Event) => {
   const target = e.target as HTMLInputElement
   if (target.files && target.files[0]) {
     const reader = new FileReader()
@@ -183,7 +184,7 @@ const clearInitImage = () => {
 
 <template>
   <div class="card shadow-sm p-3">
-    <form @submit.prevent="n">
+    <form @submit.prevent="handleGenerate">
       <!-- Img2Img / Inpainting Upload & Scaling -->
       <div class="mb-3" v-if="mode === 'img2img' || mode === 'inpainting'">
         <div v-if="mode === 'img2img'">
