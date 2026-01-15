@@ -863,7 +863,6 @@ void handle_generate_image(const httplib::Request& req, httplib::Response& res, 
             else if (estimated_vae_vram > free_vram * 0.6f) {
                 DD_LOG_WARN("High VRAM usage predicted. Auto-enabling VAE tiling.");
                 img_gen_params.vae_tiling_params.enabled = true;
-                set_progress_message("VRAM low: VAE tiling enabled");
             } else {
                 img_gen_params.vae_tiling_params.enabled = false;
             }
