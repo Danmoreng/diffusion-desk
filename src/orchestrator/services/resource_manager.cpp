@@ -49,21 +49,21 @@ ArbitrationResult ResourceManager::prepare_for_sd_generation(float estimated_tot
     // New Escalation Logic
     bool llm_seems_loaded = m_last_llm_vram_gb > 0.1f;
     
-    // Phase 1: If tight, try Swapping LLM to RAM (CPU Offload)
+    // Phase 1: If tight, Unload LLM completely (User Preference: Shutdown instead of Offload)
     if (free_vram < actually_needed_additional + 0.5f && llm_seems_loaded) {
-        DD_LOG_INFO("[ResourceManager] VRAM tight. Requesting LLM swap to RAM...");
+        DD_LOG_INFO("[ResourceManager] VRAM tight. Requesting LLM shutdown/unload...");
         httplib::Client cli("127.0.0.1", m_llm_port);
         cli.set_connection_timeout(2);
         cli.set_read_timeout(20);
-        auto ures = cli.Post("/v1/llm/offload", headers, "", "application/json");
+        auto ures = cli.Post("/v1/llm/unload", headers, "", "application/json");
         if (ures && ures->status == 200) {
-            DD_LOG_INFO("[ResourceManager] LLM swapped to RAM successfully.");
-            std::this_thread::sleep_for(std::chrono::milliseconds(500));
+            DD_LOG_INFO("[ResourceManager] LLM unloaded successfully.");
+            std::this_thread::sleep_for(std::chrono::milliseconds(800));
             // Update local tracking
             free_vram = get_free_vram_gb() - m_committed_vram_gb.load();
             if (free_vram < 0.0f) free_vram = 0.0f;
         } else {
-            DD_LOG_WARN("[ResourceManager] Failed to swap LLM to RAM.");
+            DD_LOG_WARN("[ResourceManager] Failed to unload LLM.");
         }
     }
 
