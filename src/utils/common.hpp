@@ -146,6 +146,7 @@ struct SDSvrParams {
     std::string output_dir = "./outputs";
     std::string app_dir = "./public/app";
     std::string default_llm_model = "";
+    std::string default_mmproj_model = "";
     std::string mode = "orchestrator"; // orchestrator, sd-worker, llm-worker
     int llm_threads = -1;
     int llm_idle_timeout = 300; 

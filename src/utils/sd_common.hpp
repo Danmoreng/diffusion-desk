@@ -73,6 +73,7 @@ struct SDContextParams {
     rng_type_t rng_type         = CUDA_RNG;
     rng_type_t sampler_rng_type = RNG_TYPE_COUNT;
     bool offload_params_to_cpu  = false;
+    bool enable_mmap            = true; // Default to true as per library convention usually
     bool control_net_cpu        = false;
     bool clip_on_cpu            = false;
     bool vae_on_cpu             = false;
@@ -83,6 +84,7 @@ struct SDContextParams {
     bool chroma_use_dit_mask = true;
     bool chroma_use_t5_mask  = false;
     int chroma_t5_mask_pad   = 1;
+    bool qwen_image_zero_cond_t = false;
 
     prediction_t prediction           = PREDICTION_COUNT;
     lora_apply_mode_t lora_apply_mode = LORA_APPLY_AUTO;
@@ -127,7 +129,7 @@ struct SDGenerationParams {
     std::vector<float> custom_sigmas;
 
     std::string easycache_option;
-    sd_easycache_params_t easycache_params;
+    sd_cache_params_t cache_params;
 
     float moe_boundary  = 0.875f;
     int video_frames    = 1;
