@@ -80,9 +80,14 @@ void ensure_llm_loaded(SDSvrParams& svr_params, LlamaServer& llm_server) {
 
     if (!svr_params.default_llm_model.empty()) {
         fs::path model_path = fs::path(svr_params.model_dir) / svr_params.default_llm_model;
+        fs::path mmproj_path;
+        if (!svr_params.default_mmproj_model.empty()) {
+            mmproj_path = fs::path(svr_params.model_dir) / svr_params.default_mmproj_model;
+        }
+
         if (fs::exists(model_path)) {
-            DD_LOG_INFO("Auto-loading default LLM: %s", svr_params.default_llm_model.c_str());
-            llm_server.load_model(model_path.string(), "", 0, 2048, -1);
+            DD_LOG_INFO("Auto-loading default LLM: %s (mmproj: %s)", svr_params.default_llm_model.c_str(), mmproj_path.string().c_str());
+            llm_server.load_model(model_path.string(), mmproj_path.string(), 0, 2048, -1);
         } else {
             DD_LOG_WARN("Default LLM model not found: %s", model_path.string().c_str());
         }

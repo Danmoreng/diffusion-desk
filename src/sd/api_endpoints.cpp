@@ -822,7 +822,7 @@ void handle_generate_image(const httplib::Request& req, httplib::Response& res, 
                 gen_params.pm_style_strength,
             },  // pm_params
             ctx.ctx_params.vae_tiling_params,
-            gen_params.easycache_params,
+            gen_params.cache_params,
         };
 
         sd_image_t* results = nullptr;
@@ -1361,7 +1361,7 @@ void handle_edit_image(const httplib::Request& req, httplib::Response& res, Serv
                 gen_params.pm_style_strength,
             },  // pm_params
             ctx.ctx_params.vae_tiling_params,
-            gen_params.easycache_params,
+            gen_params.cache_params,
         };
 
         sd_image_t* results = nullptr;

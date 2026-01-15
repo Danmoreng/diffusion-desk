@@ -1,4 +1,7 @@
 # DiffusionDesk Build Script (Step-by-Step)
+param (
+    [switch]$Clean
+)
 
 function Import-VSEnv {
     Write-Host "Loading Visual Studio Environment..."
@@ -20,6 +23,11 @@ Import-VSEnv
 $PSScriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Definition
 $ProjectRoot = Split-Path -Parent $PSScriptRoot
 $BuildDir = Join-Path $ProjectRoot "build"
+
+if ($Clean -and (Test-Path $BuildDir)) {
+    Write-Host "Cleaning build directory..."
+    Remove-Item -Path $BuildDir -Recurse -Force
+}
 
 # Check for Ninja
 if (Get-Command ninja -ErrorAction SilentlyContinue) {

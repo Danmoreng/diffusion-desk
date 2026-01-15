@@ -745,6 +745,11 @@ ArgOptions SDSvrParams::get_options() {
             &default_llm_model},
         {
             "",
+            "--default-mmproj",
+            "default multimodal projector (mmproj) model to load automatically",
+            &default_mmproj_model},
+        {
+            "",
             "--internal-token",
             "transient API token for internal communication",
             &internal_token}};
@@ -855,6 +860,7 @@ bool SDSvrParams::load_from_file(const std::string& path) {
         if (j.contains("llm")) {
             auto& l = j["llm"];
             if (l.contains("default_model")) default_llm_model = l["default_model"];
+            if (l.contains("default_mmproj")) default_mmproj_model = l["default_mmproj"];
             if (l.contains("threads")) llm_threads = l["threads"];
             if (l.contains("idle_timeout")) llm_idle_timeout = l["idle_timeout"];
             if (l.contains("assistant_system_prompt")) assistant_system_prompt = l["assistant_system_prompt"];

@@ -6,6 +6,7 @@
 
 LlamaServer::LlamaServer() {
     common_init();
+    llama_backend_init();
     last_access = std::chrono::steady_clock::now();
     idle_thread = std::thread(&LlamaServer::idle_check_loop, this);
 }
@@ -19,6 +20,7 @@ LlamaServer::~LlamaServer() {
         idle_thread.join();
     }
     stop();
+    llama_backend_free();
 }
 
 bool LlamaServer::load_model(const std::string& model_path, const std::string& mmproj_path, int n_gpu_layers, int n_ctx, int image_max_tokens) {
@@ -66,6 +68,7 @@ bool LlamaServer::load_model(const std::string& model_path, const std::string& m
     }
 
     routes = std::make_unique<server_routes>(llama_params, *server_ctx);
+    routes->update_meta(*server_ctx);
 
     loop_thread = std::thread([this]() {
         server_ctx->start_loop();
@@ -151,26 +154,41 @@ void LlamaServer::bridge_handler(httplib::Server& svr, const std::string& method
             return;
         }
 
-        std::function<bool()> should_stop = []() { return false; };
-        server_http_req llama_req = {
+        auto should_stop = std::make_shared<std::function<bool()>>([]() { return false; });
+        // Use shared_ptr to keep request alive for streaming responses
+        auto llama_req_ptr = std::make_shared<server_http_req>(server_http_req{
             {}, // params
             {}, // headers
             req.path,
             req.body,
-            should_stop
-        };
+            *should_stop
+        });
 
         // Map params
         for (auto& p : req.params) {
-            llama_req.params[p.first] = p.second;
+            llama_req_ptr->params[p.first] = p.second;
         }
         // Map headers
         for (auto& h : req.headers) {
-            llama_req.headers[h.first] = h.second;
+            llama_req_ptr->headers[h.first] = h.second;
         }
 
         DD_LOG_DEBUG("LLM calling native handler...");
-        auto llama_res = handler(llama_req);
+        std::shared_ptr<server_http_res> llama_res;
+        try {
+            llama_res = handler(*llama_req_ptr);
+        } catch (const std::exception& e) {
+            DD_LOG_ERROR("Exception in LLM handler: %s", e.what());
+            res.status = 500;
+            res.set_content(make_error_json("internal_error", e.what()), "application/json");
+            return;
+        } catch (...) {
+            DD_LOG_ERROR("Unknown exception in LLM handler");
+            res.status = 500;
+            res.set_content(make_error_json("internal_error", "Unknown exception"), "application/json");
+            return;
+        }
+
         if (!llama_res) {
             DD_LOG_ERROR("LLM native handler returned null");
             res.status = 500;
@@ -185,7 +203,7 @@ void LlamaServer::bridge_handler(httplib::Server& svr, const std::string& method
 
         if (llama_res->is_stream()) {
             res.set_chunked_content_provider(llama_res->content_type, 
-                [llama_res = std::shared_ptr<server_http_res>(std::move(llama_res))](size_t offset, httplib::DataSink &sink) {
+                [llama_res = std::shared_ptr<server_http_res>(std::move(llama_res)), llama_req_ptr](size_t offset, httplib::DataSink &sink) {
                     std::string chunk;
                     if (llama_res->next(chunk)) {
                         sink.write(chunk.c_str(), chunk.size());

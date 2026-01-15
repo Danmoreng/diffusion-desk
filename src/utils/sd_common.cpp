@@ -69,6 +69,7 @@ ArgOptions SDContextParams::get_options() {
     options.bool_options = {
         {"", "--vae-tiling", "process vae in tiles to reduce memory usage", true, &vae_tiling_params.enabled},
         {"", "--force-sdxl-vae-conv-scale", "force use of conv scale on sdxl vae", true, &force_sdxl_vae_conv_scale},
+        {"", "--mmap", "enable memory mapped file input (default: true)", true, &enable_mmap},
         {"", "--offload-to-cpu", "place the weights in RAM to save VRAM, and automatically load them into VRAM when needed", true, &offload_params_to_cpu},
         {"", "--control-net-cpu", "keep controlnet in cpu (for low vram)", true, &control_net_cpu},
         {"", "--clip-on-cpu", "keep clip in cpu (for low vram)", true, &clip_on_cpu},
@@ -223,9 +224,9 @@ sd_ctx_params_t SDContextParams::to_sd_ctx_params_t(bool vae_decode_only, bool f
         model_path.c_str(), clip_l_path.c_str(), clip_g_path.c_str(), clip_vision_path.c_str(), t5xxl_path.c_str(), llm_path.c_str(), llm_vision_path.c_str(),
         diffusion_model_path.c_str(), high_noise_diffusion_model_path.c_str(), vae_path.c_str(), taesd_path.c_str(), control_net_path.c_str(),
         embedding_vec.data(), static_cast<uint32_t>(embedding_vec.size()), photo_maker_path.c_str(), tensor_type_rules.c_str(), vae_decode_only, free_params_immediately,
-        n_threads, wtype, rng_type, sampler_rng_type, prediction, lora_apply_mode, offload_params_to_cpu, clip_on_cpu, control_net_cpu, vae_on_cpu,
+        n_threads, wtype, rng_type, sampler_rng_type, prediction, lora_apply_mode, offload_params_to_cpu, enable_mmap, clip_on_cpu, control_net_cpu, vae_on_cpu,
         diffusion_flash_attn, taesd_preview, diffusion_conv_direct, vae_conv_direct, false, false, force_sdxl_vae_conv_scale, chroma_use_dit_mask,
-        chroma_use_t5_mask, chroma_t5_mask_pad, flow_shift,
+        chroma_use_t5_mask, chroma_t5_mask_pad, qwen_image_zero_cond_t, flow_shift,
     };
     return params;
 }
@@ -233,6 +234,8 @@ sd_ctx_params_t SDContextParams::to_sd_ctx_params_t(bool vae_decode_only, bool f
 SDGenerationParams::SDGenerationParams() {
     sd_sample_params_init(&sample_params);
     sd_sample_params_init(&high_noise_sample_params);
+    memset(&cache_params, 0, sizeof(cache_params));
+    cache_params.mode = SD_CACHE_DISABLED;
 }
 
 ArgOptions SDGenerationParams::get_options() {
