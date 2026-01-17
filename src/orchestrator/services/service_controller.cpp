@@ -203,12 +203,26 @@ bool ServiceController::ensure_sd_model_loaded(const diffusion_desk::json& model
 
     DD_LOG_INFO("[SmartQueue] Triggering lazy load for SD model: %s (Sig: %s)", model_id.c_str(), signature.c_str());
     
+    // Resolve absolute path for worker
+    diffusion_desk::json worker_req = model_config;
+    fs::path p(model_id);
+    if (!p.is_absolute()) {
+        fs::path abs_path = fs::path(m_params.model_dir) / p;
+        if (fs::exists(abs_path)) {
+            worker_req["model_id"] = abs_path.string();
+        } else {
+             // Fallback: try relative to CWD (legacy behavior) or just send as is
+             // But log warning if configured dir doesn't have it
+             DD_LOG_WARN("Model not found in configured model_dir: %s. Sending relative path.", abs_path.string().c_str());
+        }
+    }
+
     httplib::Client cli("127.0.0.1", m_sd_port);
     cli.set_read_timeout(120);
     httplib::Headers h;
     if (!m_token.empty()) h.emplace("X-Internal-Token", m_token);
     
-    auto res = cli.Post("/v1/models/load", h, model_config.dump(), "application/json");
+    auto res = cli.Post("/v1/models/load", h, worker_req.dump(), "application/json");
     
     lock.lock();
     m_currently_loading_sd = "";
@@ -260,15 +274,36 @@ bool ServiceController::ensure_llm_loaded(const std::string& model_id) {
     }
 
     diffusion_desk::json load_req;
-    load_req["model_id"] = model_id;
+    
+    // Resolve absolute path for worker
+    fs::path p(model_id);
+    if (!p.is_absolute()) {
+        fs::path abs_path = fs::path(m_params.model_dir) / p;
+        if (fs::exists(abs_path)) {
+            load_req["model_id"] = abs_path.string();
+        } else {
+             DD_LOG_WARN("LLM Model not found in configured model_dir: %s. Sending relative path.", abs_path.string().c_str());
+             load_req["model_id"] = model_id;
+        }
+    } else {
+        load_req["model_id"] = model_id;
+    }
     
     // Attempt to lookup preset config for full context (mmproj etc)
     if (m_db) {
         auto presets = m_db->get_llm_presets();
         for (const auto& p : presets) {
+            // Check matching relative or absolute path in preset
             if (p.is_object() && (p["model_path"] == model_id || p["model_path"] == (fs::path(m_params.model_dir) / model_id).string())) {
                 if (p.contains("mmproj_path") && !p["mmproj_path"].get<std::string>().empty()) {
-                    load_req["mmproj_id"] = p["mmproj_path"];
+                    // Resolve mmproj path too
+                    std::string mmproj = p["mmproj_path"];
+                    fs::path mp(mmproj);
+                    if (!mp.is_absolute()) {
+                        fs::path abs_mp = fs::path(m_params.model_dir) / mp;
+                        if (fs::exists(abs_mp)) mmproj = abs_mp.string();
+                    }
+                    load_req["mmproj_id"] = mmproj;
                 }
                 if (p.contains("n_ctx")) {
                     load_req["n_ctx"] = p["n_ctx"];
@@ -731,8 +766,11 @@ void ServiceController::register_routes(httplib::Server& svr) {
             res.status = res_sd->status;
             try {
                 auto j = diffusion_desk::json::parse(res_sd->body);
-                // Override setup_completed with Orchestrator's truth (loaded from config.json)
+                // Override setup_completed and paths with Orchestrator's truth (loaded from config.json)
                 j["setup_completed"] = m_params.setup_completed;
+                if (!m_params.model_dir.empty()) j["model_dir"] = m_params.model_dir;
+                if (!m_params.output_dir.empty()) j["output_dir"] = m_params.output_dir;
+                
                 res.set_content(j.dump(), "application/json");
             } catch (...) {
                 // Fallback if parsing fails (unlikely)

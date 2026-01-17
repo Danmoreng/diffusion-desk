@@ -139,6 +139,9 @@ int run_orchestrator(int argc, const char** argv, SDSvrParams& svr_params) {
     std::vector<std::string> sd_args = common_args;
     sd_args.push_back("--listen-port"); sd_args.push_back(std::to_string(sd_port));
     sd_args.push_back("--listen-ip"); sd_args.push_back("127.0.0.1");
+    // Ensure worker knows the correct model directory loaded from config
+    sd_args.push_back("--model-dir"); sd_args.push_back(svr_params.model_dir);
+    
     if (!passed_sd_model_arg.empty()) {
         sd_args.push_back("--diffusion-model");
         sd_args.push_back(passed_sd_model_arg);
@@ -148,6 +151,9 @@ int run_orchestrator(int argc, const char** argv, SDSvrParams& svr_params) {
     std::vector<std::string> llm_args = common_args;
     llm_args.push_back("--listen-port"); llm_args.push_back(std::to_string(llm_port));
     llm_args.push_back("--listen-ip"); llm_args.push_back("127.0.0.1");
+    // Ensure worker knows the correct model directory loaded from config
+    llm_args.push_back("--model-dir"); llm_args.push_back(svr_params.model_dir);
+
     if (!passed_llm_model_arg.empty()) {
         llm_args.push_back("--llm-model");
         llm_args.push_back(passed_llm_model_arg);
