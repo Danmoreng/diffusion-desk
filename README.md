@@ -86,7 +86,7 @@ Start the server using the launch script or directly via the binary:
 chmod +x scripts/run.sh
 ./scripts/run.sh
 ```
-The server will initialize the SQLite database (`history.db`) and start the WebUI at `http://localhost:1234/app/`.
+The server will initialize the SQLite database (`diffusion_desk.db`) and start the WebUI at `http://localhost:1234/app/`.
 
 ### Configuration
 
@@ -98,7 +98,7 @@ DiffusionDesk uses two systems for configuration:
     *   Default LLM to load on startup.
     *   System resource limits (timeouts, threads).
 
-2.  **SQLite Database (`history.db`):** Manages **creative configurations** such as:
+2.  **SQLite Database (`diffusion_desk.db`):** Manages **creative configurations** such as:
     *   **Image Presets:** Saved combinations of Checkpoints, VAEs, and CLIP models.
     *   **Generation Parameters:** Your default steps, CFG scale, and sampler choices.
 
@@ -112,7 +112,7 @@ DiffusionDesk expects models to be organized in the following subdirectories:
 - `models/esrgan/`: Upscaler models.
 
 ### Signature-Based Presets
-DiffusionDesk uses a **Signature-Based Loading System**. Instead of relying on static `.json` sidecar files (which are now deprecated), all model configurations are managed via **Image Presets** in the Library Manager.
+DiffusionDesk uses a **Signature-Based Loading System**. All model configurations are managed via **Image Presets** in the Library Manager.
 
 When you load a preset, the Orchestrator computes a unique signature based on:
 - The main **UNet/Diffusion** model path.
