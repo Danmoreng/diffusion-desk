@@ -30,12 +30,6 @@ if ($null -eq $ServerExe) {
 }
 
 # Configuration
-$ModelBase = Join-Path $ProjectRoot "models"
-if (!(Test-Path $ModelBase)) {
-    Write-Host "Creating models directory at $ModelBase..."
-    New-Item -ItemType Directory -Force -Path $ModelBase | Out-Null
-}
-
 # Optional: Hardcode these if you want to override the last used preset on startup
 $LLMPath = ""
 $SDPath = "" 
@@ -44,7 +38,6 @@ $IdleTimeout = 600  # 10 minutes
 
 Write-Host "Starting DiffusionDesk Server..." -ForegroundColor Cyan
 Write-Host "Executable: $ServerExe"
-Write-Host "Model Directory: $ModelBase"
 if ($SDPath) { Write-Host "SD Model Override: $SDPath" }
 else { Write-Host "SD Model: (Restoring Last Preset)" }
 if ($LLMPath) { Write-Host "LLM Model Override: $LLMPath" }

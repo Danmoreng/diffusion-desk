@@ -15,14 +15,6 @@ if [ ! -f "$SERVER_EXE" ]; then
 fi
 
 # --- Configuration ---
-MODEL_BASE="$PROJECT_ROOT/models"
-
-# Check if the model base directory exists
-if [ ! -d "$MODEL_BASE" ]; then
-    echo "Creating models directory at $MODEL_BASE..."
-    mkdir -p "$MODEL_BASE"
-fi
-
 # Optional: Override these to load specific models on startup
 # LLM_PATH="$MODEL_BASE/llm/your-model.gguf"
 # SD_PATH="$MODEL_BASE/stable-diffusion/your-model.gguf" 
@@ -33,7 +25,6 @@ IDLE_TIMEOUT=600  # 10 minutes
 
 echo "Starting DiffusionDesk Server..."
 echo "Executable: $SERVER_EXE"
-echo "Model Directory: $MODEL_BASE"
 echo "-------------------------------------------"
 
 # Change to the project root so the server can find assets (e.g., ./public)
