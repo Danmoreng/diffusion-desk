@@ -598,6 +598,17 @@ export const useGenerationStore = defineStore('generation', () => {
          throw new Error(err.error || 'Failed to load preset')
        }
        currentImagePresetId.value = id
+       
+       // Apply preset defaults if available
+       const preset = imagePresets.value.find(p => p.id === id)
+       if (preset && preset.default_params) {
+           if (preset.default_params.width) width.value = preset.default_params.width
+           if (preset.default_params.height) height.value = preset.default_params.height
+           if (preset.default_params.steps) steps.value = preset.default_params.steps
+           if (preset.default_params.cfg_scale) cfgScale.value = preset.default_params.cfg_scale
+           if (preset.default_params.sampler) sampler.value = preset.default_params.sampler
+       }
+       
        // Refresh models to update active status
        await fetchModels()
      } catch(e: any) { error.value = e.message } finally { isModelSwitching.value = false }
@@ -642,6 +653,20 @@ export const useGenerationStore = defineStore('generation', () => {
   }
 
   function resetToModelDefaults() {
+    // 1. Try to use active preset defaults
+    if (currentImagePresetId.value > 0) {
+        const preset = imagePresets.value.find(p => p.id === currentImagePresetId.value)
+        if (preset && preset.default_params) {
+            if (preset.default_params.width) width.value = preset.default_params.width
+            if (preset.default_params.height) height.value = preset.default_params.height
+            if (preset.default_params.steps) steps.value = preset.default_params.steps
+            if (preset.default_params.cfg_scale) cfgScale.value = preset.default_params.cfg_scale
+            if (preset.default_params.sampler) sampler.value = preset.default_params.sampler
+            return // Stop here if preset defaults were applied (partially or fully, we assume preset overrides model meta)
+        }
+    }
+
+    // 2. Fallback to model metadata
     if (!currentModelMetadata.value || Object.keys(currentModelMetadata.value).length === 0) return
     
     const meta = currentModelMetadata.value
