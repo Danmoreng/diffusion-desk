@@ -276,7 +276,7 @@ watch(maskBlur, () => {
 </script>
 
 <template>
-  <div class="inpainting-canvas-container card shadow-sm p-3">
+  <div class="inpainting-canvas-container island p-3">
     <div class="d-flex justify-content-between align-items-center mb-3">
       <h5 class="mb-0">Inpainting Canvas</h5>
       <div v-if="store.initImage" class="d-flex gap-3 align-items-center">
