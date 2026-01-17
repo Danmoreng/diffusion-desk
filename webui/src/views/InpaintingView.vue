@@ -12,16 +12,12 @@ import InpaintingCanvas from '../components/InpaintingCanvas.vue'
     </section>
 
     <!-- Images (Right) -->
-    <section class="d-flex flex-column gap-2" style="flex: 1; min-width: 0;">
+    <section class="d-flex flex-column gap-2" style="flex: 1; min-width: 0; overflow: hidden;">
        <!-- Input Image Island -->
-       <div class="flex-fill" style="min-height: 0;">
-          <InpaintingCanvas class="h-100" style="overflow-y: auto;" />
-       </div>
+       <InpaintingCanvas style="flex: 1; min-height: 0; overflow-y: auto;" />
        
        <!-- Output Image Island -->
-       <div class="flex-fill" style="min-height: 0;">
-          <ImageDisplay />
-       </div>
+       <ImageDisplay style="flex: 1; min-height: 0; overflow-y: auto;" />
     </section>
   </div>
 </template>

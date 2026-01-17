@@ -8,7 +8,7 @@ const assistantStore = useAssistantStore()
 </script>
 
 <template>
-  <div class="island h-100">
+  <div class="island h-100 overflow-y-auto">
     <div class="card-body d-flex flex-column p-2">
       <div class="image-display-container flex-grow-1 mb-3">
         <!-- Queued State -->
