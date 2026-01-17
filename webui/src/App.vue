@@ -2,15 +2,19 @@
 import Sidebar from './components/Sidebar.vue'
 import FloatingActionBar from './components/FloatingActionBar.vue'
 import AssistantPanel from './components/AssistantPanel.vue'
+import SetupWizard from './components/SetupWizard.vue'
 import { useGenerationStore } from '@/stores/generation'
 import { useAssistantStore } from '@/stores/assistant'
 
 const store = useGenerationStore()
 const assistantStore = useAssistantStore()
+
+store.fetchConfig()
 </script>
 
 <template>
   <div id="app" class="d-flex vh-100 overflow-hidden">
+    <SetupWizard v-if="!store.setupCompleted" @completed="store.fetchConfig" />
     <div id="content-wrapper" class="d-flex w-100 h-100 position-relative">
       <!-- Toggle button moved outside aside to ensure visibility -->
       <button 

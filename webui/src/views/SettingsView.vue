@@ -54,7 +54,7 @@ async function runTest() {
           <label for="outputDir" class="form-label small fw-bold text-muted">Output Directory</label>
                       <div class="input-group input-group-sm">
                         <input type="text" id="outputDir" class="form-control" v-model="store.outputDir" placeholder="./outputs">
-                        <button class="btn btn-primary" type="button" @click="store.updateConfig">
+                        <button class="btn btn-primary" type="button" @click="() => store.updateConfig()">
                           <i class="bi bi-save"></i> Save Path
                         </button>
                       </div>

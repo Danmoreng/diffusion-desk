@@ -873,11 +873,56 @@ bool SDSvrParams::load_from_file(const std::string& path) {
             if (sd.contains("safe_mode_crashes")) safe_mode_crashes = sd["safe_mode_crashes"];
         }
 
+        if (j.contains("setup_completed")) setup_completed = j["setup_completed"];
+
         return true;
     } catch (const std::exception& e) {
         DD_LOG_ERROR("Failed to parse config file: %s", e.what());
         return false;
     }
+}
+
+bool SDSvrParams::save_to_file(const std::string& path) {
+    diffusion_desk::json j;
+    // 1. Try to load existing file to preserve other fields
+    std::ifstream ifile(path);
+    if (ifile.is_open()) {
+        try {
+            j = diffusion_desk::json::parse(ifile);
+        } catch (...) {
+            DD_LOG_WARN("Failed to parse existing config during save, starting fresh.");
+        }
+        ifile.close();
+    }
+
+    // 2. Update managed fields
+    j["server"]["listen_ip"] = listen_ip;
+    j["server"]["listen_port"] = listen_port;
+    j["server"]["verbose"] = verbose;
+    j["server"]["color"] = color;
+
+    j["paths"]["model_dir"] = model_dir;
+    j["paths"]["output_dir"] = output_dir;
+    j["paths"]["app_dir"] = app_dir;
+
+    j["llm"]["default_model"] = default_llm_model;
+    j["llm"]["default_mmproj"] = default_mmproj_model;
+    j["llm"]["threads"] = llm_threads;
+    j["llm"]["idle_timeout"] = llm_idle_timeout;
+    j["llm"]["assistant_system_prompt"] = assistant_system_prompt;
+    j["llm"]["tagger_system_prompt"] = tagger_system_prompt;
+    j["llm"]["style_extractor_system_prompt"] = style_extractor_system_prompt;
+
+    j["sd"]["safe_mode_crashes"] = safe_mode_crashes;
+    j["setup_completed"] = setup_completed;
+
+    // 3. Write back
+    std::ofstream ofile(path);
+    if (!ofile.is_open()) {
+        return false;
+    }
+    ofile << j.dump(4);
+    return true;
 }
 
 std::string SDSvrParams::to_string() const {

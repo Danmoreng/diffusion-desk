@@ -74,6 +74,7 @@ export const useGenerationStore = defineStore('generation', () => {
   const saveImages = ref(initialState.saveImages)
   const outputDir = ref('outputs')
   const modelDir = ref('models')
+  const setupCompleted = ref(true) // Default true for legacy/existing users
   const actionBarPosition = ref(initialState.actionBarPosition as 'top' | 'bottom')
   const assistantPosition = ref(initialState.assistantPosition as 'left' | 'right')
 
@@ -406,20 +407,28 @@ export const useGenerationStore = defineStore('generation', () => {
       if (data.model_dir) {
         modelDir.value = data.model_dir
       }
+      if (data.setup_completed !== undefined) {
+        setupCompleted.value = data.setup_completed
+      }
     } catch (e) {
       console.error('Failed to fetch config:', e)
     }
   }
 
-  async function updateConfig() {
+  async function updateConfig(markCompleted = false) {
     try {
+      const body: any = { 
+        output_dir: outputDir.value,
+        model_dir: modelDir.value
+      }
+      if (markCompleted) {
+        body.setup_completed = true
+        setupCompleted.value = true
+      }
       await fetch('/v1/config', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          output_dir: outputDir.value,
-          model_dir: modelDir.value
-        })
+        body: JSON.stringify(body)
       })
     } catch (e) {
       console.error('Failed to update config:', e)
@@ -1217,6 +1226,6 @@ export const useGenerationStore = defineStore('generation', () => {
     currentModelMetadata, resetToModelDefaults, applyAspectRatio, snapToNext16,
     imagePresets, llmPresets, currentImagePresetId, currentLlmPresetId, loadImagePreset, loadLlmPreset, fetchPresets,
     actionBarPosition, assistantPosition,
-    llmContextSize
+    llmContextSize, setupCompleted, fetchConfig
   }
 })

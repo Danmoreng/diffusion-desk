@@ -1,0 +1,26 @@
+{
+    "llm": {
+        "assistant_system_prompt": "You are an integrated creative assistant for DiffusionDesk. You help users refine their artistic vision, improve prompts, and organize their library. You can control the application through tools. Be concise, professional, and inspiring.",
+        "default_mmproj": "",
+        "default_model": "",
+        "idle_timeout": 600,
+        "style_extractor_system_prompt": "You are an expert art style analyzer. Analyze the given image prompt and extract distinct art styles, artists, or aesthetic descriptors. Return a JSON object with a 'styles' key containing an array of objects. Each style object must have 'name' (concise style name), 'prompt' (keywords to append, MUST include '{prompt}' placeholder), and 'negative_prompt' (optional tags to avoid). Example: {\"styles\": [{\"name\": \"Cyberpunk\", \"prompt\": \"{prompt}, cyberpunk, neon lights\", \"negative_prompt\": \"organic\"}]}",
+        "tagger_system_prompt": "You are a specialized image tagging engine. Output a JSON object with a 'tags' key containing an array of 5-8 descriptive tags (Subject, Style, Mood). Example: {\"tags\": [\"cat\", \"forest\", \"ethereal\"]}. Output ONLY valid JSON.",
+        "threads": -1
+    },
+    "paths": {
+        "app_dir": "./public/app",
+        "model_dir": "./models",
+        "output_dir": "./outputs"
+    },
+    "sd": {
+        "safe_mode_crashes": 2
+    },
+    "server": {
+        "color": true,
+        "listen_ip": "127.0.0.1",
+        "listen_port": 1234,
+        "verbose": true
+    },
+    "setup_completed": false
+}

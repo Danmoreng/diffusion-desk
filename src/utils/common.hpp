@@ -159,11 +159,13 @@ struct SDSvrParams {
     bool normal_exit      = false;
     bool verbose          = false;
     bool color            = false;
+    bool setup_completed  = true;
 
     ArgOptions get_options();
     bool process_and_check();
     std::string to_string() const;
     bool load_from_file(const std::string& path);
+    bool save_to_file(const std::string& path);
 };
 
 uint8_t* load_image_from_file(const char* image_path,
