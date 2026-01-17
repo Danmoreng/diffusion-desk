@@ -171,8 +171,11 @@ onMounted(scrollToBottom)
     <!-- Chat Area -->
     <div class="chat-history p-3 flex-grow-1 overflow-auto" ref="scrollContainer">
       <div v-for="(msg, idx) in assistantStore.messages" :key="idx" 
-           class="mb-3 d-flex flex-column"
-           :class="msg.role === 'user' ? 'align-items-end' : 'align-items-start'">
+           class="d-flex flex-column"
+           :class="[
+             msg.role === 'tool' ? 'd-none' : (msg.tool_calls ? 'mb-2' : 'mb-3'),
+             msg.role === 'user' ? 'align-items-end' : 'align-items-start'
+           ]">
         
         <!-- 1. Text Content (User or Assistant) -->
         <div v-if="msg.role === 'user' || (msg.role === 'assistant' && msg.content)" 
@@ -193,8 +196,8 @@ onMounted(scrollToBottom)
         </div>
 
         <!-- 2. Tool Calls (Combined Box: Input + Output) -->
-        <div v-if="msg.role === 'assistant' && msg.tool_calls" class="w-100 px-2 my-1">
-          <div v-for="(tool, tIdx) in msg.tool_calls" :key="tIdx" class="border rounded bg-body-tertiary mb-2 overflow-hidden shadow-sm">
+        <div v-if="msg.role === 'assistant' && msg.tool_calls" class="w-100 px-2 mt-0 mb-1">
+          <div v-for="(tool, tIdx) in msg.tool_calls" :key="tIdx" class="border rounded bg-body-tertiary mb-1 overflow-hidden shadow-sm">
              <details class="tool-combined-details">
                 <!-- Header -->
                 <summary class="px-2 py-2 small cursor-pointer d-flex align-items-center justify-content-between bg-body-tertiary hover-bg-secondary text-body">
