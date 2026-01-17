@@ -46,6 +46,14 @@ static std::unique_ptr<diffusion_desk::ThumbnailService> g_thumb_svc;
 static std::string g_internal_token;
 static std::atomic<bool> is_shutting_down{false};
 
+// Constants
+static const std::string DB_NAME = "diffusion_desk.db";
+static const std::string SD_LOG_FILE = "sd_worker.log";
+static const std::string LLM_LOG_FILE = "llm_worker.log";
+static const int SD_PORT_OFFSET = 1;
+static const int LLM_PORT_OFFSET = 2;
+static const int WS_PORT_OFFSET = 3;
+
 #ifdef _WIN32
 BOOL WINAPI ConsoleCtrlHandler(DWORD dwCtrlType) {
     if (dwCtrlType == CTRL_C_EVENT || dwCtrlType == CTRL_BREAK_EVENT || dwCtrlType == CTRL_CLOSE_EVENT) {
@@ -83,13 +91,13 @@ int run_orchestrator(int argc, const char** argv, SDSvrParams& svr_params) {
 #endif
     sd_set_log_callback(sd_log_cb, (void*)&svr_params);
     try {
-        g_db = std::make_shared<diffusion_desk::Database>("diffusion_desk.db");
+        g_db = std::make_shared<diffusion_desk::Database>(DB_NAME);
         g_db->init_schema();
-        sd_port = svr_params.listen_port + 1;
-        llm_port = svr_params.listen_port + 2;
+        sd_port = svr_params.listen_port + SD_PORT_OFFSET;
+        llm_port = svr_params.listen_port + LLM_PORT_OFFSET;
         g_internal_token = svr_params.internal_token;
         g_res_mgr = std::make_shared<diffusion_desk::ResourceManager>(sd_port, llm_port, g_internal_token);
-        g_ws_mgr = std::make_shared<diffusion_desk::WsManager>(svr_params.listen_port + 3, "127.0.0.1");
+        g_ws_mgr = std::make_shared<diffusion_desk::WsManager>(svr_params.listen_port + WS_PORT_OFFSET, "127.0.0.1");
         g_tool_svc = std::make_shared<diffusion_desk::ToolService>(g_db, sd_port, llm_port, g_internal_token);
         g_controller = std::make_shared<diffusion_desk::ServiceController>(g_db, g_res_mgr, g_ws_mgr, g_tool_svc, sd_port, llm_port, g_internal_token);
         g_import_svc = std::make_unique<diffusion_desk::ImportService>(g_db);
@@ -145,9 +153,9 @@ int run_orchestrator(int argc, const char** argv, SDSvrParams& svr_params) {
         llm_args.push_back(passed_llm_model_arg);
     }
     if (!g_internal_token.empty()) { llm_args.push_back("--internal-token"); llm_args.push_back(g_internal_token); }
-    if (!pm.spawn(sd_exe_path, sd_args, sd_process, "sd_worker.log") || !pm.spawn(llm_exe_path, llm_args, llm_process, "llm_worker.log")) return 1;
+    if (!pm.spawn(sd_exe_path, sd_args, sd_process, SD_LOG_FILE) || !pm.spawn(llm_exe_path, llm_args, llm_process, LLM_LOG_FILE)) return 1;
     
-    g_health_svc = std::make_unique<diffusion_desk::HealthService>(pm, sd_process, llm_process, sd_port, llm_port, sd_exe_path, llm_exe_path, sd_args, llm_args, "sd_worker.log", "llm_worker.log", g_internal_token, g_ws_mgr, &is_shutting_down);
+    g_health_svc = std::make_unique<diffusion_desk::HealthService>(pm, sd_process, llm_process, sd_port, llm_port, sd_exe_path, llm_exe_path, sd_args, llm_args, SD_LOG_FILE, LLM_LOG_FILE, g_internal_token, g_ws_mgr, &is_shutting_down);
     g_health_svc->set_model_state_callbacks([]() { return g_controller->get_last_sd_model_req(); }, []() { return g_controller->get_last_llm_model_req(); });
     g_health_svc->start();
     g_job_svc = std::make_shared<diffusion_desk::JobService>(g_db);
