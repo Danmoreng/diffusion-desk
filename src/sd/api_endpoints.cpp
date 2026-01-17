@@ -799,35 +799,32 @@ void handle_generate_image(const httplib::Request& req, httplib::Response& res, 
 
         std::vector<sd_image_t> pmid_images;
 
-        sd_img_gen_params_t img_gen_params = {
-            gen_params.lora_vec.data(),
-            static_cast<uint32_t>(gen_params.lora_vec.size()),
-            gen_params.prompt.c_str(),
-            gen_params.negative_prompt.c_str(),
-            gen_params.clip_skip,
-            init_image,
-            nullptr,
-            0,
-            gen_params.auto_resize_ref_image,
-            gen_params.increase_ref_index,
-            mask_image,
-            gen_params.width,
-            gen_params.height,
-            gen_params.sample_params,
-            gen_params.strength,
-            gen_params.seed,
-            gen_params.batch_count,
-            control_image,
-            gen_params.control_strength,
-            {
-                pmid_images.data(),
-                (int)pmid_images.size(),
-                gen_params.pm_id_embed_path.c_str(),
-                gen_params.pm_style_strength,
-            },  // pm_params
-            ctx.ctx_params.vae_tiling_params,
-            gen_params.cache_params,
-        };
+        sd_img_gen_params_t img_gen_params;
+        sd_img_gen_params_init(&img_gen_params);
+
+        img_gen_params.loras = gen_params.lora_vec.empty() ? nullptr : gen_params.lora_vec.data();
+        img_gen_params.lora_count = (uint32_t)gen_params.lora_vec.size();
+        img_gen_params.prompt = gen_params.prompt.c_str();
+        img_gen_params.negative_prompt = gen_params.negative_prompt.c_str();
+        img_gen_params.clip_skip = gen_params.clip_skip;
+        img_gen_params.init_image = init_image;
+        img_gen_params.mask_image = mask_image;
+        img_gen_params.width = gen_params.width;
+        img_gen_params.height = gen_params.height;
+        img_gen_params.sample_params = gen_params.sample_params;
+        img_gen_params.strength = gen_params.strength;
+        img_gen_params.seed = gen_params.seed;
+        img_gen_params.batch_count = gen_params.batch_count;
+        img_gen_params.control_image = control_image;
+        img_gen_params.control_strength = gen_params.control_strength;
+        
+        img_gen_params.pm_params.id_images = pmid_images.empty() ? nullptr : pmid_images.data();
+        img_gen_params.pm_params.id_images_count = (int)pmid_images.size();
+        img_gen_params.pm_params.id_embed_path = gen_params.pm_id_embed_path.c_str();
+        img_gen_params.pm_params.style_strength = gen_params.pm_style_strength;
+
+        img_gen_params.vae_tiling_params = ctx.ctx_params.vae_tiling_params;
+        img_gen_params.cache = gen_params.cache_params;
 
         sd_image_t* results = nullptr;
         int num_results     = 0;
@@ -1337,35 +1334,36 @@ void handle_edit_image(const httplib::Request& req, httplib::Response& res, Serv
             mask_image.data    = nullptr;
         }
 
-        sd_img_gen_params_t img_gen_params = {
-            gen_params.lora_vec.data(),
-            static_cast<uint32_t>(gen_params.lora_vec.size()),
-            gen_params.prompt.c_str(),
-            gen_params.negative_prompt.c_str(),
-            gen_params.clip_skip,
-            init_image,
-            ref_images.data(),
-            (int)ref_images.size(),
-            gen_params.auto_resize_ref_image,
-            gen_params.increase_ref_index,
-            mask_image,
-            gen_params.width,
-            gen_params.height,
-            gen_params.sample_params,
-            gen_params.strength,
-            gen_params.seed,
-            gen_params.batch_count,
-            control_image,
-            gen_params.control_strength,
-            {
-                pmid_images.data(),
-                (int)pmid_images.size(),
-                gen_params.pm_id_embed_path.c_str(),
-                gen_params.pm_style_strength,
-            },  // pm_params
-            ctx.ctx_params.vae_tiling_params,
-            gen_params.cache_params,
-        };
+        sd_img_gen_params_t img_gen_params;
+        sd_img_gen_params_init(&img_gen_params);
+
+        img_gen_params.loras = gen_params.lora_vec.empty() ? nullptr : gen_params.lora_vec.data();
+        img_gen_params.lora_count = (uint32_t)gen_params.lora_vec.size();
+        img_gen_params.prompt = gen_params.prompt.c_str();
+        img_gen_params.negative_prompt = gen_params.negative_prompt.c_str();
+        img_gen_params.clip_skip = gen_params.clip_skip;
+        img_gen_params.init_image = init_image;
+        img_gen_params.ref_images = ref_images.empty() ? nullptr : ref_images.data();
+        img_gen_params.ref_images_count = (int)ref_images.size();
+        img_gen_params.auto_resize_ref_image = gen_params.auto_resize_ref_image;
+        img_gen_params.increase_ref_index = gen_params.increase_ref_index;
+        img_gen_params.mask_image = mask_image;
+        img_gen_params.width = gen_params.width;
+        img_gen_params.height = gen_params.height;
+        img_gen_params.sample_params = gen_params.sample_params;
+        img_gen_params.strength = gen_params.strength;
+        img_gen_params.seed = gen_params.seed;
+        img_gen_params.batch_count = gen_params.batch_count;
+        img_gen_params.control_image = control_image;
+        img_gen_params.control_strength = gen_params.control_strength;
+
+        img_gen_params.pm_params.id_images = pmid_images.empty() ? nullptr : pmid_images.data();
+        img_gen_params.pm_params.id_images_count = (int)pmid_images.size();
+        img_gen_params.pm_params.id_embed_path = gen_params.pm_id_embed_path.c_str();
+        img_gen_params.pm_params.style_strength = gen_params.pm_style_strength;
+
+        img_gen_params.vae_tiling_params = ctx.ctx_params.vae_tiling_params;
+        img_gen_params.cache = gen_params.cache_params;
 
         sd_image_t* results = nullptr;
         int num_results     = 0;

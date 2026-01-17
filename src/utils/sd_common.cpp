@@ -220,14 +220,50 @@ sd_ctx_params_t SDContextParams::to_sd_ctx_params_t(bool vae_decode_only, bool f
         sd_embedding_t item; item.name = kv.first.c_str(); item.path = kv.second.c_str();
         embedding_vec.emplace_back(item);
     }
-    sd_ctx_params_t params = {
-        model_path.c_str(), clip_l_path.c_str(), clip_g_path.c_str(), clip_vision_path.c_str(), t5xxl_path.c_str(), llm_path.c_str(), llm_vision_path.c_str(),
-        diffusion_model_path.c_str(), high_noise_diffusion_model_path.c_str(), vae_path.c_str(), taesd_path.c_str(), control_net_path.c_str(),
-        embedding_vec.data(), static_cast<uint32_t>(embedding_vec.size()), photo_maker_path.c_str(), tensor_type_rules.c_str(), vae_decode_only, free_params_immediately,
-        n_threads, wtype, rng_type, sampler_rng_type, prediction, lora_apply_mode, offload_params_to_cpu, enable_mmap, clip_on_cpu, control_net_cpu, vae_on_cpu,
-        diffusion_flash_attn, taesd_preview, diffusion_conv_direct, vae_conv_direct, false, false, force_sdxl_vae_conv_scale, chroma_use_dit_mask,
-        chroma_use_t5_mask, chroma_t5_mask_pad, qwen_image_zero_cond_t, flow_shift,
-    };
+    
+    sd_ctx_params_t params;
+    sd_ctx_params_init(&params);
+
+    params.model_path = model_path.c_str();
+    params.clip_l_path = clip_l_path.c_str();
+    params.clip_g_path = clip_g_path.c_str();
+    params.clip_vision_path = clip_vision_path.c_str();
+    params.t5xxl_path = t5xxl_path.c_str();
+    params.llm_path = llm_path.c_str();
+    params.llm_vision_path = llm_vision_path.c_str();
+    params.diffusion_model_path = diffusion_model_path.c_str();
+    params.high_noise_diffusion_model_path = high_noise_diffusion_model_path.c_str();
+    params.vae_path = vae_path.c_str();
+    params.taesd_path = taesd_path.c_str();
+    params.control_net_path = control_net_path.c_str();
+    params.embeddings = embedding_vec.empty() ? nullptr : embedding_vec.data();
+    params.embedding_count = static_cast<uint32_t>(embedding_vec.size());
+    params.photo_maker_path = photo_maker_path.c_str();
+    params.tensor_type_rules = tensor_type_rules.c_str();
+    params.vae_decode_only = vae_decode_only;
+    params.free_params_immediately = free_params_immediately;
+    params.n_threads = n_threads;
+    params.wtype = wtype;
+    params.rng_type = rng_type;
+    params.sampler_rng_type = sampler_rng_type;
+    params.prediction = prediction;
+    params.lora_apply_mode = lora_apply_mode;
+    params.offload_params_to_cpu = offload_params_to_cpu;
+    params.enable_mmap = enable_mmap;
+    params.keep_clip_on_cpu = clip_on_cpu;
+    params.keep_control_net_on_cpu = control_net_cpu;
+    params.keep_vae_on_cpu = vae_on_cpu;
+    params.diffusion_flash_attn = diffusion_flash_attn;
+    params.tae_preview_only = taesd_preview;
+    params.diffusion_conv_direct = diffusion_conv_direct;
+    params.vae_conv_direct = vae_conv_direct;
+    params.force_sdxl_vae_conv_scale = force_sdxl_vae_conv_scale;
+    params.chroma_use_dit_mask = chroma_use_dit_mask;
+    params.chroma_use_t5_mask = chroma_use_t5_mask;
+    params.chroma_t5_mask_pad = chroma_t5_mask_pad;
+    params.qwen_image_zero_cond_t = qwen_image_zero_cond_t;
+    params.flow_shift = flow_shift;
+
     return params;
 }
 
@@ -385,16 +421,38 @@ void SDGenerationParams::extract_and_remove_lora(const std::string& lora_model_d
     static const std::regex re(R"(<lora:([^:>]+):([^>]+)>)");
     std::smatch m;
     std::string tmp = prompt;
+    
+    // Clear previous lora state to avoid accumulation on retries
+    lora_map.clear();
+    lora_paths.clear();
+    lora_vec.clear();
+
     while (std::regex_search(tmp, m, re)) {
         std::string raw_path = m[1].str();
-        float mul = std::stof(m[2].str());
+        float mul = 1.0f;
+        try { mul = std::stof(m[2].str()); } catch (...) {}
+        
         fs::path final_path = is_abs_path(raw_path) ? fs::path(raw_path) : fs::path(lora_model_dir) / raw_path;
         lora_map[final_path.lexically_normal().string()] += mul;
         prompt = std::regex_replace(prompt, re, "", std::regex_constants::format_first_only);
         tmp = m.suffix().str();
     }
+    
+    if (lora_map.empty()) return;
+
+    // 1. Populate all strings first to ensure they are stable in the vector
+    lora_paths.reserve(lora_map.size());
     for (const auto& kv : lora_map) {
-        sd_lora_t item; item.is_high_noise = false; item.path = kv.first.c_str(); item.multiplier = kv.second;
+        lora_paths.push_back(kv.first);
+    }
+    
+    // 2. Now populate the pointers to those stable strings
+    lora_vec.reserve(lora_paths.size());
+    for (size_t i = 0; i < lora_paths.size(); ++i) {
+        sd_lora_t item; 
+        item.is_high_noise = false; 
+        item.path = lora_paths[i].c_str(); 
+        item.multiplier = lora_map[lora_paths[i]];
         lora_vec.emplace_back(item);
     }
 }

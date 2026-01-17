@@ -72,6 +72,7 @@ cmake $ProjectRoot $Generator `
     -DSD_CUDA=ON `
     -DGGML_CUDA=ON `
     -DCMAKE_CXX_STANDARD=17 `
+    -DCMAKE_BUILD_TYPE=Release `
     -DSD_BUILD_EXTERNAL_GGML=ON
 
 Write-Host "Building Llama.cpp..."

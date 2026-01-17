@@ -158,6 +158,7 @@ struct SDGenerationParams {
 
     std::map<std::string, float> lora_map;
     std::map<std::string, float> high_noise_lora_map;
+    std::vector<std::string> lora_paths; // New: Keep strings alive for pointers in lora_vec
     std::vector<sd_lora_t> lora_vec;
 
     SDGenerationParams();

@@ -24,6 +24,7 @@ interface ImagePreset {
   llm_path: string
   vram_weights_mb_estimate: number
   default_params?: any
+  preferred_params?: any
 }
 
 interface LlmPreset {
@@ -319,7 +320,7 @@ function openPresetModal(type: 'image' | 'llm', preset?: any) {
   isEditingPreset.value = !!preset
   if (type === 'image') {
     if (preset) editingImagePreset.value = { ...preset }
-    else editingImagePreset.value = { id: 0, name: '', unet_path: '', vae_path: '', clip_l_path: '', clip_g_path: '', t5xxl_path: '', llm_path: '', vram_weights_mb_estimate: 0, default_params: {} }
+    else editingImagePreset.value = { id: 0, name: '', unet_path: '', vae_path: '', clip_l_path: '', clip_g_path: '', t5xxl_path: '', llm_path: '', vram_weights_mb_estimate: 0, default_params: {}, preferred_params: { memory: { force_clip_cpu: false } } }
   } else {
     if (preset) editingLlmPreset.value = { ...preset }
     else editingLlmPreset.value = { id: 0, name: '', model_path: '', mmproj_path: '', n_ctx: 2048, system_prompt_assistant: '', system_prompt_tagging: '', system_prompt_style: '' }
