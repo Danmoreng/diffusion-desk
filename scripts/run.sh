@@ -41,7 +41,6 @@ cd "$PROJECT_ROOT"
 
 # Build arguments
 ARGS=(
-    --model-dir "$MODEL_BASE"
     --llm-idle-timeout "$IDLE_TIMEOUT"
     --listen-port 1234
     --verbose

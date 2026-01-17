@@ -99,7 +99,7 @@ int run_orchestrator(int argc, const char** argv, SDSvrParams& svr_params) {
         g_res_mgr = std::make_shared<diffusion_desk::ResourceManager>(sd_port, llm_port, g_internal_token);
         g_ws_mgr = std::make_shared<diffusion_desk::WsManager>(svr_params.listen_port + WS_PORT_OFFSET, "127.0.0.1");
         g_tool_svc = std::make_shared<diffusion_desk::ToolService>(g_db, sd_port, llm_port, g_internal_token);
-        g_controller = std::make_shared<diffusion_desk::ServiceController>(g_db, g_res_mgr, g_ws_mgr, g_tool_svc, sd_port, llm_port, g_internal_token);
+        g_controller = std::make_shared<diffusion_desk::ServiceController>(g_db, g_res_mgr, g_ws_mgr, g_tool_svc, svr_params, sd_port, llm_port, g_internal_token);
         g_import_svc = std::make_unique<diffusion_desk::ImportService>(g_db);
         g_import_svc->auto_import_outputs(svr_params.output_dir);
     } catch (const std::exception& e) {
@@ -173,7 +173,7 @@ int run_orchestrator(int argc, const char** argv, SDSvrParams& svr_params) {
     std::thread([svr_params]() {
         // Wait a bit for workers to be ready
         if (wait_for_health_simple(sd_port, g_internal_token, 10)) {
-            g_controller->load_last_presets(svr_params);
+            g_controller->load_last_presets();
         }
     }).detach();
 
@@ -329,7 +329,7 @@ int run_orchestrator(int argc, const char** argv, SDSvrParams& svr_params) {
     }).detach();
 
     httplib::Server svr;
-    g_controller->register_routes(svr, svr_params);
+    g_controller->register_routes(svr);
     DD_LOG_INFO("Orchestrator listening on %s:%d", svr_params.listen_ip.c_str(), svr_params.listen_port);
     svr.listen(svr_params.listen_ip, svr_params.listen_port);
     is_shutting_down = true;

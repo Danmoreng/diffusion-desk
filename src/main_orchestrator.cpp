@@ -36,6 +36,23 @@ int main(int argc, const char** argv) {
     SDContextParams ctx_params;
     SDGenerationParams default_gen_params;
     
+    // 0. Ensure config.json exists (First Run)
+    fs::path config_path = "config.json";
+    if (!fs::exists(config_path)) {
+        fs::path default_config_path = "config.default.json";
+        if (fs::exists(default_config_path)) {
+            DD_LOG_INFO("First run detected. Copying %s to %s", default_config_path.string().c_str(), config_path.string().c_str());
+            try {
+                fs::copy_file(default_config_path, config_path);
+            } catch (const std::exception& e) {
+                DD_LOG_ERROR("Failed to copy default config: %s", e.what());
+            }
+        } else {
+             // Fallback if default file is missing (e.g. distributed binary without sources)
+             DD_LOG_WARN("config.json not found and config.default.json missing. Using internal defaults.");
+        }
+    }
+
     // 1. Try to load config.json from various locations
     std::vector<fs::path> config_search_paths = {
         "config.json",

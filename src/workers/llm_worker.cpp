@@ -69,6 +69,20 @@ void handle_unload_llm_model(httplib::Response& res, LlamaServer& llm_server) {
     res.set_content(R"({\"status\":\"success\"})", "application/json");
 }
 
+void handle_post_config(const httplib::Request& req, httplib::Response& res, SDSvrParams& svr_params) {
+    try {
+        diffusion_desk::json body = diffusion_desk::json::parse(req.body);
+        if (body.contains("model_dir")) {
+            svr_params.model_dir = body["model_dir"];
+            DD_LOG_INFO("Config updated: model_dir = %s", svr_params.model_dir.c_str());
+        }
+        res.set_content(R"({\"status\":\"success\"})", "application/json");
+    } catch (const std::exception& e) {
+        res.status = 400;
+        res.set_content(make_error_json("invalid_json", e.what()), "application/json");
+    }
+}
+
 void ensure_llm_loaded(SDSvrParams& svr_params, LlamaServer& llm_server) {
     if (llm_server.is_loaded()) return;
 
@@ -141,6 +155,10 @@ int run_llm_worker(SDSvrParams& svr_params, LLMContextParams& ctx_params) {
     svr.Post("/internal/shutdown", [&](const httplib::Request&, httplib::Response& res) {
         res.set_content(R"({\"status\":\"shutting_down\"})", "application/json");
         svr.stop();
+    });
+
+    svr.Post("/internal/config", [&](const httplib::Request& req, httplib::Response& res) {
+        handle_post_config(req, res, svr_params);
     });
 
     svr.Post("/v1/llm/load", [&](const httplib::Request& req, httplib::Response& res) { 

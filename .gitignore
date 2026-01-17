@@ -40,6 +40,9 @@ public/app/
 *.db-shm
 *.db-wal
 
+# Config
+config.json
+
 # Test artifacts
 scripts/tests/*.png
 scripts/tests/comparison_results/

@@ -55,7 +55,7 @@ Write-Host "-------------------------------------------"
 # We don't need Push-Location if we use absolute path to exe, 
 # BUT the server might expect CWD to be project root for assets (./public).
 Set-Location $ProjectRoot
-$Args = @("--model-dir", "$ModelBase", "--llm-idle-timeout", $IdleTimeout, "--listen-port", 1234, "--verbose")
+$Args = @("--llm-idle-timeout", $IdleTimeout, "--listen-port", 1234, "--verbose")
 if ($SDPath) { $Args += "--diffusion-model"; $Args += "$SDPath" }
 if ($LLMPath) { $Args += "--llm-model"; $Args += "$LLMPath" }
 

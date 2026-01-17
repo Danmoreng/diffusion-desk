@@ -11,9 +11,10 @@ ServiceController::ServiceController(std::shared_ptr<Database> db,
                                      std::shared_ptr<ResourceManager> res_mgr,
                                      std::shared_ptr<WsManager> ws_mgr,
                                      std::shared_ptr<ToolService> tool_svc,
+                                     const SDSvrParams& params,
                                      int sd_port, int llm_port,
                                      const std::string& token)
-    : m_db(db), m_res_mgr(res_mgr), m_ws_mgr(ws_mgr), m_tool_svc(tool_svc),
+    : m_db(db), m_res_mgr(res_mgr), m_ws_mgr(ws_mgr), m_tool_svc(tool_svc), m_params(params),
       m_sd_port(sd_port), m_llm_port(llm_port), m_token(token) {}
 
 void ServiceController::generate_style_preview(Style style, std::string output_dir) {
@@ -177,7 +178,7 @@ std::string compute_sd_signature(const diffusion_desk::json& j) {
     return ss.str();
 }
 
-bool ServiceController::ensure_sd_model_loaded(const diffusion_desk::json& model_config, const SDSvrParams& params) {
+bool ServiceController::ensure_sd_model_loaded(const diffusion_desk::json& model_config) {
     std::string model_id = model_config.value("model_id", "");
     if (model_id.empty()) return false;
     
@@ -225,7 +226,7 @@ bool ServiceController::ensure_sd_model_loaded(const diffusion_desk::json& model
     }
 }
 
-bool ServiceController::ensure_llm_loaded(const std::string& model_id, const SDSvrParams& params) {
+bool ServiceController::ensure_llm_loaded(const std::string& model_id) {
     if (model_id.empty()) return false;
     
     std::unique_lock<std::mutex> lock(m_load_mutex);
@@ -246,7 +247,7 @@ bool ServiceController::ensure_llm_loaded(const std::string& model_id, const SDS
     
     // Estimate size for arbitration
     float estimated_gb = 4.0f;
-    uint64_t model_bytes = get_file_size((fs::path(params.model_dir) / model_id).string());
+    uint64_t model_bytes = get_file_size((fs::path(m_params.model_dir) / model_id).string());
     if (model_bytes > 0) {
         estimated_gb = ((float)model_bytes / (1024.0f * 1024.0f * 1024.0f)) + 1.0f;
     }
@@ -265,7 +266,7 @@ bool ServiceController::ensure_llm_loaded(const std::string& model_id, const SDS
     if (m_db) {
         auto presets = m_db->get_llm_presets();
         for (const auto& p : presets) {
-            if (p.is_object() && (p["model_path"] == model_id || p["model_path"] == (fs::path(params.model_dir) / model_id).string())) {
+            if (p.is_object() && (p["model_path"] == model_id || p["model_path"] == (fs::path(m_params.model_dir) / model_id).string())) {
                 if (p.contains("mmproj_path") && !p["mmproj_path"].get<std::string>().empty()) {
                     load_req["mmproj_id"] = p["mmproj_path"];
                 }
@@ -303,7 +304,7 @@ bool ServiceController::ensure_llm_loaded(const std::string& model_id, const SDS
     }
 }
 
-bool ServiceController::load_llm_preset(int preset_id, const SDSvrParams& params) {
+bool ServiceController::load_llm_preset(int preset_id) {
     if (!m_db) return false;
     auto presets = m_db->get_llm_presets();
     diffusion_desk::json selected = nullptr;
@@ -313,7 +314,7 @@ bool ServiceController::load_llm_preset(int preset_id, const SDSvrParams& params
     std::string model_id = selected["model_path"];
     DD_LOG_INFO("Loading LLM Preset %d: %s", preset_id, model_id.c_str());
     
-    if (ensure_llm_loaded(model_id, params)) {
+    if (ensure_llm_loaded(model_id)) {
         m_last_llm_preset_id = preset_id;
         m_db->set_config("last_llm_preset_id", std::to_string(preset_id));
         return true;
@@ -321,7 +322,7 @@ bool ServiceController::load_llm_preset(int preset_id, const SDSvrParams& params
     return false;
 }
 
-void ServiceController::load_last_presets(const SDSvrParams& params) {
+void ServiceController::load_last_presets() {
     if (!m_db) return;
 
     std::string last_img = m_db->get_config("last_image_preset_id");
@@ -343,7 +344,7 @@ void ServiceController::load_last_presets(const SDSvrParams& params) {
                     config["t5xxl"] = p["t5xxl_path"];
                     config["llm"] = p["llm_path"];
                     
-                    ensure_sd_model_loaded(config, params);
+                    ensure_sd_model_loaded(config);
                     m_last_image_preset_id = id;
                     break;
                 }
@@ -354,7 +355,7 @@ void ServiceController::load_last_presets(const SDSvrParams& params) {
     if (!last_llm.empty()) {
         try {
             int id = std::stoi(last_llm);
-            load_llm_preset(id, params);
+            load_llm_preset(id);
         } catch(...) {}
     }
 }
@@ -419,18 +420,18 @@ void ServiceController::notify_model_loaded(const std::string& type, const std::
     }
 }
 
-void ServiceController::register_routes(httplib::Server& svr, const SDSvrParams& params) {
-    if (!svr.set_mount_point("/app", params.app_dir)) {
-        DD_LOG_WARN("failed to mount %s directory", params.app_dir.c_str());
+void ServiceController::register_routes(httplib::Server& svr) {
+    if (!svr.set_mount_point("/app", m_params.app_dir)) {
+        DD_LOG_WARN("failed to mount %s directory", m_params.app_dir.c_str());
     }
 
     svr.Get("/", [](const httplib::Request&, httplib::Response& res) {
         res.set_redirect("/app/");
     });
 
-    svr.set_error_handler([params](const httplib::Request& req, httplib::Response& res) {
+    svr.set_error_handler([this](const httplib::Request& req, httplib::Response& res) {
         if (req.path.find("/app/") == 0 && res.status == 404) {
-            std::string index_path = (fs::path(params.app_dir) / "index.html").string();
+            std::string index_path = (fs::path(m_params.app_dir) / "index.html").string();
             std::ifstream file(index_path, std::ios::binary);
             if (file) {
                 std::string content((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
@@ -460,7 +461,7 @@ void ServiceController::register_routes(httplib::Server& svr, const SDSvrParams&
         Proxy::forward_request(req, res, "127.0.0.1", m_llm_port, "", m_token);
     };
 
-    svr.Post("/v1/models/load", [this, params](const httplib::Request& req, httplib::Response& res) {
+    svr.Post("/v1/models/load", [this](const httplib::Request& req, httplib::Response& res) {
         DD_LOG_INFO("Request: POST /v1/models/load, Body: %s", req.body.c_str());
         diffusion_desk::json config;
         try {
@@ -475,7 +476,7 @@ void ServiceController::register_routes(httplib::Server& svr, const SDSvrParams&
         }
 
         // Use ensure helper which handles queueing
-        if (ensure_sd_model_loaded(config, params)) {
+        if (ensure_sd_model_loaded(config)) {
             res.status = 200;
             res.set_content(R"({\"status\":\"success\"})", "application/json");
         } else {
@@ -484,7 +485,7 @@ void ServiceController::register_routes(httplib::Server& svr, const SDSvrParams&
         }
     });
 
-    svr.Post("/v1/llm/load", [this, params](const httplib::Request& req, httplib::Response& res) {
+    svr.Post("/v1/llm/load", [this](const httplib::Request& req, httplib::Response& res) {
         DD_LOG_INFO("Request: POST /v1/llm/load, Body: %s", req.body.c_str());
         std::string model_id = "";
         try {
@@ -498,7 +499,7 @@ void ServiceController::register_routes(httplib::Server& svr, const SDSvrParams&
             return;
         }
 
-        if (ensure_llm_loaded(model_id, params)) {
+        if (ensure_llm_loaded(model_id)) {
             res.status = 200;
             res.set_content(R"({\"status\":\"success\"})", "application/json");
         } else {
@@ -507,7 +508,7 @@ void ServiceController::register_routes(httplib::Server& svr, const SDSvrParams&
         }
     });
 
-    svr.Post("/v1/images/generations", [this, params](const httplib::Request& req, httplib::Response& res) {
+    svr.Post("/v1/images/generations", [this](const httplib::Request& req, httplib::Response& res) {
         RequestIdGuard request_id_guard("req-" + generate_random_token(8));
 
         struct GenActiveGuard {
@@ -540,7 +541,7 @@ void ServiceController::register_routes(httplib::Server& svr, const SDSvrParams&
 
         if (explicit_load_request) {
              // User requested specific model ID. Use basic config.
-             if (!ensure_sd_model_loaded(requested_config, params)) {
+             if (!ensure_sd_model_loaded(requested_config)) {
                 res.status = 503;
                 res.set_content(R"({\"error\":\"Model not loaded and lazy load failed.\"})", "application/json");
                 return;
@@ -556,7 +557,7 @@ void ServiceController::register_routes(httplib::Server& svr, const SDSvrParams&
             }
             
             if (!requested_model_id.empty()) {
-                if (!ensure_sd_model_loaded(requested_config, params)) {
+                if (!ensure_sd_model_loaded(requested_config)) {
                     res.status = 503;
                     res.set_content(R"({\"error\":\"Model not loaded and lazy load failed.\"})", "application/json");
                     return;
@@ -579,7 +580,7 @@ void ServiceController::register_routes(httplib::Server& svr, const SDSvrParams&
 
         float base_gb = 4.5f;
         float clip_gb = 0.0f;
-        fs::path model_path = fs::path(params.model_dir) / requested_model_id;
+        fs::path model_path = fs::path(m_params.model_dir) / requested_model_id;
         uint64_t size_bytes = get_file_size(model_path.string());
         if (size_bytes > 0) {
             base_gb = (float)size_bytes / (1024.0f * 1024.0f * 1024.0f) + 0.5f;
@@ -686,7 +687,7 @@ void ServiceController::register_routes(httplib::Server& svr, const SDSvrParams&
         }
     });
 
-    svr.Post("/v1/chat/completions", [this, params](const httplib::Request& req, httplib::Response& res) {
+    svr.Post("/v1/chat/completions", [this](const httplib::Request& req, httplib::Response& res) {
         std::string model_id = "";
         try {
             auto j = diffusion_desk::json::parse(req.body);
@@ -694,12 +695,12 @@ void ServiceController::register_routes(httplib::Server& svr, const SDSvrParams&
         } catch(...) {}
 
         if (!model_id.empty()) {
-            ensure_llm_loaded(model_id, params);
+            ensure_llm_loaded(model_id);
         }
         Proxy::forward_request(req, res, "127.0.0.1", m_llm_port, "", m_token);
     });
 
-    svr.Post("/v1/completions", [this, params](const httplib::Request& req, httplib::Response& res) {
+    svr.Post("/v1/completions", [this](const httplib::Request& req, httplib::Response& res) {
         std::string model_id = "";
         try {
             auto j = diffusion_desk::json::parse(req.body);
@@ -707,7 +708,7 @@ void ServiceController::register_routes(httplib::Server& svr, const SDSvrParams&
         } catch(...) {}
 
         if (!model_id.empty()) {
-            ensure_llm_loaded(model_id, params);
+            ensure_llm_loaded(model_id);
         }
         Proxy::forward_request(req, res, "127.0.0.1", m_llm_port, "", m_token);
     });
@@ -719,8 +720,77 @@ void ServiceController::register_routes(httplib::Server& svr, const SDSvrParams&
     svr.Post("/v1/llm/offload", proxy_llm);
 
     svr.Get("/v1/models", proxy_sd);
-    svr.Get("/v1/config", proxy_sd);
-    svr.Post("/v1/config", proxy_sd);
+    
+    // Intercept GET /v1/config to enforce Orchestrator's truth about setup_completed
+    svr.Get("/v1/config", [this](const httplib::Request& req, httplib::Response& res) {
+        httplib::Client cli("127.0.0.1", m_sd_port);
+        httplib::Headers h; 
+        if (!m_token.empty()) h.emplace("X-Internal-Token", m_token);
+        
+        if (auto res_sd = cli.Get("/v1/config", h)) {
+            res.status = res_sd->status;
+            try {
+                auto j = diffusion_desk::json::parse(res_sd->body);
+                // Override setup_completed with Orchestrator's truth (loaded from config.json)
+                j["setup_completed"] = m_params.setup_completed;
+                res.set_content(j.dump(), "application/json");
+            } catch (...) {
+                // Fallback if parsing fails (unlikely)
+                res.set_content(res_sd->body, "application/json");
+            }
+        } else {
+            res.status = 500;
+            res.set_content(R"({\"error\":\"Failed to reach SD worker\"})", "application/json");
+        }
+    });
+    
+    // Intercept config update to broadcast to all components
+    svr.Post("/v1/config", [this](const httplib::Request& req, httplib::Response& res) {
+        // 1. Update local config
+        try {
+            auto j = diffusion_desk::json::parse(req.body);
+            if (j.contains("model_dir")) {
+                std::string new_dir = j["model_dir"];
+                m_params.model_dir = new_dir;
+                DD_LOG_INFO("Config updated (Orchestrator): model_dir = %s", new_dir.c_str());
+            }
+            if (j.contains("output_dir")) {
+                m_params.output_dir = j["output_dir"];
+            }
+            if (j.contains("setup_completed")) {
+                m_params.setup_completed = j["setup_completed"];
+            }
+            m_params.save_to_file("config.json");
+        } catch (...) {}
+
+        // 2. Forward to Workers
+        bool sd_ok = false;
+        bool llm_ok = false;
+
+        // Forward to SD
+        httplib::Client cli_sd("127.0.0.1", m_sd_port);
+        httplib::Headers h;
+        if (!m_token.empty()) h.emplace("X-Internal-Token", m_token);
+        if (auto res_sd = cli_sd.Post("/v1/config", h, req.body, "application/json")) {
+            if (res_sd->status == 200) sd_ok = true;
+        }
+
+        // Forward to LLM (new internal endpoint)
+        httplib::Client cli_llm("127.0.0.1", m_llm_port);
+        if (auto res_llm = cli_llm.Post("/internal/config", h, req.body, "application/json")) {
+            if (res_llm->status == 200) llm_ok = true;
+        }
+
+        if (sd_ok) {
+            // If SD worked, we consider it a success for now, as LLM might be optional or old version
+            if (!llm_ok) DD_LOG_WARN("Config update sent to LLM worker failed (possibly not supported yet)");
+            res.set_content(R"({\"status\":\"success\"})", "application/json");
+        } else {
+            res.status = 500;
+            res.set_content(R"({\"error\":\"Failed to update workers\"})", "application/json");
+        }
+    });
+
     svr.Post("/v1/upscale/load", proxy_sd);
     svr.Post("/v1/images/upscale", proxy_sd);
     
@@ -773,13 +843,13 @@ void ServiceController::register_routes(httplib::Server& svr, const SDSvrParams&
         } catch(...) { res.status = 400; }
     });
 
-    svr.Post("/v1/models/metadata/preview", [this, params](const httplib::Request& req, httplib::Response& res) {
+    svr.Post("/v1/models/metadata/preview", [this](const httplib::Request& req, httplib::Response& res) {
         if (!m_db) { res.status = 500; return; }
         try {
             auto j = diffusion_desk::json::parse(req.body);
             std::string model_id = j.value("id", "");
             if (model_id.empty()) { res.status = 400; return; }
-            std::thread(&ServiceController::generate_model_preview, this, model_id, params.output_dir).detach();
+            std::thread(&ServiceController::generate_model_preview, this, model_id, m_params.output_dir).detach();
             res.set_content(R"({\"status\":\"success\",\"message\":\"Preview generation started in background\"})", "application/json");
         } catch(...) { res.status = 400; }
     });
@@ -789,7 +859,7 @@ void ServiceController::register_routes(httplib::Server& svr, const SDSvrParams&
         res.set_content(m_db->get_styles().dump(), "application/json");
     });
 
-    svr.Post("/v1/styles", [this, params](const httplib::Request& req, httplib::Response& res) {
+    svr.Post("/v1/styles", [this](const httplib::Request& req, httplib::Response& res) {
         if (!m_db) { res.status = 500; return; }
         try {
             auto j = diffusion_desk::json::parse(req.body);
@@ -800,12 +870,12 @@ void ServiceController::register_routes(httplib::Server& svr, const SDSvrParams&
             s.preview_path = j.value("preview_path", "");
             if (s.name.empty()) { res.status = 400; return; }
             m_db->save_style(s);
-            std::thread(&ServiceController::generate_style_preview, this, s, params.output_dir).detach();
+            std::thread(&ServiceController::generate_style_preview, this, s, m_params.output_dir).detach();
             res.set_content(R"({\"status\":\"success\"})", "application/json");
         } catch(...) { res.status = 400; }
     });
 
-    svr.Post("/v1/styles/extract", [this, params](const httplib::Request& req, httplib::Response& res) {
+    svr.Post("/v1/styles/extract", [this](const httplib::Request& req, httplib::Response& res) {
         if (!m_db) { res.status = 500; return; }
         try {
             auto j = diffusion_desk::json::parse(req.body);
@@ -821,7 +891,7 @@ void ServiceController::register_routes(httplib::Server& svr, const SDSvrParams&
             httplib::Headers h;
             if (!m_token.empty()) h.emplace("X-Internal-Token", m_token);
 
-            std::string sys_prompt = params.style_extractor_system_prompt;
+            std::string sys_prompt = m_params.style_extractor_system_prompt;
             if (m_db && m_last_llm_preset_id > 0) {
                 auto presets = m_db->get_llm_presets();
                 for (const auto& p : presets) {
@@ -884,7 +954,7 @@ void ServiceController::register_routes(httplib::Server& svr, const SDSvrParams&
                         }
 
                         if (!new_styles.empty()) {
-                            std::thread([this, new_styles, out_dir = params.output_dir]() {
+                            std::thread([this, new_styles, out_dir = m_params.output_dir]() {
                                 for (const auto& s : new_styles) {
                                     generate_style_preview(s, out_dir);
                                 }
@@ -906,7 +976,7 @@ void ServiceController::register_routes(httplib::Server& svr, const SDSvrParams&
         }
     });
 
-    svr.Post("/v1/styles/previews/fix", [this, params](const httplib::Request&, httplib::Response& res) {
+    svr.Post("/v1/styles/previews/fix", [this](const httplib::Request&, httplib::Response& res) {
         if (!m_db) { res.status = 500; return; }
         auto all_styles_json = m_db->get_styles();
         std::vector<diffusion_desk::Style> missing;
@@ -920,7 +990,7 @@ void ServiceController::register_routes(httplib::Server& svr, const SDSvrParams&
             }
         }
         if (!missing.empty()) {
-            std::thread([this, missing, out_dir = params.output_dir]() {
+            std::thread([this, missing, out_dir = m_params.output_dir]() {
                 for (const auto& s : missing) {
                     generate_style_preview(s, out_dir);
                 }
@@ -995,7 +1065,7 @@ void ServiceController::register_routes(httplib::Server& svr, const SDSvrParams&
         } catch(...) { res.status = 400; }
     });
 
-    svr.Delete(R"(/v1/history/images/([^/]+))", [this, params](const httplib::Request& req, httplib::Response& res) {
+    svr.Delete(R"(/v1/history/images/([^/]+))", [this](const httplib::Request& req, httplib::Response& res) {
         if (!m_db) { res.status = 500; return; }
         std::string uuid = req.matches[1];
         bool delete_file = req.has_param("delete_file") && req.get_param_value("delete_file") == "true";
@@ -1004,7 +1074,7 @@ void ServiceController::register_routes(httplib::Server& svr, const SDSvrParams&
             std::string path_url = m_db->get_generation_filepath(uuid);
             if (!path_url.empty() && path_url.find("/outputs/") == 0) {
                 std::string filename = path_url.substr(9);
-                fs::path p = fs::path(params.output_dir) / filename;
+                fs::path p = fs::path(m_params.output_dir) / filename;
                 try {
                     if (fs::exists(p)) {
                         fs::remove(p);
@@ -1024,8 +1094,8 @@ void ServiceController::register_routes(httplib::Server& svr, const SDSvrParams&
     svr.Get("/v1/progress", proxy_sd);
     svr.Get("/v1/stream/progress", proxy_sd); 
     
-    svr.Get("/outputs/previews/([^/]+)", [params](const httplib::Request& req, httplib::Response& res) {
-        fs::path p = fs::path(params.output_dir) / "previews" / std::string(req.matches[1]);
+    svr.Get("/outputs/previews/([^/]+)", [this](const httplib::Request& req, httplib::Response& res) {
+        fs::path p = fs::path(m_params.output_dir) / "previews" / std::string(req.matches[1]);
         if (fs::exists(p) && fs::is_regular_file(p)) {
             std::ifstream ifs(p.string(), std::ios::binary);
             std::string content((std::istreambuf_iterator<char>(ifs)), (std::istreambuf_iterator<char>()));
@@ -1057,7 +1127,7 @@ void ServiceController::register_routes(httplib::Server& svr, const SDSvrParams&
         res.set_content(j.dump(), "application/json");
     });
 
-    svr.Post("/v1/presets/image", [this, params](const httplib::Request& req, httplib::Response& res) {
+    svr.Post("/v1/presets/image", [this](const httplib::Request& req, httplib::Response& res) {
         if (!m_db) { res.status = 500; return; }
         try {
             auto j = diffusion_desk::json::parse(req.body);
@@ -1080,7 +1150,7 @@ void ServiceController::register_routes(httplib::Server& svr, const SDSvrParams&
                 uint64_t total_bytes = 0;
                 auto check_size = [&](const std::string& rel_path) {
                     if (rel_path.empty()) return;
-                    fs::path full_path = fs::path(params.model_dir) / rel_path;
+                    fs::path full_path = fs::path(m_params.model_dir) / rel_path;
                     total_bytes += get_file_size(full_path.string());
                 };
                 check_size(p.unet_path);
@@ -1135,7 +1205,7 @@ void ServiceController::register_routes(httplib::Server& svr, const SDSvrParams&
         res.set_content(R"({\"status\":\"success\"})", "application/json");
     });
 
-    svr.Post("/v1/presets/image/load", [this, params](const httplib::Request& req, httplib::Response& res) {
+    svr.Post("/v1/presets/image/load", [this](const httplib::Request& req, httplib::Response& res) {
         if (!m_db) { res.status = 500; return; }
         try {
             auto j = diffusion_desk::json::parse(req.body);
@@ -1157,7 +1227,7 @@ void ServiceController::register_routes(httplib::Server& svr, const SDSvrParams&
             config["t5xxl"] = selected["t5xxl_path"];
             config["llm"] = selected["llm_path"];
             
-            if (ensure_sd_model_loaded(config, params)) {
+            if (ensure_sd_model_loaded(config)) {
                 m_last_image_preset_id = id;
                 m_db->set_config("last_image_preset_id", std::to_string(id));
                 res.status = 200;
@@ -1169,12 +1239,12 @@ void ServiceController::register_routes(httplib::Server& svr, const SDSvrParams&
         } catch(...) { res.status = 400; }
     });
 
-    svr.Post("/v1/presets/llm/load", [this, params](const httplib::Request& req, httplib::Response& res) {
+    svr.Post("/v1/presets/llm/load", [this](const httplib::Request& req, httplib::Response& res) {
         if (!m_db) { res.status = 500; return; }
         try {
             auto j = diffusion_desk::json::parse(req.body);
             int id = j.value("id", 0);
-            if (load_llm_preset(id, params)) {
+            if (load_llm_preset(id)) {
                 res.status = 200;
                 res.set_content(R"({\"status\":\"success\"})", "application/json");
             } else {
@@ -1202,9 +1272,9 @@ void ServiceController::register_routes(httplib::Server& svr, const SDSvrParams&
         }
     });
 
-    svr.Get("/v1/assistant/config", [this, params](const httplib::Request&, httplib::Response& res) {
+    svr.Get("/v1/assistant/config", [this](const httplib::Request&, httplib::Response& res) {
         diffusion_desk::json c;
-        std::string prompt = params.assistant_system_prompt;
+        std::string prompt = m_params.assistant_system_prompt;
         
         if (m_db && m_last_llm_preset_id > 0) {
             auto presets = m_db->get_llm_presets();

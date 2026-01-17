@@ -37,6 +37,7 @@ void handle_get_config(const httplib::Request&, httplib::Response& res, ServerCo
     diffusion_desk::json c;
     c["output_dir"] = ctx.svr_params.output_dir;
     c["model_dir"] = ctx.svr_params.model_dir;
+    c["setup_completed"] = ctx.svr_params.setup_completed;
     
     // Use standalone diffusion model if set, otherwise full model path
     std::string current_model = ctx.ctx_params.diffusion_model_path;
@@ -56,6 +57,9 @@ void handle_post_config(const httplib::Request& req, httplib::Response& res, Ser
         if (body.contains("model_dir")) {
             ctx.svr_params.model_dir = body["model_dir"];
             DD_LOG_INFO("Config updated: model_dir = %s", ctx.svr_params.model_dir.c_str());
+        }
+        if (body.contains("setup_completed")) {
+            ctx.svr_params.setup_completed = body["setup_completed"];
         }
         res.set_content(R"({\"status\":\"success\"})", "application/json");
     } catch (const std::exception& e) {

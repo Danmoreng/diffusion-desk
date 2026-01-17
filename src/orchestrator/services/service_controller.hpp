@@ -16,13 +16,14 @@ public:
                       std::shared_ptr<ResourceManager> res_mgr,
                       std::shared_ptr<WsManager> ws_mgr,
                       std::shared_ptr<ToolService> tool_svc,
+                      const SDSvrParams& params,
                       int sd_port, int llm_port,
                       const std::string& token);
     
-    void register_routes(httplib::Server& svr, const SDSvrParams& params);
+    void register_routes(httplib::Server& svr);
 
     // Startup / State Restoration
-    void load_last_presets(const SDSvrParams& params);
+    void load_last_presets();
 
     // State accessors for recovery
     std::string get_last_sd_model_req() { std::lock_guard<std::mutex> lock(m_state_mutex); return m_last_sd_model_req_body; }
@@ -37,15 +38,16 @@ public:
     void notify_model_loaded(const std::string& type, const std::string& model_id);
 
     // Internal Smart Queue helpers
-    bool ensure_sd_model_loaded(const diffusion_desk::json& model_config, const SDSvrParams& params);
-    bool ensure_llm_loaded(const std::string& model_id, const SDSvrParams& params);
-    bool load_llm_preset(int preset_id, const SDSvrParams& params);
+    bool ensure_sd_model_loaded(const diffusion_desk::json& model_config);
+    bool ensure_llm_loaded(const std::string& model_id);
+    bool load_llm_preset(int preset_id);
 
 private:
     std::shared_ptr<Database> m_db;
     std::shared_ptr<ResourceManager> m_res_mgr;
     std::shared_ptr<WsManager> m_ws_mgr;
     std::shared_ptr<ToolService> m_tool_svc;
+    SDSvrParams m_params;
     int m_sd_port;
     int m_llm_port;
     std::string m_token;
