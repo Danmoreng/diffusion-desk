@@ -75,6 +75,37 @@ const availableLlmEncoders = computed(() => store.models.filter(m => m.type === 
        </select>
      </div>
      
+     <div class="col-12"><hr class="my-2"></div>
+     
+     <div class="col-12">
+        <label class="form-label fw-bold">Default Generation Parameters</label>
+        <div class="row g-2">
+            <div class="col-6 col-md-4">
+                <label class="form-label small text-muted">Width</label>
+                <input type="number" class="form-control form-control-sm" v-model.number="modelValue.default_params.width" placeholder="1024">
+            </div>
+            <div class="col-6 col-md-4">
+                <label class="form-label small text-muted">Height</label>
+                <input type="number" class="form-control form-control-sm" v-model.number="modelValue.default_params.height" placeholder="1024">
+            </div>
+            <div class="col-6 col-md-4">
+                <label class="form-label small text-muted">Sampler</label>
+                <select v-model="modelValue.default_params.sampler" class="form-select form-select-sm">
+                    <option :value="undefined">Model Default</option>
+                    <option v-for="s in store.samplers" :key="s" :value="s">{{ s }}</option>
+                </select>
+            </div>
+            <div class="col-6 col-md-6">
+                <label class="form-label small text-muted">Steps</label>
+                <input type="number" class="form-control form-control-sm" v-model.number="modelValue.default_params.steps" placeholder="20">
+            </div>
+            <div class="col-6 col-md-6">
+                <label class="form-label small text-muted">CFG Scale</label>
+                <input type="number" class="form-control form-control-sm" v-model.number="modelValue.default_params.cfg_scale" step="0.1" placeholder="3.5">
+            </div>
+        </div>
+     </div>
+
      <div class="col-12">
          <div class="form-text x-small">Note: For Flux/SD3, ensure you select the correct CLIP/T5 combination if not using a GGUF that embeds them.</div>
      </div>
