@@ -32,7 +32,7 @@ function toggleEndless() {
 
 <template>
   <div v-if="isGenerationPage" 
-       class="action-bar shadow-sm border-bottom border-top"
+       class="action-bar shadow-sm border-bottom border-top island"
        :class="[store.actionBarPosition === 'top' ? 'bar-top' : 'bar-bottom']">
     <div class="container-fluid d-flex justify-content-start align-items-center gap-2 py-2 px-3">
       
@@ -103,7 +103,7 @@ function toggleEndless() {
 .action-bar {
   position: sticky;
   z-index: 1000;
-  background-color: var(--bs-body-bg);
+  background-color: var(--island-surface-bg);
   width: 100%;
   transition: all 0.3s ease;
 }

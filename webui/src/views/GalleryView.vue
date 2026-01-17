@@ -65,7 +65,7 @@ function removeTagFilter(tag: string) {
 </script>
 
 <template>
-  <div class="gallery-view h-100 d-flex flex-column">
+  <div class="gallery-view h-100 d-flex flex-column island p-3">
     <div class="row mb-3 align-items-end g-3">
       <div class="col-12 col-xl-auto">
         <h3 class="mb-0">Gallery</h3>

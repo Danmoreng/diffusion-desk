@@ -89,7 +89,7 @@ const navigateToManager = (tab: string) => {
         </div>
         
         <div class="dropdown w-100">
-           <button class="btn btn-sm btn-outline-secondary w-100 text-start text-truncate d-flex justify-content-between align-items-center bg-body" type="button" @click.stop="toggleModelMenu">
+           <button class="btn btn-sm btn-outline-secondary w-100 text-start text-truncate d-flex justify-content-between align-items-center" style="background-color: var(--island-deep-bg)" type="button" @click.stop="toggleModelMenu">
              <span>{{ activePresetName }}</span>
              <i class="bi bi-chevron-down x-small"></i>
            </button>
@@ -120,7 +120,7 @@ const navigateToManager = (tab: string) => {
         </div>
         
         <div class="dropdown w-100">
-           <button class="btn btn-sm btn-outline-secondary w-100 text-start text-truncate d-flex justify-content-between align-items-center bg-body" type="button" @click.stop="toggleLlmMenu">
+           <button class="btn btn-sm btn-outline-secondary w-100 text-start text-truncate d-flex justify-content-between align-items-center" style="background-color: var(--island-deep-bg)" type="button" @click.stop="toggleLlmMenu">
              <span>{{ activeLlmPresetName }}</span>
              <i class="bi bi-chevron-down x-small"></i>
            </button>
@@ -152,7 +152,7 @@ const navigateToManager = (tab: string) => {
         </button>
         
         <!-- SD Custom Dropdown -->
-        <div v-if="isModelMenuOpen" class="custom-dropdown shadow border rounded bg-body text-start">
+        <div v-if="isModelMenuOpen" class="custom-dropdown shadow border rounded bg-body-tertiary text-start">
           <div class="dropdown-header border-bottom py-2 px-3 fw-bold small text-uppercase">Image Presets</div>
           <div class="dropdown-list">
             <div v-if="store.imagePresets.length === 0" class="p-3 text-muted small text-center italic">No presets.</div>
@@ -188,7 +188,7 @@ const navigateToManager = (tab: string) => {
         </button>
 
         <!-- LLM Custom Dropdown -->
-        <div v-if="isLlmMenuOpen" class="custom-dropdown shadow border rounded bg-body text-start">
+        <div v-if="isLlmMenuOpen" class="custom-dropdown shadow border rounded bg-body-tertiary text-start">
           <div class="dropdown-header border-bottom py-2 px-3 fw-bold small text-uppercase">Intelligence Presets</div>
           <div class="dropdown-list">
              <div v-if="store.llmPresets.length === 0" class="p-3 text-muted small text-center italic">No presets.</div>
@@ -226,7 +226,7 @@ const navigateToManager = (tab: string) => {
   max-height: 400px;
   overflow-y: auto;
   z-index: 9999 !important;
-  background-color: var(--bs-body-bg);
+  background-color: var(--bs-tertiary-bg);
 }
 
 .dropdown-item-btn {

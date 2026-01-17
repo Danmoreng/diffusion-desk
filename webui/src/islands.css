@@ -1,0 +1,132 @@
+:root {
+  /* ISLANDS THEME TOKENS */
+  /* Dark Mode Default */
+  --island-canvas-bg: #1e1f22;
+  --island-surface-bg: #2b2d31;
+  --island-deep-bg: #1e1f22; /* Inputs match canvas or slightly darker */
+  --island-elevated-bg: #393b40;
+  --island-divider: rgba(255, 255, 255, 0.08);
+  --island-text-primary: #bcbec4;
+  --island-text-muted: #7a7e85;
+  --island-accent: #56a8f5; /* Blue */
+  --island-success: #6aab73;
+  --island-info: #2aacb8;
+  --island-warning: #cf8e6d;
+  --island-radius: 10px;
+}
+
+[data-bs-theme="light"] {
+  --island-canvas-bg: #e6e8ee;
+  --island-surface-bg: #ffffff;
+  --island-deep-bg: #f5f6f8; /* Alt surface */
+  --island-elevated-bg: #ffffff;
+  --island-divider: rgba(0, 0, 0, 0.08);
+  --island-text-primary: #000000;
+  --island-text-muted: #8c8c8c;
+  --island-accent: #1750eb;
+}
+
+/* OVERRIDE BOOTSTRAP VARIABLES */
+:root {
+  --bs-body-bg: var(--island-canvas-bg);
+  --bs-body-color: var(--island-text-primary);
+  --bs-border-color: var(--island-divider);
+  
+  /* Map Bootstrap surfaces to Islands surfaces */
+  --bs-secondary-bg: var(--island-surface-bg); 
+  --bs-tertiary-bg: var(--island-elevated-bg);
+
+  --bs-border-radius: var(--island-radius);
+  --bs-border-radius-lg: 12px;
+  --bs-border-radius-sm: 6px;
+
+  --bs-link-color: var(--island-accent);
+  --bs-primary: var(--island-accent);
+  --bs-primary-rgb: 86, 168, 245; /* Approximate RGB for #56a8f5 */
+  
+  --bs-secondary-color: var(--island-text-muted); /* Fix text-muted visibility */
+}
+
+/* Fix Slider (Range) Track Visibility */
+.form-range::-webkit-slider-runnable-track {
+  background-color: var(--island-deep-bg);
+}
+.form-range::-moz-range-track {
+  background-color: var(--island-deep-bg);
+}
+
+/* UTILITY CLASS */
+.island {
+  background-color: var(--island-surface-bg);
+  border-radius: var(--island-radius);
+  border: 1px solid transparent;
+  /* overflow: hidden; Often useful, but can clip popovers if not careful */
+  box-shadow: 0 1px 3px rgba(0,0,0,0.1); 
+}
+
+/* COMPONENT OVERRIDES */
+
+/* Tabs */
+.nav-tabs {
+  border-bottom: 1px solid var(--island-divider);
+  --bs-nav-tabs-border-width: 0;
+}
+.nav-tabs .nav-link {
+  border: none;
+  color: var(--island-text-muted);
+  border-bottom: 3px solid transparent;
+  margin-bottom: -1px;
+  border-radius: 4px 4px 0 0; /* Slight rounding on top */
+}
+.nav-tabs .nav-link:hover {
+  color: var(--island-text-primary);
+  background-color: rgba(255,255,255,0.03);
+}
+.nav-tabs .nav-link.active {
+  background-color: var(--island-deep-bg); /* Slight bg for active */
+  color: var(--island-text-primary);
+  border-bottom-color: var(--island-accent);
+}
+
+/* Form Controls */
+.form-control, .form-select {
+  background-color: var(--island-deep-bg);
+  border-color: transparent;
+  color: var(--island-text-primary);
+}
+.form-control:focus, .form-select:focus {
+  background-color: var(--island-deep-bg);
+  border-color: var(--island-accent);
+  box-shadow: 0 0 0 2px rgba(86, 168, 245, 0.25); /* Accenty glow */
+  color: var(--island-text-primary);
+}
+
+/* Buttons */
+.btn-primary {
+  background-color: var(--island-accent);
+  border-color: var(--island-accent);
+  color: #fff; /* Ensure contrast */
+}
+.btn-secondary {
+    background-color: var(--island-deep-bg);
+    border-color: transparent;
+    color: var(--island-text-primary);
+}
+.btn-secondary:hover {
+    background-color: var(--island-elevated-bg);
+    border-color: var(--island-divider);
+}
+
+/* Dropdowns/Modals */
+.dropdown-menu, .modal-content, .popover {
+  background-color: var(--island-elevated-bg);
+  border: 1px solid var(--island-divider);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+}
+.dropdown-item {
+    color: var(--island-text-primary);
+}
+.dropdown-item:hover, .dropdown-item:focus {
+    background-color: var(--island-deep-bg);
+    color: var(--island-text-primary);
+}
