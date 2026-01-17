@@ -16,6 +16,29 @@ const availableVaEs = computed(() => store.models.filter(m => m.type === 'vae'))
 const availableClips = computed(() => store.models.filter(m => m.type === 'text-encoder' || m.type === 'clip'))
 const availableLlmEncoders = computed(() => store.models.filter(m => m.type === 'text-encoder' || m.type === 'llm'))
 
+const clipOnCpu = computed({
+  get: () => {
+    return props.modelValue.preferred_params?.memory?.force_clip_cpu || false
+  },
+  set: (val: boolean) => {
+    if (!props.modelValue.preferred_params) props.modelValue.preferred_params = {}
+    if (!props.modelValue.preferred_params.memory) props.modelValue.preferred_params.memory = {}
+    props.modelValue.preferred_params.memory.force_clip_cpu = val
+    emit('update:modelValue', props.modelValue)
+  }
+})
+
+const vaeTiling = computed({
+  get: () => {
+    return props.modelValue.preferred_params?.memory?.force_vae_tiling || false
+  },
+  set: (val: boolean) => {
+    if (!props.modelValue.preferred_params) props.modelValue.preferred_params = {}
+    if (!props.modelValue.preferred_params.memory) props.modelValue.preferred_params.memory = {}
+    props.modelValue.preferred_params.memory.force_vae_tiling = val
+    emit('update:modelValue', props.modelValue)
+  }
+})
 </script>
 
 <template>
@@ -103,6 +126,24 @@ const availableLlmEncoders = computed(() => store.models.filter(m => m.type === 
                 <label class="form-label small text-muted">CFG Scale</label>
                 <input type="number" class="form-control form-control-sm" v-model.number="modelValue.default_params.cfg_scale" step="0.1" placeholder="3.5">
             </div>
+        </div>
+     </div>
+
+     <div class="col-12">
+        <label class="form-label fw-bold">Performance & Memory</label>
+        <div class="form-check form-switch mb-2">
+            <input class="form-check-input" type="checkbox" id="clipOnCpu" v-model="clipOnCpu">
+            <label class="form-check-label small" for="clipOnCpu">
+                Clip on CPU
+                <span class="text-muted d-block x-small">Recommended for 8GB VRAM or less to save VRAM for the main model.</span>
+            </label>
+        </div>
+        <div class="form-check form-switch">
+            <input class="form-check-input" type="checkbox" id="vaeTiling" v-model="vaeTiling">
+            <label class="form-check-label small" for="vaeTiling">
+                VAE Tiling
+                <span class="text-muted d-block x-small">Process VAE in tiles to avoid OOM on large images or low VRAM.</span>
+            </label>
         </div>
      </div>
 

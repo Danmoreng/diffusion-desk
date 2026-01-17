@@ -378,6 +378,12 @@ void ServiceController::load_last_presets() {
                     config["clip_g"] = p["clip_g_path"];
                     config["t5xxl"] = p["t5xxl_path"];
                     config["llm"] = p["llm_path"];
+
+                    if (p.contains("preferred_params") && p["preferred_params"].contains("memory")) {
+                        auto mem = p["preferred_params"]["memory"];
+                        if (mem.value("force_clip_cpu", false)) config["clip_on_cpu"] = true;
+                        if (mem.value("force_vae_tiling", false)) config["vae_tiling"] = true;
+                    }
                     
                     ensure_sd_model_loaded(config);
                     m_last_image_preset_id = id;
@@ -652,6 +658,20 @@ void ServiceController::register_routes(httplib::Server& svr) {
                     auto mem = meta["memory"];
                     if (mem.value("force_clip_cpu", false)) j["clip_on_cpu"] = true;
                     if (mem.value("force_vae_tiling", false)) j["vae_tiling"] = true;
+                }
+
+                if (m_last_image_preset_id > 0) {
+                    auto presets = m_db->get_image_presets();
+                    for (const auto& p : presets) {
+                        if (p.value("id", -1) == m_last_image_preset_id) {
+                            if (p.contains("preferred_params") && p["preferred_params"].contains("memory")) {
+                                auto mem = p["preferred_params"]["memory"];
+                                if (mem.value("force_clip_cpu", false)) j["clip_on_cpu"] = true;
+                                if (mem.value("force_vae_tiling", false)) j["vae_tiling"] = true;
+                            }
+                            break;
+                        }
+                    }
                 }
             }
             
@@ -1182,6 +1202,13 @@ void ServiceController::register_routes(httplib::Server& svr) {
             p.default_params = j.value("default_params", diffusion_desk::json::object());
             p.preferred_params = j.value("preferred_params", diffusion_desk::json::object());
             
+            // Populate memory settings from preferred_params if available
+            if (p.preferred_params.contains("memory")) {
+                auto mem = p.preferred_params["memory"];
+                p.memory_settings.force_clip_cpu = mem.value("force_clip_cpu", false);
+                p.memory_settings.force_vae_tiling = mem.value("force_vae_tiling", false);
+            }
+
             if (p.name.empty()) { res.status = 400; return; }
 
             if (p.vram_weights_mb_estimate <= 0) {
@@ -1293,6 +1320,12 @@ void ServiceController::register_routes(httplib::Server& svr) {
             config["clip_g"] = selected["clip_g_path"];
             config["t5xxl"] = selected["t5xxl_path"];
             config["llm"] = selected["llm_path"];
+
+            if (selected.contains("preferred_params") && selected["preferred_params"].contains("memory")) {
+                auto mem = selected["preferred_params"]["memory"];
+                if (mem.value("force_clip_cpu", false)) config["clip_on_cpu"] = true;
+                if (mem.value("force_vae_tiling", false)) config["vae_tiling"] = true;
+            }
             
             if (ensure_sd_model_loaded(config)) {
                 m_last_image_preset_id = id;

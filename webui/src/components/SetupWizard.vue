@@ -22,7 +22,8 @@ const imagePreset = ref({
   t5xxl_path: '',
   llm_path: '',
   vram_weights_mb_estimate: 0,
-  default_params: {}
+  default_params: {},
+  preferred_params: { memory: { force_clip_cpu: false } }
 })
 
 const llmPreset = ref({
