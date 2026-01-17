@@ -70,8 +70,14 @@ const menuItems = [
 </script>
 
 <template>
-  <div class="sidebar-inner p-2 d-flex flex-column h-100 pt-5">
+  <div class="sidebar-inner p-2 d-flex flex-column h-100">
     
+    <!-- Branding -->
+    <div class="d-flex align-items-center mb-4 px-1" :class="{ 'justify-content-center': store.isSidebarCollapsed }" style="height: 40px;">
+      <img src="/diffusion-desk-icon-256.png" alt="DiffusionDesk" class="rounded-2" width="32" height="32">
+      <span v-if="!store.isSidebarCollapsed" class="ms-2 fw-bold fs-5 text-truncate">DiffusionDesk</span>
+    </div>
+
     <ModelSelector ref="modelSelectorRef" />
 
     <!-- Menu Section -->
