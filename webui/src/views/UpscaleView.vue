@@ -61,9 +61,9 @@ const clearImage = () => {
 </script>
 
 <template>
-  <div class="row g-3">
-    <section class="col-lg-5">
-      <div class="card shadow-sm p-3">
+  <div class="d-flex flex-column flex-lg-row gap-2 h-100">
+    <section class="col-lg-5 d-flex flex-column gap-2" style="min-width: 0;">
+      <div class="island p-3 h-100 overflow-y-auto">
         <h5 class="mb-3">Image Upscaling (ESRGAN)</h5>
         
         <div class="mb-4">
@@ -120,13 +120,13 @@ const clearImage = () => {
         </div>
       </div>
       
-      <div class="mt-3 alert alert-secondary py-2 small">
+      <div class="alert alert-secondary py-2 small mb-0">
         <strong>Tip:</strong> ESRGAN upscaling is great for sharpening photos and textures without changing the content. It is much faster than Highres-fix but doesn't "hallucinate" new details.
       </div>
     </section>
 
-    <section class="col-lg-7">
-      <div class="card shadow-sm h-100 p-3 d-flex flex-column">
+    <section class="flex-fill d-flex flex-column" style="min-width: 0;">
+      <div class="island h-100 p-3 d-flex flex-column">
         <h5 class="mb-3">Result</h5>
         <div class="flex-grow-1 d-flex align-items-center justify-content-center border rounded bg-light overflow-hidden position-relative" style="min-height: 400px;">
            <ImageDisplay v-if="store.imageUrls.length > 0" />

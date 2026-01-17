@@ -183,7 +183,7 @@ const clearInitImage = () => {
 </script>
 
 <template>
-  <div class="island p-2">
+  <div class="island p-2 h-100 overflow-y-auto">
     <form @submit.prevent="handleGenerate">
       <!-- Img2Img / Inpainting Upload & Scaling -->
       <div class="mb-3" v-if="mode === 'img2img' || mode === 'inpainting'">

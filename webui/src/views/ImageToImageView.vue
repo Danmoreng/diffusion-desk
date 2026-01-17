@@ -4,11 +4,11 @@ import ImageDisplay from '../components/ImageDisplay.vue'
 </script>
 
 <template>
-  <div class="row g-3">
-    <section class="col-lg-6">
+  <div class="d-flex flex-column flex-lg-row gap-2 h-100">
+    <section class="" style="flex: 1; min-width: 0;">
       <GenerationForm mode="img2img" />
     </section>
-    <section class="col-lg-6">
+    <section class="" style="flex: 1; min-width: 0;">
       <ImageDisplay />
     </section>
   </div>

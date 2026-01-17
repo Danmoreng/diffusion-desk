@@ -37,7 +37,7 @@ store.fetchConfig()
         <FloatingActionBar v-if="store.actionBarPosition === 'top'" />
         
         <main class="main-content flex-grow-1 overflow-auto">
-          <div>
+          <div class="h-100">
             <router-view />
           </div>
         </main>

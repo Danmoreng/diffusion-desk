@@ -47,19 +47,18 @@ const dynamicAspectRatio = computed(() => {
 </script>
 
 <template>
-  <div class="exploration-view-wrapper">
-    <div class="row g-0 h-100">
+  <div class="d-flex h-100 gap-2">
       <!-- Sidebar -->
-            <aside class="col-md-3 border-end h-100 d-flex flex-column bg-body-tertiary">
-              <div class="p-3 flex-grow-1 overflow-y-auto">
-                <h5 class="mb-3 d-flex align-items-center">
-                  <i class="bi bi-sliders me-2"></i> Anchor Params
-                </h5>
-                <CondensedGenerationForm />
-                <hr class="my-3">
-              </div>
+      <aside class="island d-flex flex-column" style="width: 300px; flex-shrink: 0;">
+          <div class="p-3 flex-grow-1 overflow-y-auto">
+            <h5 class="mb-3 d-flex align-items-center">
+              <i class="bi bi-sliders me-2"></i> Anchor Params
+            </h5>
+            <CondensedGenerationForm />
+            <hr class="my-3">
+          </div>
 
-        <div class="p-3 border-top bg-body">
+        <div class="p-3 border-top border-secondary border-opacity-25">
           <button 
             class="btn btn-primary w-100 py-2 d-flex align-items-center justify-content-center gap-2" 
             @click="explorationStore.refreshVariations()" 
@@ -73,7 +72,7 @@ const dynamicAspectRatio = computed(() => {
       </aside>
 
       <!-- Main Grid -->
-      <main class="col-md-9 h-100 overflow-hidden d-flex flex-column">
+      <main class="island flex-grow-1 overflow-hidden d-flex flex-column p-0">
         <div class="flex-grow-1 p-3 d-flex align-items-center justify-content-center overflow-hidden">
           <div class="exploration-grid-container" :style="{ maxWidth: `calc((100vh - 120px) * ${dynamicAspectRatio})` }">
             <div class="row g-2">
@@ -120,16 +119,10 @@ const dynamicAspectRatio = computed(() => {
           </div>
         </div>
       </main>
-    </div>
   </div>
 </template>
 
 <style scoped>
-.exploration-view-wrapper {
-  height: calc(100vh - 4rem); /* Viewport - padding */
-  margin: 0;
-}
-
 .exploration-grid-container {
   width: 100%;
   max-width: 1200px; /* Limit ultra-wide growth */
