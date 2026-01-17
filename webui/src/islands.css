@@ -8,7 +8,7 @@
   --island-divider: rgba(255, 255, 255, 0.08);
   --island-text-primary: #bcbec4;
   --island-text-muted: #7a7e85;
-  --island-accent: #56a8f5; /* Blue */
+  --island-accent: #5c8aff; /* Lighter Blue for contrast */
   --island-success: #6aab73;
   --island-info: #2aacb8;
   --island-warning: #cf8e6d;
@@ -42,7 +42,7 @@
 
   --bs-link-color: var(--island-accent);
   --bs-primary: var(--island-accent);
-  --bs-primary-rgb: 86, 168, 245; /* Approximate RGB for #56a8f5 */
+  --bs-primary-rgb: 92, 138, 255; /* RGB for #5c8aff */
   
   --bs-secondary-color: var(--island-text-muted); /* Fix text-muted visibility */
 }
@@ -97,15 +97,19 @@
 .form-control:focus, .form-select:focus {
   background-color: var(--island-deep-bg);
   border-color: var(--island-accent);
-  box-shadow: 0 0 0 2px rgba(86, 168, 245, 0.25); /* Accenty glow */
+  box-shadow: 0 0 0 2px rgba(92, 138, 255, 0.25); /* Accenty glow */
   color: var(--island-text-primary);
 }
 
 /* Buttons */
 .btn-primary {
-  background-color: var(--island-accent);
-  border-color: var(--island-accent);
+  background-color: #00104b;
+  border-color: #00104b;
   color: #fff; /* Ensure contrast */
+}
+.btn-primary:hover {
+  background-color: #001a7a;
+  border-color: #001a7a;
 }
 .btn-secondary {
     background-color: var(--island-deep-bg);
