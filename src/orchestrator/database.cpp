@@ -44,6 +44,18 @@ static diffusion_desk::json parse_generation_row(SQLite::Statement& q, SQLite::D
         tags_arr.push_back(tag_query.getColumn(0).getText());
     }
     gen["tags"] = tags_arr;
+
+    // Fetch thumbnail
+    std::string thumb_path;
+    try {
+        SQLite::Statement thumb_q(db, "SELECT file_path FROM generation_files WHERE generation_id = ? AND file_type = 'thumbnail' LIMIT 1");
+        thumb_q.bind(1, q.getColumn("id").getInt());
+        if (thumb_q.executeStep()) {
+            thumb_path = thumb_q.getColumn(0).getText();
+        }
+    } catch (...) {}
+    gen["thumbnail_path"] = thumb_path;
+
     return gen;
 }
 

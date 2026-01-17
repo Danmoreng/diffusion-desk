@@ -9,6 +9,7 @@ import RatingInput from './RatingInput.vue'
 interface HistoryItem {
   id: string
   name: string
+  thumbnail_path?: string
   params?: any
   tags?: string[]
   is_favorite?: boolean
@@ -459,6 +460,11 @@ async function fetchImages(reset = false) {
     // Initialize modal and carousel now that the elements are in the DOM
     if (modalElement.value && carouselElement.value && !modalInstance) {
       modalInstance = new Modal(modalElement.value)
+      
+      modalElement.value.addEventListener('hidden.bs.modal', () => {
+        isModalVisible.value = false
+      })
+
       carouselInstance = new Carousel(carouselElement.value, {
         interval: false, // Do not auto-cycle
         touch: true,
@@ -487,11 +493,14 @@ function loadMore() {
     }
 }
 
+const isModalVisible = ref(false)
+
 function openModal(index: number) {
   if (isSelectionMode.value) return // Disable modal in selection mode
   
   if (carouselInstance && modalInstance) {
     activeIndex.value = index
+    isModalVisible.value = true
     carouselInstance.to(index)
     modalInstance.show()
   }
@@ -651,7 +660,7 @@ onUnmounted(() => {
                </div>
             </div>
 
-            <img :src="'/outputs/' + image.name" class="card-img-top" :alt="image.name" loading="lazy" />
+            <img :src="image.thumbnail_path || ('/outputs/' + image.name)" class="card-img-top" :alt="image.name" loading="lazy" />
             
             <div class="card-footer p-2 x-small border-0 bg-transparent">
               <div class="d-flex justify-content-between text-muted mb-1">
@@ -693,7 +702,7 @@ onUnmounted(() => {
                     <div class="carousel-inner h-100">
                       <div v-for="(image, index) in filteredImages" :key="`carousel-${image.name}`" class="carousel-item h-100" :class="{ active: index === activeIndex }">
                         <div class="d-flex align-items-center justify-content-center h-100">
-                          <img :src="'/outputs/' + image.name" class="d-block" :alt="image.name" style="max-width: 100%; max-height: 100%; object-fit: contain;">
+                          <img v-if="isModalVisible && Math.abs(index - activeIndex) <= 1" :src="'/outputs/' + image.name" class="d-block" :alt="image.name" style="max-width: 100%; max-height: 100%; object-fit: contain;">
                         </div>
                       </div>
                     </div>
