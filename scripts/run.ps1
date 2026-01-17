@@ -30,7 +30,12 @@ if ($null -eq $ServerExe) {
 }
 
 # Configuration
-$ModelBase = "C:\StableDiffusion\Models"
+$ModelBase = Join-Path $ProjectRoot "models"
+if (!(Test-Path $ModelBase)) {
+    Write-Host "Creating models directory at $ModelBase..."
+    New-Item -ItemType Directory -Force -Path $ModelBase | Out-Null
+}
+
 # Optional: Hardcode these if you want to override the last used preset on startup
 $LLMPath = ""
 $SDPath = "" 

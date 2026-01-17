@@ -15,35 +15,45 @@ if [ ! -f "$SERVER_EXE" ]; then
 fi
 
 # --- Configuration ---
-# IMPORTANT: Replace this with the actual path to your models directory
-MODEL_BASE="/home/sebastian/Development/models" 
+MODEL_BASE="$PROJECT_ROOT/models"
 
 # Check if the model base directory exists
-if [ "$MODEL_BASE" == "/path/to/your/models" ] || [ ! -d "$MODEL_BASE" ]; then
-    echo "Warning: Model directory not configured or does not exist."
-    echo "Please edit scripts/run.sh and set the MODEL_BASE variable."
+if [ ! -d "$MODEL_BASE" ]; then
+    echo "Creating models directory at $MODEL_BASE..."
+    mkdir -p "$MODEL_BASE"
 fi
 
-LLM_PATH="$MODEL_BASE/llm/Ministral-3-3B-Instruct-2512-Q8_0.gguf"
-SD_PATH="$MODEL_BASE/stable-diffusion/z_image_turbo-Q8_0.gguf" 
+# Optional: Override these to load specific models on startup
+# LLM_PATH="$MODEL_BASE/llm/your-model.gguf"
+# SD_PATH="$MODEL_BASE/stable-diffusion/your-model.gguf" 
+LLM_PATH=""
+SD_PATH=""
 
 IDLE_TIMEOUT=600  # 10 minutes
 
 echo "Starting DiffusionDesk Server..."
 echo "Executable: $SERVER_EXE"
 echo "Model Directory: $MODEL_BASE"
-echo "SD Model: $SD_PATH"
-echo "LLM Model: $LLM_PATH"
 echo "-------------------------------------------"
 
 # Change to the project root so the server can find assets (e.g., ./public)
 cd "$PROJECT_ROOT"
 
-# Execute the server
-"$SERVER_EXE" \
-    --model-dir "$MODEL_BASE" \
-    --diffusion-model "$SD_PATH" \
-    --llm-model "$LLM_PATH" \
-    --llm-idle-timeout "$IDLE_TIMEOUT" \
-    --listen-port 1234 \
+# Build arguments
+ARGS=(
+    --model-dir "$MODEL_BASE"
+    --llm-idle-timeout "$IDLE_TIMEOUT"
+    --listen-port 1234
     --verbose
+)
+
+if [ -n "$SD_PATH" ]; then
+    ARGS+=(--diffusion-model "$SD_PATH")
+fi
+
+if [ -n "$LLM_PATH" ]; then
+    ARGS+=(--llm-model "$LLM_PATH")
+fi
+
+# Execute the server
+"$SERVER_EXE" "${ARGS[@]}"
