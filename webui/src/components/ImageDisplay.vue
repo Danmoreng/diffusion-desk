@@ -8,11 +8,11 @@ const assistantStore = useAssistantStore()
 </script>
 
 <template>
-  <div class="card shadow-sm h-100 border-0">
-    <div class="card-body d-flex flex-column p-3">
+  <div class="island h-100">
+    <div class="card-body d-flex flex-column p-2">
       <div class="image-display-container flex-grow-1 mb-3">
         <!-- Queued State -->
-        <div v-if="store.currentHistoryItem && store.currentHistoryItem.status === 'pending'" class="d-flex flex-column align-items-center justify-content-center h-100 text-muted p-5 bg-dark bg-opacity-10 rounded">
+        <div v-if="store.currentHistoryItem && store.currentHistoryItem.status === 'pending'" class="d-flex flex-column align-items-center justify-content-center h-100 text-muted p-5 bg-body-tertiary rounded">
           <div class="spinner-grow text-secondary mb-3" role="status">
             <span class="visually-hidden">Queued...</span>
           </div>
@@ -21,7 +21,7 @@ const assistantStore = useAssistantStore()
         </div>
 
         <!-- Processing State -->
-        <div v-else-if="store.currentHistoryItem && store.currentHistoryItem.status === 'processing'" class="d-flex flex-column align-items-center justify-content-center h-100 text-muted p-5 bg-dark bg-opacity-10 rounded">
+        <div v-else-if="store.currentHistoryItem && store.currentHistoryItem.status === 'processing'" class="d-flex flex-column align-items-center justify-content-center h-100 text-muted p-5 bg-body-tertiary rounded">
           <div class="spinner-border text-primary mb-3" role="status">
             <span class="visually-hidden">Generating...</span>
           </div>
@@ -65,7 +65,7 @@ const assistantStore = useAssistantStore()
         </div>
 
         <!-- Empty State -->
-        <div v-else class="d-flex align-items-center justify-content-center h-100 text-muted border rounded bg-light bg-opacity-10">
+        <div v-else class="d-flex align-items-center justify-content-center h-100 text-muted border rounded bg-body-tertiary">
           <p class="mb-0 italic">No images generated yet.</p>
         </div>
       </div>
@@ -114,7 +114,7 @@ const assistantStore = useAssistantStore()
 }
 
 .result-item {
-  background: var(--bs-body-bg);
+  background: var(--island-deep-bg);
   border-radius: 0.5rem;
   overflow: hidden;
   box-shadow: 0 2px 4px rgba(0,0,0,0.05);

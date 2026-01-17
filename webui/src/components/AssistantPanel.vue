@@ -133,9 +133,8 @@ onMounted(scrollToBottom)
 </script>
 
 <template>
-  <div class="assistant-panel bg-body d-flex flex-column shadow-sm" 
+  <div class="assistant-panel island d-flex flex-column shadow-sm" 
        :class="[
-         generationStore.assistantPosition === 'right' ? 'border-start' : 'border-end',
          { 'drag-over': isDragging }
        ]"
        @dragover="onDragOver"

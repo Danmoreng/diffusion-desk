@@ -198,7 +198,7 @@ const menuItems = [
 }
 
 .nav-link:hover {
-  background-color: var(--bs-secondary-bg);
+  background-color: var(--bs-tertiary-bg);
 }
 
 .router-link-active {

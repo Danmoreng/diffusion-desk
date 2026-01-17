@@ -438,7 +438,7 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="manager-view h-100 d-flex flex-column">
+  <div class="manager-view h-100 d-flex flex-column island p-3">
     <div class="d-flex justify-content-between align-items-center mb-3">
       <h3 class="mb-0">Library Manager</h3>
     </div>

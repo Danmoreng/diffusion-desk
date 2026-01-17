@@ -14,7 +14,7 @@ async function runTest() {
 </script>
 
 <template>
-  <div>
+  <div class="island p-4">
     <h3>Settings</h3>
     <hr />
     <div class="row g-4">

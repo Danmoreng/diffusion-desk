@@ -15,17 +15,17 @@ store.fetchConfig()
 <template>
   <div id="app" class="d-flex vh-100 overflow-hidden">
     <SetupWizard v-if="!store.setupCompleted" @completed="store.fetchConfig" />
-    <div id="content-wrapper" class="d-flex w-100 h-100 position-relative">
+    <div id="content-wrapper" class="d-flex w-100 h-100 position-relative p-2 gap-2">
       <!-- Toggle button moved outside aside to ensure visibility -->
       <button 
         class="btn btn-secondary toggle-btn rounded-circle p-0" 
-        :style="{ left: store.isSidebarCollapsed ? '54px' : '230px' }"
+        :style="{ left: store.isSidebarCollapsed ? '62px' : '238px' }"
         @click="store.toggleSidebar"
       >
         <i :class="store.isSidebarCollapsed ? 'bi bi-chevron-right' : 'bi bi-chevron-left'"></i>
       </button>
 
-      <aside class="sidebar border-end position-relative bg-body d-flex flex-column" 
+      <aside class="sidebar island position-relative d-flex flex-column" 
              :class="{ 'sidebar-collapsed': store.isSidebarCollapsed }">
         <Sidebar />
       </aside>
@@ -33,11 +33,11 @@ store.fetchConfig()
       <!-- Assistant Panel (Left) -->
       <AssistantPanel v-if="assistantStore.isOpen && store.assistantPosition === 'left'" />
 
-      <div class="d-flex flex-column flex-grow-1 overflow-hidden">
+      <div class="d-flex flex-column flex-grow-1 overflow-hidden gap-2">
         <FloatingActionBar v-if="store.actionBarPosition === 'top'" />
         
-        <main class="main-content flex-grow-1 overflow-auto bg-body-tertiary">
-          <div class="p-4">
+        <main class="main-content flex-grow-1 overflow-auto">
+          <div>
             <router-view />
           </div>
         </main>
