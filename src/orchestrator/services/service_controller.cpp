@@ -1161,7 +1161,23 @@ void ServiceController::register_routes(httplib::Server& svr) {
                 if (total_bytes > 0) p.vram_weights_mb_estimate = (int)((total_bytes * 1.05) / (1024 * 1024));
             }
             m_db->save_image_preset(p);
-            res.set_content(R"({\"status\":\"success\"})", "application/json");
+            diffusion_desk::json res_json;
+            res_json["status"] = "success";
+            // If it was a new preset, we need the last insert ID. 
+            // Database::save_image_preset uses REPLACE, so we can get it from DB.
+            if (p.id <= 0) {
+                // Find by name since it's UNIQUE
+                auto all = m_db->get_image_presets();
+                for (auto& item : all) {
+                    if (item["name"] == p.name) {
+                        res_json["id"] = item["id"];
+                        break;
+                    }
+                }
+            } else {
+                res_json["id"] = p.id;
+            }
+            res.set_content(res_json.dump(), "application/json");
         } catch(...) { res.status = 400; }
     });
 
@@ -1194,7 +1210,20 @@ void ServiceController::register_routes(httplib::Server& svr) {
             
             if (p.name.empty() || p.model_path.empty()) { res.status = 400; return; }
             m_db->save_llm_preset(p);
-            res.set_content(R"({\"status\":\"success\"})", "application/json");
+            diffusion_desk::json res_json;
+            res_json["status"] = "success";
+            if (p.id <= 0) {
+                auto all = m_db->get_llm_presets();
+                for (auto& item : all) {
+                    if (item["name"] == p.name) {
+                        res_json["id"] = item["id"];
+                        break;
+                    }
+                }
+            } else {
+                res_json["id"] = p.id;
+            }
+            res.set_content(res_json.dump(), "application/json");
         } catch(...) { res.status = 400; }
     });
 

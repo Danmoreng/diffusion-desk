@@ -3,6 +3,8 @@ import { ref, onMounted, computed, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { Modal } from 'bootstrap'
 import { useGenerationStore } from '@/stores/generation'
+import ImagePresetEditor from '@/components/ImagePresetEditor.vue'
+import LlmPresetEditor from '@/components/LlmPresetEditor.vue'
 
 interface TagInfo {
   name: string
@@ -939,120 +941,13 @@ onUnmounted(() => {
           <div class="modal-body">
             
             <!-- Image Preset Form -->
-            <div v-if="activeTab === 'image_presets'" class="row g-3">
-               <div class="col-12">
-                 <label class="form-label fw-bold">Preset Name</label>
-                 <input type="text" v-model="editingImagePreset.name" class="form-control" placeholder="e.g. Flux Dev + FP8 T5">
-               </div>
-               
-               <div class="col-12"><hr class="my-2"></div>
-               
-               <div class="col-12">
-                 <label class="form-label small text-uppercase fw-bold">UNet / Main Model (Required)</label>
-                 <select v-model="editingImagePreset.unet_path" class="form-select">
-                    <option value="">Select Model...</option>
-                    <option v-for="m in availableModels" :key="m.id" :value="m.id">{{ m.name }} ({{ m.type }})</option>
-                 </select>
-               </div>
-               
-               <div class="col-md-6">
-                 <label class="form-label small text-uppercase fw-bold">VAE (Optional)</label>
-                 <select v-model="editingImagePreset.vae_path" class="form-select">
-                    <option value="">None (Use Embedded)</option>
-                    <option v-for="m in availableVaEs" :key="m.id" :value="m.id">{{ m.name }}</option>
-                 </select>
-               </div>
-               
-               <div class="col-md-6">
-                 <label class="form-label small text-uppercase fw-bold">T5 / Text Encoder 2 (Optional)</label>
-                 <select v-model="editingImagePreset.t5xxl_path" class="form-select">
-                    <option value="">None (Use Embedded)</option>
-                    <option v-for="m in availableClips" :key="m.id" :value="m.id">{{ m.name }}</option>
-                 </select>
-               </div>
-
-               <div class="col-md-6">
-                 <label class="form-label small text-uppercase fw-bold">LLM Text Encoder 3 (Optional)</label>
-                 <select v-model="editingImagePreset.llm_path" class="form-select">
-                    <option value="">None</option>
-                    <option v-for="m in availableLlmEncoders" :key="m.id" :value="m.id">{{ m.name }}</option>
-                 </select>
-               </div>
-               
-               <div class="col-md-6">
-                 <label class="form-label small text-uppercase fw-bold">CLIP L (Optional)</label>
-                 <select v-model="editingImagePreset.clip_l_path" class="form-select">
-                    <option value="">None</option>
-                    <option v-for="m in availableClips" :key="m.id" :value="m.id">{{ m.name }}</option>
-                 </select>
-               </div>
-               
-               <div class="col-md-6">
-                 <label class="form-label small text-uppercase fw-bold">CLIP G (Optional)</label>
-                 <select v-model="editingImagePreset.clip_g_path" class="form-select">
-                    <option value="">None</option>
-                    <option v-for="m in availableClips" :key="m.id" :value="m.id">{{ m.name }}</option>
-                 </select>
-               </div>
-               
-               <div class="col-12">
-                   <div class="form-text x-small">Note: For Flux/SD3, ensure you select the correct CLIP/T5 combination if not using a GGUF that embeds them.</div>
-               </div>
+            <div v-if="activeTab === 'image_presets'">
+               <ImagePresetEditor v-model="editingImagePreset" />
             </div>
 
             <!-- LLM Preset Form -->
-            <div v-else class="row g-3">
-               <div class="col-12">
-                 <label class="form-label fw-bold">Preset Name</label>
-                 <input type="text" v-model="editingLlmPreset.name" class="form-control" placeholder="e.g. Qwen2-VL Vision">
-               </div>
-               
-               <div class="col-12"><hr class="my-2"></div>
-               
-               <div class="col-12">
-                 <label class="form-label small text-uppercase fw-bold">LLM Model (Required)</label>
-                 <select v-model="editingLlmPreset.model_path" class="form-select">
-                    <option value="">Select Model...</option>
-                    <option v-for="m in availableLlms" :key="m.id" :value="m.id">{{ m.name }}</option>
-                 </select>
-               </div>
-               
-               <div class="col-12">
-                 <label class="form-label small text-uppercase fw-bold">Vision Projector (mmproj) (Optional)</label>
-                 <select v-model="editingLlmPreset.mmproj_path" class="form-select">
-                    <option value="">None</option>
-                    <option v-for="m in availableProjectors" :key="m.id" :value="m.id">{{ m.name }}</option>
-                 </select>
-                 <div class="form-text x-small">Select a vision projector (must contain 'mmproj' in name).</div>
-               </div>
-               
-               <div class="col-md-6">
-                 <label class="form-label small text-uppercase fw-bold">Context Size</label>
-                 <input type="number" v-model="editingLlmPreset.n_ctx" class="form-control" step="1024">
-               </div>
-
-               <div class="col-12"><hr class="my-2"></div>
-               <div class="col-12">
-                   <div class="d-flex justify-content-between align-items-center mb-2">
-                       <label class="form-label small text-uppercase fw-bold mb-0">System Prompts</label>
-                       <button class="btn btn-xs btn-outline-secondary" type="button" @click="editingLlmPreset.system_prompt_assistant=''; editingLlmPreset.system_prompt_tagging=''; editingLlmPreset.system_prompt_style=''">
-                           <i class="bi bi-arrow-counterclockwise"></i> Reset to Defaults
-                       </button>
-                   </div>
-                   
-                   <div class="mb-3">
-                       <label class="form-label x-small text-muted">Assistant Role</label>
-                       <textarea v-model="editingLlmPreset.system_prompt_assistant" class="form-control form-control-sm" rows="2" placeholder="Default: You are an integrated creative assistant..."></textarea>
-                   </div>
-                   <div class="mb-3">
-                       <label class="form-label x-small text-muted">Image Tagging</label>
-                       <textarea v-model="editingLlmPreset.system_prompt_tagging" class="form-control form-control-sm" rows="2" placeholder="Default: Analyze the image and provide JSON tags..."></textarea>
-                   </div>
-                   <div class="mb-3">
-                       <label class="form-label x-small text-muted">Style Extraction</label>
-                       <textarea v-model="editingLlmPreset.system_prompt_style" class="form-control form-control-sm" rows="2" placeholder="Default: Extract artistic styles from prompt..."></textarea>
-                   </div>
-               </div>
+            <div v-else>
+               <LlmPresetEditor v-model="editingLlmPreset" />
             </div>
 
           </div>

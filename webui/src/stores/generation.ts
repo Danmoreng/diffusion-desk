@@ -466,6 +466,42 @@ export const useGenerationStore = defineStore('generation', () => {
     return Math.round(avgStepTime * remainingSteps);
   });
 
+  async function saveImagePreset(preset: any) {
+    try {
+      const res = await fetch('/v1/presets/image', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(preset)
+      })
+      if (!res.ok) throw new Error('Failed to save image preset')
+      const data = await res.json()
+      await fetchPresets()
+      return data.id
+    } catch (e: any) {
+      console.error('Failed to save image preset:', e)
+      error.value = e.message
+      return null
+    }
+  }
+
+  async function saveLlmPreset(preset: any) {
+    try {
+      const res = await fetch('/v1/presets/llm', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(preset)
+      })
+      if (!res.ok) throw new Error('Failed to save LLM preset')
+      const data = await res.json()
+      await fetchPresets()
+      return data.id
+    } catch (e: any) {
+      console.error('Failed to save LLM preset:', e)
+      error.value = e.message
+      return null
+    }
+  }
+
   async function fetchActivePresets() {
     try {
         const res = await fetch('/v1/presets/active')
@@ -1224,7 +1260,7 @@ export const useGenerationStore = defineStore('generation', () => {
     updateConfig, reuseLastSeed, randomizeSeed, swapDimensions,
     styles, activeStyleNames, fetchStyles, saveStyle, deleteStyle, applyStyle, extractStylesFromPrompt,
     currentModelMetadata, resetToModelDefaults, applyAspectRatio, snapToNext16,
-    imagePresets, llmPresets, currentImagePresetId, currentLlmPresetId, loadImagePreset, loadLlmPreset, fetchPresets,
+    imagePresets, llmPresets, currentImagePresetId, currentLlmPresetId, loadImagePreset, loadLlmPreset, fetchPresets, saveImagePreset, saveLlmPreset,
     actionBarPosition, assistantPosition,
     llmContextSize, setupCompleted, fetchConfig
   }
