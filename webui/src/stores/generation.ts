@@ -67,6 +67,7 @@ export const useGenerationStore = defineStore('generation', () => {
   // Img2Img State
   const initImage = ref<string | null>(null)
   const maskImage = ref<string | null>(null)
+  const referenceImages = ref<string[]>([])
 
   // UI State
   const isSidebarCollapsed = ref(localStorage.getItem('sidebar-collapsed') === 'true')
@@ -207,6 +208,8 @@ export const useGenerationStore = defineStore('generation', () => {
       saveImages.value = p.saveImages
       if (p.initImage) initImage.value = p.initImage
       if (p.maskImage) maskImage.value = p.maskImage
+      if (p.referenceImages) referenceImages.value = p.referenceImages
+      else referenceImages.value = []
       
       // Update Display
       if (item.status === 'completed') {
@@ -903,6 +906,7 @@ export const useGenerationStore = defineStore('generation', () => {
 
   // Watch for changes in settings and persist them to localStorage
   watch([prompt, negativePrompt, steps, cfgScale, sampler, width, height, theme, saveImages, strength, batchCount, hiresFix, hiresUpscaleModel, hiresUpscaleFactor, hiresDenoisingStrength, hiresSteps, actionBarPosition, assistantPosition], (newValues) => {
+    // Note: We do NOT persist referenceImages in local storage as they can be large
     const settingsToSave = {
       prompt: newValues[0],
       negativePrompt: newValues[1],
@@ -943,6 +947,19 @@ export const useGenerationStore = defineStore('generation', () => {
     saveImages: boolean
     initImage?: string | null
     maskImage?: string | null
+    referenceImages?: string[]
+  }
+
+  function dataURLtoBlob(dataurl: string) {
+    const arr = dataurl.split(',')
+    const mime = arr[0].match(/:(.*?);/)?.[1]
+    const bstr = atob(arr[1])
+    let n = bstr.length
+    const u8arr = new Uint8Array(n)
+    while (n--) {
+      u8arr[n] = bstr.charCodeAt(n)
+    }
+    return new Blob([u8arr], { type: mime })
   }
 
   async function requestImage(params: GenerationParams, signal?: AbortSignal): Promise<{ urls: string[], seed: number }> {
@@ -969,44 +986,100 @@ export const useGenerationStore = defineStore('generation', () => {
       }
     }
 
-    const body: any = {
-      prompt: finalPrompt,
-      negative_prompt: finalNegativePrompt,
-      sample_steps: params.steps,
-      cfg_scale: params.cfgScale,
-      strength: params.strength,
-      n: params.batchCount,
-      sampling_method: params.sampler.toLowerCase().replace(' a', '_a').replace(/\+\+/g, 'pp'),
-      seed: params.seed,
-      width: params.width,
-      height: params.height,
-      save_image: params.saveImages,
-      hires_fix: hiresFix.value,
-      hires_upscale_model: hiresUpscaleModel.value,
-      hires_upscale_factor: hiresUpscaleFactor.value,
-      hires_denoising_strength: hiresDenoisingStrength.value,
-      hires_steps: hiresSteps.value,
-      no_base64: true
-    }
+    let response: Response;
 
-    if (params.initImage) {
-      body.init_image = params.initImage
-    }
-    
-    if (params.maskImage) {
-      body.mask_image = params.maskImage
-    }
+    // Check for Edit Mode (Reference Images)
+    if (params.referenceImages && params.referenceImages.length > 0) {
+      const formData = new FormData();
+      formData.append('prompt', finalPrompt);
+      if (finalNegativePrompt) {
+        // We pack negative prompt into extra_args usually, but let's check if endpoint supports it directly?
+        // api_endpoints.cpp: handles prompt, but others via extra_args usually.
+        // Actually, SDGenerationParams::from_json_str handles negative_prompt.
+      }
+      formData.append('n', params.batchCount.toString());
+      formData.append('size', `${params.width}x${params.height}`);
+      formData.append('output_format', 'png');
 
-    const headers: Record<string, string> = {
-      'Content-Type': 'application/json',
-    }
+      // Append Images
+      for (const imgDataUrl of params.referenceImages) {
+        const blob = dataURLtoBlob(imgDataUrl);
+        formData.append('image[]', blob, 'ref_image.png');
+      }
 
-    const response = await fetch('/v1/images/generations', {
-      method: 'POST',
-      headers,
-      body: JSON.stringify(body),
-      signal,
-    })
+      // Append Mask if exists
+      if (params.maskImage) {
+        const blob = dataURLtoBlob(params.maskImage);
+        formData.append('mask', blob, 'mask.png');
+      }
+
+      // Construct Extra Args JSON
+      const extraArgs: any = {
+        negative_prompt: finalNegativePrompt,
+        sample_steps: params.steps,
+        cfg_scale: params.cfgScale,
+        strength: params.strength,
+        sampling_method: params.sampler.toLowerCase().replace(' a', '_a').replace(/\+\+/g, 'pp'),
+        seed: params.seed,
+        save_image: params.saveImages,
+        // Hires fix args if needed, though usually not for edits?
+        // But if backend supports it, why not.
+        hires_fix: hiresFix.value,
+        hires_upscale_model: hiresUpscaleModel.value,
+        hires_upscale_factor: hiresUpscaleFactor.value,
+        hires_denoising_strength: hiresDenoisingStrength.value,
+        hires_steps: hiresSteps.value
+      };
+      
+      formData.append('extra_args', JSON.stringify(extraArgs));
+
+      response = await fetch('/v1/images/edits', {
+        method: 'POST',
+        body: formData,
+        signal,
+      });
+
+    } else {
+      // Standard Generation
+      const body: any = {
+        prompt: finalPrompt,
+        negative_prompt: finalNegativePrompt,
+        sample_steps: params.steps,
+        cfg_scale: params.cfgScale,
+        strength: params.strength,
+        n: params.batchCount,
+        sampling_method: params.sampler.toLowerCase().replace(' a', '_a').replace(/\+\+/g, 'pp'),
+        seed: params.seed,
+        width: params.width,
+        height: params.height,
+        save_image: params.saveImages,
+        hires_fix: hiresFix.value,
+        hires_upscale_model: hiresUpscaleModel.value,
+        hires_upscale_factor: hiresUpscaleFactor.value,
+        hires_denoising_strength: hiresDenoisingStrength.value,
+        hires_steps: hiresSteps.value,
+        no_base64: true
+      }
+
+      if (params.initImage) {
+        body.init_image = params.initImage
+      }
+      
+      if (params.maskImage) {
+        body.mask_image = params.maskImage
+      }
+
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+      }
+
+      response = await fetch('/v1/images/generations', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(body),
+        signal,
+      })
+    }
 
     if (!response.ok) {
       const errText = await response.text();
@@ -1265,7 +1338,8 @@ export const useGenerationStore = defineStore('generation', () => {
       height: height.value,
       saveImages: saveImages.value,
       initImage: (mode === 'img2img' || mode === 'inpainting') ? initImage.value : null,
-      maskImage: mode === 'inpainting' ? maskImage.value : null
+      maskImage: mode === 'inpainting' ? maskImage.value : null,
+      referenceImages: referenceImages.value
     })
   }
 
@@ -1275,7 +1349,7 @@ export const useGenerationStore = defineStore('generation', () => {
     generateImage, triggerGeneration, requestImage, upscaleImage, parseA1111Parameters, 
     prompt, negativePrompt, steps, seed, cfgScale, strength, batchCount, sampler, samplers, width, height, 
     hiresFix, hiresUpscaleModel, hiresUpscaleFactor, hiresDenoisingStrength, hiresSteps, 
-    isSidebarCollapsed, toggleSidebar, theme, toggleTheme, saveImages, initImage, maskImage,
+    isSidebarCollapsed, toggleSidebar, theme, toggleTheme, saveImages, initImage, maskImage, referenceImages,
     models, currentModel, currentLlmModel, upscaleModel, upscaleFactor, vramInfo,
     isModelsLoading, fetchModels, loadModel, loadLlmModel, unloadLlmModel, loadUpscaleModel, testLlmCompletion, enhancePrompt,
     progressStep, progressSteps, progressTime, progressPhase, progressMessage, eta, 
