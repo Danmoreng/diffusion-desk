@@ -73,9 +73,23 @@ const menuItems = [
   <div class="sidebar-inner p-2 d-flex flex-column h-100">
     
     <!-- Branding -->
-    <div class="d-flex align-items-center mb-4 px-1" :class="{ 'justify-content-center': store.isSidebarCollapsed }" style="height: 40px;">
+    <div 
+      class="d-flex align-items-center mb-4 px-1 branding-container" 
+      :class="{ 
+        'justify-content-center': store.isSidebarCollapsed, 
+        'cursor-pointer': store.isSidebarCollapsed 
+      }" 
+      style="height: 40px;"
+      @click="store.isSidebarCollapsed ? store.toggleSidebar() : null"
+      :title="store.isSidebarCollapsed ? 'Expand Sidebar' : ''"
+    >
       <img src="/diffusion-desk-icon-256.png" alt="DiffusionDesk" class="rounded-2" width="32" height="32">
-      <span v-if="!store.isSidebarCollapsed" class="ms-2 fw-bold fs-5 text-truncate">DiffusionDesk</span>
+      <template v-if="!store.isSidebarCollapsed">
+        <span class="ms-2 fw-bold fs-5 text-truncate flex-grow-1">DiffusionDesk</span>
+        <button class="btn btn-link p-0 text-muted ms-1 no-caret toggle-sidebar-btn" @click.stop="store.toggleSidebar" title="Collapse Sidebar">
+           <i class="bi bi-chevron-left"></i>
+        </button>
+      </template>
     </div>
 
     <ModelSelector ref="modelSelectorRef" />
@@ -135,6 +149,25 @@ const menuItems = [
 <style scoped>
 .sidebar-inner {
   overflow: visible !important;
+}
+
+.branding-container {
+  transition: opacity 0.2s;
+}
+
+.branding-container.cursor-pointer:hover {
+  opacity: 0.8;
+}
+
+.toggle-sidebar-btn {
+  color: var(--bs-body-color) !important;
+  opacity: 0.5;
+  transition: opacity 0.2s, transform 0.2s;
+}
+
+.toggle-sidebar-btn:hover {
+  opacity: 1;
+  transform: translateX(-2px);
 }
 
 .model-dropdown-container, .llm-dropdown-container {
