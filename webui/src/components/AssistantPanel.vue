@@ -81,26 +81,36 @@ const handleDrop = async (e: DragEvent) => {
     }
   }
 
-  // Handle image URLs (e.g. dragging from elsewhere in the app)
+  // Handle image URLs (e.g. dragging from elsewhere in the app or external sites)
+  const uriList = e.dataTransfer?.getData('text/uri-list')
+  const plainText = e.dataTransfer?.getData('text/plain')
   const html = e.dataTransfer?.getData('text/html')
-  if (html) {
+  
+  let imageUrl = ''
+  
+  if (uriList) {
+    imageUrl = uriList.split('\n').filter(line => line && !line.startsWith('#'))[0]
+  } else if (plainText && (plainText.startsWith('http') || plainText.startsWith('/outputs'))) {
+    imageUrl = plainText
+  } else if (html) {
     const doc = new DOMParser().parseFromString(html, 'text/html')
     const img = doc.querySelector('img')
     if (img && img.src) {
-      // If it's a blob URL from our own app, we should ideally convert it to base64
-      // or just use it as is if the backend can handle it.
-      // But for better compatibility, let's try to fetch and convert to base64.
-      try {
-        const response = await fetch(img.src)
-        const blob = await response.blob()
-        const reader = new FileReader()
-        reader.onloadend = () => {
-          assistantStore.attachImage(reader.result as string)
-        }
-        reader.readAsDataURL(blob)
-      } catch (err) {
-        console.error("Failed to process dropped image URL", err)
+      imageUrl = img.src
+    }
+  }
+
+  if (imageUrl) {
+    try {
+      const response = await fetch(imageUrl)
+      const blob = await response.blob()
+      const reader = new FileReader()
+      reader.onloadend = () => {
+        assistantStore.attachImage(reader.result as string)
       }
+      reader.readAsDataURL(blob)
+    } catch (err) {
+      console.error("Failed to process dropped image URL", err)
     }
   }
 }

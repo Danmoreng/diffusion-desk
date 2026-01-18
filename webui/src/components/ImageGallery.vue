@@ -560,6 +560,19 @@ function copyToClipboard(text: string) {
   navigator.clipboard.writeText(text)
 }
 
+function handleDragStart(event: DragEvent, image: HistoryItem) {
+  if (event.dataTransfer) {
+    const fullUrl = window.location.origin + '/outputs/' + image.name;
+    // Set multiple formats for compatibility
+    event.dataTransfer.setData('text/plain', fullUrl);
+    event.dataTransfer.setData('text/uri-list', fullUrl);
+    // We also provide a custom HTML snippet so that AssistantPanel's html parser picks it up
+    const html = `<img src="${fullUrl}">`;
+    event.dataTransfer.setData('text/html', html);
+    event.dataTransfer.effectAllowed = 'copy';
+  }
+}
+
 async function sendToImg2Img() {
   const item = filteredImages.value[activeIndex.value]
   if (!item) return
@@ -660,7 +673,13 @@ onUnmounted(() => {
                </div>
             </div>
 
-            <img :src="image.thumbnail_path || ('/outputs/' + image.name)" class="card-img-top" :alt="image.name" loading="lazy" />
+            <img 
+              :src="image.thumbnail_path || ('/outputs/' + image.name)" 
+              class="card-img-top" 
+              :alt="image.name" 
+              loading="lazy" 
+              @dragstart="handleDragStart($event, image)"
+            />
             
             <div class="card-footer p-2 x-small border-0 bg-transparent">
               <div class="d-flex justify-content-between text-muted mb-1">
