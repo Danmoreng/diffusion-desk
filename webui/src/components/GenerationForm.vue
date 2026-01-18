@@ -180,6 +180,36 @@ const clearInitImage = () => {
   uploadedImageWidth.value = 0
   uploadedImageHeight.value = 0
 }
+
+// Reference Images Logic
+const referenceInput = ref<HTMLInputElement | null>(null)
+
+const onReferenceFileChange = (e: Event) => {
+  const target = e.target as HTMLInputElement
+  if (target.files && target.files.length > 0) {
+    for (let i = 0; i < target.files.length; i++) {
+      const file = target.files[i]
+      const reader = new FileReader()
+      reader.onload = (event) => {
+        const dataUrl = event.target?.result as string
+        // Check for duplicates? or just append
+        if (dataUrl && !store.referenceImages?.includes(dataUrl)) {
+           if (!store.referenceImages) store.referenceImages = []
+           store.referenceImages.push(dataUrl)
+        }
+      }
+      reader.readAsDataURL(file)
+    }
+  }
+  // Reset input so same files can be selected again if needed
+  target.value = ''
+}
+
+const removeReferenceImage = (index: number) => {
+  if (store.referenceImages) {
+    store.referenceImages.splice(index, 1)
+  }
+}
 </script>
 
 <template>
@@ -226,6 +256,34 @@ const clearInitImage = () => {
               <i class="bi bi-ruler"></i> Apply Scale to Canvas
             </button>
         </div>
+      </div>
+
+      <!-- Reference Images (Flux Edit / Context) -->
+      <div class="mb-3" v-if="mode === 'txt2img'">
+        <div class="d-flex justify-content-between align-items-center mb-2">
+            <label class="form-label mb-0 fw-bold small text-uppercase text-muted">Reference Images (Edit Mode)</label>
+            <button v-if="store.referenceImages && store.referenceImages.length > 0" type="button" class="btn btn-link btn-sm p-0 text-danger text-decoration-none" @click="store.referenceImages = []">
+                Clear All
+            </button>
+        </div>
+        
+        <div class="d-flex flex-wrap gap-2 mb-2" v-if="store.referenceImages && store.referenceImages.length > 0">
+            <div v-for="(img, idx) in store.referenceImages" :key="idx" class="position-relative border rounded overflow-hidden" style="width: 80px; height: 80px;">
+                <img :src="img" class="w-100 h-100 object-fit-cover" />
+                <button type="button" class="btn btn-sm btn-dark position-absolute top-0 end-0 p-0 m-1 rounded-circle d-flex align-items-center justify-content-center" style="width: 20px; height: 20px; opacity: 0.8;" @click="removeReferenceImage(idx)">
+                    <span style="font-size: 12px;">&times;</span>
+                </button>
+            </div>
+            <div class="border rounded d-flex align-items-center justify-content-center bg-body-tertiary" style="width: 80px; height: 80px; cursor: pointer;" @click="referenceInput?.click()">
+                <i class="bi bi-plus-lg text-muted"></i>
+            </div>
+        </div>
+
+        <div v-else class="image-upload-dropzone border rounded p-3 text-center" @click="referenceInput?.click()">
+            <i class="bi bi-images fs-4"></i>
+            <p class="mb-0 mt-1 small">Upload reference images (Flux Edit)</p>
+        </div>
+        <input type="file" ref="referenceInput" class="d-none" accept="image/*" multiple @change="onReferenceFileChange" />
       </div>
 
       <!-- Strength Slider (only if initImage exists) -->

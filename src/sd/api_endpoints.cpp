@@ -1187,8 +1187,10 @@ void handle_generate_image(const httplib::Request& req, httplib::Response& res, 
 
 void handle_edit_image(const httplib::Request& req, httplib::Response& res, ServerContext& ctx) {
     reset_progress();
+    DD_LOG_INFO("New edit request received (multipart)");
     try {
         if (!req.is_multipart_form_data()) {
+            DD_LOG_ERROR("Edit request failed: Not multipart form data");
             res.status = 400;
             res.set_content(make_error_json("invalid_request", "Content-Type must be multipart/form-data"), "application/json");
             return;
@@ -1196,6 +1198,7 @@ void handle_edit_image(const httplib::Request& req, httplib::Response& res, Serv
 
         std::string prompt = req.form.get_field("prompt");
         if (prompt.empty()) {
+            DD_LOG_ERROR("Edit request failed: Prompt is empty");
             res.status = 400;
             res.set_content(make_error_json("invalid_request", "prompt required"), "application/json");
             return;
@@ -1208,6 +1211,7 @@ void handle_edit_image(const httplib::Request& req, httplib::Response& res, Serv
 
         size_t image_count = req.form.get_file_count("image[]");
         if (image_count == 0) {
+            DD_LOG_ERROR("Edit request failed: No images provided");
             res.status = 400;
             res.set_content(make_error_json("invalid_request", "at least one image[] required"), "application/json");
             return;
@@ -1276,6 +1280,7 @@ void handle_edit_image(const httplib::Request& req, httplib::Response& res, Serv
         gen_params.batch_count        = n;
 
         if (!extra_args_str.empty() && !gen_params.from_json_str(extra_args_str)) {
+            DD_LOG_ERROR("Edit request failed: Invalid extra_args JSON");
             res.status = 400;
             res.set_content(R"({\"error\":\"invalid extra_args\"})", "application/json");
             return;
@@ -1287,6 +1292,7 @@ void handle_edit_image(const httplib::Request& req, httplib::Response& res, Serv
         }
 
         if (!gen_params.process_and_check(IMG_GEN, lora_dir)) {
+            DD_LOG_ERROR("Edit request failed: Invalid generation params (process_and_check)");
             res.status = 400;
             res.set_content(make_error_json("invalid_request", "invalid params"), "application/json");
             return;

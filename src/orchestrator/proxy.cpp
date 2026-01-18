@@ -45,6 +45,42 @@ private:
     bool done = false;
 };
 
+std::string generate_boundary() {
+    static const char alphanum[] =
+        "0123456789"
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+        "abcdefghijklmnopqrstuvwxyz";
+    std::string boundary = "----WebKitFormBoundary";
+    for (int i = 0; i < 16; ++i) {
+        boundary += alphanum[rand() % (sizeof(alphanum) - 1)];
+    }
+    return boundary;
+}
+
+void reconstruct_multipart_body(const httplib::Request& req, std::string& body, std::string& content_type) {
+    std::string boundary = generate_boundary();
+    std::stringstream ss;
+
+    DD_LOG_DEBUG("Reconstructing multipart body. Fields: %zu, Files: %zu", req.form.fields.size(), req.form.files.size());
+
+    for (const auto& field : req.form.fields) {
+        ss << "--" << boundary << "\r\n";
+        ss << "Content-Disposition: form-data; name=\"" << field.first << "\"\r\n\r\n";
+        ss << field.second.content << "\r\n";
+    }
+
+    for (const auto& file : req.form.files) {
+        ss << "--" << boundary << "\r\n";
+        ss << "Content-Disposition: form-data; name=\"" << file.first << "\"; filename=\"" << file.second.filename << "\"\r\n";
+        ss << "Content-Type: " << file.second.content_type << "\r\n\r\n";
+        ss << file.second.content << "\r\n";
+    }
+
+    ss << "--" << boundary << "--\r\n";
+    body = ss.str();
+    content_type = "multipart/form-data; boundary=" + boundary;
+}
+
 void Proxy::forward_request(const httplib::Request& req, httplib::Response& res, const std::string& host, int port, const std::string& target_path, const std::string& internal_token) {
     std::string path = target_path.empty() ? req.path : target_path;
     
@@ -54,6 +90,7 @@ void Proxy::forward_request(const httplib::Request& req, httplib::Response& res,
     headers.erase("Transfer-Encoding");
     headers.erase("Content-Length");
     headers.erase("Host");
+    headers.erase("Content-Type"); // Remove Content-Type as it will be set by the Post call with correct boundary/type
 
     if (!internal_token.empty()) {
         headers.emplace("X-Internal-Token", internal_token);
@@ -63,9 +100,20 @@ void Proxy::forward_request(const httplib::Request& req, httplib::Response& res,
         headers.emplace("X-Request-ID", g_request_id);
     }
 
+    // Handle Multipart Reconstruction
+    std::string request_body = req.body;
+    std::string request_content_type = req.get_header_value("Content-Type");
+
+    if (req.is_multipart_form_data()) {
+        reconstruct_multipart_body(req, request_body, request_content_type);
+        // We must update the header passed to Client::Post
+        // Note: headers map will be passed, but Client::Post takes content_type arg which overrides/sets Content-Type header
+        // So we just need request_content_type to be correct.
+    }
+
     // Detect if we should use streaming (SSE or long-running completion paths)
-    bool is_stream_req = (req.body.find("\"stream\": true") != std::string::npos || 
-                          req.body.find("\"stream\":true") != std::string::npos);
+    bool is_stream_req = (request_body.find("\"stream\": true") != std::string::npos || 
+                          request_body.find("\"stream\":true") != std::string::npos);
     
     bool is_sse_path = path.find("/progress") != std::string::npos;
     bool is_long_running = path.find("/llm/load") != std::string::npos;
@@ -81,7 +129,7 @@ void Proxy::forward_request(const httplib::Request& req, httplib::Response& res,
         auto response_headers = std::make_shared<httplib::Headers>();
 
         // Start the client request in a background thread
-        std::thread client_thread([host, port, path, headers, req, queue, status, content_type, response_headers, internal_token]() {
+        std::thread client_thread([host, port, path, headers, request_body, request_content_type, req, queue, status, content_type, response_headers, internal_token]() {
             httplib::Client cli(host, port);
             cli.set_connection_timeout(300, 0);
             cli.set_read_timeout(300, 0);
@@ -95,12 +143,11 @@ void Proxy::forward_request(const httplib::Request& req, httplib::Response& res,
 
             if (req.method == "POST") {
                 // Optimistic approach for POST: assume success and infer content type
-                // because httplib::Client::Post doesn't support ResponseHandler overload.
                 *status = 200;
                 
                 // Heuristic for Content-Type
-                bool is_stream_req = (req.body.find("\"stream\": true") != std::string::npos || 
-                                      req.body.find("\"stream\":true") != std::string::npos);
+                bool is_stream_req = (request_body.find("\"stream\": true") != std::string::npos || 
+                                      request_body.find("\"stream\":true") != std::string::npos);
                 
                 if (path.find("/chat/completions") != std::string::npos || path.find("/completions") != std::string::npos) {
                      if (is_stream_req) {
@@ -113,7 +160,7 @@ void Proxy::forward_request(const httplib::Request& req, httplib::Response& res,
                 }
 
                 // POST with ContentReceiver only
-                cli.Post(path.c_str(), headers, req.body, req.get_header_value("Content-Type").c_str(), content_receiver);
+                cli.Post(path.c_str(), headers, request_body, request_content_type.c_str(), content_receiver);
             } else {
                 // GET supports ResponseHandler, so we can capture real headers
                 httplib::ResponseHandler res_handler = [status, content_type, response_headers](const httplib::Response& response) {
@@ -174,7 +221,7 @@ void Proxy::forward_request(const httplib::Request& req, httplib::Response& res,
 
         httplib::Result result;
         if (req.method == "POST") {
-             result = cli.Post(path.c_str(), headers, req.body, req.get_header_value("Content-Type").c_str());
+             result = cli.Post(path.c_str(), headers, request_body, request_content_type.c_str());
         } else {
              result = cli.Get(path.c_str(), headers);
         }
