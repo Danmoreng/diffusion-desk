@@ -100,7 +100,7 @@ async function finishSetup() {
     <div class="card shadow-lg" style="max-width: 800px; width: 100%;">
       <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
         <h5 class="mb-0 d-flex align-items-center">
-          <img src="/diffusion-desk-icon-256.png" alt="Logo" width="28" height="28" class="me-2 rounded-2 bg-white p-1">
+          <img src="/diffusion-desk-icon-256.png" alt="Logo" width="28" height="28" class="me-2 rounded-2">
           Welcome to DiffusionDesk
         </h5>
         <span class="badge bg-light text-primary">Step {{ step }} of 2</span>
