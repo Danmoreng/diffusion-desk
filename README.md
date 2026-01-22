@@ -2,6 +2,8 @@
 
 DiffusionDesk is a high-performance, self-hosted **Creative AI Workstation** built on the power of [stable-diffusion.cpp](https://github.com/leejet/stable-diffusion.cpp) and [llama.cpp](https://github.com/ggml-org/llama.cpp/). It integrates state-of-the-art image generation and large language model capabilities into a unified, local application.
 
+![DiffusionDesk UI](screenshots/Screenshot_1.png)
+
 Unlike simple generation frontends, DiffusionDesk functions as a complete **Asset Management System**. It persists your creative history, uses local LLMs to intelligently analyze and tag your images, and provides advanced workflows for refinement and exploration.
 
 ## Key Capabilities
