@@ -9,10 +9,17 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -37,8 +44,18 @@ fun GenerateScreen(
     onCfgScaleChange: (String) -> Unit,
     onSeedChange: (String) -> Unit,
     onSamplerChange: (String) -> Unit,
+    onRefreshModels: () -> Unit,
+    onLoadModel: () -> Unit,
     onGenerate: () -> Unit,
 ) {
+    var showModelMenu by remember { mutableStateOf(false) }
+    val activeModel = state.availableModels.firstOrNull { it.active }
+    val progressFraction = if (state.progressSteps > 0) {
+        state.progressStep.toFloat() / state.progressSteps.toFloat()
+    } else {
+        null
+    }
+
     Row(
         modifier = Modifier
             .fillMaxSize()
@@ -68,16 +85,92 @@ fun GenerateScreen(
                     },
                     style = MaterialTheme.typography.bodyMedium,
                 )
+
+                if (state.isGenerating) {
+                    if (progressFraction != null) {
+                        LinearProgressIndicator(progress = { progressFraction }, modifier = Modifier.fillMaxWidth())
+                    } else {
+                        LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                    }
+                    Text(
+                        text = buildString {
+                            append(state.progressPhase.ifBlank { "Generating..." })
+                            if (state.progressSteps > 0) {
+                                append(" (${state.progressStep}/${state.progressSteps})")
+                            }
+                            if (state.progressTime > 0.0) {
+                                append("  ${"%.1f".format(state.progressTime)}s")
+                            }
+                        },
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                    if (state.progressMessage.isNotBlank()) {
+                        Text(
+                            text = state.progressMessage,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+
                 OutlinedTextField(
                     value = state.modelId,
                     onValueChange = onModelIdChange,
                     modifier = Modifier.fillMaxWidth(),
-                    label = { Text("Model ID (optional)") },
+                    label = { Text("Selected Model") },
                     supportingText = {
-                        Text("Leave blank to use the last active SD model. Set this if you want deterministic desktop testing.")
+                        Text(activeModel?.let { "Active model for generation: ${it.id}" } ?: "Load a model first, then generation will use the active backend model.")
                     },
                     singleLine = true,
                 )
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Box {
+                        Button(
+                            onClick = { showModelMenu = true },
+                            enabled = backendState.status == BackendStatus.Ready && state.availableModels.isNotEmpty(),
+                        ) {
+                            Text("Choose Model")
+                        }
+                        DropdownMenu(
+                            expanded = showModelMenu,
+                            onDismissRequest = { showModelMenu = false },
+                        ) {
+                            state.availableModels.forEach { model ->
+                                DropdownMenuItem(
+                                    text = {
+                                        Text(
+                                            text = if (model.active) "${model.name} [active]" else model.name,
+                                            maxLines = 1,
+                                        )
+                                    },
+                                    onClick = {
+                                        onModelIdChange(model.id)
+                                        showModelMenu = false
+                                    },
+                                )
+                            }
+                        }
+                    }
+                    Button(
+                        onClick = onRefreshModels,
+                        enabled = backendState.status == BackendStatus.Ready && !state.isLoadingModels,
+                    ) {
+                        Text(if (state.isLoadingModels) "Refreshing..." else "Refresh Models")
+                    }
+                    Button(
+                        onClick = onLoadModel,
+                        enabled = backendState.status == BackendStatus.Ready && !state.isLoadingModel && state.modelId.isNotBlank(),
+                    ) {
+                        Text(if (state.isLoadingModel) "Loading..." else "Load Model")
+                    }
+                }
+                if (state.availableModels.isNotEmpty()) {
+                    Text(
+                        text = "Detected SD models: ${state.availableModels.size}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
                 OutlinedTextField(
                     value = state.prompt,
                     onValueChange = onPromptChange,
@@ -147,7 +240,7 @@ fun GenerateScreen(
                     onClick = onGenerate,
                     enabled = !state.isGenerating && backendState.status == BackendStatus.Ready,
                 ) {
-                    Text(if (state.isGenerating) "Generating..." else "Generate")
+                    Text(if (state.isGenerating) "Generating..." else "Generate With Active Model")
                 }
                 state.message.takeIf(String::isNotBlank)?.let {
                     Text(

@@ -3,11 +3,13 @@ package com.diffusiondesk.desktop.core
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.toComposeImageBitmap
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.doubleOrNull
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
@@ -24,6 +26,22 @@ data class ServerConfig(
     val modelDir: String,
     val outputDir: String,
     val setupCompleted: Boolean,
+)
+
+data class ModelSummary(
+    val id: String,
+    val name: String,
+    val type: String,
+    val active: Boolean,
+    val loaded: Boolean,
+)
+
+data class ProgressSnapshot(
+    val step: Int,
+    val steps: Int,
+    val time: Double,
+    val phase: String,
+    val message: String,
 )
 
 data class GenerationRequest(
@@ -67,6 +85,68 @@ class DiffusionDeskClient {
                 modelDir = root["model_dir"]?.jsonPrimitive?.content.orEmpty(),
                 outputDir = root["output_dir"]?.jsonPrimitive?.content.orEmpty(),
                 setupCompleted = root["setup_completed"]?.jsonPrimitive?.booleanOrNull ?: true,
+            )
+        }
+    }
+
+    suspend fun fetchModels(baseUrl: String): Result<List<ModelSummary>> = withContext(Dispatchers.IO) {
+        runCatching {
+            val request = HttpRequest.newBuilder(URI.create("$baseUrl/v1/models"))
+                .GET()
+                .timeout(Duration.ofSeconds(10))
+                .build()
+
+            val response = httpClient.send(request, HttpResponse.BodyHandlers.ofString())
+            check(response.statusCode() in 200..299) { "Model request failed with ${response.statusCode()}" }
+
+            val root = json.parseToJsonElement(response.body()).jsonObject
+            root["data"]?.jsonArray.orEmpty().map { item ->
+                val model = item.jsonObject
+                ModelSummary(
+                    id = model["id"]?.jsonPrimitive?.content.orEmpty(),
+                    name = model["name"]?.jsonPrimitive?.content.orEmpty(),
+                    type = model["type"]?.jsonPrimitive?.content.orEmpty(),
+                    active = model["active"]?.jsonPrimitive?.booleanOrNull ?: false,
+                    loaded = model["loaded"]?.jsonPrimitive?.booleanOrNull ?: false,
+                )
+            }
+        }
+    }
+
+    suspend fun loadModel(baseUrl: String, modelId: String): Result<Unit> = withContext(Dispatchers.IO) {
+        runCatching {
+            val payload = buildJsonObject {
+                put("model_id", JsonPrimitive(modelId))
+            }
+
+            val request = HttpRequest.newBuilder(URI.create("$baseUrl/v1/models/load"))
+                .header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString(payload.toString()))
+                .timeout(Duration.ofMinutes(2))
+                .build()
+
+            val response = httpClient.send(request, HttpResponse.BodyHandlers.ofString())
+            check(response.statusCode() in 200..299) { response.body().ifBlank { "Model load failed with ${response.statusCode()}" } }
+        }
+    }
+
+    suspend fun fetchProgress(baseUrl: String): Result<ProgressSnapshot> = withContext(Dispatchers.IO) {
+        runCatching {
+            val request = HttpRequest.newBuilder(URI.create("$baseUrl/v1/progress"))
+                .GET()
+                .timeout(Duration.ofSeconds(5))
+                .build()
+
+            val response = httpClient.send(request, HttpResponse.BodyHandlers.ofString())
+            check(response.statusCode() in 200..299) { "Progress request failed with ${response.statusCode()}" }
+
+            val root = json.parseToJsonElement(response.body()).jsonObject
+            ProgressSnapshot(
+                step = root["step"]?.jsonPrimitive?.intOrNull ?: 0,
+                steps = root["steps"]?.jsonPrimitive?.intOrNull ?: 0,
+                time = root["time"]?.jsonPrimitive?.doubleOrNull ?: 0.0,
+                phase = root["phase"]?.jsonPrimitive?.content.orEmpty(),
+                message = root["message"]?.jsonPrimitive?.content.orEmpty(),
             )
         }
     }
@@ -138,17 +218,33 @@ class DiffusionDeskClient {
                 "$baseUrl$imageUrl"
             }
 
-            val request = HttpRequest.newBuilder(URI.create(resolvedUrl))
-                .GET()
-                .timeout(Duration.ofSeconds(30))
-                .build()
+            var lastError: Throwable? = null
+            repeat(8) { attempt ->
+                val attemptResult = runCatching {
+                    val request = HttpRequest.newBuilder(URI.create(resolvedUrl))
+                        .GET()
+                        .timeout(Duration.ofSeconds(30))
+                        .build()
 
-            val response = httpClient.send(request, HttpResponse.BodyHandlers.ofByteArray())
-            check(response.statusCode() in 200..299) { "Failed to download generated image." }
+                    val response = httpClient.send(request, HttpResponse.BodyHandlers.ofByteArray())
+                    check(response.statusCode() in 200..299) { "Failed to download generated image (${response.statusCode()})." }
 
-            val bufferedImage = ImageIO.read(ByteArrayInputStream(response.body()))
-                ?: error("Image decode failed.")
-            bufferedImage.toComposeImageBitmap()
+                    val bufferedImage = ImageIO.read(ByteArrayInputStream(response.body()))
+                        ?: error("Image decode failed.")
+                    bufferedImage.toComposeImageBitmap()
+                }
+
+                if (attemptResult.isSuccess) {
+                    return@runCatching attemptResult.getOrThrow()
+                }
+
+                lastError = attemptResult.exceptionOrNull()
+                if (attempt < 7) {
+                    delay(200)
+                }
+            }
+
+            throw IllegalStateException(lastError?.message ?: "Failed to download generated image.")
         }
     }
 }

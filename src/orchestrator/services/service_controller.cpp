@@ -199,9 +199,22 @@ bool ServiceController::ensure_sd_model_loaded(const diffusion_desk::json& model
     // Start loading
     m_currently_loading_sd = signature;
     m_sd_loaded = false;
+    bool should_unload_existing = !m_active_sd_signature.empty() && m_active_sd_signature != signature;
     lock.unlock();
 
     DD_LOG_INFO("[SmartQueue] Triggering lazy load for SD model: %s (Sig: %s)", model_id.c_str(), signature.c_str());
+
+    if (should_unload_existing) {
+        DD_LOG_INFO("[SmartQueue] Unloading previous SD model before switching to %s", model_id.c_str());
+        httplib::Client unload_cli("127.0.0.1", m_sd_port);
+        httplib::Headers unload_headers;
+        if (!m_token.empty()) unload_headers.emplace("X-Internal-Token", m_token);
+        auto unload_res = unload_cli.Post("/v1/models/unload", unload_headers, "", "application/json");
+        if (!unload_res || unload_res->status != 200) {
+            DD_LOG_WARN("[SmartQueue] SD unload before switch did not return success.");
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(800));
+    }
     
     // Resolve absolute path for worker
     diffusion_desk::json worker_req = model_config;

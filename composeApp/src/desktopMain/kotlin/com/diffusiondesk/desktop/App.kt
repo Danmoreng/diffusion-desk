@@ -93,6 +93,8 @@ fun App(
                             onCfgScaleChange = controller.generationViewModel::updateCfgScale,
                             onSeedChange = controller.generationViewModel::updateSeed,
                             onSamplerChange = controller.generationViewModel::updateSampler,
+                            onRefreshModels = controller.generationViewModel::refreshModels,
+                            onLoadModel = controller.generationViewModel::loadSelectedModel,
                             onGenerate = controller.generationViewModel::generate,
                         )
                         Screen.Settings -> SettingsScreen(
@@ -252,7 +254,7 @@ private fun ScreenPlaceholder(screen: Screen) {
                 StatusCard(
                     title = "Next Step",
                     body = when (screen) {
-                        Screen.Generate -> "Generation already works here; next we should add model discovery and progress events."
+                        Screen.Generate -> "Generation now has model discovery and progress polling; next we should port gallery/history."
                         Screen.Gallery -> "Add typed DTOs and a lazy grid backed by the existing history endpoints."
                         Screen.Manager -> "Port presets and model metadata workflows after generation is stable."
                         Screen.Inpaint -> "Add a custom Compose Canvas editor once core backend connectivity is in place."
