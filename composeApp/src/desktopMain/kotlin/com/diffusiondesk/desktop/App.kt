@@ -1,17 +1,7 @@
 package com.diffusiondesk.desktop
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoAwesome
@@ -34,6 +24,7 @@ import androidx.compose.material3.NavigationRailItem
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -44,10 +35,13 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.diffusiondesk.desktop.core.BackendStatus
+import com.diffusiondesk.desktop.screens.GenerateScreen
+import com.diffusiondesk.desktop.screens.SettingsScreen
 import com.diffusiondesk.desktop.theme.DiffusionDeskTheme
 
 private enum class Screen(val label: String, val icon: ImageVector, val subtitle: String) {
-    Generate("Generate", Icons.Default.Image, "Text-to-image, img2img, and upscale flows will land here first."),
+    Generate("Generate", Icons.Default.Image, "Basic prompt submission against the existing native backend."),
     Gallery("Gallery", Icons.Default.Collections, "Saved outputs, filters, tags, ratings, and reuse actions."),
     Manager("Manager", Icons.Default.Tune, "Presets, styles, LoRAs, and model metadata."),
     Inpaint("Inpaint", Icons.Default.Draw, "Canvas-based editing and mask export will live here."),
@@ -58,10 +52,14 @@ private enum class Screen(val label: String, val icon: ImageVector, val subtitle
 
 @Composable
 fun App(
+    controller: AppController,
     darkTheme: Boolean,
     onToggleTheme: () -> Unit,
 ) {
     var currentScreen by remember { mutableStateOf(Screen.Generate) }
+    val settingsState by controller.settingsViewModel.uiState.collectAsState()
+    val backendState by controller.settingsViewModel.backendState.collectAsState()
+    val generationState by controller.generationViewModel.uiState.collectAsState()
 
     DiffusionDeskTheme(darkTheme = darkTheme) {
         Surface(
@@ -77,8 +75,43 @@ fun App(
                 )
 
                 Column(modifier = Modifier.fillMaxSize()) {
-                    Header(currentScreen = currentScreen)
-                    ScreenPlaceholder(screen = currentScreen)
+                    Header(
+                        currentScreen = currentScreen,
+                        backendStatus = backendState.status,
+                    )
+                    when (currentScreen) {
+                        Screen.Generate -> GenerateScreen(
+                            state = generationState,
+                            backendState = backendState,
+                            samplerOptions = controller.generationViewModel.samplers,
+                            onModelIdChange = controller.generationViewModel::updateModelId,
+                            onPromptChange = controller.generationViewModel::updatePrompt,
+                            onNegativePromptChange = controller.generationViewModel::updateNegativePrompt,
+                            onWidthChange = controller.generationViewModel::updateWidth,
+                            onHeightChange = controller.generationViewModel::updateHeight,
+                            onStepsChange = controller.generationViewModel::updateSteps,
+                            onCfgScaleChange = controller.generationViewModel::updateCfgScale,
+                            onSeedChange = controller.generationViewModel::updateSeed,
+                            onSamplerChange = controller.generationViewModel::updateSampler,
+                            onGenerate = controller.generationViewModel::generate,
+                        )
+                        Screen.Settings -> SettingsScreen(
+                            state = settingsState,
+                            backendState = backendState,
+                            onRepoRootChange = controller.settingsViewModel::updateRepoRoot,
+                            onListenPortChange = controller.settingsViewModel::updateListenPort,
+                            onModelDirChange = controller.settingsViewModel::updateModelDir,
+                            onOutputDirChange = controller.settingsViewModel::updateOutputDir,
+                            onSetupCompletedChange = controller.settingsViewModel::updateSetupCompleted,
+                            onUseCurrentRepo = controller.settingsViewModel::useCurrentRepo,
+                            onSaveLocal = controller.settingsViewModel::saveLocalSettings,
+                            onStartBackend = controller.settingsViewModel::startBackend,
+                            onStopBackend = controller.settingsViewModel::stopBackend,
+                            onApplyToBackend = controller.settingsViewModel::applySettingsToBackend,
+                            onReloadFromBackend = controller.settingsViewModel::loadConfigFromBackend,
+                        )
+                        else -> ScreenPlaceholder(screen = currentScreen)
+                    }
                 }
             }
         }
@@ -140,7 +173,10 @@ private fun NavigationSidebar(
 }
 
 @Composable
-private fun Header(currentScreen: Screen) {
+private fun Header(
+    currentScreen: Screen,
+    backendStatus: BackendStatus,
+) {
     Surface(
         modifier = Modifier
             .fillMaxWidth()
@@ -162,11 +198,20 @@ private fun Header(currentScreen: Screen) {
                     fontWeight = FontWeight.SemiBold,
                 )
                 Text(
-                    text = "Compose desktop skeleton. Backend wiring comes next.",
+                    text = currentScreen.subtitle,
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
+            Text(
+                text = "Backend: ${backendStatus.name}",
+                style = MaterialTheme.typography.labelLarge,
+                color = when (backendStatus) {
+                    BackendStatus.Ready -> MaterialTheme.colorScheme.primary
+                    BackendStatus.Error -> MaterialTheme.colorScheme.error
+                    else -> MaterialTheme.colorScheme.onSurfaceVariant
+                },
+            )
         }
     }
 }
@@ -202,18 +247,18 @@ private fun ScreenPlaceholder(screen: Screen) {
                 )
                 StatusCard(
                     title = "Current Status",
-                    body = "This is the first native shell. It establishes the Compose app structure, future navigation, and theming without backend coupling yet.",
+                    body = "Generate and Settings are now wired. The remaining sections are still placeholders in this first desktop slice.",
                 )
                 StatusCard(
                     title = "Next Step",
                     body = when (screen) {
-                        Screen.Generate -> "Wire the orchestrator process manager, HTTP client, and generation state first."
-                        Screen.Gallery -> "Add typed DTOs and a lazy grid backed by the existing /v1/history/images API."
+                        Screen.Generate -> "Generation already works here; next we should add model discovery and progress events."
+                        Screen.Gallery -> "Add typed DTOs and a lazy grid backed by the existing history endpoints."
                         Screen.Manager -> "Port presets and model metadata workflows after generation is stable."
                         Screen.Inpaint -> "Add a custom Compose Canvas editor once core backend connectivity is in place."
                         Screen.Explore -> "Port mutation-builder logic after generation requests are wired."
                         Screen.Assistant -> "Add chat state, markdown rendering, and tool-call visualization after backend bootstrap."
-                        Screen.Settings -> "Persist desktop settings and add file pickers for model/output directories."
+                        Screen.Settings -> "Settings already work here; next we can add file pickers and validation helpers."
                     },
                 )
             }
