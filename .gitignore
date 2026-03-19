@@ -6,6 +6,9 @@ out/
 # IDE files
 .vscode/
 .idea/
+.gradle/
+.gradle-home/
+.kotlin/
 *.swp
 *.swo
 
