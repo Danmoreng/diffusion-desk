@@ -1,12 +1,4 @@
 import { createRouter, createWebHistory } from 'vue-router'
-import TextToImageView from '../views/TextToImageView.vue'
-import ImageToImageView from '../views/ImageToImageView.vue'
-import InpaintingView from '../views/InpaintingView.vue'
-import UpscaleView from '../views/UpscaleView.vue'
-import ExplorationView from '../views/ExplorationView.vue'
-import SettingsView from '../views/SettingsView.vue'
-import GalleryView from '../views/GalleryView.vue'
-import ManagerView from '../views/ManagerView.vue'
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -14,27 +6,27 @@ const router = createRouter({
     {
       path: '/',
       name: 'Text-to-Image',
-      component: TextToImageView
+      component: () => import('../views/TextToImageView.vue')
     },
     {
       path: '/exploration',
       name: 'Exploration',
-      component: ExplorationView
+      component: () => import('../views/ExplorationView.vue')
     },
     {
       path: '/img2img',
       name: 'Image-to-Image',
-      component: ImageToImageView
+      component: () => import('../views/ImageToImageView.vue')
     },
     {
       path: '/inpainting',
       name: 'Inpainting',
-      component: InpaintingView
+      component: () => import('../views/InpaintingView.vue')
     },
     {
       path: '/upscale',
       name: 'Upscale',
-      component: UpscaleView
+      component: () => import('../views/UpscaleView.vue')
     },
     {
       path: '/manager/:section?/:subsection?',
@@ -44,12 +36,12 @@ const router = createRouter({
     {
       path: '/settings',
       name: 'Settings',
-      component: SettingsView
+      component: () => import('../views/SettingsView.vue')
     },
     {
       path: '/gallery',
       name: 'Gallery',
-      component: GalleryView
+      component: () => import('../views/GalleryView.vue')
     }
   ]
 })
