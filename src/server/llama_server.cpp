@@ -154,14 +154,25 @@ void LlamaServer::bridge_handler(httplib::Server& svr, const std::string& method
             return;
         }
 
-        auto should_stop = std::make_shared<std::function<bool()>>([]() { return false; });
+        static const std::function<bool()> never_stop = []() { return false; };
+        std::string query_string;
+        for (const auto& p : req.params) {
+            if (!query_string.empty()) {
+                query_string += "&";
+            }
+            query_string += p.first;
+            query_string += "=";
+            query_string += p.second;
+        }
+
         // Use shared_ptr to keep request alive for streaming responses
         auto llama_req_ptr = std::make_shared<server_http_req>(server_http_req{
             {}, // params
             {}, // headers
             req.path,
+            query_string,
             req.body,
-            *should_stop
+            never_stop
         });
 
         // Map params
