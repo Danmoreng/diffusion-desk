@@ -1,10 +1,12 @@
 <script setup lang="ts">
+import { defineAsyncComponent } from 'vue'
 import Sidebar from './components/Sidebar.vue'
 import FloatingActionBar from './components/FloatingActionBar.vue'
-import AssistantPanel from './components/AssistantPanel.vue'
 import SetupWizard from './components/SetupWizard.vue'
 import { useGenerationStore } from '@/stores/generation'
 import { useAssistantStore } from '@/stores/assistant'
+
+const AssistantPanel = defineAsyncComponent(() => import('./components/AssistantPanel.vue'))
 
 const store = useGenerationStore()
 const assistantStore = useAssistantStore()
