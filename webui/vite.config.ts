@@ -13,7 +13,30 @@ export default defineConfig({
   base: '/app/',
   build: {
     outDir: '../public/app',
-    emptyOutDir: true
+    emptyOutDir: true,
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (!id.includes('node_modules')) {
+            return
+          }
+
+          if (id.includes('bootstrap')) {
+            return 'vendor-bootstrap'
+          }
+
+          if (id.includes('markdown-it')) {
+            return 'vendor-markdown'
+          }
+
+          if (id.includes('vue')) {
+            return 'vendor-vue'
+          }
+
+          return 'vendor'
+        }
+      }
+    }
   },
   server: {
     proxy: {
