@@ -12,8 +12,6 @@
 
 // SD Headers (from submodule)
 #include "stable-diffusion.h"
-#include "util.h"
-
 #include "utils/common.hpp"
 
 namespace fs = std::filesystem;

@@ -262,7 +262,6 @@ sd_ctx_params_t SDContextParams::to_sd_ctx_params_t(bool vae_decode_only, bool f
     params.chroma_use_t5_mask = chroma_use_t5_mask;
     params.chroma_t5_mask_pad = chroma_t5_mask_pad;
     params.qwen_image_zero_cond_t = qwen_image_zero_cond_t;
-    params.flow_shift = flow_shift;
 
     return params;
 }
