@@ -108,9 +108,9 @@ target_include_directories(diffusion_desk_server PRIVATE
 
 # Only link system libs, no SD/LLM libs - wait, we need SD for common.cpp symbols
 if(WIN32)
-    target_link_libraries(diffusion_desk_server PRIVATE stable-diffusion ixwebsocket SQLiteCpp ws2_32 shell32)
+    target_link_libraries(diffusion_desk_server PRIVATE stable-diffusion cpp-httplib ixwebsocket SQLiteCpp ws2_32 shell32)
 else()
-    target_link_libraries(diffusion_desk_server PRIVATE stable-diffusion ixwebsocket SQLiteCpp)
+    target_link_libraries(diffusion_desk_server PRIVATE stable-diffusion cpp-httplib ixwebsocket SQLiteCpp)
 endif()
 
 # Copy WebUI assets to build directory
@@ -147,7 +147,8 @@ target_include_directories(diffusion_desk_sd_worker PRIVATE
 
 target_link_libraries(diffusion_desk_sd_worker PRIVATE
     stable-diffusion
-    common # llama.cpp common
+    cpp-httplib
+    llama-common # llama.cpp common
 )
 
 if(WIN32)
@@ -182,7 +183,8 @@ target_include_directories(diffusion_desk_llm_worker PRIVATE
 target_link_libraries(diffusion_desk_llm_worker PRIVATE
     llama
     server-context
-    common # This is llama's common library
+    cpp-httplib
+    llama-common # This is llama's common library
 )
 
 if(WIN32)
