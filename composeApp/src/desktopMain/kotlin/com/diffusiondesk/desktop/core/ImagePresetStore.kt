@@ -34,6 +34,13 @@ class ImagePresetStore {
         File(presetDir, "${preset.id}.json").writeText(json.encodeToString(JsonObject.serializer(), preset.toJson()))
     }
 
+    fun delete(id: String) {
+        File(presetDir, "$id.json").delete()
+        if (loadLastPresetId() == id) {
+            saveLastPresetId("")
+        }
+    }
+
     fun loadLastPresetId(): String {
         if (!stateFile.exists()) {
             return ""

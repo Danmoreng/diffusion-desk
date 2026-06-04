@@ -7,20 +7,13 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.diffusiondesk.desktop.core.BackendStatus
@@ -51,7 +44,6 @@ fun SettingsScreen(
     onReloadPresets: () -> Unit,
     onLoadPreset: () -> Unit,
 ) {
-    var showPresetMenu by remember { mutableStateOf(false) }
     val selectedPreset = generationState.presets.firstOrNull { it.id == generationState.selectedPresetId }
 
     Column(
@@ -108,36 +100,27 @@ fun SettingsScreen(
             StatusLine("Preset Folder", generationState.presets.size.toString() + " preset(s)")
             StatusLine("Selected Preset", selectedPreset?.name ?: "None")
             StatusLine("Diffusion Model", selectedPreset?.diffusionModel ?: "Not selected")
-            if (!selectedPreset?.llm.isNullOrBlank()) {
-                StatusLine("Text Encoder", selectedPreset?.llm.orEmpty())
+            val textEncoder = selectedPreset?.llm.orEmpty()
+            val vae = selectedPreset?.vae.orEmpty()
+            if (textEncoder.isNotBlank()) {
+                StatusLine("Text Encoder", textEncoder)
             }
-            if (!selectedPreset?.vae.isNullOrBlank()) {
-                StatusLine("VAE", selectedPreset?.vae.orEmpty())
+            if (vae.isNotBlank()) {
+                StatusLine("VAE", vae)
             }
 
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                Column {
-                    Button(
-                        onClick = { showPresetMenu = true },
-                        enabled = generationState.presets.isNotEmpty(),
-                    ) {
-                        Text("Choose Preset")
-                    }
-                    DropdownMenu(
-                        expanded = showPresetMenu,
-                        onDismissRequest = { showPresetMenu = false },
-                    ) {
-                        generationState.presets.forEach { preset ->
-                            DropdownMenuItem(
-                                text = { Text(preset.name) },
-                                onClick = {
-                                    onPresetIdChange(preset.id)
-                                    showPresetMenu = false
-                                },
-                            )
+                DeskDropdownField(
+                    label = "Preset",
+                    value = selectedPreset?.name ?: "None",
+                    options = generationState.presets.map { it.name },
+                    onValueChange = { name ->
+                        generationState.presets.firstOrNull { it.name == name }?.let { preset ->
+                            onPresetIdChange(preset.id)
                         }
-                    }
-                }
+                    },
+                    modifier = Modifier.widthIn(min = 240.dp, max = 360.dp),
+                )
                 Button(
                     onClick = onReloadPresets,
                     enabled = !generationState.isLoadingPresets,
@@ -157,20 +140,18 @@ fun SettingsScreen(
             title = "Desktop Settings",
             subtitle = "These settings are stored locally and passed to the image worker on startup.",
         ) {
-            OutlinedTextField(
+            DeskTextField(
+                label = "Repository Root",
                 value = state.repoRoot,
                 onValueChange = onRepoRootChange,
                 modifier = Modifier.fillMaxWidth(),
-                label = { Text("Repository Root") },
-                singleLine = true,
             )
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                OutlinedTextField(
+                DeskTextField(
+                    label = "Listen Port",
                     value = state.listenPort,
                     onValueChange = onListenPortChange,
                     modifier = Modifier.widthIn(min = 160.dp),
-                    label = { Text("Listen Port") },
-                    singleLine = true,
                 )
                 Button(onClick = onUseCurrentRepo) {
                     Text("Use Detected Repo")
@@ -179,19 +160,17 @@ fun SettingsScreen(
                     Text("Save Local")
                 }
             }
-            OutlinedTextField(
+            DeskTextField(
+                label = "Model Directory",
                 value = state.modelDir,
                 onValueChange = onModelDirChange,
                 modifier = Modifier.fillMaxWidth(),
-                label = { Text("Model Directory") },
-                singleLine = true,
             )
-            OutlinedTextField(
+            DeskTextField(
+                label = "Output Directory",
                 value = state.outputDir,
                 onValueChange = onOutputDirChange,
                 modifier = Modifier.fillMaxWidth(),
-                label = { Text("Output Directory") },
-                singleLine = true,
             )
             Row(
                 verticalAlignment = Alignment.CenterVertically,
@@ -215,16 +194,14 @@ private fun SectionCard(
     subtitle: String,
     content: @Composable () -> Unit,
 ) {
-    Card(
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surface,
-        ),
+    DeskPanel(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(8.dp)),
     ) {
         Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(20.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp),
+            modifier = Modifier.fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             Text(
                 text = title,

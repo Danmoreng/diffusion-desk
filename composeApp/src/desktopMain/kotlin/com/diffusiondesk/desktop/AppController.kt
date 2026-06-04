@@ -6,6 +6,7 @@ import com.diffusiondesk.desktop.core.DiffusionDeskClient
 import com.diffusiondesk.desktop.core.GenerationSettingsStore
 import com.diffusiondesk.desktop.core.ImagePresetStore
 import com.diffusiondesk.desktop.viewmodel.GenerationViewModel
+import com.diffusiondesk.desktop.viewmodel.LibraryViewModel
 import com.diffusiondesk.desktop.viewmodel.SettingsViewModel
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -23,6 +24,7 @@ class AppController {
 
     val settingsViewModel = SettingsViewModel(scope, settingsStore, backendManager, client)
     val generationViewModel = GenerationViewModel(scope, backendManager, client, presetStore, generationSettingsStore)
+    val libraryViewModel = LibraryViewModel(presetStore)
 
     init {
         settingsViewModel.startBackend()
