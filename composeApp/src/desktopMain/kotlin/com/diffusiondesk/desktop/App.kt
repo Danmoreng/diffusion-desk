@@ -86,6 +86,7 @@ fun App(
                             onToggleEndless = controller.generationViewModel::toggleEndless,
                             onGoBack = controller.generationViewModel::goBack,
                             onGoForward = controller.generationViewModel::goForward,
+                            onLeftPanelWidthChange = controller.generationViewModel::updateLeftPanelWidth,
                         )
                         Screen.Settings -> SettingsScreen(
                             state = settingsState,
