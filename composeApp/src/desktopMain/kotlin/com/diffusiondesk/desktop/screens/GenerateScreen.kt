@@ -3,6 +3,7 @@ package com.diffusiondesk.desktop.screens
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Arrangement
@@ -28,22 +29,18 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ChevronLeft
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Casino
+import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Recycling
 import androidx.compose.material.icons.filled.Repeat
-import androidx.compose.material.icons.filled.RestartAlt
 import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.MenuAnchorType
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
-import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ExposedDropdownMenuBox
-import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -70,7 +67,6 @@ import org.jetbrains.jewel.ui.component.IconButton
 import org.jetbrains.jewel.ui.component.Slider
 import org.jetbrains.jewel.ui.component.Text
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun GenerateScreen(
     state: GenerationUiState,
@@ -149,7 +145,6 @@ fun GenerateScreen(
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun GenerationPanel(
     state: GenerationUiState,
@@ -201,13 +196,23 @@ private fun GenerationPanel(
                     .heightIn(min = 74.dp),
             )
 
-            Label("Parameters")
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                CompactNumberField("Steps", state.steps, onStepsChange, Modifier.weight(1f))
-                CompactNumberField("Batch", state.batchCount, onBatchCountChange, Modifier.weight(1f))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Label("Parameters")
+                Text(
+                    text = "Reset to Preset Defaults",
+                    modifier = Modifier.clickable(onClick = onResetToPresetDefaults),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                CompactNumberField("Seed", state.seed, onSeedChange, Modifier.weight(1f))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                CompactTextField("Steps", state.steps, onStepsChange, Modifier.weight(0.8f))
+                CompactTextField("Batch", state.batchCount, onBatchCountChange, Modifier.weight(0.8f))
+                CompactTextField("Seed", state.seed, onSeedChange, Modifier.weight(1.1f))
                 IconButton(onClick = onRandomizeSeed) {
                     Icon(Icons.Default.Casino, contentDescription = "Random seed")
                 }
@@ -218,36 +223,28 @@ private fun GenerationPanel(
                     Icon(Icons.Default.Recycling, contentDescription = "Reuse last seed")
                 }
             }
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                CompactNumberField("Width", state.width, onWidthChange, Modifier.weight(1f))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                CompactTextField("Width", state.width, onWidthChange, Modifier.weight(1f))
                 IconButton(onClick = onSwapDimensions) {
                     Icon(Icons.Default.SwapHoriz, contentDescription = "Swap dimensions")
                 }
-                CompactNumberField("Height", state.height, onHeightChange, Modifier.weight(1f))
-            }
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                CompactTextField("Height", state.height, onHeightChange, Modifier.weight(1f))
                 AspectRatioMenu(
                     onApplyAspectRatio = onApplyAspectRatio,
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier.weight(0.78f),
                 )
             }
             ResolutionSlider(
                 state = state,
                 onScaleResolution = onScaleResolution,
             )
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                CompactNumberField("CFG", state.cfgScale, onCfgScaleChange, Modifier.weight(1f))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                CompactTextField("CFG", state.cfgScale, onCfgScaleChange, Modifier.weight(1f))
                 SamplerMenu(
                     value = state.sampler,
                     options = samplerOptions,
                     onChange = onSamplerChange,
                     modifier = Modifier.weight(1f),
-                )
-            }
-            Button(onClick = onResetToPresetDefaults) {
-                ButtonContent(
-                    icon = Icons.Default.RestartAlt,
-                    text = "Reset to Preset Defaults",
                 )
             }
 
@@ -563,22 +560,100 @@ private fun ActionBar(
 }
 
 @Composable
-private fun CompactNumberField(
+private fun CompactTextField(
     label: String,
     value: String,
     onChange: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    OutlinedTextField(
-        value = value,
-        onValueChange = onChange,
+    CompactFieldFrame(
+        label = label,
         modifier = modifier,
-        label = { Text(label) },
-        singleLine = true,
-    )
+    ) {
+        BasicTextField(
+            value = value,
+            onValueChange = onChange,
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true,
+            textStyle = MaterialTheme.typography.bodyMedium.copy(color = MaterialTheme.colorScheme.onSurface),
+            cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+        )
+    }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun CompactFieldFrame(
+    label: String,
+    modifier: Modifier = Modifier,
+    content: @Composable () -> Unit,
+) {
+    val shape = RoundedCornerShape(5.dp)
+    Row(
+        modifier = modifier
+            .height(42.dp)
+            .clip(shape)
+            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, shape)
+            .background(MaterialTheme.colorScheme.surface),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxHeight()
+                .width(58.dp)
+                .background(MaterialTheme.colorScheme.surfaceVariant),
+            contentAlignment = Alignment.CenterStart,
+        ) {
+            Text(
+                text = label,
+                modifier = Modifier.padding(start = 10.dp),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        Box(
+            modifier = Modifier
+                .weight(1f)
+                .padding(horizontal = 10.dp),
+            contentAlignment = Alignment.CenterStart,
+        ) {
+            content()
+        }
+    }
+}
+
+@Composable
+private fun CompactDropdownField(
+    label: String,
+    value: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    CompactFieldFrame(
+        label = label,
+        modifier = modifier.clickable(onClick = onClick),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = value,
+                modifier = Modifier.weight(1f),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Icon(
+                imageVector = Icons.Default.ArrowDropDown,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(20.dp),
+            )
+        }
+    }
+}
+
 @Composable
 private fun SamplerMenu(
     value: String,
@@ -587,22 +662,14 @@ private fun SamplerMenu(
     modifier: Modifier = Modifier,
 ) {
     var expanded by remember { mutableStateOf(false) }
-    ExposedDropdownMenuBox(
-        expanded = expanded,
-        onExpandedChange = { expanded = !expanded },
-        modifier = modifier,
-    ) {
-        OutlinedTextField(
+    Box(modifier = modifier) {
+        CompactDropdownField(
+            label = "Sampler",
             value = value,
-            onValueChange = onChange,
-            modifier = Modifier
-                .menuAnchor(MenuAnchorType.PrimaryNotEditable)
-                .fillMaxWidth(),
-            label = { Text("Sampler") },
-            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
-            singleLine = true,
+            onClick = { expanded = true },
+            modifier = Modifier.fillMaxWidth(),
         )
-        ExposedDropdownMenu(
+        DropdownMenu(
             expanded = expanded,
             onDismissRequest = { expanded = false },
         ) {
@@ -619,7 +686,6 @@ private fun SamplerMenu(
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun AspectRatioMenu(
     onApplyAspectRatio: (Int, Int) -> Unit,
@@ -638,23 +704,14 @@ private fun AspectRatioMenu(
         "21:9" to (21 to 9),
     )
     var expanded by remember { mutableStateOf(false) }
-    ExposedDropdownMenuBox(
-        expanded = expanded,
-        onExpandedChange = { expanded = !expanded },
-        modifier = modifier,
-    ) {
-        OutlinedTextField(
+    Box(modifier = modifier) {
+        CompactDropdownField(
+            label = "AR",
             value = "Aspect Ratio",
-            onValueChange = {},
-            modifier = Modifier
-                .menuAnchor(MenuAnchorType.PrimaryNotEditable)
-                .fillMaxWidth(),
-            label = { Text("AR") },
-            readOnly = true,
-            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
-            singleLine = true,
+            onClick = { expanded = true },
+            modifier = Modifier.fillMaxWidth(),
         )
-        ExposedDropdownMenu(
+        DropdownMenu(
             expanded = expanded,
             onDismissRequest = { expanded = false },
         ) {
@@ -669,6 +726,26 @@ private fun AspectRatioMenu(
             }
         }
     }
+}
+
+@Composable
+private fun PaddedTextArea(
+    value: String,
+    onValueChange: (String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val shape = RoundedCornerShape(5.dp)
+    BasicTextField(
+        value = value,
+        onValueChange = onValueChange,
+        modifier = modifier
+            .clip(shape)
+            .background(MaterialTheme.colorScheme.surface)
+            .border(1.dp, MaterialTheme.colorScheme.outline, shape)
+            .padding(horizontal = 10.dp, vertical = 8.dp),
+        textStyle = MaterialTheme.typography.bodyLarge.copy(color = MaterialTheme.colorScheme.onSurface),
+        cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+    )
 }
 
 @Composable
@@ -716,25 +793,6 @@ private fun ResolutionSlider(
     }
 }
 
-@Composable
-private fun PaddedTextArea(
-    value: String,
-    onValueChange: (String) -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    val shape = RoundedCornerShape(5.dp)
-    BasicTextField(
-        value = value,
-        onValueChange = onValueChange,
-        modifier = modifier
-            .clip(shape)
-            .background(MaterialTheme.colorScheme.surface)
-            .border(1.dp, MaterialTheme.colorScheme.outline, shape)
-            .padding(horizontal = 10.dp, vertical = 8.dp),
-        textStyle = MaterialTheme.typography.bodyLarge.copy(color = MaterialTheme.colorScheme.onSurface),
-        cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
-    )
-}
 
 @Composable
 private fun ButtonContent(
