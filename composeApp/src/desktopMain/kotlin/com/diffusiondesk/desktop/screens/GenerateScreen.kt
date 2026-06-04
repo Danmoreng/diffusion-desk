@@ -2,6 +2,8 @@ package com.diffusiondesk.desktop.screens
 
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -22,10 +24,13 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ChevronLeft
 import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.Casino
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Recycling
 import androidx.compose.material.icons.filled.Repeat
+import androidx.compose.material.icons.filled.RestartAlt
+import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
@@ -34,9 +39,9 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.MenuAnchorType
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
@@ -57,6 +62,7 @@ import com.diffusiondesk.desktop.core.BackendStatus
 import com.diffusiondesk.desktop.core.BackendUiState
 import com.diffusiondesk.desktop.viewmodel.GenerationStatus
 import com.diffusiondesk.desktop.viewmodel.GenerationUiState
+import kotlin.math.roundToInt
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -71,7 +77,14 @@ fun GenerateScreen(
     onStepsChange: (String) -> Unit,
     onCfgScaleChange: (String) -> Unit,
     onSeedChange: (String) -> Unit,
+    onBatchCountChange: (String) -> Unit,
     onSamplerChange: (String) -> Unit,
+    onRandomizeSeed: () -> Unit,
+    onReuseLastSeed: () -> Unit,
+    onSwapDimensions: () -> Unit,
+    onApplyAspectRatio: (Int, Int) -> Unit,
+    onScaleResolution: (Int) -> Unit,
+    onResetToPresetDefaults: () -> Unit,
     onGenerate: () -> Unit,
     onToggleEndless: () -> Unit,
     onGoBack: () -> Unit,
@@ -98,7 +111,14 @@ fun GenerateScreen(
                 onStepsChange = onStepsChange,
                 onCfgScaleChange = onCfgScaleChange,
                 onSeedChange = onSeedChange,
+                onBatchCountChange = onBatchCountChange,
                 onSamplerChange = onSamplerChange,
+                onRandomizeSeed = onRandomizeSeed,
+                onReuseLastSeed = onReuseLastSeed,
+                onSwapDimensions = onSwapDimensions,
+                onApplyAspectRatio = onApplyAspectRatio,
+                onScaleResolution = onScaleResolution,
+                onResetToPresetDefaults = onResetToPresetDefaults,
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxHeight(),
@@ -135,7 +155,14 @@ private fun GenerationPanel(
     onStepsChange: (String) -> Unit,
     onCfgScaleChange: (String) -> Unit,
     onSeedChange: (String) -> Unit,
+    onBatchCountChange: (String) -> Unit,
     onSamplerChange: (String) -> Unit,
+    onRandomizeSeed: () -> Unit,
+    onReuseLastSeed: () -> Unit,
+    onSwapDimensions: () -> Unit,
+    onApplyAspectRatio: (Int, Int) -> Unit,
+    onScaleResolution: (Int) -> Unit,
+    onResetToPresetDefaults: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Card(
@@ -172,12 +199,37 @@ private fun GenerationPanel(
             Label("Parameters")
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 CompactNumberField("Steps", state.steps, onStepsChange, Modifier.weight(1f))
+                CompactNumberField("Batch", state.batchCount, onBatchCountChange, Modifier.weight(1f))
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 CompactNumberField("Seed", state.seed, onSeedChange, Modifier.weight(1f))
+                IconButton(onClick = onRandomizeSeed) {
+                    Icon(Icons.Default.Casino, contentDescription = "Random seed")
+                }
+                IconButton(
+                    onClick = onReuseLastSeed,
+                    enabled = state.history.any { it.usedSeed != null },
+                ) {
+                    Icon(Icons.Default.Recycling, contentDescription = "Reuse last seed")
+                }
             }
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 CompactNumberField("Width", state.width, onWidthChange, Modifier.weight(1f))
+                IconButton(onClick = onSwapDimensions) {
+                    Icon(Icons.Default.SwapHoriz, contentDescription = "Swap dimensions")
+                }
                 CompactNumberField("Height", state.height, onHeightChange, Modifier.weight(1f))
             }
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                AspectRatioMenu(
+                    onApplyAspectRatio = onApplyAspectRatio,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+            ResolutionSlider(
+                state = state,
+                onScaleResolution = onScaleResolution,
+            )
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 CompactNumberField("CFG", state.cfgScale, onCfgScaleChange, Modifier.weight(1f))
                 SamplerMenu(
@@ -186,6 +238,11 @@ private fun GenerationPanel(
                     onChange = onSamplerChange,
                     modifier = Modifier.weight(1f),
                 )
+            }
+            Button(onClick = onResetToPresetDefaults) {
+                Icon(Icons.Default.RestartAlt, contentDescription = null)
+                Spacer(Modifier.width(8.dp))
+                Text("Reset to Preset Defaults")
             }
 
             state.currentHistoryItem?.let { item ->
@@ -245,13 +302,8 @@ private fun PreviewPanel(
                 state.isGenerating && state.currentHistoryItem?.status == GenerationStatus.Processing -> {
                     ProgressCard(state)
                 }
-                state.image != null -> {
-                    Image(
-                        bitmap = state.image,
-                        contentDescription = "Generated image",
-                        modifier = Modifier.fillMaxSize(),
-                        contentScale = ContentScale.Fit,
-                    )
+                state.images.isNotEmpty() -> {
+                    GeneratedImageGrid(state)
                 }
                 state.currentHistoryItem?.status == GenerationStatus.Pending -> {
                     Text("Queued", color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -259,6 +311,35 @@ private fun PreviewPanel(
                 else -> {
                     Text("No generated image yet.", color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun GeneratedImageGrid(state: GenerationUiState) {
+    FlowRow(
+        modifier = Modifier.fillMaxSize(),
+        horizontalArrangement = Arrangement.spacedBy(10.dp, Alignment.CenterHorizontally),
+        verticalArrangement = Arrangement.spacedBy(10.dp, Alignment.CenterVertically),
+        maxItemsInEachRow = if (state.images.size <= 1) 1 else 2,
+    ) {
+        state.images.forEachIndexed { index, image ->
+            Box(
+                modifier = Modifier
+                    .weight(1f, fill = false)
+                    .heightIn(min = 220.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(MaterialTheme.colorScheme.surface),
+                contentAlignment = Alignment.Center,
+            ) {
+                Image(
+                    bitmap = image,
+                    contentDescription = "Generated image ${index + 1}",
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Fit,
+                )
             }
         }
     }
@@ -494,6 +575,105 @@ private fun SamplerMenu(
         }
     }
 }
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun AspectRatioMenu(
+    onApplyAspectRatio: (Int, Int) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val ratios = listOf(
+        "1:1" to (1 to 1),
+        "4:3" to (4 to 3),
+        "3:4" to (3 to 4),
+        "3:2" to (3 to 2),
+        "2:3" to (2 to 3),
+        "16:9" to (16 to 9),
+        "9:16" to (9 to 16),
+        "16:10" to (16 to 10),
+        "10:16" to (10 to 16),
+        "21:9" to (21 to 9),
+    )
+    var expanded by remember { mutableStateOf(false) }
+    ExposedDropdownMenuBox(
+        expanded = expanded,
+        onExpandedChange = { expanded = !expanded },
+        modifier = modifier,
+    ) {
+        OutlinedTextField(
+            value = "Aspect Ratio",
+            onValueChange = {},
+            modifier = Modifier
+                .menuAnchor(MenuAnchorType.PrimaryNotEditable)
+                .fillMaxWidth(),
+            label = { Text("AR") },
+            readOnly = true,
+            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
+            singleLine = true,
+        )
+        ExposedDropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false },
+        ) {
+            ratios.forEach { (label, ratio) ->
+                DropdownMenuItem(
+                    text = { Text(label) },
+                    onClick = {
+                        onApplyAspectRatio(ratio.first, ratio.second)
+                        expanded = false
+                    },
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ResolutionSlider(
+    state: GenerationUiState,
+    onScaleResolution: (Int) -> Unit,
+) {
+    val width = state.width.toIntOrNull() ?: 0
+    val height = state.height.toIntOrNull() ?: 0
+    val widthUnits = (width / 16).coerceAtLeast(1)
+    val heightUnits = (height / 16).coerceAtLeast(1)
+    val divisor = gcd(widthUnits, heightUnits).coerceAtLeast(1)
+    val ratioWidthUnits = widthUnits / divisor
+    val ratioHeightUnits = heightUnits / divisor
+    val minMultiplier = maxOf(
+        1,
+        kotlin.math.ceil(64.0 / (ratioWidthUnits * 16)).toInt(),
+        kotlin.math.ceil(64.0 / (ratioHeightUnits * 16)).toInt(),
+    )
+    val maxMultiplier = minOf(
+        4096 / (ratioWidthUnits * 16),
+        4096 / (ratioHeightUnits * 16),
+    ).coerceAtLeast(minMultiplier)
+    val currentMultiplier = divisor.coerceIn(minMultiplier, maxMultiplier)
+
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Label("Overall Size Adjustment")
+            Text(
+                text = "$width x $height",
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.primary,
+            )
+        }
+        Slider(
+            value = currentMultiplier.toFloat(),
+            onValueChange = { onScaleResolution(it.roundToInt()) },
+            valueRange = minMultiplier.toFloat()..maxMultiplier.toFloat(),
+            steps = (maxMultiplier - minMultiplier - 1).coerceAtLeast(0),
+        )
+    }
+}
+
+private fun gcd(a: Int, b: Int): Int = if (b == 0) kotlin.math.abs(a) else gcd(b, a % b)
 
 @Composable
 private fun Label(text: String) {

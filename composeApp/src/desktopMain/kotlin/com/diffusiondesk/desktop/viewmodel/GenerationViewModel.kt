@@ -5,8 +5,10 @@ import com.diffusiondesk.desktop.core.BackendManager
 import com.diffusiondesk.desktop.core.BackendStatus
 import com.diffusiondesk.desktop.core.DiffusionDeskClient
 import com.diffusiondesk.desktop.core.GenerationRequest
+import com.diffusiondesk.desktop.core.GenerationSettingsStore
 import com.diffusiondesk.desktop.core.ImagePreset
 import com.diffusiondesk.desktop.core.ImagePresetStore
+import com.diffusiondesk.desktop.core.SavedGenerationSettings
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -32,6 +34,7 @@ data class GenerationParams(
     val steps: Int,
     val cfgScale: Double,
     val seed: Int,
+    val batchCount: Int,
     val sampler: String,
 )
 
@@ -39,9 +42,9 @@ data class GenerationHistoryItem(
     val id: String,
     val status: GenerationStatus,
     val params: GenerationParams,
-    val imageUrl: String = "",
+    val imageUrls: List<String> = emptyList(),
     val usedSeed: Int? = null,
-    val image: ImageBitmap? = null,
+    val images: List<ImageBitmap> = emptyList(),
     val error: String? = null,
     val generationTime: Double? = null,
 )
@@ -55,6 +58,7 @@ data class GenerationUiState(
     val steps: String = "4",
     val cfgScale: String = "1.0",
     val seed: String = "-1",
+    val batchCount: String = "1",
     val sampler: String = "euler_a",
     val presets: List<ImagePreset> = emptyList(),
     val isLoadingPresets: Boolean = false,
@@ -65,9 +69,9 @@ data class GenerationUiState(
     val progressPhase: String = "",
     val progressMessage: String = "",
     val isGenerating: Boolean = false,
-    val resultUrl: String = "",
+    val resultUrls: List<String> = emptyList(),
     val usedSeed: String = "",
-    val image: ImageBitmap? = null,
+    val images: List<ImageBitmap> = emptyList(),
     val history: List<GenerationHistoryItem> = emptyList(),
     val historyIndex: Int = -1,
     val isEndless: Boolean = false,
@@ -85,8 +89,9 @@ class GenerationViewModel(
     private val backendManager: BackendManager,
     private val client: DiffusionDeskClient,
     private val presetStore: ImagePresetStore,
+    private val generationSettingsStore: GenerationSettingsStore,
 ) {
-    private val _uiState = MutableStateFlow(GenerationUiState())
+    private val _uiState = MutableStateFlow(generationSettingsStore.load().toUiState())
     val uiState: StateFlow<GenerationUiState> = _uiState.asStateFlow()
 
     private var progressJob: Job? = null
@@ -152,8 +157,60 @@ class GenerationViewModel(
     fun updateSteps(value: String) = update { copy(steps = value) }
     fun updateCfgScale(value: String) = update { copy(cfgScale = value) }
     fun updateSeed(value: String) = update { copy(seed = value) }
+    fun updateBatchCount(value: String) = update { copy(batchCount = value) }
     fun updateSampler(value: String) = update { copy(sampler = value) }
     fun toggleEndless() = update { copy(isEndless = !isEndless) }
+
+    fun randomizeSeed() = update { copy(seed = "-1") }
+
+    fun reuseLastSeed() {
+        val usedSeed = _uiState.value.history.lastOrNull { it.usedSeed != null }?.usedSeed ?: return
+        update { copy(seed = usedSeed.toString()) }
+    }
+
+    fun swapDimensions() = update { copy(width = height, height = width) }
+
+    fun applyAspectRatio(widthRatio: Int, heightRatio: Int) {
+        val multiplier = kotlin.math.ceil(maxOf(4.0 / widthRatio, 4.0 / heightRatio)).toInt()
+        update {
+            copy(
+                width = (widthRatio * multiplier * RESOLUTION_STEP).toString(),
+                height = (heightRatio * multiplier * RESOLUTION_STEP).toString(),
+            )
+        }
+    }
+
+    fun scaleResolution(multiplier: Int) {
+        val widthValue = _uiState.value.width.toIntOrNull() ?: return
+        val heightValue = _uiState.value.height.toIntOrNull() ?: return
+        val baseWidthUnits = (widthValue / RESOLUTION_STEP).coerceAtLeast(1)
+        val baseHeightUnits = (heightValue / RESOLUTION_STEP).coerceAtLeast(1)
+        val divisor = gcd(baseWidthUnits, baseHeightUnits).coerceAtLeast(1)
+        val ratioWidthUnits = baseWidthUnits / divisor
+        val ratioHeightUnits = baseHeightUnits / divisor
+        update {
+            copy(
+                width = (ratioWidthUnits * multiplier * RESOLUTION_STEP).coerceIn(MIN_RESOLUTION, MAX_RESOLUTION).toString(),
+                height = (ratioHeightUnits * multiplier * RESOLUTION_STEP).coerceIn(MIN_RESOLUTION, MAX_RESOLUTION).toString(),
+            )
+        }
+    }
+
+    fun resetToPresetDefaults() {
+        val preset = selectedPresetOrNull() ?: return
+        update {
+            copy(
+                width = preset.defaultWidth.toString(),
+                height = preset.defaultHeight.toString(),
+                steps = preset.defaultSteps.toString(),
+                cfgScale = preset.defaultCfgScale.toString(),
+                sampler = preset.defaultSampler,
+                negativePrompt = preset.defaultNegativePrompt,
+                message = "Reset generation settings to ${preset.name}.",
+                error = null,
+            )
+        }
+    }
 
     fun reloadPresets() {
         scope.launch {
@@ -288,10 +345,11 @@ class GenerationViewModel(
                 steps = item.params.steps.toString(),
                 cfgScale = item.params.cfgScale.toString(),
                 seed = item.params.seed.toString(),
+                batchCount = item.params.batchCount.toString(),
                 sampler = item.params.sampler,
-                resultUrl = item.imageUrl,
+                resultUrls = item.imageUrls,
                 usedSeed = item.usedSeed?.toString().orEmpty(),
-                image = item.image,
+                images = item.images,
                 error = item.error,
                 message = when (item.status) {
                     GenerationStatus.Pending -> "Queued."
@@ -340,24 +398,24 @@ class GenerationViewModel(
             stopProgressPolling()
 
             generationResult.onSuccess { result ->
-                val bitmapResult = client.fetchImageBitmap(backendManager.state.value.baseUrl, result.imageUrl)
-                bitmapResult.onSuccess { image ->
+                val bitmapResult = client.fetchImageBitmaps(backendManager.state.value.baseUrl, result.imageUrls)
+                bitmapResult.onSuccess { images ->
                     val generationTime = (System.currentTimeMillis() - startedAt) / 1000.0
                     updateHistoryItem(nextIndex) {
                         it.copy(
                             status = GenerationStatus.Completed,
-                            imageUrl = result.imageUrl,
+                            imageUrls = result.imageUrls,
                             usedSeed = result.usedSeed,
-                            image = image,
+                            images = images,
                             generationTime = generationTime,
                         )
                     }
                     if (_uiState.value.historyIndex == nextIndex) {
                         update {
                             copy(
-                                resultUrl = result.imageUrl,
+                                resultUrls = result.imageUrls,
                                 usedSeed = result.usedSeed.toString(),
-                                image = image,
+                                images = images,
                                 message = "Image generated successfully.",
                                 error = null,
                             )
@@ -367,14 +425,14 @@ class GenerationViewModel(
                     val message = error.message ?: "Failed to load generated image."
                     updateHistoryItem(nextIndex) { it.copy(status = GenerationStatus.Failed, error = message) }
                     if (_uiState.value.historyIndex == nextIndex) {
-                        update { copy(image = null, error = message) }
+                        update { copy(images = emptyList(), error = message) }
                     }
                 }
             }.onFailure { error ->
                 val message = error.message ?: "Generation failed."
                 updateHistoryItem(nextIndex) { it.copy(status = GenerationStatus.Failed, error = message) }
                 if (_uiState.value.historyIndex == nextIndex) {
-                    update { copy(image = null, error = message) }
+                    update { copy(images = emptyList(), error = message) }
                 }
             }
 
@@ -424,6 +482,7 @@ class GenerationViewModel(
             steps = state.steps.toIntOrNull() ?: error("Steps must be numeric."),
             cfgScale = state.cfgScale.toDoubleOrNull() ?: error("CFG scale must be numeric."),
             seed = state.seed.toIntOrNull() ?: error("Seed must be numeric."),
+            batchCount = state.batchCount.toIntOrNull()?.coerceIn(MIN_BATCH_COUNT, MAX_BATCH_COUNT) ?: error("Batch must be numeric."),
             sampler = state.sampler.trim(),
         )
     }
@@ -437,6 +496,7 @@ class GenerationViewModel(
         steps = steps,
         cfgScale = cfgScale,
         seed = seed,
+        batchCount = batchCount,
         sampler = sampler,
     )
 
@@ -456,5 +516,40 @@ class GenerationViewModel(
 
     private fun update(transform: GenerationUiState.() -> GenerationUiState) {
         _uiState.value = _uiState.value.transform()
+        generationSettingsStore.save(_uiState.value.toSavedSettings())
+    }
+
+    private fun SavedGenerationSettings.toUiState() = GenerationUiState(
+        prompt = prompt,
+        negativePrompt = negativePrompt,
+        width = width,
+        height = height,
+        steps = steps,
+        cfgScale = cfgScale,
+        seed = seed,
+        batchCount = batchCount,
+        sampler = sampler,
+    )
+
+    private fun GenerationUiState.toSavedSettings() = SavedGenerationSettings(
+        prompt = prompt,
+        negativePrompt = negativePrompt,
+        width = width,
+        height = height,
+        steps = steps,
+        cfgScale = cfgScale,
+        seed = seed,
+        batchCount = batchCount,
+        sampler = sampler,
+    )
+
+    private fun gcd(a: Int, b: Int): Int = if (b == 0) kotlin.math.abs(a) else gcd(b, a % b)
+
+    companion object {
+        const val MIN_RESOLUTION = 64
+        const val MAX_RESOLUTION = 4096
+        const val RESOLUTION_STEP = 16
+        const val MIN_BATCH_COUNT = 1
+        const val MAX_BATCH_COUNT = 8
     }
 }
