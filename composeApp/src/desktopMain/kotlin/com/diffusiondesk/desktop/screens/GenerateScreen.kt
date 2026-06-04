@@ -29,6 +29,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Redo
+import androidx.compose.material.icons.automirrored.filled.Undo
 import androidx.compose.material.icons.filled.ChevronLeft
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Casino
@@ -56,6 +58,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
@@ -104,6 +107,9 @@ fun GenerateScreen(
     backendState: BackendUiState,
     samplerOptions: List<String>,
     onPromptChange: (String) -> Unit,
+    onPromptCommit: () -> Unit,
+    onUndoPrompt: () -> Unit,
+    onRedoPrompt: () -> Unit,
     onNegativePromptChange: (String) -> Unit,
     onWidthChange: (String) -> Unit,
     onHeightChange: (String) -> Unit,
@@ -174,6 +180,9 @@ fun GenerateScreen(
                     state = state,
                     samplerOptions = samplerOptions,
                     onPromptChange = onPromptChange,
+                    onPromptCommit = onPromptCommit,
+                    onUndoPrompt = onUndoPrompt,
+                    onRedoPrompt = onRedoPrompt,
                     onNegativePromptChange = onNegativePromptChange,
                     onWidthChange = onWidthChange,
                     onHeightChange = onHeightChange,
@@ -275,6 +284,9 @@ private fun GenerationPanel(
     state: GenerationUiState,
     samplerOptions: List<String>,
     onPromptChange: (String) -> Unit,
+    onPromptCommit: () -> Unit,
+    onUndoPrompt: () -> Unit,
+    onRedoPrompt: () -> Unit,
     onNegativePromptChange: (String) -> Unit,
     onWidthChange: (String) -> Unit,
     onHeightChange: (String) -> Unit,
@@ -305,10 +317,31 @@ private fun GenerationPanel(
                 .padding(14.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
-            Label("Prompt")
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Label("Prompt")
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    PromptHistoryButton(
+                        icon = Icons.AutoMirrored.Filled.Undo,
+                        contentDescription = "Previous prompt",
+                        onClick = onUndoPrompt,
+                        enabled = state.canUndoPrompt,
+                    )
+                    PromptHistoryButton(
+                        icon = Icons.AutoMirrored.Filled.Redo,
+                        contentDescription = "Next prompt",
+                        onClick = onRedoPrompt,
+                        enabled = state.canRedoPrompt,
+                    )
+                }
+            }
             PaddedTextArea(
                 value = state.prompt,
                 onValueChange = onPromptChange,
+                onFocusLost = onPromptCommit,
                 modifier = Modifier
                     .fillMaxWidth()
                     .heightIn(min = 142.dp),
@@ -1090,6 +1123,38 @@ private fun CompactIconButton(
 }
 
 @Composable
+private fun PromptHistoryButton(
+    icon: ImageVector,
+    contentDescription: String,
+    onClick: () -> Unit,
+    enabled: Boolean,
+) {
+    val shape = RoundedCornerShape(5.dp)
+    val tint = if (enabled) {
+        MaterialTheme.colorScheme.onSurfaceVariant
+    } else {
+        MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.38f)
+    }
+
+    Box(
+        modifier = Modifier
+            .size(width = 28.dp, height = 24.dp)
+            .clip(shape)
+            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, shape)
+            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = if (enabled) 0.75f else 0.35f))
+            .then(if (enabled) Modifier.clickable(onClick = onClick) else Modifier),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = contentDescription,
+            tint = tint,
+            modifier = Modifier.size(15.dp),
+        )
+    }
+}
+
+@Composable
 private fun CompactDropdownField(
     label: String,
     value: String,
@@ -1285,12 +1350,20 @@ private fun PaddedTextArea(
     value: String,
     onValueChange: (String) -> Unit,
     modifier: Modifier = Modifier,
+    onFocusLost: (() -> Unit)? = null,
 ) {
     val shape = RoundedCornerShape(5.dp)
+    var hadFocus by remember { mutableStateOf(false) }
     BasicTextField(
         value = value,
         onValueChange = onValueChange,
         modifier = modifier
+            .onFocusChanged { focusState ->
+                if (hadFocus && !focusState.isFocused) {
+                    onFocusLost?.invoke()
+                }
+                hadFocus = focusState.isFocused
+            }
             .clip(shape)
             .background(MaterialTheme.colorScheme.surface)
             .border(1.dp, MaterialTheme.colorScheme.outline, shape)
