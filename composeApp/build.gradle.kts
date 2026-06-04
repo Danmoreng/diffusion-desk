@@ -47,6 +47,14 @@ compose.desktop {
             packageName = "diffusion-desk"
             packageVersion = "1.0.0"
 
+            windows {
+                iconFile.set(project.file("src/desktopMain/resources/icons/app-icon.ico"))
+            }
+
+            linux {
+                iconFile.set(project.file("src/desktopMain/resources/icons/app-icon.png"))
+            }
+
             modules(
                 "java.base",
                 "java.desktop",
