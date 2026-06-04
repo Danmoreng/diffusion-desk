@@ -9,8 +9,6 @@ import androidx.compose.material.icons.filled.Dashboard
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -27,10 +25,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.diffusiondesk.desktop.core.BackendStatus
 import com.diffusiondesk.desktop.screens.GenerateScreen
 import com.diffusiondesk.desktop.screens.SettingsScreen
 import com.diffusiondesk.desktop.theme.DiffusionDeskTheme
@@ -64,17 +60,12 @@ fun App(
                     onToggleTheme = onToggleTheme,
                 )
 
-                Column(modifier = Modifier.fillMaxSize()) {
-                    Header(
-                        currentScreen = currentScreen,
-                        backendStatus = backendState.status,
-                    )
+                Box(modifier = Modifier.fillMaxSize()) {
                     when (currentScreen) {
                         Screen.Generate -> GenerateScreen(
                             state = generationState,
                             backendState = backendState,
                             samplerOptions = controller.generationViewModel.samplers,
-                            onPresetIdChange = controller.generationViewModel::updatePresetId,
                             onPromptChange = controller.generationViewModel::updatePrompt,
                             onNegativePromptChange = controller.generationViewModel::updateNegativePrompt,
                             onWidthChange = controller.generationViewModel::updateWidth,
@@ -83,13 +74,15 @@ fun App(
                             onCfgScaleChange = controller.generationViewModel::updateCfgScale,
                             onSeedChange = controller.generationViewModel::updateSeed,
                             onSamplerChange = controller.generationViewModel::updateSampler,
-                            onReloadPresets = controller.generationViewModel::reloadPresets,
-                            onLoadPreset = controller.generationViewModel::loadSelectedPreset,
                             onGenerate = controller.generationViewModel::generate,
+                            onToggleEndless = controller.generationViewModel::toggleEndless,
+                            onGoBack = controller.generationViewModel::goBack,
+                            onGoForward = controller.generationViewModel::goForward,
                         )
                         Screen.Settings -> SettingsScreen(
                             state = settingsState,
                             backendState = backendState,
+                            generationState = generationState,
                             onRepoRootChange = controller.settingsViewModel::updateRepoRoot,
                             onListenPortChange = controller.settingsViewModel::updateListenPort,
                             onModelDirChange = controller.settingsViewModel::updateModelDir,
@@ -101,6 +94,9 @@ fun App(
                             onStopBackend = controller.settingsViewModel::stopBackend,
                             onApplyToBackend = controller.settingsViewModel::applySettingsToBackend,
                             onReloadFromBackend = controller.settingsViewModel::loadConfigFromBackend,
+                            onPresetIdChange = controller.generationViewModel::updatePresetId,
+                            onReloadPresets = controller.generationViewModel::reloadPresets,
+                            onLoadPreset = controller.generationViewModel::loadSelectedPreset,
                         )
                     }
                 }
@@ -160,49 +156,5 @@ private fun NavigationSidebar(
         }
 
         Spacer(Modifier.height(16.dp))
-    }
-}
-
-@Composable
-private fun Header(
-    currentScreen: Screen,
-    backendStatus: BackendStatus,
-) {
-    Surface(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(72.dp),
-        color = MaterialTheme.colorScheme.surface,
-        tonalElevation = 2.dp,
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(horizontal = 28.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween,
-        ) {
-            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text(
-                    text = currentScreen.label,
-                    style = MaterialTheme.typography.headlineSmall,
-                    fontWeight = FontWeight.SemiBold,
-                )
-                Text(
-                    text = currentScreen.subtitle,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-            Text(
-                text = "Worker: ${backendStatus.name}",
-                style = MaterialTheme.typography.labelLarge,
-                color = when (backendStatus) {
-                    BackendStatus.Ready -> MaterialTheme.colorScheme.primary
-                    BackendStatus.Error -> MaterialTheme.colorScheme.error
-                    else -> MaterialTheme.colorScheme.onSurfaceVariant
-                },
-            )
-        }
     }
 }
