@@ -24,6 +24,7 @@ import java.net.http.HttpRequest
 import java.net.http.HttpResponse
 import java.nio.charset.StandardCharsets
 import java.time.Duration
+import java.awt.image.BufferedImage
 import javax.imageio.ImageIO
 
 data class ServerConfig(
@@ -66,6 +67,13 @@ data class GenerationResult(
     val imageUrls: List<String>,
     val usedSeed: Int,
     val generationTime: Double? = null,
+)
+
+data class GeneratedImage(
+    val bitmap: ImageBitmap,
+    val bufferedImage: BufferedImage,
+    val bytes: ByteArray,
+    val sourceUrl: String,
 )
 
 data class GenerationJobSubmission(
@@ -352,15 +360,15 @@ class DiffusionDeskClient {
         }
     }
 
-    suspend fun fetchImageBitmaps(baseUrl: String, imageUrls: List<String>): Result<List<ImageBitmap>> = withContext(Dispatchers.IO) {
+    suspend fun fetchGeneratedImages(baseUrl: String, imageUrls: List<String>): Result<List<GeneratedImage>> = withContext(Dispatchers.IO) {
         runCatching {
             imageUrls.map { imageUrl ->
-                fetchImageBitmap(baseUrl, imageUrl).getOrThrow()
+                fetchGeneratedImage(baseUrl, imageUrl).getOrThrow()
             }
         }
     }
 
-    suspend fun fetchImageBitmap(baseUrl: String, imageUrl: String): Result<ImageBitmap> = withContext(Dispatchers.IO) {
+    suspend fun fetchGeneratedImage(baseUrl: String, imageUrl: String): Result<GeneratedImage> = withContext(Dispatchers.IO) {
         runCatching {
             val resolvedUrl = if (imageUrl.startsWith("http://") || imageUrl.startsWith("https://")) {
                 imageUrl
@@ -379,9 +387,15 @@ class DiffusionDeskClient {
                     val response = httpClient.send(request, HttpResponse.BodyHandlers.ofByteArray())
                     check(response.statusCode() in 200..299) { "Failed to download generated image (${response.statusCode()})." }
 
-                    val bufferedImage = ImageIO.read(ByteArrayInputStream(response.body()))
+                    val imageBytes = response.body()
+                    val bufferedImage = ImageIO.read(ByteArrayInputStream(imageBytes))
                         ?: error("Image decode failed.")
-                    bufferedImage.toComposeImageBitmap()
+                    GeneratedImage(
+                        bitmap = bufferedImage.toComposeImageBitmap(),
+                        bufferedImage = bufferedImage,
+                        bytes = imageBytes,
+                        sourceUrl = resolvedUrl,
+                    )
                 }
 
                 if (attemptResult.isSuccess) {

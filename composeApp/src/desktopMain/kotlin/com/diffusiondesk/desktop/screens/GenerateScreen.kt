@@ -1,6 +1,8 @@
 package com.diffusiondesk.desktop.screens
 
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.ContextMenuArea
+import androidx.compose.foundation.ContextMenuItem
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -74,9 +76,20 @@ import androidx.compose.ui.window.PopupProperties
 import androidx.compose.ui.graphics.vector.ImageVector
 import com.diffusiondesk.desktop.core.BackendStatus
 import com.diffusiondesk.desktop.core.BackendUiState
+import com.diffusiondesk.desktop.core.GeneratedImage
 import com.diffusiondesk.desktop.viewmodel.GenerationStatus
 import com.diffusiondesk.desktop.viewmodel.GenerationUiState
 import java.awt.Cursor
+import java.awt.Desktop
+import java.awt.FileDialog
+import java.awt.Frame
+import java.awt.Toolkit
+import java.awt.datatransfer.DataFlavor
+import java.awt.datatransfer.Transferable
+import java.io.File
+import java.net.URI
+import java.net.URLDecoder
+import java.nio.charset.StandardCharsets
 import java.util.Locale
 import kotlin.math.roundToInt
 import org.jetbrains.jewel.ui.component.DefaultButton as Button
@@ -111,6 +124,7 @@ fun GenerateScreen(
     onGoForward: () -> Unit,
     onLeftPanelWidthChange: (Int) -> Unit,
     actionBarPosition: String,
+    outputDir: String,
 ) {
     val showActionBarOnTop = actionBarPosition == "top"
     Column(
@@ -214,6 +228,7 @@ fun GenerateScreen(
 
                 PreviewPanel(
                     state = state,
+                    outputDir = outputDir,
                     modifier = Modifier
                         .weight(1f)
                         .fillMaxHeight(),
@@ -373,6 +388,7 @@ private fun GenerationPanel(
 @Composable
 private fun PreviewPanel(
     state: GenerationUiState,
+    outputDir: String,
     modifier: Modifier = Modifier,
 ) {
     Box(
@@ -384,7 +400,7 @@ private fun PreviewPanel(
                 ProgressCard(state)
             }
             state.images.isNotEmpty() -> {
-                GeneratedImageGrid(state)
+                GeneratedImageGrid(state, outputDir)
             }
             state.currentHistoryItem?.status == GenerationStatus.Pending -> {
                 Text("Queued", color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -395,7 +411,10 @@ private fun PreviewPanel(
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun GeneratedImageGrid(state: GenerationUiState) {
+private fun GeneratedImageGrid(
+    state: GenerationUiState,
+    outputDir: String,
+) {
     BoxWithConstraints(
         modifier = Modifier.fillMaxSize(),
         contentAlignment = Alignment.Center,
@@ -419,6 +438,7 @@ private fun GeneratedImageGrid(state: GenerationUiState) {
                     index = index,
                     maxWidth = cellMaxWidth,
                     maxHeight = cellMaxHeight,
+                    outputDir = outputDir,
                 )
             }
         }
@@ -427,17 +447,22 @@ private fun GeneratedImageGrid(state: GenerationUiState) {
 
 @Composable
 private fun GeneratedImageTile(
-    image: androidx.compose.ui.graphics.ImageBitmap,
+    image: GeneratedImage,
     index: Int,
     maxWidth: Dp,
     maxHeight: Dp,
+    outputDir: String,
 ) {
-    val imageWidth = image.width.coerceAtLeast(1).toFloat()
-    val imageHeight = image.height.coerceAtLeast(1).toFloat()
+    val bitmap = image.bitmap
+    val imageWidth = bitmap.width.coerceAtLeast(1).toFloat()
+    val imageHeight = bitmap.height.coerceAtLeast(1).toFloat()
     val aspectRatio = imageWidth / imageHeight
     val density = LocalDensity.current
-    val naturalWidth = with(density) { image.width.toDp() }
-    val naturalHeight = with(density) { image.height.toDp() }
+    val naturalWidth = with(density) { bitmap.width.toDp() }
+    val naturalHeight = with(density) { bitmap.height.toDp() }
+    val localFile = remember(image.sourceUrl, outputDir) {
+        image.resolveOutputFile(outputDir)
+    }
 
     var displayWidth = naturalWidth.coerceAtMost(maxWidth)
     var displayHeight = displayWidth / aspectRatio
@@ -450,20 +475,119 @@ private fun GeneratedImageTile(
         displayWidth = naturalHeight * aspectRatio
     }
 
-    Box(
-        modifier = Modifier
-            .width(displayWidth)
-            .height(displayHeight)
-            .clip(RoundedCornerShape(8.dp))
-            .background(MaterialTheme.colorScheme.surface),
-        contentAlignment = Alignment.Center,
+    ContextMenuArea(
+        items = {
+            buildList {
+                add(ContextMenuItem("Copy Image") { image.copyToClipboard() })
+                add(ContextMenuItem("Save Image As...") { image.saveAs(index) })
+                if (localFile != null && localFile.exists()) {
+                    add(ContextMenuItem("Open Image") { openFile(localFile) })
+                    add(ContextMenuItem("Show in Explorer") { showInExplorer(localFile) })
+                }
+            }
+        },
     ) {
-        Image(
-            bitmap = image,
-            contentDescription = "Generated image ${index + 1}",
-            modifier = Modifier.fillMaxSize(),
-            contentScale = ContentScale.Fit,
-        )
+        Box(
+            modifier = Modifier
+                .width(displayWidth)
+                .height(displayHeight)
+                .clip(RoundedCornerShape(8.dp))
+                .background(MaterialTheme.colorScheme.surface),
+            contentAlignment = Alignment.Center,
+        ) {
+            Image(
+                bitmap = bitmap,
+                contentDescription = "Generated image ${index + 1}",
+                modifier = Modifier.fillMaxSize(),
+                contentScale = ContentScale.Fit,
+            )
+        }
+    }
+}
+
+private fun GeneratedImage.copyToClipboard() {
+    Toolkit.getDefaultToolkit().systemClipboard.setContents(ImageTransferable(bufferedImage), null)
+}
+
+private fun GeneratedImage.saveAs(index: Int) {
+    val extension = imageExtension().ifBlank { "png" }
+    val dialog = FileDialog(activeFrame(), "Save Image", FileDialog.SAVE).apply {
+        file = sourceFileName() ?: "generated-image-${index + 1}.$extension"
+        isVisible = true
+    }
+    val selectedFile = dialog.file ?: return
+    val directory = dialog.directory ?: return
+    val target = File(directory, selectedFile).withImageExtension(extension)
+    target.writeBytes(bytes)
+}
+
+private fun GeneratedImage.resolveOutputFile(outputDir: String): File? {
+    if (outputDir.isBlank()) return null
+    val path = runCatching { URI(sourceUrl).path }.getOrNull() ?: return null
+    val marker = "/outputs/"
+    val markerIndex = path.indexOf(marker)
+    if (markerIndex < 0) return null
+
+    val relativePath = URLDecoder.decode(
+        path.substring(markerIndex + marker.length),
+        StandardCharsets.UTF_8,
+    )
+    val outputRoot = File(outputDir).canonicalFile
+    val file = File(outputRoot, relativePath.replace('/', File.separatorChar)).canonicalFile
+    return file.takeIf {
+        it.path == outputRoot.path || it.path.startsWith(outputRoot.path + File.separator)
+    }
+}
+
+private fun GeneratedImage.sourceFileName(): String? {
+    val path = runCatching { URI(sourceUrl).path }.getOrNull() ?: return null
+    return URLDecoder.decode(path.substringAfterLast('/'), StandardCharsets.UTF_8)
+        .takeIf { it.isNotBlank() }
+}
+
+private fun GeneratedImage.imageExtension(): String {
+    return sourceFileName()
+        ?.substringAfterLast('.', missingDelimiterValue = "")
+        ?.lowercase(Locale.US)
+        ?.takeIf { it in setOf("png", "jpg", "jpeg", "webp", "bmp", "gif") }
+        ?: "png"
+}
+
+private fun File.withImageExtension(extension: String): File {
+    return if (name.contains('.')) this else File(parentFile, "$name.$extension")
+}
+
+private fun activeFrame(): Frame? {
+    return Frame.getFrames().firstOrNull { it.isActive }
+        ?: Frame.getFrames().firstOrNull { it.isVisible }
+}
+
+private fun openFile(file: File) {
+    if (Desktop.isDesktopSupported()) {
+        Desktop.getDesktop().open(file)
+    }
+}
+
+private fun showInExplorer(file: File) {
+    if (System.getProperty("os.name").startsWith("Windows", ignoreCase = true)) {
+        ProcessBuilder("explorer.exe", "/select,", file.absolutePath).start()
+    } else if (Desktop.isDesktopSupported()) {
+        Desktop.getDesktop().open(file.parentFile)
+    }
+}
+
+private class ImageTransferable(
+    private val image: java.awt.Image,
+) : Transferable {
+    override fun getTransferDataFlavors(): Array<DataFlavor> = arrayOf(DataFlavor.imageFlavor)
+
+    override fun isDataFlavorSupported(flavor: DataFlavor): Boolean = flavor == DataFlavor.imageFlavor
+
+    override fun getTransferData(flavor: DataFlavor): Any {
+        if (!isDataFlavorSupported(flavor)) {
+            throw UnsupportedOperationException("Unsupported clipboard flavor: $flavor")
+        }
+        return image
     }
 }
 
