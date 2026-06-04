@@ -4,16 +4,15 @@ import java.io.File
 import java.util.Properties
 
 class DesktopSettingsStore {
-    private val appDir = File(System.getProperty("user.home"), ".diffusion-desk-desktop")
-    private val settingsFile = File(appDir, "settings.properties")
+    private val settingsFile = File(AppPaths.appDir, "settings.properties")
 
     fun load(): DesktopSettings {
         val repoRoot = detectDefaultRepoRoot()
         val defaults = DesktopSettings(
             repoRoot = repoRoot,
             listenPort = 1234,
-            modelDir = File(repoRoot, "models").absolutePath,
-            outputDir = File(repoRoot, "outputs").absolutePath,
+            modelDir = detectDefaultModelDir(repoRoot),
+            outputDir = detectDefaultOutputDir(repoRoot),
             setupCompleted = true,
         )
 
@@ -24,11 +23,17 @@ class DesktopSettingsStore {
         return runCatching {
             val props = Properties()
             settingsFile.inputStream().use(props::load)
+            val repoRootFromSettings = props.getProperty("repoRoot", defaults.repoRoot)
+            val modelDirFromSettings = props.getProperty("modelDir", defaults.modelDir)
+            val outputDirFromSettings = props.getProperty("outputDir", defaults.outputDir)
+            val detectedModelDir = detectDefaultModelDir(repoRootFromSettings)
+            val detectedOutputDir = detectDefaultOutputDir(repoRootFromSettings)
+
             defaults.copy(
-                repoRoot = props.getProperty("repoRoot", defaults.repoRoot),
+                repoRoot = repoRootFromSettings,
                 listenPort = props.getProperty("listenPort", defaults.listenPort.toString()).toIntOrNull() ?: defaults.listenPort,
-                modelDir = props.getProperty("modelDir", defaults.modelDir),
-                outputDir = props.getProperty("outputDir", defaults.outputDir),
+                modelDir = modelDirFromSettings.takeIf { File(it).exists() } ?: detectedModelDir,
+                outputDir = outputDirFromSettings.takeIf { it.isNotBlank() } ?: detectedOutputDir,
                 setupCompleted = props.getProperty("setupCompleted", defaults.setupCompleted.toString()).toBooleanStrictOrNull()
                     ?: defaults.setupCompleted,
             )
@@ -36,8 +41,8 @@ class DesktopSettingsStore {
     }
 
     fun save(settings: DesktopSettings) {
-        if (!appDir.exists()) {
-            appDir.mkdirs()
+        if (!AppPaths.appDir.exists()) {
+            AppPaths.appDir.mkdirs()
         }
 
         val props = Properties()

@@ -1,0 +1,22 @@
+package com.diffusiondesk.desktop.core
+
+data class ImagePreset(
+    val id: String,
+    val name: String,
+    val diffusionModel: String,
+    val vae: String = "",
+    val clipL: String = "",
+    val clipG: String = "",
+    val t5xxl: String = "",
+    val llm: String = "",
+    val clipOnCpu: Boolean = false,
+    val vaeOnCpu: Boolean = false,
+    val offloadParamsToCpu: Boolean = false,
+    val flashAttention: Boolean = false,
+    val defaultWidth: Int = 1024,
+    val defaultHeight: Int = 1024,
+    val defaultSteps: Int = 4,
+    val defaultCfgScale: Double = 1.0,
+    val defaultSampler: String = "euler_a",
+    val defaultNegativePrompt: String = "deformed, blurry, low quality, watermark",
+)

@@ -5,7 +5,8 @@ import com.diffusiondesk.desktop.core.BackendManager
 import com.diffusiondesk.desktop.core.BackendStatus
 import com.diffusiondesk.desktop.core.DiffusionDeskClient
 import com.diffusiondesk.desktop.core.GenerationRequest
-import com.diffusiondesk.desktop.core.ModelSummary
+import com.diffusiondesk.desktop.core.ImagePreset
+import com.diffusiondesk.desktop.core.ImagePresetStore
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -16,7 +17,7 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 
 data class GenerationUiState(
-    val modelId: String = "",
+    val selectedPresetId: String = "",
     val prompt: String = "A cinematic, melancholic photograph of a solitary hooded figure walking through a sprawling, rain-slicked metropolis at night.",
     val negativePrompt: String = "deformed, blurry, low quality, watermark",
     val width: String = "1024",
@@ -25,9 +26,9 @@ data class GenerationUiState(
     val cfgScale: String = "1.0",
     val seed: String = "-1",
     val sampler: String = "euler_a",
-    val availableModels: List<ModelSummary> = emptyList(),
-    val isLoadingModels: Boolean = false,
-    val isLoadingModel: Boolean = false,
+    val presets: List<ImagePreset> = emptyList(),
+    val isLoadingPresets: Boolean = false,
+    val isLoadingPreset: Boolean = false,
     val progressStep: Int = 0,
     val progressSteps: Int = 0,
     val progressTime: Double = 0.0,
@@ -45,25 +46,31 @@ class GenerationViewModel(
     private val scope: CoroutineScope,
     private val backendManager: BackendManager,
     private val client: DiffusionDeskClient,
+    private val presetStore: ImagePresetStore,
 ) {
     private val _uiState = MutableStateFlow(GenerationUiState())
     val uiState: StateFlow<GenerationUiState> = _uiState.asStateFlow()
 
     private var progressJob: Job? = null
+    private var hasAutoLoadedPreset = false
 
     val samplers = listOf("euler", "euler_a", "heun", "dpm2", "dpmpp_2s_a", "dpmpp_2m", "dpmpp_2mv2", "ipndm", "ipndm_v", "lcm", "ddim_trailing", "tcd")
 
     init {
+        reloadPresets()
         scope.launch {
             backendManager.state.collectLatest { state ->
                 if (state.status == BackendStatus.Ready) {
-                    refreshModels()
+                    update { copy(message = "Image worker ready.") }
+                    if (!hasAutoLoadedPreset) {
+                        hasAutoLoadedPreset = true
+                        loadSelectedPreset()
+                    }
                 } else {
                     progressJob?.cancel()
                     progressJob = null
                     update {
                         copy(
-                            availableModels = emptyList(),
                             progressStep = 0,
                             progressSteps = 0,
                             progressTime = 0.0,
@@ -76,7 +83,30 @@ class GenerationViewModel(
         }
     }
 
-    fun updateModelId(value: String) = update { copy(modelId = value) }
+    fun updatePresetId(value: String) {
+        val preset = _uiState.value.presets.firstOrNull { it.id == value }
+        update {
+            if (preset == null) {
+                copy(selectedPresetId = value)
+            } else {
+                copy(
+                    selectedPresetId = value,
+                    width = preset.defaultWidth.toString(),
+                    height = preset.defaultHeight.toString(),
+                    steps = preset.defaultSteps.toString(),
+                    cfgScale = preset.defaultCfgScale.toString(),
+                    sampler = preset.defaultSampler,
+                    negativePrompt = preset.defaultNegativePrompt,
+                    message = "Selected ${preset.name}.",
+                    error = null,
+                )
+            }
+        }
+        if (preset != null) {
+            presetStore.saveLastPresetId(preset.id)
+        }
+    }
+
     fun updatePrompt(value: String) = update { copy(prompt = value) }
     fun updateNegativePrompt(value: String) = update { copy(negativePrompt = value) }
     fun updateWidth(value: String) = update { copy(width = value) }
@@ -86,77 +116,73 @@ class GenerationViewModel(
     fun updateSeed(value: String) = update { copy(seed = value) }
     fun updateSampler(value: String) = update { copy(sampler = value) }
 
-    fun refreshModels() {
+    fun reloadPresets() {
         scope.launch {
-            if (backendManager.state.value.status != BackendStatus.Ready) {
-                return@launch
-            }
-
-            update { copy(isLoadingModels = true, error = null) }
-            val result = client.fetchModels(backendManager.state.value.baseUrl)
-            result.onSuccess { models ->
-                val sdModels = models.filter { it.type == "stable-diffusion" || it.type == "root" }
-                val activeModel = sdModels.firstOrNull { it.active }
-                update {
-                    copy(
-                        availableModels = sdModels,
-                        modelId = when {
-                            activeModel != null -> activeModel.id
-                            modelId.isBlank() -> modelId
-                            else -> modelId
-                        },
-                        isLoadingModels = false,
-                        message = if (sdModels.isEmpty()) "No SD models found under model_dir." else "Loaded ${sdModels.size} SD models.",
-                        error = null,
-                    )
+            update { copy(isLoadingPresets = true, error = null) }
+            runCatching { presetStore.load() }
+                .onSuccess { presets ->
+                    val currentPresetId = _uiState.value.selectedPresetId
+                    val lastPresetId = presetStore.loadLastPresetId()
+                    val selected = presets.firstOrNull { it.id == currentPresetId }
+                        ?: presets.firstOrNull { it.id == lastPresetId }
+                        ?: presets.firstOrNull()
+                    update {
+                        copy(
+                            presets = presets,
+                            selectedPresetId = selected?.id.orEmpty(),
+                            isLoadingPresets = false,
+                            message = "Loaded ${presets.size} image presets from ${presetStore.presetDir.absolutePath}.",
+                            error = null,
+                        )
+                    }
+                    selected?.let { updatePresetId(it.id) }
                 }
-            }.onFailure { error ->
-                update {
-                    copy(
-                        isLoadingModels = false,
-                        error = error.message ?: "Failed to fetch models.",
-                    )
+                .onFailure { error ->
+                    update {
+                        copy(
+                            isLoadingPresets = false,
+                            error = error.message ?: "Failed to load image presets.",
+                        )
+                    }
                 }
-            }
         }
     }
 
-    fun loadSelectedModel() {
+    fun loadSelectedPreset() {
         scope.launch {
             if (backendManager.state.value.status != BackendStatus.Ready) {
-                update { copy(error = "Backend is not ready.") }
+                update { copy(error = "Image worker is not ready.") }
                 return@launch
             }
 
-            val modelId = _uiState.value.modelId.trim()
-            if (modelId.isBlank()) {
-                update { copy(error = "Select a model first.") }
+            val preset = selectedPresetOrNull()
+            if (preset == null) {
+                update { copy(error = "Select an image preset first.") }
                 return@launch
             }
 
             update {
                 copy(
-                    isLoadingModel = true,
-                    message = "Loading model $modelId...",
+                    isLoadingPreset = true,
+                    message = "Loading ${preset.name}...",
                     error = null,
                 )
             }
 
-            val result = client.loadModel(backendManager.state.value.baseUrl, modelId)
+            val result = client.loadPreset(backendManager.state.value.baseUrl, preset)
             result.onSuccess {
-                refreshModels()
                 update {
                     copy(
-                        isLoadingModel = false,
-                        message = "Loaded model $modelId.",
+                        isLoadingPreset = false,
+                        message = "Loaded ${preset.name}.",
                         error = null,
                     )
                 }
             }.onFailure { error ->
                 update {
                     copy(
-                        isLoadingModel = false,
-                        error = error.message ?: "Failed to load model.",
+                        isLoadingPreset = false,
+                        error = error.message ?: "Failed to load preset.",
                     )
                 }
             }
@@ -166,7 +192,7 @@ class GenerationViewModel(
     fun generate() {
         scope.launch {
             if (backendManager.state.value.status != BackendStatus.Ready) {
-                update { copy(error = "Backend is not ready.") }
+                update { copy(error = "Image worker is not ready.") }
                 return@launch
             }
 
@@ -182,7 +208,7 @@ class GenerationViewModel(
                     progressTime = 0.0,
                     progressPhase = "Starting...",
                     progressMessage = "",
-                    message = "Submitting generation request using the active model...",
+                    message = "Submitting generation request...",
                     error = null,
                 )
             }
@@ -266,6 +292,11 @@ class GenerationViewModel(
             seed = state.seed.toIntOrNull() ?: error("Seed must be numeric."),
             sampler = state.sampler.trim(),
         )
+    }
+
+    private fun selectedPresetOrNull(): ImagePreset? {
+        val state = _uiState.value
+        return state.presets.firstOrNull { it.id == state.selectedPresetId }
     }
 
     private fun update(transform: GenerationUiState.() -> GenerationUiState) {
