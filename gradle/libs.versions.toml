@@ -1,5 +1,6 @@
 [versions]
 compose-plugin = "1.10.0"
+compose-hot-reload = "1.1.1"
 kotlin = "2.3.20"
 coroutines = "1.8.1"
 serialization = "1.7.3"
@@ -14,5 +15,6 @@ jewel-int-ui-standalone = { module = "org.jetbrains.jewel:jewel-int-ui-standalon
 
 [plugins]
 jetbrainsCompose = { id = "org.jetbrains.compose", version.ref = "compose-plugin" }
+composeHotReload = { id = "org.jetbrains.compose.hot-reload", version.ref = "compose-hot-reload" }
 compose-compiler = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
 kotlinMultiplatform = { id = "org.jetbrains.kotlin.multiplatform", version.ref = "kotlin" }

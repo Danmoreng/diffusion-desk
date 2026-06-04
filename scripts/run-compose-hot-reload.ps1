@@ -1,6 +1,7 @@
 # DiffusionDesk Compose Desktop Hot Reload Launch Script
 param (
     [string]$JavaHome = "C:\Program Files\JetBrains\WebStorm 2025.3.2\jbr",
+    [switch]$ManualReload,
     [switch]$DryRun
 )
 
@@ -39,9 +40,14 @@ Write-Host "Java: $JavaHome"
 Write-Host "-------------------------------------------"
 
 Set-Location $ProjectRoot
+$GradleArgs = @(":composeApp:hotRunDesktop")
+if (-not $ManualReload) {
+    $GradleArgs += "--auto"
+}
+
 if ($DryRun) {
-    Write-Host "Dry run: would execute $GradleWrapper :composeApp:hotRunDesktop"
+    Write-Host "Dry run: would execute $GradleWrapper $($GradleArgs -join ' ')"
     exit 0
 }
 
-& $GradleWrapper ":composeApp:hotRunDesktop"
+& $GradleWrapper @GradleArgs
