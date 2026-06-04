@@ -52,6 +52,8 @@ data class GenerationHistoryItem(
 data class GenerationUiState(
     val selectedPresetId: String = "",
     val prompt: String = "A cinematic, melancholic photograph of a solitary hooded figure walking through a sprawling, rain-slicked metropolis at night.",
+    val promptHistory: List<String> = listOf(prompt),
+    val promptHistoryIndex: Int = 0,
     val negativePrompt: String = "deformed, blurry, low quality, watermark",
     val width: String = "1024",
     val height: String = "768",
@@ -83,6 +85,8 @@ data class GenerationUiState(
     val canGoBack: Boolean get() = historyIndex > 0
     val canGoForward: Boolean get() = historyIndex >= 0 && historyIndex < history.lastIndex
     val currentHistoryItem: GenerationHistoryItem? get() = history.getOrNull(historyIndex)
+    val canUndoPrompt: Boolean get() = promptHistoryIndex > 0
+    val canRedoPrompt: Boolean get() = promptHistoryIndex < promptHistory.lastIndex
 }
 
 class GenerationViewModel(
@@ -149,6 +153,43 @@ class GenerationViewModel(
     }
 
     fun updatePrompt(value: String) = update { copy(prompt = value) }
+    fun commitPrompt() = update {
+        if (promptHistory.getOrNull(promptHistoryIndex) == prompt) {
+            this
+        } else {
+            val retainedHistory = promptHistory.take(promptHistoryIndex + 1)
+            val nextHistory = retainedHistory + prompt
+            copy(
+                promptHistory = nextHistory,
+                promptHistoryIndex = nextHistory.lastIndex,
+            )
+        }
+    }
+
+    fun undoPrompt() = update {
+        if (!canUndoPrompt) {
+            this
+        } else {
+            val nextIndex = promptHistoryIndex - 1
+            copy(
+                prompt = promptHistory[nextIndex],
+                promptHistoryIndex = nextIndex,
+            )
+        }
+    }
+
+    fun redoPrompt() = update {
+        if (!canRedoPrompt) {
+            this
+        } else {
+            val nextIndex = promptHistoryIndex + 1
+            copy(
+                prompt = promptHistory[nextIndex],
+                promptHistoryIndex = nextIndex,
+            )
+        }
+    }
+
     fun updateNegativePrompt(value: String) = update { copy(negativePrompt = value) }
     fun updateWidth(value: String) = update { copy(width = value) }
     fun updateHeight(value: String) = update { copy(height = value) }
@@ -286,6 +327,8 @@ class GenerationViewModel(
 
     fun generate(saveImagesAutomatically: Boolean) {
         scope.launch {
+            commitPrompt()
+
             if (backendManager.state.value.status != BackendStatus.Ready) {
                 update { copy(error = "Image worker is not ready.") }
                 return@launch
@@ -520,6 +563,8 @@ class GenerationViewModel(
 
     private fun SavedGenerationSettings.toUiState() = GenerationUiState(
         prompt = prompt,
+        promptHistory = listOf(prompt),
+        promptHistoryIndex = 0,
         negativePrompt = negativePrompt,
         width = width,
         height = height,
