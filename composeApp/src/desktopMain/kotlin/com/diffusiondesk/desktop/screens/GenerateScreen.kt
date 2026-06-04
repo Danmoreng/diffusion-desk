@@ -54,6 +54,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -360,12 +361,19 @@ private fun GeneratedImageTile(
     val imageWidth = image.width.coerceAtLeast(1).toFloat()
     val imageHeight = image.height.coerceAtLeast(1).toFloat()
     val aspectRatio = imageWidth / imageHeight
+    val density = LocalDensity.current
+    val naturalWidth = with(density) { image.width.toDp() }
+    val naturalHeight = with(density) { image.height.toDp() }
 
-    var displayWidth = maxWidth
-    var displayHeight = maxWidth / aspectRatio
+    var displayWidth = naturalWidth.coerceAtMost(maxWidth)
+    var displayHeight = displayWidth / aspectRatio
     if (displayHeight > maxHeight) {
         displayHeight = maxHeight
         displayWidth = maxHeight * aspectRatio
+    }
+    if (displayHeight > naturalHeight) {
+        displayHeight = naturalHeight
+        displayWidth = naturalHeight * aspectRatio
     }
 
     Box(
