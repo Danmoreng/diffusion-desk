@@ -1,9 +1,9 @@
 package com.diffusiondesk.desktop.viewmodel
 
-import androidx.compose.ui.graphics.ImageBitmap
 import com.diffusiondesk.desktop.core.BackendManager
 import com.diffusiondesk.desktop.core.BackendStatus
 import com.diffusiondesk.desktop.core.DiffusionDeskClient
+import com.diffusiondesk.desktop.core.GeneratedImage
 import com.diffusiondesk.desktop.core.GenerationJobEvent
 import com.diffusiondesk.desktop.core.GenerationRequest
 import com.diffusiondesk.desktop.core.GenerationSettingsStore
@@ -44,7 +44,7 @@ data class GenerationHistoryItem(
     val params: GenerationParams,
     val imageUrls: List<String> = emptyList(),
     val usedSeed: Int? = null,
-    val images: List<ImageBitmap> = emptyList(),
+    val images: List<GeneratedImage> = emptyList(),
     val error: String? = null,
     val generationTime: Double? = null,
 )
@@ -72,7 +72,7 @@ data class GenerationUiState(
     val isGenerating: Boolean = false,
     val resultUrls: List<String> = emptyList(),
     val usedSeed: String = "",
-    val images: List<ImageBitmap> = emptyList(),
+    val images: List<GeneratedImage> = emptyList(),
     val history: List<GenerationHistoryItem> = emptyList(),
     val historyIndex: Int = -1,
     val isEndless: Boolean = false,
@@ -422,7 +422,7 @@ class GenerationViewModel(
             }
 
             generationResult.onSuccess { result ->
-                val bitmapResult = client.fetchImageBitmaps(backendManager.state.value.baseUrl, result.imageUrls)
+                val bitmapResult = client.fetchGeneratedImages(backendManager.state.value.baseUrl, result.imageUrls)
                 bitmapResult.onSuccess { images ->
                     val generationTime = result.generationTime ?: ((System.currentTimeMillis() - startedAt) / 1000.0)
                     updateHistoryItem(nextIndex) {

@@ -98,6 +98,7 @@ fun App(
                             onGoForward = controller.generationViewModel::goForward,
                             onLeftPanelWidthChange = controller.generationViewModel::updateLeftPanelWidth,
                             actionBarPosition = settingsState.actionBarPosition,
+                            outputDir = settingsState.outputDir,
                         )
                         Screen.Library -> LibraryScreen(
                             state = libraryState,
