@@ -55,6 +55,8 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.input.pointer.PointerIcon
+import androidx.compose.ui.input.pointer.pointerHoverIcon
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -72,6 +74,7 @@ import com.diffusiondesk.desktop.core.BackendStatus
 import com.diffusiondesk.desktop.core.BackendUiState
 import com.diffusiondesk.desktop.viewmodel.GenerationStatus
 import com.diffusiondesk.desktop.viewmodel.GenerationUiState
+import java.awt.Cursor
 import kotlin.math.roundToInt
 import org.jetbrains.jewel.ui.component.DefaultButton as Button
 import org.jetbrains.jewel.ui.component.HorizontalProgressBar
@@ -216,8 +219,11 @@ fun GenerateScreen(
 private fun Splitter(
     modifier: Modifier = Modifier,
 ) {
+    val cursorIcon = remember {
+        PointerIcon(Cursor.getPredefinedCursor(Cursor.E_RESIZE_CURSOR))
+    }
     Box(
-        modifier = modifier,
+        modifier = modifier.pointerHoverIcon(cursorIcon),
         contentAlignment = Alignment.Center,
     ) {
         Box(
