@@ -340,38 +340,6 @@ private fun GenerationPanel(
                     modifier = Modifier.weight(1f),
                 )
             }
-
-            state.currentHistoryItem?.let { item ->
-                Label("Selected Generation")
-                Text(
-                    text = when (item.status) {
-                        GenerationStatus.Pending -> "Queued"
-                        GenerationStatus.Processing -> "Generating"
-                        GenerationStatus.Completed -> "Completed"
-                        GenerationStatus.Failed -> "Failed"
-                    },
-                    color = when (item.status) {
-                        GenerationStatus.Completed -> MaterialTheme.colorScheme.primary
-                        GenerationStatus.Failed -> MaterialTheme.colorScheme.error
-                        else -> MaterialTheme.colorScheme.onSurfaceVariant
-                    },
-                    style = MaterialTheme.typography.bodyMedium,
-                )
-                item.generationTime?.let {
-                    Text(
-                        text = "Generated in ${"%.1f".format(it)}s",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-            }
-
-            state.message.takeIf(String::isNotBlank)?.let {
-                Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
-            }
-            state.error?.let {
-                Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error)
-            }
         }
     }
 }
@@ -628,17 +596,80 @@ private fun ActionBar(
                 }
             }
 
-            Text(
-                text = when (backendState.status) {
-                    BackendStatus.Ready -> "Worker ready"
-                    BackendStatus.Starting -> "Worker starting"
-                    BackendStatus.Error -> "Worker error"
-                    BackendStatus.Stopped -> "Worker stopped"
-                },
-                style = MaterialTheme.typography.bodySmall,
-                color = if (backendState.status == BackendStatus.Ready) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+            Spacer(Modifier.weight(1f))
+
+            ActionStatus(
+                state = state,
+                backendState = backendState,
             )
         }
+    }
+}
+
+@Composable
+private fun ActionStatus(
+    state: GenerationUiState,
+    backendState: BackendUiState,
+) {
+    val item = state.currentHistoryItem
+    val generationStatus = item?.status
+    val statusText = when (generationStatus) {
+        GenerationStatus.Pending -> "Queued"
+        GenerationStatus.Processing -> "Generating"
+        GenerationStatus.Completed -> "Completed"
+        GenerationStatus.Failed -> "Failed"
+        null -> "No generation selected"
+    }
+    val statusColor = when (generationStatus) {
+        GenerationStatus.Completed -> MaterialTheme.colorScheme.primary
+        GenerationStatus.Failed -> MaterialTheme.colorScheme.error
+        GenerationStatus.Pending,
+        GenerationStatus.Processing,
+        null -> MaterialTheme.colorScheme.onSurfaceVariant
+    }
+    val workerText = when (backendState.status) {
+        BackendStatus.Ready -> "Worker ready"
+        BackendStatus.Starting -> "Worker starting"
+        BackendStatus.Error -> "Worker error"
+        BackendStatus.Stopped -> "Worker stopped"
+    }
+    val workerColor = if (backendState.status == BackendStatus.Ready) {
+        MaterialTheme.colorScheme.primary
+    } else {
+        MaterialTheme.colorScheme.onSurfaceVariant
+    }
+    val detailText = when {
+        state.error != null -> state.error
+        item?.generationTime != null -> "Generated in ${"%.1f".format(item.generationTime)}s"
+        state.message.isNotBlank() -> state.message
+        else -> workerText
+    }
+    val detailColor = when {
+        state.error != null -> MaterialTheme.colorScheme.error
+        detailText == workerText -> workerColor
+        else -> MaterialTheme.colorScheme.onSurfaceVariant
+    }
+
+    Column(
+        modifier = Modifier.widthIn(min = 180.dp, max = 360.dp),
+        horizontalAlignment = Alignment.End,
+        verticalArrangement = Arrangement.spacedBy(3.dp),
+    ) {
+        Text(
+            text = statusText,
+            style = MaterialTheme.typography.bodyMedium,
+            color = statusColor,
+            fontWeight = FontWeight.SemiBold,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        Text(
+            text = detailText ?: workerText,
+            style = MaterialTheme.typography.bodySmall,
+            color = detailColor,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
     }
 }
 
