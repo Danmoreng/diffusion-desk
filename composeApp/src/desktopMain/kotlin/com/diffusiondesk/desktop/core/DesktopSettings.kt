@@ -1,6 +1,9 @@
 package com.diffusiondesk.desktop.core
 
 import java.io.File
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 
 data class DesktopSettings(
     val repoRoot: String,
@@ -19,4 +22,40 @@ fun detectDefaultRepoRoot(): String {
         current = current.parentFile ?: return@repeat
     }
     return File(System.getProperty("user.dir")).absolutePath
+}
+
+fun detectDefaultModelDir(repoRoot: String): String {
+    val configModelDir = runCatching {
+        val configFile = File(repoRoot, "config.json")
+        if (!configFile.exists()) {
+            return@runCatching ""
+        }
+        Json.parseToJsonElement(configFile.readText())
+            .jsonObject["paths"]
+            ?.jsonObject
+            ?.get("model_dir")
+            ?.jsonPrimitive
+            ?.content
+            .orEmpty()
+    }.getOrDefault("")
+
+    return configModelDir.ifBlank { File(repoRoot, "models").absolutePath }
+}
+
+fun detectDefaultOutputDir(repoRoot: String): String {
+    val configOutputDir = runCatching {
+        val configFile = File(repoRoot, "config.json")
+        if (!configFile.exists()) {
+            return@runCatching ""
+        }
+        Json.parseToJsonElement(configFile.readText())
+            .jsonObject["paths"]
+            ?.jsonObject
+            ?.get("output_dir")
+            ?.jsonPrimitive
+            ?.content
+            .orEmpty()
+    }.getOrDefault("")
+
+    return configOutputDir.ifBlank { File(repoRoot, "outputs").absolutePath }
 }

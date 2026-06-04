@@ -113,10 +113,19 @@ class DiffusionDeskClient {
         }
     }
 
-    suspend fun loadModel(baseUrl: String, modelId: String): Result<Unit> = withContext(Dispatchers.IO) {
+    suspend fun loadPreset(baseUrl: String, preset: ImagePreset): Result<Unit> = withContext(Dispatchers.IO) {
         runCatching {
             val payload = buildJsonObject {
-                put("model_id", JsonPrimitive(modelId))
+                put("model_id", JsonPrimitive(preset.diffusionModel))
+                putIfNotBlank("vae", preset.vae)
+                putIfNotBlank("clip_l", preset.clipL)
+                putIfNotBlank("clip_g", preset.clipG)
+                putIfNotBlank("t5xxl", preset.t5xxl)
+                putIfNotBlank("llm", preset.llm)
+                put("clip_on_cpu", JsonPrimitive(preset.clipOnCpu))
+                put("vae_on_cpu", JsonPrimitive(preset.vaeOnCpu))
+                put("offload_to_cpu", JsonPrimitive(preset.offloadParamsToCpu))
+                put("flash_attn", JsonPrimitive(preset.flashAttention))
             }
 
             val request = HttpRequest.newBuilder(URI.create("$baseUrl/v1/models/load"))
@@ -126,7 +135,22 @@ class DiffusionDeskClient {
                 .build()
 
             val response = httpClient.send(request, HttpResponse.BodyHandlers.ofString())
-            check(response.statusCode() in 200..299) { response.body().ifBlank { "Model load failed with ${response.statusCode()}" } }
+            check(response.statusCode() in 200..299) { response.body().ifBlank { "Preset load failed with ${response.statusCode()}" } }
+        }
+    }
+
+    suspend fun verifyImageWorker(baseUrl: String): Result<Unit> = withContext(Dispatchers.IO) {
+        runCatching {
+            val request = HttpRequest.newBuilder(URI.create("$baseUrl/internal/health"))
+                .GET()
+                .timeout(Duration.ofSeconds(5))
+                .build()
+
+            val response = httpClient.send(request, HttpResponse.BodyHandlers.ofString())
+            check(response.statusCode() in 200..299) { "Worker health request failed with ${response.statusCode()}" }
+
+            val root = json.parseToJsonElement(response.body()).jsonObject
+            check(root["service"]?.jsonPrimitive?.content == "sd") { "Port is not running the SD image worker." }
         }
     }
 
@@ -168,6 +192,21 @@ class DiffusionDeskClient {
             val response = httpClient.send(request, HttpResponse.BodyHandlers.ofString())
             check(response.statusCode() in 200..299) { "Config update failed with ${response.statusCode()}" }
         }
+    }
+
+    suspend fun shutdownImageWorker(baseUrl: String): Result<Unit> = withContext(Dispatchers.IO) {
+        runCatching {
+            shutdownImageWorkerBlocking(baseUrl)
+        }
+    }
+
+    fun shutdownImageWorkerBlocking(baseUrl: String) {
+        val request = HttpRequest.newBuilder(URI.create("$baseUrl/internal/shutdown"))
+            .header("Content-Type", "application/json")
+            .POST(HttpRequest.BodyPublishers.noBody())
+            .timeout(Duration.ofSeconds(3))
+            .build()
+        httpClient.send(request, HttpResponse.BodyHandlers.discarding())
     }
 
     suspend fun generateImage(baseUrl: String, requestData: GenerationRequest): Result<GenerationResult> = withContext(Dispatchers.IO) {
@@ -245,6 +284,12 @@ class DiffusionDeskClient {
             }
 
             throw IllegalStateException(lastError?.message ?: "Failed to download generated image.")
+        }
+    }
+
+    private fun kotlinx.serialization.json.JsonObjectBuilder.putIfNotBlank(key: String, value: String) {
+        if (value.isNotBlank()) {
+            put(key, JsonPrimitive(value))
         }
     }
 }

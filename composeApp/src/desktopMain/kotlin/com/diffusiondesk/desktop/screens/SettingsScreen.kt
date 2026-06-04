@@ -48,8 +48,8 @@ fun SettingsScreen(
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         SectionCard(
-            title = "Backend",
-            subtitle = "Launch the local Diffusion Desk server and push desktop settings into /v1/config.",
+            title = "Image Worker",
+            subtitle = "The desktop app starts the stable-diffusion.cpp worker automatically and keeps the old orchestrator unused.",
         ) {
             StatusLine("Status", backendState.status.name)
             StatusLine("Base URL", backendState.baseUrl)
@@ -64,13 +64,13 @@ fun SettingsScreen(
                     onClick = onStartBackend,
                     enabled = !state.isBusy && backendState.status != BackendStatus.Ready,
                 ) {
-                    Text("Start Backend")
+                    Text("Start Worker")
                 }
                 Button(
                     onClick = onStopBackend,
                     enabled = !state.isBusy && backendState.status != BackendStatus.Stopped,
                 ) {
-                    Text("Stop Backend")
+                    Text("Stop Worker")
                 }
                 Button(
                     onClick = onApplyToBackend,
@@ -89,7 +89,7 @@ fun SettingsScreen(
 
         SectionCard(
             title = "Desktop Settings",
-            subtitle = "This stays local to the desktop app and seeds backend startup/config updates.",
+            subtitle = "These settings are stored locally and passed to the image worker on startup.",
         ) {
             OutlinedTextField(
                 value = state.repoRoot,

@@ -6,6 +6,8 @@ import com.diffusiondesk.desktop.core.BackendUiState
 import com.diffusiondesk.desktop.core.DesktopSettings
 import com.diffusiondesk.desktop.core.DesktopSettingsStore
 import com.diffusiondesk.desktop.core.DiffusionDeskClient
+import com.diffusiondesk.desktop.core.detectDefaultModelDir
+import com.diffusiondesk.desktop.core.detectDefaultOutputDir
 import com.diffusiondesk.desktop.core.detectDefaultRepoRoot
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -47,8 +49,8 @@ class SettingsViewModel(
         update {
             copy(
                 repoRoot = repoRoot,
-                modelDir = File(repoRoot, "models").absolutePath,
-                outputDir = File(repoRoot, "outputs").absolutePath,
+                modelDir = detectDefaultModelDir(repoRoot),
+                outputDir = detectDefaultOutputDir(repoRoot),
             )
         }
     }
@@ -68,18 +70,18 @@ class SettingsViewModel(
         scope.launch {
             val settings = currentSettingsOrReport() ?: return@launch
             store.save(settings)
-            update { copy(isBusy = true, message = "Starting backend...", error = null) }
+            update { copy(isBusy = true, message = "Starting image worker...", error = null) }
 
             val startResult = backendManager.start(settings)
             if (startResult.isSuccess) {
                 applySettingsToBackendInternal(settings)
                 loadConfigFromBackendInternal()
-                update { copy(isBusy = false, message = "Backend started.", error = null) }
+                update { copy(isBusy = false, message = "Image worker started.", error = null) }
             } else {
                 update {
                     copy(
                         isBusy = false,
-                        error = startResult.exceptionOrNull()?.message ?: "Failed to start backend.",
+                        error = startResult.exceptionOrNull()?.message ?: "Failed to start image worker.",
                     )
                 }
             }
@@ -88,9 +90,9 @@ class SettingsViewModel(
 
     fun stopBackend() {
         scope.launch {
-            update { copy(isBusy = true, message = "Stopping backend...", error = null) }
+            update { copy(isBusy = true, message = "Stopping image worker...", error = null) }
             backendManager.stop()
-            update { copy(isBusy = false, message = "Backend stopped.", error = null) }
+            update { copy(isBusy = false, message = "Image worker stopped.", error = null) }
         }
     }
 
@@ -109,21 +111,21 @@ class SettingsViewModel(
 
     private suspend fun applySettingsToBackendInternal(settings: DesktopSettings) {
         if (backendState.value.status != BackendStatus.Ready) {
-            update { copy(message = "Backend is not ready yet.") }
+            update { copy(message = "Image worker is not ready yet.") }
             return
         }
 
         val result = client.updateConfig(backendState.value.baseUrl, settings)
         if (result.isSuccess) {
-            update { copy(message = "Settings applied to backend.", error = null) }
+            update { copy(message = "Settings applied to image worker.", error = null) }
         } else {
-            update { copy(error = result.exceptionOrNull()?.message ?: "Failed to apply backend settings.") }
+            update { copy(error = result.exceptionOrNull()?.message ?: "Failed to apply image worker settings.") }
         }
     }
 
     private suspend fun loadConfigFromBackendInternal() {
         if (backendState.value.status != BackendStatus.Ready) {
-            update { copy(message = "Backend is not ready yet.") }
+            update { copy(message = "Image worker is not ready yet.") }
             return
         }
 
@@ -134,13 +136,13 @@ class SettingsViewModel(
                     modelDir = config.modelDir.ifBlank { modelDir },
                     outputDir = config.outputDir.ifBlank { outputDir },
                     setupCompleted = config.setupCompleted,
-                    message = "Loaded backend config.",
+                    message = "Loaded image worker config.",
                     error = null,
                 )
             }
             currentSettingsOrNull()?.let(store::save)
         }.onFailure { error ->
-            update { copy(error = error.message ?: "Failed to load backend config.") }
+            update { copy(error = error.message ?: "Failed to load image worker config.") }
         }
     }
 

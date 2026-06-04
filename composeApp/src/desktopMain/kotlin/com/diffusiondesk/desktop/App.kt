@@ -4,16 +4,11 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.AutoAwesome
-import androidx.compose.material.icons.filled.Collections
 import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.Dashboard
-import androidx.compose.material.icons.filled.Draw
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.SmartToy
-import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
@@ -41,13 +36,8 @@ import com.diffusiondesk.desktop.screens.SettingsScreen
 import com.diffusiondesk.desktop.theme.DiffusionDeskTheme
 
 private enum class Screen(val label: String, val icon: ImageVector, val subtitle: String) {
-    Generate("Generate", Icons.Default.Image, "Basic prompt submission against the existing native backend."),
-    Gallery("Gallery", Icons.Default.Collections, "Saved outputs, filters, tags, ratings, and reuse actions."),
-    Manager("Manager", Icons.Default.Tune, "Presets, styles, LoRAs, and model metadata."),
-    Inpaint("Inpaint", Icons.Default.Draw, "Canvas-based editing and mask export will live here."),
-    Explore("Explore", Icons.Default.AutoAwesome, "Mutation grid and prompt exploration."),
-    Assistant("Assistant", Icons.Default.SmartToy, "Chat, tool calls, and multimodal assist."),
-    Settings("Settings", Icons.Default.Settings, "Desktop preferences and backend bootstrap settings."),
+    Generate("Generate", Icons.Default.Image, "Preset-driven image generation with the local SD worker."),
+    Settings("Settings", Icons.Default.Settings, "Local paths, worker status, and preset storage."),
 }
 
 @Composable
@@ -84,7 +74,7 @@ fun App(
                             state = generationState,
                             backendState = backendState,
                             samplerOptions = controller.generationViewModel.samplers,
-                            onModelIdChange = controller.generationViewModel::updateModelId,
+                            onPresetIdChange = controller.generationViewModel::updatePresetId,
                             onPromptChange = controller.generationViewModel::updatePrompt,
                             onNegativePromptChange = controller.generationViewModel::updateNegativePrompt,
                             onWidthChange = controller.generationViewModel::updateWidth,
@@ -93,8 +83,8 @@ fun App(
                             onCfgScaleChange = controller.generationViewModel::updateCfgScale,
                             onSeedChange = controller.generationViewModel::updateSeed,
                             onSamplerChange = controller.generationViewModel::updateSampler,
-                            onRefreshModels = controller.generationViewModel::refreshModels,
-                            onLoadModel = controller.generationViewModel::loadSelectedModel,
+                            onReloadPresets = controller.generationViewModel::reloadPresets,
+                            onLoadPreset = controller.generationViewModel::loadSelectedPreset,
                             onGenerate = controller.generationViewModel::generate,
                         )
                         Screen.Settings -> SettingsScreen(
@@ -112,7 +102,6 @@ fun App(
                             onApplyToBackend = controller.settingsViewModel::applySettingsToBackend,
                             onReloadFromBackend = controller.settingsViewModel::loadConfigFromBackend,
                         )
-                        else -> ScreenPlaceholder(screen = currentScreen)
                     }
                 }
             }
@@ -206,88 +195,13 @@ private fun Header(
                 )
             }
             Text(
-                text = "Backend: ${backendStatus.name}",
+                text = "Worker: ${backendStatus.name}",
                 style = MaterialTheme.typography.labelLarge,
                 color = when (backendStatus) {
                     BackendStatus.Ready -> MaterialTheme.colorScheme.primary
                     BackendStatus.Error -> MaterialTheme.colorScheme.error
                     else -> MaterialTheme.colorScheme.onSurfaceVariant
                 },
-            )
-        }
-    }
-}
-
-@Composable
-private fun ScreenPlaceholder(screen: Screen) {
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(24.dp),
-    ) {
-        Card(
-            modifier = Modifier.fillMaxSize(),
-            colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surface,
-            ),
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(32.dp),
-                verticalArrangement = Arrangement.spacedBy(20.dp),
-            ) {
-                Text(
-                    text = screen.label,
-                    style = MaterialTheme.typography.headlineMedium,
-                    fontWeight = FontWeight.Bold,
-                )
-                Text(
-                    text = screen.subtitle,
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                StatusCard(
-                    title = "Current Status",
-                    body = "Generate and Settings are now wired. The remaining sections are still placeholders in this first desktop slice.",
-                )
-                StatusCard(
-                    title = "Next Step",
-                    body = when (screen) {
-                        Screen.Generate -> "Generation now has model discovery and progress polling; next we should port gallery/history."
-                        Screen.Gallery -> "Add typed DTOs and a lazy grid backed by the existing history endpoints."
-                        Screen.Manager -> "Port presets and model metadata workflows after generation is stable."
-                        Screen.Inpaint -> "Add a custom Compose Canvas editor once core backend connectivity is in place."
-                        Screen.Explore -> "Port mutation-builder logic after generation requests are wired."
-                        Screen.Assistant -> "Add chat state, markdown rendering, and tool-call visualization after backend bootstrap."
-                        Screen.Settings -> "Settings already work here; next we can add file pickers and validation helpers."
-                    },
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun StatusCard(title: String, body: String) {
-    Card(
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
-        ),
-    ) {
-        Column(
-            modifier = Modifier.padding(20.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            Text(
-                text = title,
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold,
-            )
-            Text(
-                text = body,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
     }

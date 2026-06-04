@@ -35,7 +35,7 @@ fun GenerateScreen(
     state: GenerationUiState,
     backendState: BackendUiState,
     samplerOptions: List<String>,
-    onModelIdChange: (String) -> Unit,
+    onPresetIdChange: (String) -> Unit,
     onPromptChange: (String) -> Unit,
     onNegativePromptChange: (String) -> Unit,
     onWidthChange: (String) -> Unit,
@@ -44,12 +44,12 @@ fun GenerateScreen(
     onCfgScaleChange: (String) -> Unit,
     onSeedChange: (String) -> Unit,
     onSamplerChange: (String) -> Unit,
-    onRefreshModels: () -> Unit,
-    onLoadModel: () -> Unit,
+    onReloadPresets: () -> Unit,
+    onLoadPreset: () -> Unit,
     onGenerate: () -> Unit,
 ) {
-    var showModelMenu by remember { mutableStateOf(false) }
-    val activeModel = state.availableModels.firstOrNull { it.active }
+    var showPresetMenu by remember { mutableStateOf(false) }
+    val selectedPreset = state.presets.firstOrNull { it.id == state.selectedPresetId }
     val progressFraction = if (state.progressSteps > 0) {
         state.progressStep.toFloat() / state.progressSteps.toFloat()
     } else {
@@ -70,13 +70,13 @@ fun GenerateScreen(
         ) {
             GenerationCard(
                 title = "Generation",
-                subtitle = "Minimal native smoke test for POST /v1/images/generations.",
+                subtitle = "Prompt, preview, and preset-driven image generation.",
             ) {
                 Text(
                     text = if (backendState.status == BackendStatus.Ready) {
-                        "Backend ready at ${backendState.baseUrl}"
+                        "Image worker ready at ${backendState.baseUrl}"
                     } else {
-                        "Backend is not ready. Start it from Settings first."
+                        "Image worker is starting..."
                     },
                     color = if (backendState.status == BackendStatus.Ready) {
                         MaterialTheme.colorScheme.primary
@@ -114,59 +114,60 @@ fun GenerateScreen(
                 }
 
                 OutlinedTextField(
-                    value = state.modelId,
-                    onValueChange = onModelIdChange,
+                    value = selectedPreset?.name ?: state.selectedPresetId,
+                    onValueChange = {},
                     modifier = Modifier.fillMaxWidth(),
-                    label = { Text("Selected Model") },
+                    label = { Text("Image Preset") },
                     supportingText = {
-                        Text(activeModel?.let { "Active model for generation: ${it.id}" } ?: "Load a model first, then generation will use the active backend model.")
+                        Text(selectedPreset?.diffusionModel ?: "Create or edit presets in the app data folder.")
                     },
+                    readOnly = true,
                     singleLine = true,
                 )
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     Box {
                         Button(
-                            onClick = { showModelMenu = true },
-                            enabled = backendState.status == BackendStatus.Ready && state.availableModels.isNotEmpty(),
+                            onClick = { showPresetMenu = true },
+                            enabled = state.presets.isNotEmpty(),
                         ) {
-                            Text("Choose Model")
+                            Text("Choose Preset")
                         }
                         DropdownMenu(
-                            expanded = showModelMenu,
-                            onDismissRequest = { showModelMenu = false },
+                            expanded = showPresetMenu,
+                            onDismissRequest = { showPresetMenu = false },
                         ) {
-                            state.availableModels.forEach { model ->
+                            state.presets.forEach { preset ->
                                 DropdownMenuItem(
                                     text = {
                                         Text(
-                                            text = if (model.active) "${model.name} [active]" else model.name,
+                                            text = preset.name,
                                             maxLines = 1,
                                         )
                                     },
                                     onClick = {
-                                        onModelIdChange(model.id)
-                                        showModelMenu = false
+                                        onPresetIdChange(preset.id)
+                                        showPresetMenu = false
                                     },
                                 )
                             }
                         }
                     }
                     Button(
-                        onClick = onRefreshModels,
-                        enabled = backendState.status == BackendStatus.Ready && !state.isLoadingModels,
+                        onClick = onReloadPresets,
+                        enabled = !state.isLoadingPresets,
                     ) {
-                        Text(if (state.isLoadingModels) "Refreshing..." else "Refresh Models")
+                        Text(if (state.isLoadingPresets) "Refreshing..." else "Refresh Presets")
                     }
                     Button(
-                        onClick = onLoadModel,
-                        enabled = backendState.status == BackendStatus.Ready && !state.isLoadingModel && state.modelId.isNotBlank(),
+                        onClick = onLoadPreset,
+                        enabled = backendState.status == BackendStatus.Ready && !state.isLoadingPreset && selectedPreset != null,
                     ) {
-                        Text(if (state.isLoadingModel) "Loading..." else "Load Model")
+                        Text(if (state.isLoadingPreset) "Loading..." else "Load Preset")
                     }
                 }
-                if (state.availableModels.isNotEmpty()) {
+                if (state.presets.isNotEmpty()) {
                     Text(
-                        text = "Detected SD models: ${state.availableModels.size}",
+                        text = "Preset folder contains ${state.presets.size} preset(s).",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -240,7 +241,7 @@ fun GenerateScreen(
                     onClick = onGenerate,
                     enabled = !state.isGenerating && backendState.status == BackendStatus.Ready,
                 ) {
-                    Text(if (state.isGenerating) "Generating..." else "Generate With Active Model")
+                    Text(if (state.isGenerating) "Generating..." else "Generate")
                 }
                 state.message.takeIf(String::isNotBlank)?.let {
                     Text(
@@ -262,7 +263,7 @@ fun GenerateScreen(
         GenerationCard(
             modifier = Modifier.weight(1f),
             title = "Result",
-            subtitle = "The server returns URLs; this preview confirms the native client can resolve and display them.",
+            subtitle = "Latest generated image from the local worker.",
         ) {
             Box(
                 modifier = Modifier
