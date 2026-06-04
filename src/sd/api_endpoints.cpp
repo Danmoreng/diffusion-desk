@@ -2,13 +2,285 @@
 #include "api_utils.hpp"
 #include "server_state.hpp"
 #include "model_loader.hpp"
+#include <atomic>
+#include <algorithm>
+#include <condition_variable>
+#include <deque>
 #include <sstream>
 #include <iomanip>
 #include <fstream>
+#include <thread>
+#include <unordered_map>
 
 namespace fs = std::filesystem;
 
 // Handlers Placeholders - To be filled from main.cpp logic
+
+namespace {
+
+enum class GenerationJobStatus {
+    Queued,
+    Processing,
+    Completed,
+    Failed,
+    Cancelled,
+};
+
+const char* generation_job_status_name(GenerationJobStatus status) {
+    switch (status) {
+        case GenerationJobStatus::Queued: return "queued";
+        case GenerationJobStatus::Processing: return "processing";
+        case GenerationJobStatus::Completed: return "completed";
+        case GenerationJobStatus::Failed: return "failed";
+        case GenerationJobStatus::Cancelled: return "cancelled";
+        default: return "failed";
+    }
+}
+
+bool generation_job_status_terminal(GenerationJobStatus status) {
+    return status == GenerationJobStatus::Completed ||
+           status == GenerationJobStatus::Failed ||
+           status == GenerationJobStatus::Cancelled;
+}
+
+int64_t unix_ms_now() {
+    return std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::system_clock::now().time_since_epoch()).count();
+}
+
+struct GenerationJobEvent {
+    uint64_t id = 0;
+    std::string name;
+    diffusion_desk::json data;
+};
+
+struct GenerationJob {
+    std::string id;
+    GenerationJobStatus status = GenerationJobStatus::Queued;
+    std::string request_body;
+    int64_t created_at = unix_ms_now();
+    int64_t started_at = 0;
+    int64_t completed_at = 0;
+    diffusion_desk::json result;
+    std::string error_code;
+    std::string error_message;
+    std::vector<GenerationJobEvent> events;
+    uint64_t next_event_id = 1;
+};
+
+struct GenerationJobManager {
+    std::mutex mutex;
+    std::condition_variable cv;
+    std::unordered_map<std::string, std::shared_ptr<GenerationJob>> jobs;
+    std::deque<std::string> queue;
+    std::thread worker_thread;
+    uint64_t next_id = 1;
+    bool stop = false;
+    bool started = false;
+    size_t max_pending_jobs = 64;
+};
+
+GenerationJobManager g_generation_jobs;
+
+size_t count_pending_generation_jobs_locked() {
+    size_t count = 0;
+    for (const auto& entry : g_generation_jobs.jobs) {
+        if (entry.second->status == GenerationJobStatus::Queued ||
+            entry.second->status == GenerationJobStatus::Processing) {
+            ++count;
+        }
+    }
+    return count;
+}
+
+std::string make_generation_job_id_locked() {
+    std::ostringstream oss;
+    oss << "job_" << std::hex << unix_ms_now() << "_" << std::setw(8)
+        << std::setfill('0') << g_generation_jobs.next_id++;
+    return oss.str();
+}
+
+void append_generation_job_event_locked(GenerationJob& job, const std::string& name, diffusion_desk::json data) {
+    data["job_id"] = job.id;
+    job.events.push_back({job.next_event_id++, name, std::move(data)});
+    g_generation_jobs.cv.notify_all();
+}
+
+diffusion_desk::json make_generation_job_json_locked(const GenerationJob& job) {
+    diffusion_desk::json j;
+    j["id"] = job.id;
+    j["status"] = generation_job_status_name(job.status);
+    j["created_at"] = job.created_at;
+    j["started_at"] = job.started_at == 0 ? diffusion_desk::json(nullptr) : diffusion_desk::json(job.started_at);
+    j["completed_at"] = job.completed_at == 0 ? diffusion_desk::json(nullptr) : diffusion_desk::json(job.completed_at);
+    j["queue_position"] = 0;
+
+    if (job.status == GenerationJobStatus::Queued) {
+        size_t position = 1;
+        for (const auto& queued_id : g_generation_jobs.queue) {
+            if (queued_id == job.id) {
+                j["queue_position"] = position;
+                break;
+            }
+            ++position;
+        }
+    }
+
+    if (job.status == GenerationJobStatus::Completed) {
+        j["result"] = job.result;
+        j["error"] = nullptr;
+    } else if (job.status == GenerationJobStatus::Failed || job.status == GenerationJobStatus::Cancelled) {
+        j["result"] = nullptr;
+        j["error"] = {
+            {"code", job.error_code.empty() ? "generation_failed" : job.error_code},
+            {"message", job.error_message},
+        };
+    } else {
+        j["result"] = nullptr;
+        j["error"] = nullptr;
+    }
+
+    return j;
+}
+
+bool write_sse_event(httplib::DataSink& sink, const GenerationJobEvent& event) {
+    std::string payload = "id: " + std::to_string(event.id) + "\n" +
+                          "event: " + event.name + "\n" +
+                          "data: " + event.data.dump() + "\n\n";
+    return sink.write(payload.c_str(), payload.size());
+}
+
+void publish_progress_events_until_done(const std::shared_ptr<GenerationJob>& job, std::atomic<bool>& done) {
+    uint64_t last_version = 0;
+    while (!done.load()) {
+        int step = 0;
+        int steps = 0;
+        float time = 0;
+        std::string phase;
+        std::string message;
+
+        {
+            std::unique_lock<std::mutex> lock(progress_state.mutex);
+            progress_state.cv.wait_for(lock, std::chrono::milliseconds(250), [&] {
+                return done.load() || progress_state.version > last_version;
+            });
+            if (progress_state.version <= last_version) {
+                continue;
+            }
+            step = progress_state.step;
+            steps = progress_state.steps;
+            time = progress_state.time;
+            phase = progress_state.phase;
+            message = progress_state.message;
+            last_version = progress_state.version;
+        }
+
+        diffusion_desk::json data;
+        data["step"] = step;
+        data["steps"] = steps;
+        data["time"] = time;
+        data["phase"] = phase;
+        data["message"] = message;
+
+        std::lock_guard<std::mutex> lock(g_generation_jobs.mutex);
+        if (job->status == GenerationJobStatus::Processing) {
+            append_generation_job_event_locked(*job, "progress", std::move(data));
+        }
+    }
+}
+
+void execute_generation_job(const std::shared_ptr<GenerationJob>& job, ServerContext& ctx) {
+    {
+        std::lock_guard<std::mutex> lock(g_generation_jobs.mutex);
+        job->status = GenerationJobStatus::Processing;
+        job->started_at = unix_ms_now();
+        append_generation_job_event_locked(*job, "started", make_generation_job_json_locked(*job));
+    }
+
+    std::atomic<bool> progress_done{false};
+    std::thread progress_thread([job, &progress_done]() {
+        publish_progress_events_until_done(job, progress_done);
+    });
+
+    httplib::Request generation_req;
+    generation_req.body = job->request_body;
+    httplib::Response generation_res;
+
+    try {
+        handle_generate_image(generation_req, generation_res, ctx);
+    } catch (const std::exception& e) {
+        generation_res.status = 500;
+        generation_res.set_content(make_error_json("server_error", e.what()), "application/json");
+    } catch (...) {
+        generation_res.status = 500;
+        generation_res.set_content(make_error_json("server_error", "generation job failed"), "application/json");
+    }
+
+    progress_done = true;
+    progress_state.cv.notify_all();
+    if (progress_thread.joinable()) {
+        progress_thread.join();
+    }
+
+    std::lock_guard<std::mutex> lock(g_generation_jobs.mutex);
+    job->completed_at = unix_ms_now();
+    if (generation_res.status >= 200 && generation_res.status < 300) {
+        try {
+            job->result = diffusion_desk::json::parse(generation_res.body);
+            job->status = GenerationJobStatus::Completed;
+            append_generation_job_event_locked(*job, "completed", make_generation_job_json_locked(*job));
+        } catch (const std::exception& e) {
+            job->status = GenerationJobStatus::Failed;
+            job->error_code = "invalid_generation_response";
+            job->error_message = e.what();
+            append_generation_job_event_locked(*job, "failed", make_generation_job_json_locked(*job));
+        }
+    } else {
+        job->status = GenerationJobStatus::Failed;
+        job->error_code = "generation_failed";
+        job->error_message = generation_res.body.empty()
+            ? ("generation failed with status " + std::to_string(generation_res.status))
+            : generation_res.body;
+        append_generation_job_event_locked(*job, "failed", make_generation_job_json_locked(*job));
+    }
+}
+
+void generation_job_worker(ServerContext* ctx) {
+    while (true) {
+        std::shared_ptr<GenerationJob> job;
+        {
+            std::unique_lock<std::mutex> lock(g_generation_jobs.mutex);
+            g_generation_jobs.cv.wait(lock, [] {
+                return g_generation_jobs.stop || !g_generation_jobs.queue.empty();
+            });
+            if (g_generation_jobs.stop && g_generation_jobs.queue.empty()) {
+                return;
+            }
+            const std::string job_id = g_generation_jobs.queue.front();
+            g_generation_jobs.queue.pop_front();
+            auto it = g_generation_jobs.jobs.find(job_id);
+            if (it == g_generation_jobs.jobs.end() || it->second->status != GenerationJobStatus::Queued) {
+                continue;
+            }
+            job = it->second;
+        }
+        execute_generation_job(job, *ctx);
+    }
+}
+
+void ensure_generation_job_worker_started(ServerContext& ctx) {
+    if (g_generation_jobs.started) {
+        return;
+    }
+    g_generation_jobs.stop = false;
+    g_generation_jobs.started = true;
+    ServerContext* ctx_ptr = &ctx;
+    g_generation_jobs.worker_thread = std::thread([ctx_ptr]() {
+        generation_job_worker(ctx_ptr);
+    });
+}
+
+} // namespace
 
 void log_vram_status(const std::string& phase) {
     float proc = get_current_process_vram_usage_gb();
@@ -146,6 +418,202 @@ void handle_stream_progress(const httplib::Request& req, httplib::Response& res)
         }
         return true;
     });
+}
+
+void handle_submit_generation_job(const httplib::Request& req, httplib::Response& res, ServerContext& ctx) {
+    try {
+        diffusion_desk::json::parse(req.body);
+    } catch (const std::exception& e) {
+        res.status = 400;
+        res.set_content(make_error_json("invalid_json", e.what()), "application/json");
+        return;
+    }
+
+    std::shared_ptr<GenerationJob> job = std::make_shared<GenerationJob>();
+    diffusion_desk::json out;
+
+    {
+        std::lock_guard<std::mutex> lock(g_generation_jobs.mutex);
+        if (count_pending_generation_jobs_locked() >= g_generation_jobs.max_pending_jobs) {
+            res.status = 429;
+            res.set_content(make_error_json("queue_full", "generation job queue is full"), "application/json");
+            return;
+        }
+
+        ensure_generation_job_worker_started(ctx);
+        job->id = make_generation_job_id_locked();
+        job->request_body = req.body;
+        g_generation_jobs.jobs[job->id] = job;
+        g_generation_jobs.queue.push_back(job->id);
+        append_generation_job_event_locked(*job, "queued", make_generation_job_json_locked(*job));
+
+        out["id"] = job->id;
+        out["status"] = generation_job_status_name(job->status);
+        out["created_at"] = job->created_at;
+        out["status_url"] = "/v1/generation-jobs/" + job->id;
+        out["events_url"] = "/v1/generation-jobs/" + job->id + "/events";
+    }
+
+    g_generation_jobs.cv.notify_all();
+
+    res.status = 202;
+    res.set_content(out.dump(), "application/json");
+}
+
+void handle_get_generation_job(const httplib::Request& req, httplib::Response& res) {
+    const std::string job_id = req.matches[1];
+    std::lock_guard<std::mutex> lock(g_generation_jobs.mutex);
+    auto it = g_generation_jobs.jobs.find(job_id);
+    if (it == g_generation_jobs.jobs.end()) {
+        res.status = 404;
+        res.set_content(make_error_json("not_found", "generation job not found"), "application/json");
+        return;
+    }
+    res.status = 200;
+    res.set_content(make_generation_job_json_locked(*it->second).dump(), "application/json");
+}
+
+void handle_stream_generation_job_events(const httplib::Request& req, httplib::Response& res) {
+    const std::string job_id = req.matches[1];
+    {
+        std::lock_guard<std::mutex> lock(g_generation_jobs.mutex);
+        if (g_generation_jobs.jobs.find(job_id) == g_generation_jobs.jobs.end()) {
+            res.status = 404;
+            res.set_content(make_error_json("not_found", "generation job not found"), "application/json");
+            return;
+        }
+    }
+
+    DD_LOG_INFO("New generation job event stream subscription for %s", job_id.c_str());
+    res.set_header("Cache-Control", "no-cache");
+    res.set_header("Connection", "keep-alive");
+    res.set_header("X-Accel-Buffering", "no");
+
+    res.set_chunked_content_provider("text/event-stream", [job_id](size_t, httplib::DataSink& sink) {
+        size_t next_event_index = 0;
+
+        while (true) {
+            std::vector<GenerationJobEvent> events;
+            bool terminal = false;
+            {
+                std::unique_lock<std::mutex> lock(g_generation_jobs.mutex);
+                auto it = g_generation_jobs.jobs.find(job_id);
+                if (it == g_generation_jobs.jobs.end()) {
+                    sink.done();
+                    return false;
+                }
+
+                g_generation_jobs.cv.wait_for(lock, std::chrono::seconds(15), [&] {
+                    auto current = g_generation_jobs.jobs.find(job_id);
+                    return current == g_generation_jobs.jobs.end() ||
+                           current->second->events.size() > next_event_index ||
+                           generation_job_status_terminal(current->second->status);
+                });
+
+                it = g_generation_jobs.jobs.find(job_id);
+                if (it == g_generation_jobs.jobs.end()) {
+                    sink.done();
+                    return false;
+                }
+
+                auto& job = *it->second;
+                terminal = generation_job_status_terminal(job.status);
+                if (job.events.size() > next_event_index) {
+                    events.assign(job.events.begin() + static_cast<std::ptrdiff_t>(next_event_index), job.events.end());
+                    next_event_index = job.events.size();
+                }
+            }
+
+            if (events.empty()) {
+                if (terminal) {
+                    sink.done();
+                    return false;
+                }
+                const char ping[] = ": ping\n\n";
+                if (!sink.write(ping, sizeof(ping) - 1)) {
+                    return false;
+                }
+                continue;
+            }
+
+            for (const auto& event : events) {
+                if (!write_sse_event(sink, event)) {
+                    return false;
+                }
+            }
+
+            if (terminal) {
+                sink.done();
+                return false;
+            }
+        }
+    });
+}
+
+void handle_cancel_generation_job(const httplib::Request& req, httplib::Response& res) {
+    const std::string job_id = req.matches[1];
+    std::lock_guard<std::mutex> lock(g_generation_jobs.mutex);
+    auto it = g_generation_jobs.jobs.find(job_id);
+    if (it == g_generation_jobs.jobs.end()) {
+        res.status = 404;
+        res.set_content(make_error_json("not_found", "generation job not found"), "application/json");
+        return;
+    }
+
+    GenerationJob& job = *it->second;
+    if (job.status == GenerationJobStatus::Queued) {
+        auto new_end = std::remove(g_generation_jobs.queue.begin(), g_generation_jobs.queue.end(), job.id);
+        if (new_end == g_generation_jobs.queue.end()) {
+            res.status = 409;
+            res.set_content(make_error_json("queue_changed", "generation job queue changed before cancellation"), "application/json");
+            return;
+        }
+        g_generation_jobs.queue.erase(new_end, g_generation_jobs.queue.end());
+        job.status = GenerationJobStatus::Cancelled;
+        job.completed_at = unix_ms_now();
+        job.error_code = "cancelled";
+        job.error_message = "generation job cancelled by client";
+        append_generation_job_event_locked(job, "cancelled", make_generation_job_json_locked(job));
+        res.status = 200;
+        res.set_content(make_generation_job_json_locked(job).dump(), "application/json");
+        return;
+    }
+
+    if (job.status == GenerationJobStatus::Processing) {
+        res.status = 409;
+        res.set_content(make_error_json("already_processing", "generation job is already processing and cannot be interrupted"), "application/json");
+        return;
+    }
+
+    res.status = 200;
+    res.set_content(make_generation_job_json_locked(job).dump(), "application/json");
+}
+
+void shutdown_generation_jobs() {
+    {
+        std::lock_guard<std::mutex> lock(g_generation_jobs.mutex);
+        g_generation_jobs.stop = true;
+        while (!g_generation_jobs.queue.empty()) {
+            const std::string job_id = g_generation_jobs.queue.front();
+            g_generation_jobs.queue.pop_front();
+            auto it = g_generation_jobs.jobs.find(job_id);
+            if (it != g_generation_jobs.jobs.end() && it->second->status == GenerationJobStatus::Queued) {
+                it->second->status = GenerationJobStatus::Cancelled;
+                it->second->completed_at = unix_ms_now();
+                it->second->error_code = "cancelled";
+                it->second->error_message = "generation job cancelled by worker shutdown";
+                append_generation_job_event_locked(*it->second, "cancelled", make_generation_job_json_locked(*it->second));
+            }
+        }
+        g_generation_jobs.cv.notify_all();
+    }
+    if (g_generation_jobs.worker_thread.joinable()) {
+        g_generation_jobs.worker_thread.join();
+    }
+    {
+        std::lock_guard<std::mutex> lock(g_generation_jobs.mutex);
+        g_generation_jobs.started = false;
+    }
 }
 
 // We will move other handlers implementation in next steps to keep this manageable

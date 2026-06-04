@@ -4,14 +4,13 @@ import androidx.compose.ui.graphics.ImageBitmap
 import com.diffusiondesk.desktop.core.BackendManager
 import com.diffusiondesk.desktop.core.BackendStatus
 import com.diffusiondesk.desktop.core.DiffusionDeskClient
+import com.diffusiondesk.desktop.core.GenerationJobEvent
 import com.diffusiondesk.desktop.core.GenerationRequest
 import com.diffusiondesk.desktop.core.GenerationSettingsStore
 import com.diffusiondesk.desktop.core.ImagePreset
 import com.diffusiondesk.desktop.core.ImagePresetStore
 import com.diffusiondesk.desktop.core.SavedGenerationSettings
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -94,7 +93,6 @@ class GenerationViewModel(
     private val _uiState = MutableStateFlow(generationSettingsStore.load().toUiState())
     val uiState: StateFlow<GenerationUiState> = _uiState.asStateFlow()
 
-    private var progressJob: Job? = null
     private var hasAutoLoadedPreset = false
 
     val samplers = listOf("euler", "euler_a", "heun", "dpm2", "dpmpp_2s_a", "dpmpp_2m", "dpmpp_2mv2", "ipndm", "ipndm_v", "lcm", "ddim_trailing", "tcd")
@@ -110,8 +108,6 @@ class GenerationViewModel(
                         loadSelectedPreset()
                     }
                 } else {
-                    progressJob?.cancel()
-                    progressJob = null
                     update {
                         copy(
                             progressStep = 0,
@@ -393,14 +389,39 @@ class GenerationViewModel(
                 seekHistory(nextIndex)
             }
 
-            startProgressPolling()
-            val generationResult = client.generateImage(backendManager.state.value.baseUrl, item.params.toRequest())
-            stopProgressPolling()
+            val baseUrl = backendManager.state.value.baseUrl
+            val jobSubmission = client.submitGenerationJob(baseUrl, item.params.toRequest())
+
+            val generationResult = jobSubmission.mapCatching { submission ->
+                update { copy(message = "Queued worker job ${submission.id}.") }
+                client.streamGenerationJobEvents(baseUrl, submission.id) { event ->
+                    when (event) {
+                        is GenerationJobEvent.Queued -> update {
+                            copy(message = if (event.queuePosition > 0) "Queued worker job (${event.queuePosition})." else "Queued worker job.")
+                        }
+                        is GenerationJobEvent.Started -> update {
+                            copy(message = "Generating...")
+                        }
+                        is GenerationJobEvent.Progress -> update {
+                            copy(
+                                progressStep = event.step,
+                                progressSteps = event.steps,
+                                progressTime = event.time,
+                                progressPhase = event.phase,
+                                progressMessage = event.message,
+                            )
+                        }
+                        is GenerationJobEvent.Completed -> Unit
+                        is GenerationJobEvent.Failed -> error(event.message)
+                        is GenerationJobEvent.Cancelled -> error(event.message)
+                    }
+                }.getOrThrow()
+            }
 
             generationResult.onSuccess { result ->
                 val bitmapResult = client.fetchImageBitmaps(backendManager.state.value.baseUrl, result.imageUrls)
                 bitmapResult.onSuccess { images ->
-                    val generationTime = (System.currentTimeMillis() - startedAt) / 1000.0
+                    val generationTime = result.generationTime ?: ((System.currentTimeMillis() - startedAt) / 1000.0)
                     updateHistoryItem(nextIndex) {
                         it.copy(
                             status = GenerationStatus.Completed,
@@ -443,32 +464,6 @@ class GenerationViewModel(
             }
             processQueue()
         }
-    }
-
-    private fun startProgressPolling() {
-        progressJob?.cancel()
-        progressJob = scope.launch {
-            while (true) {
-                val progress = client.fetchProgress(backendManager.state.value.baseUrl)
-                progress.onSuccess { snapshot ->
-                    update {
-                        copy(
-                            progressStep = snapshot.step,
-                            progressSteps = snapshot.steps,
-                            progressTime = snapshot.time,
-                            progressPhase = snapshot.phase,
-                            progressMessage = snapshot.message,
-                        )
-                    }
-                }
-                delay(300)
-            }
-        }
-    }
-
-    private fun stopProgressPolling() {
-        progressJob?.cancel()
-        progressJob = null
     }
 
     private fun buildParams(): GenerationParams {

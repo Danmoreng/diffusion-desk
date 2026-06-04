@@ -114,6 +114,7 @@ int run_sd_worker(SDSvrParams& svr_params, SDContextParams& ctx_params, SDGenera
     svr.Post("/internal/shutdown", [&](const httplib::Request&, httplib::Response& res) {
         res.set_content(R"({\"status\":\"shutting_down\"})", "application/json");
         worker_running = false;
+        shutdown_generation_jobs();
         svr.stop();
     });
 
@@ -150,6 +151,22 @@ int run_sd_worker(SDSvrParams& svr_params, SDContextParams& ctx_params, SDGenera
         handle_stream_progress(req, res);
     });
 
+    svr.Post("/v1/generation-jobs", [&](const httplib::Request& req, httplib::Response& res) {
+        handle_submit_generation_job(req, res, ctx);
+    });
+
+    svr.Get(R"(/v1/generation-jobs/([A-Za-z0-9_\-]+))", [&](const httplib::Request& req, httplib::Response& res) {
+        handle_get_generation_job(req, res);
+    });
+
+    svr.Get(R"(/v1/generation-jobs/([A-Za-z0-9_\-]+)/events)", [&](const httplib::Request& req, httplib::Response& res) {
+        handle_stream_generation_job_events(req, res);
+    });
+
+    svr.Post(R"(/v1/generation-jobs/([A-Za-z0-9_\-]+)/cancel)", [&](const httplib::Request& req, httplib::Response& res) {
+        handle_cancel_generation_job(req, res);
+    });
+
     svr.Post("/v1/upscale/load", [&](const httplib::Request& req, httplib::Response& res) {
         handle_load_upscale_model(req, res, ctx);
     });
@@ -175,6 +192,7 @@ int run_sd_worker(SDSvrParams& svr_params, SDContextParams& ctx_params, SDGenera
     svr.listen(svr_params.listen_ip, svr_params.listen_port);
 
     worker_running = false;
+    shutdown_generation_jobs();
     if (idle_thread.joinable()) idle_thread.join();
 
     return 0;

@@ -10,15 +10,10 @@ void on_progress(int step, int steps, float time, void* data) {
         return;
     }
 
-    // Heuristic: If we are in Sampling phase and the step count resets to 0 (or a very small value)
-    // or if the step count exceeds the steps passed by the library, we have likely moved to a new internal phase (VAE Decode).
-    if (progress_state.phase == "Sampling..." || progress_state.phase == "Highres-fix Pass...") {
-        if (step < (progress_state.step - progress_state.base_step) || step > steps) {
-            progress_state.phase = "VAE Decoding...";
-            progress_state.base_step = 0;
-            progress_state.total_steps = steps;
-            DD_LOG_INFO("Phase transition detected: %s (steps: %d)", progress_state.phase.c_str(), steps);
-        }
+    // The stable-diffusion.cpp progress callback reports sampling progress only.
+    // Pipeline phases such as VAE decoding are set explicitly by the endpoint code.
+    if (progress_state.phase.rfind("Encoding Prompt", 0) == 0) {
+        progress_state.phase = "Sampling...";
     }
 
     progress_state.step = progress_state.base_step + step;
