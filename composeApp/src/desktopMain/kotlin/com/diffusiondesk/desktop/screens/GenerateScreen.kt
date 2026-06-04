@@ -62,6 +62,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupPositionProvider
 import androidx.compose.ui.window.PopupProperties
+import androidx.compose.ui.graphics.vector.ImageVector
 import com.diffusiondesk.desktop.core.BackendStatus
 import com.diffusiondesk.desktop.core.BackendUiState
 import com.diffusiondesk.desktop.viewmodel.GenerationStatus
@@ -219,21 +220,25 @@ private fun GenerationPanel(
                 CompactTextField("Steps", state.steps, onStepsChange, Modifier.weight(0.8f))
                 CompactTextField("Batch", state.batchCount, onBatchCountChange, Modifier.weight(0.8f))
                 CompactTextField("Seed", state.seed, onSeedChange, Modifier.weight(1.1f))
-                IconButton(onClick = onRandomizeSeed) {
-                    Icon(Icons.Default.Casino, contentDescription = "Random seed")
-                }
-                IconButton(
+                CompactIconButton(
+                    icon = Icons.Default.Casino,
+                    contentDescription = "Random seed",
+                    onClick = onRandomizeSeed,
+                )
+                CompactIconButton(
+                    icon = Icons.Default.Recycling,
+                    contentDescription = "Reuse last seed",
                     onClick = onReuseLastSeed,
                     enabled = state.history.any { it.usedSeed != null },
-                ) {
-                    Icon(Icons.Default.Recycling, contentDescription = "Reuse last seed")
-                }
+                )
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 CompactTextField("Width", state.width, onWidthChange, Modifier.weight(1f))
-                IconButton(onClick = onSwapDimensions) {
-                    Icon(Icons.Default.SwapHoriz, contentDescription = "Swap dimensions")
-                }
+                CompactIconButton(
+                    icon = Icons.Default.SwapHoriz,
+                    contentDescription = "Swap dimensions",
+                    onClick = onSwapDimensions,
+                )
                 CompactTextField("Height", state.height, onHeightChange, Modifier.weight(1f))
                 AspectRatioMenu(
                     width = state.width,
@@ -626,6 +631,33 @@ private fun CompactFieldFrame(
         ) {
             content()
         }
+    }
+}
+
+@Composable
+private fun CompactIconButton(
+    icon: ImageVector,
+    contentDescription: String,
+    onClick: () -> Unit,
+    enabled: Boolean = true,
+) {
+    val shape = RoundedCornerShape(5.dp)
+    val tint = if (enabled) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f)
+    Box(
+        modifier = Modifier
+            .size(42.dp)
+            .clip(shape)
+            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, shape)
+            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = if (enabled) 1f else 0.45f))
+            .then(if (enabled) Modifier.clickable(onClick = onClick) else Modifier),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = contentDescription,
+            tint = tint,
+            modifier = Modifier.size(20.dp),
+        )
     }
 }
 
