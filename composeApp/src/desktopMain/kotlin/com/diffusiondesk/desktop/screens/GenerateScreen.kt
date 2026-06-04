@@ -33,6 +33,7 @@ import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Recycling
 import androidx.compose.material.icons.filled.Repeat
+import androidx.compose.material.icons.filled.RestartAlt
 import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -209,11 +210,10 @@ private fun GenerationPanel(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Label("Parameters")
-                Text(
-                    text = "Reset to Preset Defaults",
-                    modifier = Modifier.clickable(onClick = onResetToPresetDefaults),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                SubtleTextButton(
+                    icon = Icons.Default.RestartAlt,
+                    text = "Reset to defaults",
+                    onClick = onResetToPresetDefaults,
                 )
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -631,6 +631,35 @@ private fun CompactFieldFrame(
         ) {
             content()
         }
+    }
+}
+
+@Composable
+private fun SubtleTextButton(
+    icon: ImageVector,
+    text: String,
+    onClick: () -> Unit,
+) {
+    val shape = RoundedCornerShape(5.dp)
+    Row(
+        modifier = Modifier
+            .clip(shape)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 8.dp, vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(5.dp),
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.size(14.dp),
+        )
+        Text(
+            text = text,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }
 
