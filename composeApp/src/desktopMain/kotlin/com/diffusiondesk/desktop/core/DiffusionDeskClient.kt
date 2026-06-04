@@ -53,11 +53,12 @@ data class GenerationRequest(
     val steps: Int,
     val cfgScale: Double,
     val seed: Int,
+    val batchCount: Int,
     val sampler: String,
 )
 
 data class GenerationResult(
-    val imageUrl: String,
+    val imageUrls: List<String>,
     val usedSeed: Int,
 )
 
@@ -220,7 +221,7 @@ class DiffusionDeskClient {
                 put("sample_steps", JsonPrimitive(requestData.steps))
                 put("cfg_scale", JsonPrimitive(requestData.cfgScale))
                 put("strength", JsonPrimitive(0.75))
-                put("n", JsonPrimitive(1))
+                put("n", JsonPrimitive(requestData.batchCount))
                 put("sampling_method", JsonPrimitive(requestData.sampler))
                 put("seed", JsonPrimitive(requestData.seed))
                 put("width", JsonPrimitive(requestData.width))
@@ -243,9 +244,19 @@ class DiffusionDeskClient {
                 ?: error("Generation response did not include image data.")
 
             GenerationResult(
-                imageUrl = first["url"]?.jsonPrimitive?.content ?: error("Missing image url"),
+                imageUrls = root["data"]?.jsonArray.orEmpty().map { item ->
+                    item.jsonObject["url"]?.jsonPrimitive?.content ?: error("Missing image url")
+                },
                 usedSeed = first["seed"]?.jsonPrimitive?.intOrNull ?: requestData.seed,
             )
+        }
+    }
+
+    suspend fun fetchImageBitmaps(baseUrl: String, imageUrls: List<String>): Result<List<ImageBitmap>> = withContext(Dispatchers.IO) {
+        runCatching {
+            imageUrls.map { imageUrl ->
+                fetchImageBitmap(baseUrl, imageUrl).getOrThrow()
+            }
         }
     }
 
