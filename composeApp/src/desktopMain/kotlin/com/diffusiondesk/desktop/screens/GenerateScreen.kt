@@ -550,7 +550,7 @@ private fun ActionBar(
             .padding(start = 8.dp, end = 8.dp, bottom = 8.dp),
         shape = RoundedCornerShape(8.dp),
         color = MaterialTheme.colorScheme.surface,
-        tonalElevation = 2.dp,
+        tonalElevation = 0.dp,
     ) {
         Row(
             modifier = Modifier
