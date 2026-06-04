@@ -36,8 +36,6 @@ import androidx.compose.material.icons.filled.Repeat
 import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -51,11 +49,19 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntRect
+import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Popup
+import androidx.compose.ui.window.PopupPositionProvider
+import androidx.compose.ui.window.PopupProperties
 import com.diffusiondesk.desktop.core.BackendStatus
 import com.diffusiondesk.desktop.core.BackendUiState
 import com.diffusiondesk.desktop.viewmodel.GenerationStatus
@@ -230,6 +236,8 @@ private fun GenerationPanel(
                 }
                 CompactTextField("Height", state.height, onHeightChange, Modifier.weight(1f))
                 AspectRatioMenu(
+                    width = state.width,
+                    height = state.height,
                     onApplyAspectRatio = onApplyAspectRatio,
                     modifier = Modifier.weight(0.78f),
                 )
@@ -662,32 +670,32 @@ private fun SamplerMenu(
     modifier: Modifier = Modifier,
 ) {
     var expanded by remember { mutableStateOf(false) }
-    Box(modifier = modifier) {
+    var anchorSize by remember { mutableStateOf(IntSize.Zero) }
+    Box(modifier = modifier.onGloballyPositioned { anchorSize = it.size }) {
         CompactDropdownField(
             label = "Sampler",
             value = value,
             onClick = { expanded = true },
             modifier = Modifier.fillMaxWidth(),
         )
-        DropdownMenu(
+        AnchoredDropdownMenu(
             expanded = expanded,
             onDismissRequest = { expanded = false },
-        ) {
-            options.forEach { option ->
-                DropdownMenuItem(
-                    text = { Text(option) },
-                    onClick = {
-                        onChange(option)
-                        expanded = false
-                    },
-                )
-            }
-        }
+            options = options,
+            anchorSize = anchorSize,
+            minWidth = 180.dp,
+            onSelect = { option ->
+                onChange(option)
+                expanded = false
+            },
+        )
     }
 }
 
 @Composable
 private fun AspectRatioMenu(
+    width: String,
+    height: String,
     onApplyAspectRatio: (Int, Int) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -704,28 +712,112 @@ private fun AspectRatioMenu(
         "21:9" to (21 to 9),
     )
     var expanded by remember { mutableStateOf(false) }
-    Box(modifier = modifier) {
+    var anchorSize by remember { mutableStateOf(IntSize.Zero) }
+    Box(modifier = modifier.onGloballyPositioned { anchorSize = it.size }) {
         CompactDropdownField(
             label = "AR",
-            value = "Aspect Ratio",
+            value = aspectRatioLabel(width, height),
             onClick = { expanded = true },
             modifier = Modifier.fillMaxWidth(),
         )
-        DropdownMenu(
+        AnchoredDropdownMenu(
             expanded = expanded,
             onDismissRequest = { expanded = false },
+            options = ratios.map { it.first },
+            anchorSize = anchorSize,
+            minWidth = 120.dp,
+            onSelect = { selected ->
+                val ratio = ratios.first { it.first == selected }.second
+                onApplyAspectRatio(ratio.first, ratio.second)
+                expanded = false
+            },
+        )
+    }
+}
+
+@Composable
+private fun AnchoredDropdownMenu(
+    expanded: Boolean,
+    onDismissRequest: () -> Unit,
+    options: List<String>,
+    anchorSize: IntSize,
+    minWidth: Dp,
+    onSelect: (String) -> Unit,
+) {
+    if (!expanded) return
+    val density = LocalDensity.current
+    val menuWidth = with(density) {
+        if (anchorSize.width > 0) anchorSize.width.toDp() else minWidth
+    }
+    val gapPx = with(density) { 4.dp.roundToPx() }
+
+    Popup(
+        popupPositionProvider = DropdownPositionProvider(gapPx),
+        onDismissRequest = onDismissRequest,
+        properties = PopupProperties(focusable = true),
+    ) {
+        Surface(
+            modifier = Modifier.width(menuWidth),
+            shape = RoundedCornerShape(6.dp),
+            color = MaterialTheme.colorScheme.surface,
+            shadowElevation = 8.dp,
         ) {
-            ratios.forEach { (label, ratio) ->
-                DropdownMenuItem(
-                    text = { Text(label) },
-                    onClick = {
-                        onApplyAspectRatio(ratio.first, ratio.second)
-                        expanded = false
-                    },
-                )
+            Column(
+                modifier = Modifier.padding(vertical = 4.dp),
+            ) {
+                options.forEach { option ->
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(32.dp)
+                            .clickable { onSelect(option) }
+                            .padding(horizontal = 12.dp),
+                        contentAlignment = Alignment.CenterStart,
+                    ) {
+                        Text(
+                            text = option,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurface,
+                        )
+                    }
+                }
             }
         }
     }
+}
+
+private class DropdownPositionProvider(
+    private val gapPx: Int,
+) : PopupPositionProvider {
+    override fun calculatePosition(
+        anchorBounds: IntRect,
+        windowSize: IntSize,
+        layoutDirection: LayoutDirection,
+        popupContentSize: IntSize,
+    ): IntOffset {
+        val belowY = anchorBounds.bottom + gapPx
+        val aboveY = anchorBounds.top - popupContentSize.height - gapPx
+        val y = when {
+            belowY + popupContentSize.height <= windowSize.height -> belowY
+            aboveY >= 0 -> aboveY
+            else -> (windowSize.height - popupContentSize.height).coerceAtLeast(0)
+        }
+        val x = anchorBounds.left.coerceIn(
+            minimumValue = 0,
+            maximumValue = (windowSize.width - popupContentSize.width).coerceAtLeast(0),
+        )
+
+        return IntOffset(x, y)
+    }
+}
+
+private fun aspectRatioLabel(widthValue: String, heightValue: String): String {
+    val width = widthValue.toIntOrNull()
+    val height = heightValue.toIntOrNull()
+    if (width == null || height == null || width <= 0 || height <= 0) return "-"
+
+    val divisor = gcd(width, height).coerceAtLeast(1)
+    return "${width / divisor}:${height / divisor}"
 }
 
 @Composable
