@@ -8,6 +8,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.Dashboard
 import androidx.compose.material.icons.filled.Image
+import androidx.compose.material.icons.filled.Inventory2
 import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Icon
@@ -27,6 +28,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.diffusiondesk.desktop.screens.GenerateScreen
+import com.diffusiondesk.desktop.screens.LibraryScreen
 import com.diffusiondesk.desktop.screens.SettingsScreen
 import com.diffusiondesk.desktop.theme.DiffusionDeskTheme
 import org.jetbrains.jewel.ui.component.IconButton
@@ -34,6 +36,7 @@ import org.jetbrains.jewel.ui.component.Text
 
 private enum class Screen(val label: String, val icon: ImageVector, val subtitle: String) {
     Generate("Generate", Icons.Default.Image, "Preset-driven image generation with the local SD worker."),
+    Library("Library", Icons.Default.Inventory2, "Manage JSON-backed image generation presets."),
     Settings("Settings", Icons.Default.Settings, "Local paths, worker status, and preset storage."),
 }
 
@@ -47,6 +50,7 @@ fun App(
     val settingsState by controller.settingsViewModel.uiState.collectAsState()
     val backendState by controller.settingsViewModel.backendState.collectAsState()
     val generationState by controller.generationViewModel.uiState.collectAsState()
+    val libraryState by controller.libraryViewModel.uiState.collectAsState()
 
     DiffusionDeskTheme(darkTheme = darkTheme) {
         Surface(
@@ -87,6 +91,34 @@ fun App(
                             onGoBack = controller.generationViewModel::goBack,
                             onGoForward = controller.generationViewModel::goForward,
                             onLeftPanelWidthChange = controller.generationViewModel::updateLeftPanelWidth,
+                        )
+                        Screen.Library -> LibraryScreen(
+                            state = libraryState,
+                            backendState = backendState,
+                            selectedPresetId = generationState.selectedPresetId,
+                            samplerOptions = controller.generationViewModel.samplers,
+                            onCreatePreset = controller.libraryViewModel::createPreset,
+                            onEditPreset = controller.libraryViewModel::editPreset,
+                            onDeletePreset = { id ->
+                                if (controller.libraryViewModel.deletePreset(id)) {
+                                    controller.generationViewModel.reloadPresets()
+                                }
+                            },
+                            onLoadPreset = { id ->
+                                controller.generationViewModel.updatePresetId(id)
+                                controller.generationViewModel.loadSelectedPreset()
+                            },
+                            onReloadPresets = {
+                                controller.libraryViewModel.reloadPresets()
+                                controller.generationViewModel.reloadPresets()
+                            },
+                            onCancelEditor = controller.libraryViewModel::cancelEditor,
+                            onFormChange = controller.libraryViewModel::updateForm,
+                            onSavePreset = {
+                                if (controller.libraryViewModel.saveEditor()) {
+                                    controller.generationViewModel.reloadPresets()
+                                }
+                            },
                         )
                         Screen.Settings -> SettingsScreen(
                             state = settingsState,
