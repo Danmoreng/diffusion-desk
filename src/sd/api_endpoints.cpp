@@ -410,11 +410,13 @@ void handle_load_upscale_model(const httplib::Request& req, httplib::Response& r
 
         {
             std::lock_guard<std::mutex> lock(ctx.sd_ctx_mutex);
-            ctx.upscaler_ctx.reset(new_upscaler_ctx(model_path.string().c_str(), 
+            ctx.upscaler_ctx.reset(new_upscaler_ctx(model_path.string().c_str(),
                                             ctx.ctx_params.offload_params_to_cpu,
                                             false, // direct
                                             ctx.ctx_params.n_threads,
-                                            512)); // tile_size
+                                            512, // tile_size
+                                            nullptr, // backend
+                                            nullptr)); // params_backend
 
             if (!ctx.upscaler_ctx) {
                 throw std::runtime_error("failed to create upscaler context");
@@ -970,9 +972,13 @@ void handle_generate_image(const httplib::Request& req, httplib::Response& res, 
                     fs::path upscaler_path = fs::path(ctx.svr_params.model_dir) / gen_params.hires_upscale_model;
                     DD_LOG_INFO("Attempting to load upscaler: %s", upscaler_path.string().c_str());
                     if (fs::exists(upscaler_path)) {
-                        ctx.upscaler_ctx.reset(new_upscaler_ctx(upscaler_path.string().c_str(), 
+                        ctx.upscaler_ctx.reset(new_upscaler_ctx(upscaler_path.string().c_str(),
                                                         ctx.ctx_params.offload_params_to_cpu,
-                                                        false, ctx.ctx_params.n_threads, 512));
+                                                        false,
+                                                        ctx.ctx_params.n_threads,
+                                                        512,
+                                                        nullptr,
+                                                        nullptr));
                         ctx.current_upscale_model_path = gen_params.hires_upscale_model;
                         DD_LOG_INFO("Upscaler loaded successfully.");
                     } else {

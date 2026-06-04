@@ -165,13 +165,14 @@ void LlamaServer::bridge_handler(httplib::Server& svr, const std::string& method
             query_string += p.second;
         }
 
-        // Use shared_ptr to keep request alive for streaming responses
+        // Use shared_ptr to keep request alive for streaming responses.
         auto llama_req_ptr = std::make_shared<server_http_req>(server_http_req{
             {}, // params
             {}, // headers
             req.path,
             query_string,
             req.body,
+            {}, // files
             never_stop
         });
 
@@ -185,7 +186,7 @@ void LlamaServer::bridge_handler(httplib::Server& svr, const std::string& method
         }
 
         DD_LOG_DEBUG("LLM calling native handler...");
-        std::shared_ptr<server_http_res> llama_res;
+        server_http_res_ptr llama_res;
         try {
             llama_res = handler(*llama_req_ptr);
         } catch (const std::exception& e) {
@@ -213,15 +214,27 @@ void LlamaServer::bridge_handler(httplib::Server& svr, const std::string& method
         }
 
         if (llama_res->is_stream()) {
-            res.set_chunked_content_provider(llama_res->content_type, 
-                [llama_res = std::shared_ptr<server_http_res>(std::move(llama_res)), llama_req_ptr](size_t offset, httplib::DataSink &sink) {
+            const std::string content_type = llama_res->content_type;
+            std::shared_ptr<server_http_req> llama_req_keepalive(std::move(llama_req_ptr));
+            std::shared_ptr<server_http_res> llama_res_keepalive(std::move(llama_res));
+
+            res.set_chunked_content_provider(content_type,
+                [llama_res = llama_res_keepalive](size_t, const httplib::DataSink &sink) {
                     std::string chunk;
-                    if (llama_res->next(chunk)) {
-                        sink.write(chunk.c_str(), chunk.size());
-                        return true;
+                    const bool has_next = llama_res->next(chunk);
+                    if (!chunk.empty()) {
+                        if (!sink.write(chunk.c_str(), chunk.size())) {
+                            return false;
+                        }
                     }
-                    sink.done();
-                    return false;
+                    if (!has_next) {
+                        sink.done();
+                    }
+                    return has_next;
+                },
+                [llama_req = llama_req_keepalive, llama_res = llama_res_keepalive](bool) mutable {
+                    llama_res.reset();
+                    llama_req.reset();
                 });
         } else {
             res.set_content(llama_res->data, llama_res->content_type);
