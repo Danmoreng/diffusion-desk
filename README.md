@@ -1,158 +1,198 @@
-# DiffusionDesk
+# Diffusion Desk
 
-DiffusionDesk is a high-performance, self-hosted **Creative AI Workstation** built on the power of [stable-diffusion.cpp](https://github.com/leejet/stable-diffusion.cpp) and [llama.cpp](https://github.com/ggml-org/llama.cpp/). It integrates state-of-the-art image generation and large language model capabilities into a unified, local application.
+Diffusion Desk is a minimal local desktop app for generating images with
+`stable-diffusion.cpp`. The current app is built with Kotlin Compose
+Multiplatform and focuses on a direct, quiet workflow: choose a model preset,
+write a prompt, generate, inspect the image, and keep moving.
 
-![DiffusionDesk UI](screenshots/Screenshot_1.png)
+![Diffusion Desk Compose app](screenshots/Screenshot_2.png)
 
-Unlike simple generation frontends, DiffusionDesk functions as a complete **Asset Management System**. It persists your creative history, uses local LLMs to intelligently analyze and tag your images, and provides advanced workflows for refinement and exploration.
+The older Vue/orchestrator README is archived here:
+[docs/LEGACY_WEBUI_README.md](docs/LEGACY_WEBUI_README.md).
 
-## Key Capabilities
+## Current Compose App
 
-### Generation & Editing
-- **Dual-Backend Power:** Seamlessly links against [stable-diffusion.cpp](https://github.com/leejet/stable-diffusion.cpp) and [llama.cpp](https://github.com/ggml-org/llama.cpp/) using a shared GGML foundation.
-- **Image Generation:** Supports FLUX, Z-Image, SDXL, and more with full GPU acceleration (CUDA).
-- **Inpainting Canvas:** Integrated editor for masking and regenerating specific parts of an image.
-- **Built-in Upscaling:** Native integration of ESRGAN for high-quality image enhancement.
-- **Dynamic Exploration:** Generate variations of prompts and seeds to explore the latent space and discover new styles.
+The current user-facing app is `composeApp/`. It starts the native SD worker
+locally and talks to it over HTTP on `127.0.0.1`.
 
-### Smart Asset Management
-- **SQLite Database:** Stores all your creative assets, including:
-    - **History:** Every generation prompt and result.
-    - **Presets:** Saved model configurations (Model + VAE + CLIP + Settings).
-    - **Styles & Prompts:** Your personal library of reusable styles.
-- **Smart Tagging:** Runs a background **Tagging Service** that uses your loaded LLM to analyze generated images and automatically assign descriptive tags (Subject, Style, Mood).
-- **Advanced Filtering:** Search your history by date, model, rating, or specific tags.
+Main screens:
 
-### System Architecture
-- **Multi-Process Design:** Orchestrator-Worker architecture allowing simultaneous Image and Text generation without resource conflicts or UI freezing.
-- **Job Queue:** Asynchronous background processing for tasks like auto-tagging and batch generation.
-- **WebSocket Hub:** Real-time generation progress and system-wide VRAM monitoring.
-- **Internal Security:** Automatic transient token authentication between the Orchestrator and backend workers.
+- **Generate:** prompt editor, negative prompt, compact generation controls,
+  prompt history, image queue/history navigation, live progress stages, ETA,
+  and generated image preview.
+- **Library:** JSON-backed image preset editor for model components and default
+  generation parameters.
+- **Settings:** theme, action bar placement, model/output paths, worker status,
+  and advanced launch diagnostics.
 
-## Project Structure
+Generated images support a desktop context menu for copy, save, open, and show
+in Explorer.
 
-- `src/`: C++ Backend source code.
-    - `orchestrator/`: Main server, database management, tagging service, and job queue.
-    - `workers/`: Wrappers for SD and LLM inference.
-- `webui/`: Vue.js 3 + TypeScript frontend with specialized views for History, Inpainting, and Settings.
-- `libs/`: Submodules for `stable-diffusion.cpp`, `llama.cpp`, `ixwebsocket`, and `SQLiteCpp`.
-- `scripts/`: Build and automation scripts.
-- `models/`: Directory structure for AI models.
+## Preset-Driven Generation
 
-## Quick Start
+Image models are loaded through presets. The preset dropdown lives in the
+Generate action bar and loads a preset as soon as it is selected.
 
-### Prerequisites
+The status dot next to the preset name means:
 
-- **C++ Compiler:** MSVC 2022 (Windows), GCC, or Clang.
-- **CMake:** Version 3.14 or higher.
-- **Node.js & NPM:** For building the frontend.
-- **CUDA Toolkit:** Required for GPU acceleration (Project is configured for CUDA by default).
+- Green: selected preset is loaded
+- Orange: preset is loading
+- Red: preset load failed
 
-### Build Instructions
+A preset can define:
 
-1. **Clone the repository with submodules:**
-   ```bash
-   git clone --recursive https://github.com/Danmoreng/diffusion-desk.git
-   cd diffusion-desk
-   ```
-   *If you have already cloned the repository without submodules, initialize them manually:*
-   ```bash
-   git submodule update --init --recursive
-   ```
+- Diffusion model
+- VAE
+- CLIP-L / CLIP-G
+- T5XXL encoder
+- LLM text encoder, for architectures such as Z-Image
+- CPU placement flags
+- Flash attention flag
+- Default width, height, steps, CFG, sampler, and negative prompt
 
-2. **Run the One-Click Build Script:**
-   The provided scripts handle NPM installation, Vue compilation, and C++ build.
+Presets are stored as JSON files in the app data directory under
+`image-presets/`.
 
-   **Windows:**
-   ```powershell
-   .\scripts\build.ps1
-   ```
+## Runtime Layout
 
-   **Linux:**
-   ```bash
-   chmod +x scripts/build.sh
-   ./scripts/build.sh
-   ```
+The Compose app expects the native worker and DLLs to exist in the repository or
+portable app root:
 
-### Running the Server
+- SD worker: `build/bin/diffusion_desk_sd_worker.exe`
+- Models: `models/`
+- Generated images: `outputs/`
 
-Start the server using the launch script or directly via the binary:
+Recommended model layout:
 
-**Windows:**
+- `models/stable-diffusion/`
+- `models/vae/`
+- `models/text-encoder/`
+- `models/lora/`
+
+## Requirements
+
+Windows is the primary supported development and packaging target right now.
+
+- Windows 10/11
+- Visual Studio 2022 C++ build tools
+- CMake
+- CUDA Toolkit, because the native build scripts currently enable CUDA by default
+- Java 25 JDK/JBR for Compose desktop
+- Java 25 JDK/JBR with `jpackage` for packaging
+
+The run and packaging scripts can use Gradle-provisioned JDKs from `.gradle\jdks`
+if `JAVA_HOME` is not set.
+
+## Build
+
+Clone with submodules:
+
 ```powershell
-.\scripts\run.ps1
+git clone --recursive https://github.com/Danmoreng/diffusion-desk.git
+cd diffusion-desk
 ```
 
-**Linux:**
-```bash
-chmod +x scripts/run.sh
-./scripts/run.sh
+If submodules are missing:
+
+```powershell
+git submodule update --init --recursive
 ```
-The server will initialize the SQLite database (`diffusion_desk.db`) and start the WebUI at `http://localhost:1234/app/`.
 
-### Packaging the Desktop App on Windows
+Build the native backend and worker:
 
-The Compose desktop shell can be packaged as a portable Windows app image. The packaging script builds the native backend, creates the Compose distributable, copies the worker executables and DLLs into the app image, and writes a portable zip.
+```powershell
+.\scripts\build.ps1
+```
+
+For the Compose app, the important native output is
+`build\bin\diffusion_desk_sd_worker.exe` plus its DLL dependencies.
+
+## Run
+
+Use the helper script:
+
+```powershell
+.\scripts\run-compose.ps1
+```
+
+Or run Gradle directly:
+
+```powershell
+.\gradlew.bat :composeApp:run
+```
+
+For hot reload during Compose UI development:
+
+```powershell
+.\scripts\run-compose-hot-reload.ps1
+```
+
+## Package On Windows
+
+Create a portable Windows app image and zip:
 
 ```powershell
 .\gradlew.bat packageWindows
 ```
 
-Or run the script directly:
+Or run the packaging script directly:
 
 ```powershell
 pwsh -ExecutionPolicy Bypass -File .\scripts\package-windows.ps1
 ```
 
 Outputs:
-- Portable app folder: `composeApp\build\compose\binaries\main\app\diffusion-desk`
-- Portable zip: `composeApp\build\compose\binaries\main\portable\diffusion-desk-windows-portable.zip`
 
-To also ask Compose/jpackage for an MSI installer:
+- App folder: `composeApp\build\compose\binaries\main\app\diffusion-desk`
+- Portable zip:
+  `composeApp\build\compose\binaries\main\portable\diffusion-desk-windows-portable.zip`
+
+If `build\bin` already contains a fresh native worker build:
+
+```powershell
+pwsh -ExecutionPolicy Bypass -File .\scripts\package-windows.ps1 -SkipNativeBuild
+```
+
+To also ask Compose/jpackage for an MSI:
 
 ```powershell
 .\gradlew.bat packageWindowsMsi
 ```
 
-### Configuration
+## Repository Map
 
-DiffusionDesk uses two systems for configuration:
+- `composeApp/`: current Kotlin Compose desktop app
+- `src/workers/`: native SD and LLM worker entry points
+- `src/sd/`: SD worker API, generation jobs, progress, and server state
+- `src/orchestrator/`: older orchestrator/database/web stack
+- `webui/`: older Vue web UI
+- `scripts/`: build, run, packaging, and verification scripts
+- `libs/`: vendored/submodule dependencies
 
-1.  **`config.json`:** Manages **infrastructure settings** such as:
-    *   Server listening IP and Port.
-    *   Paths to the `models` and `outputs` directories.
-    *   Default LLM to load on startup.
-    *   System resource limits (timeouts, threads).
+## Legacy Web UI
 
-2.  **SQLite Database (`diffusion_desk.db`):** Manages **creative configurations** such as:
-    *   **Image Presets:** Saved combinations of Checkpoints, VAEs, and CLIP models.
-    *   **Generation Parameters:** Your default steps, CFG scale, and sampler choices.
+The older browser app and orchestrator still exist in this repository. They are
+not the main path on this branch, but they can still be built and run with:
 
-## Model Organization
+```powershell
+.\scripts\build.ps1
+.\scripts\run.ps1
+```
 
-DiffusionDesk expects models to be organized in the following subdirectories:
-- `models/stable-diffusion/`: Main model files (`.gguf`, `.safetensors`).
-- `models/vae/`: Variational Autoencoders.
-- `models/text-encoder/`: CLIP, T5, and LLM encoders (including those used for tagging).
-- `models/lora/`: Low-Rank Adaptations.
-- `models/esrgan/`: Upscaler models.
+That path serves the Vue web UI at `http://localhost:1234/app/`. See the
+archived README for the old architecture and feature description:
+[docs/LEGACY_WEBUI_README.md](docs/LEGACY_WEBUI_README.md).
 
-### Signature-Based Presets
-DiffusionDesk uses a **Signature-Based Loading System**. All model configurations are managed via **Image Presets** in the Library Manager.
+## Development Notes
 
-When you load a preset, the Orchestrator computes a unique signature based on:
-- The main **UNet/Diffusion** model path.
-- Associated **VAE** and **CLIP** (L/G) models.
-- **T5XXL** or **LLM Text Encoders** (for architectures like Flux or Z-Image).
-- **Optimization Flags** (Flash Attention, VAE Tiling, CPU Offloading).
-
-This ensures that the system correctly reloads all necessary components when switching between presets, even if they share the same base model.
-
-### Support for Modern Architectures
-DiffusionDesk natively supports complex multi-model pipelines:
-- **Flux / SD3 Support:** Dedicated slots for T5XXL and multiple CLIP encoders.
-- **Z-Image / LLM-Encoding:** Models requiring LLM-based text encoders (like Qwen) can be configured using the **LLM Text Encoder 3** slot in the preset editor.
+- Validate Compose desktop changes with
+  `.\gradlew.bat :composeApp:compileKotlinDesktop`.
+- Validate native/backend changes with `.\scripts\build.ps1`.
+- Do not edit `libs/` unless you intentionally need to change vendored upstream
+  code.
+- Treat `config.json`, logs, databases, models, outputs, and build products as
+  local runtime artifacts.
 
 ## License
 
-DiffusionDesk is released under the [MIT License](LICENSE).
+Diffusion Desk is released under the [MIT License](LICENSE).
