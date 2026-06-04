@@ -581,9 +581,12 @@ private fun ActionBar(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(0.dp),
             ) {
-                IconButton(onClick = onGoBack, enabled = state.canGoBack) {
-                    Icon(Icons.Default.ChevronLeft, contentDescription = "Previous generation")
-                }
+                HistoryNavButton(
+                    icon = Icons.Default.ChevronLeft,
+                    contentDescription = "Previous generation",
+                    onClick = onGoBack,
+                    enabled = state.canGoBack,
+                )
                 Surface(
                     modifier = Modifier.height(44.dp),
                     color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
@@ -600,9 +603,12 @@ private fun ActionBar(
                         )
                     }
                 }
-                IconButton(onClick = onGoForward, enabled = state.canGoForward) {
-                    Icon(Icons.Default.ChevronRight, contentDescription = "Next generation")
-                }
+                HistoryNavButton(
+                    icon = Icons.Default.ChevronRight,
+                    contentDescription = "Next generation",
+                    onClick = onGoForward,
+                    enabled = state.canGoForward,
+                )
             }
 
             Spacer(Modifier.weight(1f))
@@ -612,6 +618,35 @@ private fun ActionBar(
                 backendState = backendState,
             )
         }
+    }
+}
+
+@Composable
+private fun HistoryNavButton(
+    icon: ImageVector,
+    contentDescription: String,
+    onClick: () -> Unit,
+    enabled: Boolean,
+) {
+    val tint = if (enabled) {
+        MaterialTheme.colorScheme.onSurfaceVariant
+    } else {
+        MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
+    }
+
+    Box(
+        modifier = Modifier
+            .size(width = 44.dp, height = 44.dp)
+            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = if (enabled) 0.45f else 0.25f))
+            .then(if (enabled) Modifier.clickable(onClick = onClick) else Modifier),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = contentDescription,
+            tint = tint,
+            modifier = Modifier.size(22.dp),
+        )
     }
 }
 
