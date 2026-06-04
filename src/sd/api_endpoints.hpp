@@ -43,4 +43,9 @@ void handle_load_upscale_model(const httplib::Request& req, httplib::Response& r
 void handle_upscale_image(const httplib::Request& req, httplib::Response& res, ServerContext& ctx);
 void handle_get_history(const httplib::Request& req, httplib::Response& res, ServerContext& ctx);
 void handle_generate_image(const httplib::Request& req, httplib::Response& res, ServerContext& ctx);
+void handle_submit_generation_job(const httplib::Request& req, httplib::Response& res, ServerContext& ctx);
+void handle_get_generation_job(const httplib::Request& req, httplib::Response& res);
+void handle_stream_generation_job_events(const httplib::Request& req, httplib::Response& res);
+void handle_cancel_generation_job(const httplib::Request& req, httplib::Response& res);
+void shutdown_generation_jobs();
 void handle_edit_image(const httplib::Request& req, httplib::Response& res, ServerContext& ctx);

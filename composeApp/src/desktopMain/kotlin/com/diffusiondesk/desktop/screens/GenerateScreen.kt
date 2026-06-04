@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -57,6 +58,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.diffusiondesk.desktop.core.BackendStatus
 import com.diffusiondesk.desktop.core.BackendUiState
@@ -319,29 +321,67 @@ private fun PreviewPanel(
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun GeneratedImageGrid(state: GenerationUiState) {
-    FlowRow(
+    BoxWithConstraints(
         modifier = Modifier.fillMaxSize(),
-        horizontalArrangement = Arrangement.spacedBy(10.dp, Alignment.CenterHorizontally),
-        verticalArrangement = Arrangement.spacedBy(10.dp, Alignment.CenterVertically),
-        maxItemsInEachRow = if (state.images.size <= 1) 1 else 2,
+        contentAlignment = Alignment.Center,
     ) {
-        state.images.forEachIndexed { index, image ->
-            Box(
-                modifier = Modifier
-                    .weight(1f, fill = false)
-                    .heightIn(min = 220.dp)
-                    .clip(RoundedCornerShape(8.dp))
-                    .background(MaterialTheme.colorScheme.surface),
-                contentAlignment = Alignment.Center,
-            ) {
-                Image(
-                    bitmap = image,
-                    contentDescription = "Generated image ${index + 1}",
-                    modifier = Modifier.fillMaxSize(),
-                    contentScale = ContentScale.Fit,
+        val imageCount = state.images.size
+        val columns = if (imageCount <= 1) 1 else 2
+        val rows = ((imageCount + columns - 1) / columns).coerceAtLeast(1)
+        val spacing = 10.dp
+        val cellMaxWidth = ((maxWidth - spacing * (columns - 1)) / columns).coerceAtLeast(1.dp)
+        val cellMaxHeight = ((maxHeight - spacing * (rows - 1)) / rows).coerceAtLeast(1.dp)
+
+        FlowRow(
+            modifier = Modifier.fillMaxSize(),
+            horizontalArrangement = Arrangement.spacedBy(spacing, Alignment.CenterHorizontally),
+            verticalArrangement = Arrangement.spacedBy(spacing, Alignment.CenterVertically),
+            maxItemsInEachRow = columns,
+        ) {
+            state.images.forEachIndexed { index, image ->
+                GeneratedImageTile(
+                    image = image,
+                    index = index,
+                    maxWidth = cellMaxWidth,
+                    maxHeight = cellMaxHeight,
                 )
             }
         }
+    }
+}
+
+@Composable
+private fun GeneratedImageTile(
+    image: androidx.compose.ui.graphics.ImageBitmap,
+    index: Int,
+    maxWidth: Dp,
+    maxHeight: Dp,
+) {
+    val imageWidth = image.width.coerceAtLeast(1).toFloat()
+    val imageHeight = image.height.coerceAtLeast(1).toFloat()
+    val aspectRatio = imageWidth / imageHeight
+
+    var displayWidth = maxWidth
+    var displayHeight = maxWidth / aspectRatio
+    if (displayHeight > maxHeight) {
+        displayHeight = maxHeight
+        displayWidth = maxHeight * aspectRatio
+    }
+
+    Box(
+        modifier = Modifier
+            .width(displayWidth)
+            .height(displayHeight)
+            .clip(RoundedCornerShape(8.dp))
+            .background(MaterialTheme.colorScheme.surface),
+        contentAlignment = Alignment.Center,
+    ) {
+        Image(
+            bitmap = image,
+            contentDescription = "Generated image ${index + 1}",
+            modifier = Modifier.fillMaxSize(),
+            contentScale = ContentScale.Fit,
+        )
     }
 }
 
