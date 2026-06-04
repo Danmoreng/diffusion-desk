@@ -31,6 +31,8 @@ import androidx.compose.material.icons.filled.ChevronLeft
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Casino
 import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Recycling
 import androidx.compose.material.icons.filled.Repeat
@@ -75,6 +77,7 @@ import com.diffusiondesk.desktop.core.BackendUiState
 import com.diffusiondesk.desktop.viewmodel.GenerationStatus
 import com.diffusiondesk.desktop.viewmodel.GenerationUiState
 import java.awt.Cursor
+import java.util.Locale
 import kotlin.math.roundToInt
 import org.jetbrains.jewel.ui.component.DefaultButton as Button
 import org.jetbrains.jewel.ui.component.HorizontalProgressBar
@@ -303,9 +306,9 @@ private fun GenerationPanel(
                 )
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                CompactTextField("Steps", state.steps, onStepsChange, Modifier.weight(0.8f))
-                CompactTextField("Batch", state.batchCount, onBatchCountChange, Modifier.weight(0.8f))
-                CompactTextField("Seed", state.seed, onSeedChange, Modifier.weight(1.1f))
+                CompactNumberField("Steps", state.steps, onStepsChange, Modifier.weight(0.8f), step = 1.0, minValue = 1.0)
+                CompactNumberField("Batch", state.batchCount, onBatchCountChange, Modifier.weight(0.8f), step = 1.0, minValue = 1.0)
+                CompactNumberField("Seed", state.seed, onSeedChange, Modifier.weight(1.1f), step = 1.0)
                 CompactIconButton(
                     icon = Icons.Default.Casino,
                     contentDescription = "Random seed",
@@ -319,13 +322,13 @@ private fun GenerationPanel(
                 )
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                CompactTextField("Width", state.width, onWidthChange, Modifier.weight(1f))
+                CompactNumberField("Width", state.width, onWidthChange, Modifier.weight(1f), step = 16.0, minValue = 64.0)
                 CompactIconButton(
                     icon = Icons.Default.SwapHoriz,
                     contentDescription = "Swap dimensions",
                     onClick = onSwapDimensions,
                 )
-                CompactTextField("Height", state.height, onHeightChange, Modifier.weight(1f))
+                CompactNumberField("Height", state.height, onHeightChange, Modifier.weight(1f), step = 16.0, minValue = 64.0)
                 AspectRatioMenu(
                     width = state.width,
                     height = state.height,
@@ -338,7 +341,7 @@ private fun GenerationPanel(
                 onScaleResolution = onScaleResolution,
             )
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                CompactTextField("CFG", state.cfgScale, onCfgScaleChange, Modifier.weight(1f))
+                CompactNumberField("CFG", state.cfgScale, onCfgScaleChange, Modifier.weight(1f), step = 0.1, minValue = 0.0, decimalPlaces = 1)
                 SamplerMenu(
                     value = state.sampler,
                     options = samplerOptions,
@@ -698,6 +701,113 @@ private fun CompactTextField(
             textStyle = MaterialTheme.typography.bodyMedium.copy(color = MaterialTheme.colorScheme.onSurface),
             cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
         )
+    }
+}
+
+@Composable
+private fun CompactNumberField(
+    label: String,
+    value: String,
+    onChange: (String) -> Unit,
+    modifier: Modifier = Modifier,
+    step: Double,
+    minValue: Double? = null,
+    maxValue: Double? = null,
+    decimalPlaces: Int = 0,
+) {
+    CompactFieldFrame(
+        label = label,
+        modifier = modifier,
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            BasicTextField(
+                value = value,
+                onValueChange = onChange,
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(end = 4.dp),
+                singleLine = true,
+                textStyle = MaterialTheme.typography.bodyMedium.copy(color = MaterialTheme.colorScheme.onSurface),
+                cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+            )
+            NumberStepper(
+                onIncrement = {
+                    onChange(stepNumberValue(value, step, minValue, maxValue, decimalPlaces))
+                },
+                onDecrement = {
+                    onChange(stepNumberValue(value, -step, minValue, maxValue, decimalPlaces))
+                },
+            )
+        }
+    }
+}
+
+@Composable
+private fun NumberStepper(
+    onIncrement: () -> Unit,
+    onDecrement: () -> Unit,
+) {
+    Column(
+        modifier = Modifier
+            .width(24.dp)
+            .fillMaxHeight(),
+    ) {
+        NumberStepperButton(
+            icon = Icons.Default.KeyboardArrowUp,
+            contentDescription = "Increase value",
+            onClick = onIncrement,
+            modifier = Modifier.weight(1f),
+        )
+        NumberStepperButton(
+            icon = Icons.Default.KeyboardArrowDown,
+            contentDescription = "Decrease value",
+            onClick = onDecrement,
+            modifier = Modifier.weight(1f),
+        )
+    }
+}
+
+@Composable
+private fun NumberStepperButton(
+    icon: ImageVector,
+    contentDescription: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = contentDescription,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.size(16.dp),
+        )
+    }
+}
+
+private fun stepNumberValue(
+    value: String,
+    delta: Double,
+    minValue: Double?,
+    maxValue: Double?,
+    decimalPlaces: Int,
+): String {
+    val current = value.toDoubleOrNull() ?: 0.0
+    val stepped = (current + delta)
+        .let { if (minValue == null) it else it.coerceAtLeast(minValue) }
+        .let { if (maxValue == null) it else it.coerceAtMost(maxValue) }
+
+    return if (decimalPlaces > 0) {
+        "%.${decimalPlaces}f".format(Locale.US, stepped)
+    } else {
+        stepped.roundToInt().toString()
     }
 }
 
