@@ -11,6 +11,9 @@ data class DesktopSettings(
     val modelDir: String,
     val outputDir: String,
     val setupCompleted: Boolean,
+    val themeMode: String,
+    val actionBarPosition: String,
+    val saveImagesAutomatically: Boolean,
 )
 
 fun detectDefaultRepoRoot(): String {

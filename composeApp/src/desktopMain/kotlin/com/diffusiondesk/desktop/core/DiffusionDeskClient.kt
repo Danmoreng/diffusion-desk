@@ -59,6 +59,7 @@ data class GenerationRequest(
     val seed: Int,
     val batchCount: Int,
     val sampler: String,
+    val saveImage: Boolean,
 )
 
 data class GenerationResult(
@@ -252,7 +253,7 @@ class DiffusionDeskClient {
                 put("seed", JsonPrimitive(requestData.seed))
                 put("width", JsonPrimitive(requestData.width))
                 put("height", JsonPrimitive(requestData.height))
-                put("save_image", JsonPrimitive(true))
+                put("save_image", JsonPrimitive(requestData.saveImage))
                 put("no_base64", JsonPrimitive(true))
             }
 
@@ -417,7 +418,7 @@ class DiffusionDeskClient {
         put("seed", JsonPrimitive(requestData.seed))
         put("width", JsonPrimitive(requestData.width))
         put("height", JsonPrimitive(requestData.height))
-        put("save_image", JsonPrimitive(true))
+        put("save_image", JsonPrimitive(requestData.saveImage))
         put("no_base64", JsonPrimitive(true))
     }
 

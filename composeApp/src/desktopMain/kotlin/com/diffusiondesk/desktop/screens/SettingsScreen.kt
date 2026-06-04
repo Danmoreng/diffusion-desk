@@ -34,6 +34,9 @@ fun SettingsScreen(
     onModelDirChange: (String) -> Unit,
     onOutputDirChange: (String) -> Unit,
     onSetupCompletedChange: (Boolean) -> Unit,
+    onThemeModeChange: (String) -> Unit,
+    onActionBarPositionChange: (String) -> Unit,
+    onSaveImagesAutomaticallyChange: (Boolean) -> Unit,
     onUseCurrentRepo: () -> Unit,
     onSaveLocal: () -> Unit,
     onStartBackend: () -> Unit,
@@ -53,6 +56,82 @@ fun SettingsScreen(
             .padding(24.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
+        SectionCard(
+            title = "Settings",
+            subtitle = "",
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(24.dp),
+            ) {
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    Text(
+                        text = "UI Settings",
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    SettingsDropdownRow(
+                        label = "Theme",
+                        value = state.themeMode.toTitleLabel(),
+                        options = listOf("System", "Light", "Dark"),
+                        onValueChange = { onThemeModeChange(it.lowercase()) },
+                    )
+                    SettingsDropdownRow(
+                        label = "Action Bar Position",
+                        value = state.actionBarPosition.toTitleLabel(),
+                        options = listOf("Bottom", "Top"),
+                        onValueChange = { onActionBarPositionChange(it.lowercase()) },
+                    )
+                }
+
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    Text(
+                        text = "Image Generation",
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Checkbox(
+                            checked = state.saveImagesAutomatically,
+                            onCheckedChange = onSaveImagesAutomaticallyChange,
+                        )
+                        Text("Save Images Automatically")
+                    }
+                    PathSettingRow(
+                        label = "Output Directory",
+                        value = state.outputDir,
+                        onValueChange = onOutputDirChange,
+                        buttonText = "Save Path",
+                        helper = "Path on the server where images will be saved and loaded from.",
+                        onSave = {
+                            onSaveLocal()
+                            onApplyToBackend()
+                        },
+                    )
+                    PathSettingRow(
+                        label = "Model Directory",
+                        value = state.modelDir,
+                        onValueChange = onModelDirChange,
+                        buttonText = "Save & Scan",
+                        helper = "Root directory to scan for models.",
+                        onSave = {
+                            onSaveLocal()
+                            onApplyToBackend()
+                        },
+                    )
+                }
+            }
+        }
+
         SectionCard(
             title = "Image Worker",
             subtitle = "The desktop app starts the stable-diffusion.cpp worker automatically and keeps the old orchestrator unused.",
@@ -160,18 +239,6 @@ fun SettingsScreen(
                     Text("Save Local")
                 }
             }
-            DeskTextField(
-                label = "Model Directory",
-                value = state.modelDir,
-                onValueChange = onModelDirChange,
-                modifier = Modifier.fillMaxWidth(),
-            )
-            DeskTextField(
-                label = "Output Directory",
-                value = state.outputDir,
-                onValueChange = onOutputDirChange,
-                modifier = Modifier.fillMaxWidth(),
-            )
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -208,13 +275,72 @@ private fun SectionCard(
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.SemiBold,
             )
-            Text(
-                text = subtitle,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            if (subtitle.isNotBlank()) {
+                Text(
+                    text = subtitle,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
             content()
         }
+    }
+}
+
+@Composable
+private fun SettingsDropdownRow(
+    label: String,
+    value: String,
+    options: List<String>,
+    onValueChange: (String) -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(label, style = MaterialTheme.typography.bodyMedium)
+        DeskDropdownField(
+            label = "",
+            value = value,
+            options = options,
+            onValueChange = onValueChange,
+            modifier = Modifier.widthIn(min = 140.dp, max = 180.dp),
+        )
+    }
+}
+
+@Composable
+private fun PathSettingRow(
+    label: String,
+    value: String,
+    onValueChange: (String) -> Unit,
+    buttonText: String,
+    helper: String,
+    onSave: () -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        DeskLabel(label)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.Bottom,
+            horizontalArrangement = Arrangement.spacedBy(0.dp),
+        ) {
+            DeskTextField(
+                label = "",
+                value = value,
+                onValueChange = onValueChange,
+                modifier = Modifier.weight(1f),
+            )
+            Button(onClick = onSave) {
+                Text(buttonText)
+            }
+        }
+        Text(
+            text = helper,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }
 
@@ -249,4 +375,8 @@ private fun ErrorText(message: String) {
         style = MaterialTheme.typography.bodyMedium,
         color = MaterialTheme.colorScheme.error,
     )
+}
+
+private fun String.toTitleLabel(): String = replaceFirstChar { char ->
+    if (char.isLowerCase()) char.titlecase() else char.toString()
 }

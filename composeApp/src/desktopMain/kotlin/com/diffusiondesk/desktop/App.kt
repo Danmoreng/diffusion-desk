@@ -2,6 +2,7 @@ package com.diffusiondesk.desktop
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -42,14 +43,18 @@ private enum class Screen(val label: String, val icon: ImageVector, val subtitle
 @Composable
 fun App(
     controller: AppController,
-    darkTheme: Boolean,
-    onToggleTheme: () -> Unit,
 ) {
     var currentScreen by remember { mutableStateOf(Screen.Generate) }
     val settingsState by controller.settingsViewModel.uiState.collectAsState()
     val backendState by controller.settingsViewModel.backendState.collectAsState()
     val generationState by controller.generationViewModel.uiState.collectAsState()
     val libraryState by controller.libraryViewModel.uiState.collectAsState()
+    val systemDarkTheme = isSystemInDarkTheme()
+    val darkTheme = when (settingsState.themeMode) {
+        "light" -> false
+        "dark" -> true
+        else -> systemDarkTheme
+    }
 
     DiffusionDeskTheme(darkTheme = darkTheme) {
         Surface(
@@ -61,7 +66,7 @@ fun App(
                     currentScreen = currentScreen,
                     darkTheme = darkTheme,
                     onSelect = { currentScreen = it },
-                    onToggleTheme = onToggleTheme,
+                    onToggleTheme = controller.settingsViewModel::toggleThemeMode,
                 )
 
                 Box(modifier = Modifier.fillMaxSize()) {
@@ -85,11 +90,14 @@ fun App(
                             onApplyAspectRatio = controller.generationViewModel::applyAspectRatio,
                             onScaleResolution = controller.generationViewModel::scaleResolution,
                             onResetToPresetDefaults = controller.generationViewModel::resetToPresetDefaults,
-                            onGenerate = controller.generationViewModel::generate,
+                            onGenerate = {
+                                controller.generationViewModel.generate(settingsState.saveImagesAutomatically)
+                            },
                             onToggleEndless = controller.generationViewModel::toggleEndless,
                             onGoBack = controller.generationViewModel::goBack,
                             onGoForward = controller.generationViewModel::goForward,
                             onLeftPanelWidthChange = controller.generationViewModel::updateLeftPanelWidth,
+                            actionBarPosition = settingsState.actionBarPosition,
                         )
                         Screen.Library -> LibraryScreen(
                             state = libraryState,
@@ -128,6 +136,9 @@ fun App(
                             onModelDirChange = controller.settingsViewModel::updateModelDir,
                             onOutputDirChange = controller.settingsViewModel::updateOutputDir,
                             onSetupCompletedChange = controller.settingsViewModel::updateSetupCompleted,
+                            onThemeModeChange = controller.settingsViewModel::updateThemeMode,
+                            onActionBarPositionChange = controller.settingsViewModel::updateActionBarPosition,
+                            onSaveImagesAutomaticallyChange = controller.settingsViewModel::updateSaveImagesAutomatically,
                             onUseCurrentRepo = controller.settingsViewModel::useCurrentRepo,
                             onSaveLocal = controller.settingsViewModel::saveLocalSettings,
                             onStartBackend = controller.settingsViewModel::startBackend,
