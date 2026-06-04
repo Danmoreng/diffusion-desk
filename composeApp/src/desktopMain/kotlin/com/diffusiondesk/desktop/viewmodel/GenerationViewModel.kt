@@ -60,6 +60,7 @@ data class GenerationProgressStage(
 
 data class GenerationUiState(
     val selectedPresetId: String = "",
+    val loadedPresetId: String = "",
     val prompt: String = "A cinematic, melancholic photograph of a solitary hooded figure walking through a sprawling, rain-slicked metropolis at night.",
     val promptHistory: List<String> = listOf(prompt),
     val promptHistoryIndex: Int = 0,
@@ -75,6 +76,7 @@ data class GenerationUiState(
     val presets: List<ImagePreset> = emptyList(),
     val isLoadingPresets: Boolean = false,
     val isLoadingPreset: Boolean = false,
+    val presetLoadFailed: Boolean = false,
     val progressStep: Int = 0,
     val progressSteps: Int = 0,
     val progressTime: Double = 0.0,
@@ -131,8 +133,11 @@ class GenerationViewModel(
                         loadSelectedPreset()
                     }
                 } else {
+                    hasAutoLoadedPreset = false
                     update {
                         copy(
+                            loadedPresetId = "",
+                            presetLoadFailed = false,
                             progressStep = 0,
                             progressSteps = 0,
                             progressTime = 0.0,
@@ -162,6 +167,7 @@ class GenerationViewModel(
                     sampler = preset.defaultSampler,
                     negativePrompt = preset.defaultNegativePrompt,
                     message = "Selected ${preset.name}.",
+                    presetLoadFailed = false,
                     error = null,
                 )
             }
@@ -285,6 +291,7 @@ class GenerationViewModel(
                         copy(
                             presets = presets,
                             selectedPresetId = selected?.id.orEmpty(),
+                            loadedPresetId = loadedPresetId.takeIf { loadedPresetId -> presets.any { it.id == loadedPresetId } }.orEmpty(),
                             isLoadingPresets = false,
                             message = "Loaded ${presets.size} image presets from ${presetStore.presetDir.absolutePath}.",
                             error = null,
@@ -303,22 +310,38 @@ class GenerationViewModel(
         }
     }
 
+    fun selectAndLoadPreset(value: String) {
+        updatePresetId(value)
+        loadSelectedPreset()
+    }
+
     fun loadSelectedPreset() {
         scope.launch {
             if (backendManager.state.value.status != BackendStatus.Ready) {
-                update { copy(error = "Image worker is not ready.") }
+                update {
+                    copy(
+                        presetLoadFailed = true,
+                        error = "Image worker is not ready.",
+                    )
+                }
                 return@launch
             }
 
             val preset = selectedPresetOrNull()
             if (preset == null) {
-                update { copy(error = "Select an image preset first.") }
+                update {
+                    copy(
+                        presetLoadFailed = true,
+                        error = "Select an image preset first.",
+                    )
+                }
                 return@launch
             }
 
             update {
                 copy(
                     isLoadingPreset = true,
+                    presetLoadFailed = false,
                     message = "Loading ${preset.name}...",
                     error = null,
                 )
@@ -328,7 +351,9 @@ class GenerationViewModel(
             result.onSuccess {
                 update {
                     copy(
+                        loadedPresetId = preset.id,
                         isLoadingPreset = false,
+                        presetLoadFailed = false,
                         message = "Loaded ${preset.name}.",
                         error = null,
                     )
@@ -337,6 +362,7 @@ class GenerationViewModel(
                 update {
                     copy(
                         isLoadingPreset = false,
+                        presetLoadFailed = true,
                         error = error.message ?: "Failed to load preset.",
                     )
                 }

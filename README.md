@@ -90,6 +90,30 @@ chmod +x scripts/run.sh
 ```
 The server will initialize the SQLite database (`diffusion_desk.db`) and start the WebUI at `http://localhost:1234/app/`.
 
+### Packaging the Desktop App on Windows
+
+The Compose desktop shell can be packaged as a portable Windows app image. The packaging script builds the native backend, creates the Compose distributable, copies the worker executables and DLLs into the app image, and writes a portable zip.
+
+```powershell
+.\gradlew.bat packageWindows
+```
+
+Or run the script directly:
+
+```powershell
+pwsh -ExecutionPolicy Bypass -File .\scripts\package-windows.ps1
+```
+
+Outputs:
+- Portable app folder: `composeApp\build\compose\binaries\main\app\diffusion-desk`
+- Portable zip: `composeApp\build\compose\binaries\main\portable\diffusion-desk-windows-portable.zip`
+
+To also ask Compose/jpackage for an MSI installer:
+
+```powershell
+.\gradlew.bat packageWindowsMsi
+```
+
 ### Configuration
 
 DiffusionDesk uses two systems for configuration:

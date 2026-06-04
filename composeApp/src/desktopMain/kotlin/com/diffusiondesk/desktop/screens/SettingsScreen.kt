@@ -1,8 +1,10 @@
 package com.diffusiondesk.desktop.screens
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
@@ -18,7 +20,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.diffusiondesk.desktop.core.BackendStatus
 import com.diffusiondesk.desktop.core.BackendUiState
-import com.diffusiondesk.desktop.viewmodel.GenerationUiState
 import com.diffusiondesk.desktop.viewmodel.SettingsUiState
 import org.jetbrains.jewel.ui.component.Checkbox
 import org.jetbrains.jewel.ui.component.DefaultButton as Button
@@ -28,12 +29,10 @@ import org.jetbrains.jewel.ui.component.Text
 fun SettingsScreen(
     state: SettingsUiState,
     backendState: BackendUiState,
-    generationState: GenerationUiState,
     onRepoRootChange: (String) -> Unit,
     onListenPortChange: (String) -> Unit,
     onModelDirChange: (String) -> Unit,
     onOutputDirChange: (String) -> Unit,
-    onSetupCompletedChange: (Boolean) -> Unit,
     onThemeModeChange: (String) -> Unit,
     onActionBarPositionChange: (String) -> Unit,
     onSaveImagesAutomaticallyChange: (Boolean) -> Unit,
@@ -43,215 +42,242 @@ fun SettingsScreen(
     onStopBackend: () -> Unit,
     onApplyToBackend: () -> Unit,
     onReloadFromBackend: () -> Unit,
-    onPresetIdChange: (String) -> Unit,
-    onReloadPresets: () -> Unit,
-    onLoadPreset: () -> Unit,
 ) {
-    val selectedPreset = generationState.presets.firstOrNull { it.id == generationState.selectedPresetId }
-
-    Column(
+    BoxWithConstraints(
         modifier = Modifier
-            .fillMaxWidth()
+            .fillMaxSize()
             .verticalScroll(rememberScrollState())
             .padding(24.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        SectionCard(
-            title = "Settings",
-            subtitle = "",
-        ) {
+        val useTwoColumns = maxWidth >= 980.dp
+        if (useTwoColumns) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(24.dp),
+                horizontalArrangement = Arrangement.spacedBy(16.dp),
             ) {
                 Column(
                     modifier = Modifier.weight(1f),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp),
                 ) {
-                    Text(
-                        text = "UI Settings",
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.SemiBold,
+                    GeneralSettingsSection(
+                        state = state,
+                        onThemeModeChange = onThemeModeChange,
+                        onActionBarPositionChange = onActionBarPositionChange,
+                        onSaveImagesAutomaticallyChange = onSaveImagesAutomaticallyChange,
+                        onOutputDirChange = onOutputDirChange,
+                        onModelDirChange = onModelDirChange,
+                        onSaveLocal = onSaveLocal,
+                        onApplyToBackend = onApplyToBackend,
                     )
-                    SettingsDropdownRow(
-                        label = "Theme",
-                        value = state.themeMode.toTitleLabel(),
-                        options = listOf("System", "Light", "Dark"),
-                        onValueChange = { onThemeModeChange(it.lowercase()) },
-                    )
-                    SettingsDropdownRow(
-                        label = "Action Bar Position",
-                        value = state.actionBarPosition.toTitleLabel(),
-                        options = listOf("Bottom", "Top"),
-                        onValueChange = { onActionBarPositionChange(it.lowercase()) },
+                    WorkerSection(
+                        state = state,
+                        backendState = backendState,
+                        onStartBackend = onStartBackend,
+                        onStopBackend = onStopBackend,
                     )
                 }
 
                 Column(
                     modifier = Modifier.weight(1f),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp),
                 ) {
-                    Text(
-                        text = "Image Generation",
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.SemiBold,
-                    )
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        Checkbox(
-                            checked = state.saveImagesAutomatically,
-                            onCheckedChange = onSaveImagesAutomaticallyChange,
-                        )
-                        Text("Save Images Automatically")
-                    }
-                    PathSettingRow(
-                        label = "Output Directory",
-                        value = state.outputDir,
-                        onValueChange = onOutputDirChange,
-                        buttonText = "Save Path",
-                        helper = "Path on the server where images will be saved and loaded from.",
-                        onSave = {
-                            onSaveLocal()
-                            onApplyToBackend()
-                        },
-                    )
-                    PathSettingRow(
-                        label = "Model Directory",
-                        value = state.modelDir,
-                        onValueChange = onModelDirChange,
-                        buttonText = "Save & Scan",
-                        helper = "Root directory to scan for models.",
-                        onSave = {
-                            onSaveLocal()
-                            onApplyToBackend()
-                        },
+                    DesktopSettingsSection(
+                        state = state,
+                        backendState = backendState,
+                        onRepoRootChange = onRepoRootChange,
+                        onListenPortChange = onListenPortChange,
+                        onUseCurrentRepo = onUseCurrentRepo,
+                        onSaveLocal = onSaveLocal,
+                        onApplyToBackend = onApplyToBackend,
+                        onReloadFromBackend = onReloadFromBackend,
                     )
                 }
             }
-        }
-
-        SectionCard(
-            title = "Image Worker",
-            subtitle = "The desktop app starts the stable-diffusion.cpp worker automatically and keeps the old orchestrator unused.",
-        ) {
-            StatusLine("Status", backendState.status.name)
-            StatusLine("Base URL", backendState.baseUrl)
-            StatusLine("Executable", backendState.executablePath.ifBlank { "Not resolved yet" })
-            StatusLine("Message", backendState.message)
-            if (backendState.lastLogLine.isNotBlank()) {
-                StatusLine("Last log", backendState.lastLogLine)
-            }
-
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                Button(
-                    onClick = onStartBackend,
-                    enabled = !state.isBusy && backendState.status != BackendStatus.Ready,
-                ) {
-                    Text("Start Worker")
-                }
-                Button(
-                    onClick = onStopBackend,
-                    enabled = !state.isBusy && backendState.status != BackendStatus.Stopped,
-                ) {
-                    Text("Stop Worker")
-                }
-                Button(
-                    onClick = onApplyToBackend,
-                    enabled = !state.isBusy && backendState.status == BackendStatus.Ready,
-                ) {
-                    Text("Apply Config")
-                }
-                Button(
-                    onClick = onReloadFromBackend,
-                    enabled = !state.isBusy && backendState.status == BackendStatus.Ready,
-                ) {
-                    Text("Reload Config")
-                }
-            }
-        }
-
-        SectionCard(
-            title = "Image Model",
-            subtitle = "Choose and load the image preset used by text-to-image generation.",
-        ) {
-            StatusLine("Preset Folder", generationState.presets.size.toString() + " preset(s)")
-            StatusLine("Selected Preset", selectedPreset?.name ?: "None")
-            StatusLine("Diffusion Model", selectedPreset?.diffusionModel ?: "Not selected")
-            val textEncoder = selectedPreset?.llm.orEmpty()
-            val vae = selectedPreset?.vae.orEmpty()
-            if (textEncoder.isNotBlank()) {
-                StatusLine("Text Encoder", textEncoder)
-            }
-            if (vae.isNotBlank()) {
-                StatusLine("VAE", vae)
-            }
-
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                DeskDropdownField(
-                    label = "Preset",
-                    value = selectedPreset?.name ?: "None",
-                    options = generationState.presets.map { it.name },
-                    onValueChange = { name ->
-                        generationState.presets.firstOrNull { it.name == name }?.let { preset ->
-                            onPresetIdChange(preset.id)
-                        }
-                    },
-                    modifier = Modifier.widthIn(min = 240.dp, max = 360.dp),
-                )
-                Button(
-                    onClick = onReloadPresets,
-                    enabled = !generationState.isLoadingPresets,
-                ) {
-                    Text(if (generationState.isLoadingPresets) "Refreshing..." else "Refresh Presets")
-                }
-                Button(
-                    onClick = onLoadPreset,
-                    enabled = backendState.status == BackendStatus.Ready && !generationState.isLoadingPreset && selectedPreset != null,
-                ) {
-                    Text(if (generationState.isLoadingPreset) "Loading..." else "Load Preset")
-                }
-            }
-        }
-
-        SectionCard(
-            title = "Desktop Settings",
-            subtitle = "These settings are stored locally and passed to the image worker on startup.",
-        ) {
-            DeskTextField(
-                label = "Repository Root",
-                value = state.repoRoot,
-                onValueChange = onRepoRootChange,
+        } else {
+            Column(
                 modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(16.dp),
+            ) {
+                GeneralSettingsSection(
+                    state = state,
+                    onThemeModeChange = onThemeModeChange,
+                    onActionBarPositionChange = onActionBarPositionChange,
+                    onSaveImagesAutomaticallyChange = onSaveImagesAutomaticallyChange,
+                    onOutputDirChange = onOutputDirChange,
+                    onModelDirChange = onModelDirChange,
+                    onSaveLocal = onSaveLocal,
+                    onApplyToBackend = onApplyToBackend,
+                )
+                WorkerSection(
+                    state = state,
+                    backendState = backendState,
+                    onStartBackend = onStartBackend,
+                    onStopBackend = onStopBackend,
+                )
+                DesktopSettingsSection(
+                    state = state,
+                    backendState = backendState,
+                    onRepoRootChange = onRepoRootChange,
+                    onListenPortChange = onListenPortChange,
+                    onUseCurrentRepo = onUseCurrentRepo,
+                    onSaveLocal = onSaveLocal,
+                    onApplyToBackend = onApplyToBackend,
+                    onReloadFromBackend = onReloadFromBackend,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun GeneralSettingsSection(
+    state: SettingsUiState,
+    onThemeModeChange: (String) -> Unit,
+    onActionBarPositionChange: (String) -> Unit,
+    onSaveImagesAutomaticallyChange: (Boolean) -> Unit,
+    onOutputDirChange: (String) -> Unit,
+    onModelDirChange: (String) -> Unit,
+    onSaveLocal: () -> Unit,
+    onApplyToBackend: () -> Unit,
+) {
+    SectionCard(
+        title = "General",
+        subtitle = "Display options and the folders used by image generation.",
+    ) {
+        SettingsDropdownRow(
+            label = "Theme",
+            value = state.themeMode.toTitleLabel(),
+            options = listOf("System", "Light", "Dark"),
+            onValueChange = { onThemeModeChange(it.lowercase()) },
+        )
+        SettingsDropdownRow(
+            label = "Action Bar Position",
+            value = state.actionBarPosition.toTitleLabel(),
+            options = listOf("Bottom", "Top"),
+            onValueChange = { onActionBarPositionChange(it.lowercase()) },
+        )
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Checkbox(
+                checked = state.saveImagesAutomatically,
+                onCheckedChange = onSaveImagesAutomaticallyChange,
             )
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                DeskTextField(
-                    label = "Listen Port",
-                    value = state.listenPort,
-                    onValueChange = onListenPortChange,
-                    modifier = Modifier.widthIn(min = 160.dp),
-                )
-                Button(onClick = onUseCurrentRepo) {
-                    Text("Use Detected Repo")
-                }
-                Button(onClick = onSaveLocal) {
-                    Text("Save Local")
-                }
-            }
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                Checkbox(
-                    checked = state.setupCompleted,
-                    onCheckedChange = onSetupCompletedChange,
-                )
-                Text("Mark setup as completed")
-            }
-            state.message.takeIf(String::isNotBlank)?.let { InfoText(it) }
-            state.error?.let { ErrorText(it) }
+            Text("Save Images Automatically")
         }
+        PathSettingRow(
+            label = "Output Directory",
+            value = state.outputDir,
+            onValueChange = onOutputDirChange,
+            buttonText = "Save Path",
+            helper = "Path on the server where images will be saved and loaded from.",
+            onSave = {
+                onSaveLocal()
+                onApplyToBackend()
+            },
+        )
+        PathSettingRow(
+            label = "Model Directory",
+            value = state.modelDir,
+            onValueChange = onModelDirChange,
+            buttonText = "Save & Scan",
+            helper = "Root directory to scan for models.",
+            onSave = {
+                onSaveLocal()
+                onApplyToBackend()
+            },
+        )
+    }
+}
+
+@Composable
+private fun WorkerSection(
+    state: SettingsUiState,
+    backendState: BackendUiState,
+    onStartBackend: () -> Unit,
+    onStopBackend: () -> Unit,
+) {
+    SectionCard(
+        title = "Image Worker",
+        subtitle = "The local stable-diffusion.cpp worker used for generation.",
+    ) {
+        StatusLine("Status", backendState.status.name)
+        StatusLine("Message", backendState.message)
+        if (backendState.lastLogLine.isNotBlank()) {
+            StatusLine("Last log", backendState.lastLogLine)
+        }
+
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Button(
+                onClick = onStartBackend,
+                enabled = !state.isBusy && backendState.status != BackendStatus.Ready,
+            ) {
+                Text("Start Worker")
+            }
+            Button(
+                onClick = onStopBackend,
+                enabled = !state.isBusy && backendState.status != BackendStatus.Stopped,
+            ) {
+                Text("Stop Worker")
+            }
+        }
+    }
+}
+
+@Composable
+private fun DesktopSettingsSection(
+    state: SettingsUiState,
+    backendState: BackendUiState,
+    onRepoRootChange: (String) -> Unit,
+    onListenPortChange: (String) -> Unit,
+    onUseCurrentRepo: () -> Unit,
+    onSaveLocal: () -> Unit,
+    onApplyToBackend: () -> Unit,
+    onReloadFromBackend: () -> Unit,
+) {
+    SectionCard(
+        title = "Advanced",
+        subtitle = "Local worker launch settings and diagnostics.",
+    ) {
+        DeskTextField(
+            label = "Repository Root",
+            value = state.repoRoot,
+            onValueChange = onRepoRootChange,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            DeskTextField(
+                label = "Listen Port",
+                value = state.listenPort,
+                onValueChange = onListenPortChange,
+                modifier = Modifier.widthIn(min = 160.dp),
+            )
+            Button(onClick = onUseCurrentRepo) {
+                Text("Use Detected Repo")
+            }
+            Button(onClick = onSaveLocal) {
+                Text("Save Local")
+            }
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Button(
+                onClick = onApplyToBackend,
+                enabled = !state.isBusy && backendState.status == BackendStatus.Ready,
+            ) {
+                Text("Apply Config")
+            }
+            Button(
+                onClick = onReloadFromBackend,
+                enabled = !state.isBusy && backendState.status == BackendStatus.Ready,
+            ) {
+                Text("Reload Config")
+            }
+        }
+        StatusLine("Base URL", backendState.baseUrl)
+        StatusLine("Executable", backendState.executablePath.ifBlank { "Not resolved yet" })
+        state.message.takeIf(String::isNotBlank)?.let { InfoText(it) }
+        state.error?.let { ErrorText(it) }
     }
 }
 

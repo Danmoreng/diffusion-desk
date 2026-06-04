@@ -97,6 +97,7 @@ fun App(
                                 controller.generationViewModel.generate(settingsState.saveImagesAutomatically)
                             },
                             onToggleEndless = controller.generationViewModel::toggleEndless,
+                            onPresetSelected = controller.generationViewModel::selectAndLoadPreset,
                             onGoBack = controller.generationViewModel::goBack,
                             onGoForward = controller.generationViewModel::goForward,
                             onLeftPanelWidthChange = controller.generationViewModel::updateLeftPanelWidth,
@@ -134,12 +135,10 @@ fun App(
                         Screen.Settings -> SettingsScreen(
                             state = settingsState,
                             backendState = backendState,
-                            generationState = generationState,
                             onRepoRootChange = controller.settingsViewModel::updateRepoRoot,
                             onListenPortChange = controller.settingsViewModel::updateListenPort,
                             onModelDirChange = controller.settingsViewModel::updateModelDir,
                             onOutputDirChange = controller.settingsViewModel::updateOutputDir,
-                            onSetupCompletedChange = controller.settingsViewModel::updateSetupCompleted,
                             onThemeModeChange = controller.settingsViewModel::updateThemeMode,
                             onActionBarPositionChange = controller.settingsViewModel::updateActionBarPosition,
                             onSaveImagesAutomaticallyChange = controller.settingsViewModel::updateSaveImagesAutomatically,
@@ -149,9 +148,6 @@ fun App(
                             onStopBackend = controller.settingsViewModel::stopBackend,
                             onApplyToBackend = controller.settingsViewModel::applySettingsToBackend,
                             onReloadFromBackend = controller.settingsViewModel::loadConfigFromBackend,
-                            onPresetIdChange = controller.generationViewModel::updatePresetId,
-                            onReloadPresets = controller.generationViewModel::reloadPresets,
-                            onLoadPreset = controller.generationViewModel::loadSelectedPreset,
                         )
                     }
                 }

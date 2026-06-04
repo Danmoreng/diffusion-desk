@@ -17,6 +17,8 @@ data class DesktopSettings(
 )
 
 fun detectDefaultRepoRoot(): String {
+    detectPackagedAppRoot()?.let { return it.absolutePath }
+
     var current = File(System.getProperty("user.dir")).absoluteFile
     repeat(6) {
         if (File(current, "settings.gradle.kts").exists() && File(current, "src").exists()) {
@@ -25,6 +27,24 @@ fun detectDefaultRepoRoot(): String {
         current = current.parentFile ?: return@repeat
     }
     return File(System.getProperty("user.dir")).absolutePath
+}
+
+private fun detectPackagedAppRoot(): File? {
+    val candidates = mutableListOf<File>()
+    candidates += File(System.getProperty("user.dir")).absoluteFile
+
+    ProcessHandle.current().info().command().ifPresent { command ->
+        val executable = File(command).absoluteFile
+        executable.parentFile?.let { candidates += it }
+    }
+
+    return candidates
+        .flatMap { candidate -> sequenceOf(candidate, candidate.parentFile).filterNotNull().toList() }
+        .distinctBy { it.absolutePath.lowercase() }
+        .firstOrNull { root ->
+            File(root, "build/bin/diffusion_desk_sd_worker.exe").exists() ||
+                File(root, "build/bin/diffusion_desk_sd_worker").exists()
+        }
 }
 
 fun detectDefaultModelDir(repoRoot: String): String {

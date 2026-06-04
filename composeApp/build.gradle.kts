@@ -60,6 +60,7 @@ compose.desktop {
                 "java.desktop",
                 "java.logging",
                 "java.naming",
+                "java.net.http",
                 "java.sql",
                 "jdk.unsupported",
                 "jdk.security.auth",

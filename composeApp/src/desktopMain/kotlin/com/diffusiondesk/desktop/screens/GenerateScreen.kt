@@ -25,6 +25,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
@@ -57,6 +58,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.layout.ContentScale
@@ -127,6 +129,7 @@ fun GenerateScreen(
     onResetToPresetDefaults: () -> Unit,
     onGenerate: () -> Unit,
     onToggleEndless: () -> Unit,
+    onPresetSelected: (String) -> Unit,
     onGoBack: () -> Unit,
     onGoForward: () -> Unit,
     onLeftPanelWidthChange: (Int) -> Unit,
@@ -146,6 +149,7 @@ fun GenerateScreen(
                 isTop = true,
                 onGenerate = onGenerate,
                 onToggleEndless = onToggleEndless,
+                onPresetSelected = onPresetSelected,
                 onGoBack = onGoBack,
                 onGoForward = onGoForward,
             )
@@ -253,6 +257,7 @@ fun GenerateScreen(
                 isTop = false,
                 onGenerate = onGenerate,
                 onToggleEndless = onToggleEndless,
+                onPresetSelected = onPresetSelected,
                 onGoBack = onGoBack,
                 onGoForward = onGoForward,
             )
@@ -752,6 +757,7 @@ private fun ActionBar(
     isTop: Boolean,
     onGenerate: () -> Unit,
     onToggleEndless: () -> Unit,
+    onPresetSelected: (String) -> Unit,
     onGoBack: () -> Unit,
     onGoForward: () -> Unit,
 ) {
@@ -769,95 +775,183 @@ private fun ActionBar(
         color = MaterialTheme.colorScheme.surface,
         tonalElevation = 0.dp,
     ) {
-        Row(
+        BoxWithConstraints(
+            modifier = Modifier.fillMaxSize(),
+        ) {
+            val compact = maxWidth < 1120.dp
+            Row(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(horizontal = 22.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(16.dp),
+            ) {
+                Button(
+                    onClick = onGenerate,
+                    enabled = backendState.status == BackendStatus.Ready && state.prompt.isNotBlank(),
+                    modifier = Modifier
+                        .height(52.dp)
+                        .width(if (compact) 200.dp else 240.dp),
+                ) {
+                    ButtonContent(
+                        icon = Icons.Default.PlayArrow,
+                        text = when {
+                            state.isGenerating && state.queueCount > 0 -> "Queue"
+                            state.isGenerating -> "Generating..."
+                            else -> "Generate"
+                        },
+                        suffix = if (state.queueCount > 0) "(${state.queueCount})" else null,
+                    )
+                }
+
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(0.dp),
+                ) {
+                    HistoryNavButton(
+                        icon = Icons.Default.ChevronLeft,
+                        contentDescription = "Previous generation",
+                        onClick = onGoBack,
+                        enabled = state.canGoBack,
+                    )
+                    Surface(
+                        modifier = Modifier.height(44.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
+                        shape = RoundedCornerShape(0.dp),
+                    ) {
+                        Box(
+                            modifier = Modifier.width(84.dp),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Text(
+                                text = if (state.history.isEmpty()) "0 / 0" else "${state.historyIndex + 1} / ${state.history.size}",
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.SemiBold,
+                            )
+                        }
+                    }
+                    HistoryNavButton(
+                        icon = Icons.Default.ChevronRight,
+                        contentDescription = "Next generation",
+                        onClick = onGoForward,
+                        enabled = state.canGoForward,
+                    )
+                }
+
+                IconButton(
+                    onClick = onToggleEndless,
+                    modifier = Modifier
+                        .size(44.dp)
+                        .background(
+                            color = if (state.isEndless) MaterialTheme.colorScheme.primary.copy(alpha = 0.18f) else MaterialTheme.colorScheme.surfaceVariant,
+                            shape = RoundedCornerShape(8.dp),
+                        ),
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Repeat,
+                        contentDescription = "Endless generation",
+                        tint = if (state.isEndless) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+
+                Spacer(
+                    modifier = Modifier
+                        .width(1.dp)
+                        .height(44.dp)
+                        .background(MaterialTheme.colorScheme.outlineVariant),
+                )
+
+                PresetActionControl(
+                    state = state,
+                    backendState = backendState,
+                    onPresetSelected = onPresetSelected,
+                    modifier = Modifier.width(if (compact) 220.dp else 300.dp),
+                )
+
+                Spacer(Modifier.weight(1f))
+
+                if (!compact) {
+                    ActionStatus(
+                        state = state,
+                        backendState = backendState,
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun PresetActionControl(
+    state: GenerationUiState,
+    backendState: BackendUiState,
+    onPresetSelected: (String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val selectedPreset = state.presets.firstOrNull { it.id == state.selectedPresetId }
+    val dotColor = when {
+        state.presetLoadFailed -> MaterialTheme.colorScheme.error
+        state.isLoadingPreset || state.isLoadingPresets -> Color(0xFFFFA000)
+        backendState.status == BackendStatus.Ready && selectedPreset?.id == state.loadedPresetId -> Color(0xFF2EAD4A)
+        else -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f)
+    }
+    var expanded by remember { mutableStateOf(false) }
+    var anchorSize by remember { mutableStateOf(IntSize.Zero) }
+
+    Box(
+        modifier = modifier
+            .height(44.dp)
+            .onGloballyPositioned { anchorSize = it.size },
+    ) {
+        Surface(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(horizontal = 22.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(16.dp),
+                .clickable(enabled = state.presets.isNotEmpty()) { expanded = true },
+            shape = RoundedCornerShape(8.dp),
+            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
         ) {
-            Button(
-                onClick = onGenerate,
-                enabled = backendState.status == BackendStatus.Ready && state.prompt.isNotBlank(),
-                modifier = Modifier
-                    .height(52.dp)
-                    .width(240.dp),
-            ) {
-                ButtonContent(
-                    icon = Icons.Default.PlayArrow,
-                    text = when {
-                        state.isGenerating && state.queueCount > 0 -> "Queue"
-                        state.isGenerating -> "Generating..."
-                        else -> "Generate"
-                    },
-                    suffix = if (state.queueCount > 0) "(${state.queueCount})" else null,
-                )
-            }
-
-            IconButton(
-                onClick = onToggleEndless,
-                modifier = Modifier
-                    .size(44.dp)
-                    .background(
-                        color = if (state.isEndless) MaterialTheme.colorScheme.primary.copy(alpha = 0.18f) else MaterialTheme.colorScheme.surfaceVariant,
-                        shape = RoundedCornerShape(8.dp),
-                    ),
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Repeat,
-                    contentDescription = "Endless generation",
-                    tint = if (state.isEndless) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-
-            Spacer(
-                modifier = Modifier
-                    .width(1.dp)
-                    .height(44.dp)
-                    .background(MaterialTheme.colorScheme.outlineVariant),
-            )
-
             Row(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(horizontal = 10.dp),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(0.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                HistoryNavButton(
-                    icon = Icons.Default.ChevronLeft,
-                    contentDescription = "Previous generation",
-                    onClick = onGoBack,
-                    enabled = state.canGoBack,
+                Box(
+                    modifier = Modifier
+                        .size(9.dp)
+                        .background(dotColor, CircleShape),
                 )
-                Surface(
-                    modifier = Modifier.height(44.dp),
-                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
-                    shape = RoundedCornerShape(0.dp),
-                ) {
-                    Box(
-                        modifier = Modifier.width(84.dp),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Text(
-                            text = if (state.history.isEmpty()) "0 / 0" else "${state.historyIndex + 1} / ${state.history.size}",
-                            style = MaterialTheme.typography.bodyMedium,
-                            fontWeight = FontWeight.SemiBold,
-                        )
-                    }
-                }
-                HistoryNavButton(
-                    icon = Icons.Default.ChevronRight,
-                    contentDescription = "Next generation",
-                    onClick = onGoForward,
-                    enabled = state.canGoForward,
+                Text(
+                    text = selectedPreset?.name ?: "No preset",
+                    modifier = Modifier.weight(1f),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Icon(
+                    imageVector = Icons.Default.ArrowDropDown,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(20.dp),
                 )
             }
-
-            Spacer(Modifier.weight(1f))
-
-            ActionStatus(
-                state = state,
-                backendState = backendState,
-            )
         }
+        AnchoredDropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false },
+            options = state.presets.map { it.name },
+            anchorSize = anchorSize,
+            minWidth = 220.dp,
+            onSelect = { name ->
+                state.presets.firstOrNull { it.name == name }?.let { preset ->
+                    onPresetSelected(preset.id)
+                }
+                expanded = false
+            },
+        )
     }
 }
 

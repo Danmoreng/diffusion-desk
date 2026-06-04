@@ -1,0 +1,180 @@
+param(
+    [switch]$BuildMsi,
+    [switch]$SkipNativeBuild,
+    [switch]$Clean,
+    [int]$GradleRetries = 3
+)
+
+$ErrorActionPreference = "Stop"
+
+$RepoRoot = Split-Path -Parent $PSScriptRoot
+$ComposeAppDir = Join-Path $RepoRoot "composeApp"
+$GradleWrapper = Join-Path $RepoRoot "gradlew.bat"
+$PackageName = "diffusion-desk"
+
+function Test-JavaHome([string]$JavaHomePath, [switch]$RequireJPackage) {
+    if ([string]::IsNullOrWhiteSpace($JavaHomePath)) { return $false }
+
+    $required = @("bin\java.exe")
+    if ($RequireJPackage) {
+        $required += "bin\jpackage.exe"
+    }
+
+    foreach ($relativePath in $required) {
+        if (-not (Test-Path (Join-Path $JavaHomePath $relativePath))) {
+            return $false
+        }
+    }
+
+    return $true
+}
+
+function Resolve-JavaHome([switch]$RequireJPackage) {
+    if (Test-JavaHome $env:JAVA_HOME -RequireJPackage:$RequireJPackage) {
+        return $env:JAVA_HOME
+    }
+
+    $javaCmd = Get-Command java -ErrorAction SilentlyContinue
+    if ($javaCmd -and $javaCmd.Path) {
+        $javaHome = Split-Path -Parent (Split-Path -Parent $javaCmd.Path)
+        if (Test-JavaHome $javaHome -RequireJPackage:$RequireJPackage) {
+            return $javaHome
+        }
+    }
+
+    $candidates = @()
+    $localAppData = [Environment]::GetFolderPath("LocalApplicationData")
+    $programFiles = ${env:ProgramFiles}
+    $userProfile = $env:USERPROFILE
+
+    $candidates += (Join-Path $localAppData "Programs\Android Studio\jbr")
+    $candidates += (Join-Path $programFiles "Android\Android Studio\jbr")
+    $candidates += (Join-Path $localAppData "JetBrains\Toolbox\apps\AndroidStudio\ch-0")
+
+    $gradleJdks = Join-Path $userProfile ".gradle\jdks"
+    if (Test-Path $gradleJdks) {
+        $latestGradleJdk = Get-ChildItem $gradleJdks -Directory -ErrorAction SilentlyContinue |
+            Where-Object { Test-JavaHome $_.FullName -RequireJPackage:$RequireJPackage } |
+            Sort-Object LastWriteTime -Descending |
+            Select-Object -First 1
+        if ($latestGradleJdk) {
+            $candidates += $latestGradleJdk.FullName
+        }
+    }
+
+    foreach ($candidate in $candidates) {
+        if (Test-JavaHome $candidate -RequireJPackage:$RequireJPackage) {
+            return $candidate
+        }
+    }
+
+    return $null
+}
+
+function Invoke-Gradle([string[]]$Tasks, [int]$Retries = 1) {
+    $attempt = 1
+    while ($attempt -le [Math]::Max($Retries, 1)) {
+        Write-Host "Running Gradle (attempt $attempt/$Retries): $($Tasks -join ' ')" -ForegroundColor DarkCyan
+        & $GradleWrapper `
+            "-Dorg.gradle.internal.http.connectionTimeout=120000" `
+            "-Dorg.gradle.internal.http.socketTimeout=180000" `
+            @Tasks
+
+        if ($LASTEXITCODE -eq 0) {
+            return
+        }
+
+        if ($attempt -lt $Retries) {
+            Start-Sleep -Seconds (5 * $attempt)
+        }
+        $attempt++
+    }
+
+    throw "Gradle failed (exit code $LASTEXITCODE): $($Tasks -join ' ')"
+}
+
+if (-not (Test-Path $GradleWrapper)) {
+    throw "gradlew.bat not found at $GradleWrapper"
+}
+
+$resolvedJavaHome = Resolve-JavaHome -RequireJPackage
+if (-not $resolvedJavaHome) {
+    throw @"
+No Java runtime with jpackage found for Gradle packaging.
+Set JAVA_HOME manually to a full JDK/JBR, or install Android Studio / IntelliJ with JBR, then retry.
+"@
+}
+
+$env:JAVA_HOME = $resolvedJavaHome
+$env:Path = (Join-Path $resolvedJavaHome "bin") + ";" + $env:Path
+Write-Host "Using JAVA_HOME: $resolvedJavaHome" -ForegroundColor DarkCyan
+
+if (-not $SkipNativeBuild) {
+    Write-Host "Step 1/4: Build native backend and Web UI..." -ForegroundColor Cyan
+    $buildArgs = @()
+    if ($Clean) {
+        $buildArgs += "-Clean"
+    }
+    & (Join-Path $PSScriptRoot "build.ps1") @buildArgs
+    if ($LASTEXITCODE -ne 0) {
+        throw "Native build failed with exit code $LASTEXITCODE"
+    }
+} else {
+    Write-Host "Step 1/4: Skipping native build." -ForegroundColor Yellow
+}
+
+$backendBin = Join-Path $RepoRoot "build\bin"
+if (-not (Test-Path (Join-Path $backendBin "diffusion_desk_sd_worker.exe"))) {
+    throw "Missing SD worker executable under $backendBin. Run scripts\build.ps1 first or omit -SkipNativeBuild."
+}
+
+Write-Host "Step 2/4: Build Compose portable app image..." -ForegroundColor Cyan
+Invoke-Gradle @(":composeApp:createDistributable") -Retries $GradleRetries
+
+$appRoot = Join-Path $ComposeAppDir "build\compose\binaries\main\app\$PackageName"
+if (-not (Test-Path $appRoot)) {
+    throw "Could not find packaged app root: $appRoot"
+}
+
+Write-Host "Step 3/4: Copy backend runtime into packaged app..." -ForegroundColor Cyan
+$targetBin = Join-Path $appRoot "build\bin"
+New-Item -ItemType Directory -Path $targetBin -Force | Out-Null
+
+Get-ChildItem -Path (Join-Path $backendBin "*") -File -Include "*.exe", "*.dll" | ForEach-Object {
+    Copy-Item $_.FullName $targetBin -Force
+}
+
+foreach ($dir in @("models", "outputs")) {
+    New-Item -ItemType Directory -Path (Join-Path $appRoot $dir) -Force | Out-Null
+}
+
+$configDefault = Join-Path $RepoRoot "config.default.json"
+if (Test-Path $configDefault) {
+    Copy-Item $configDefault (Join-Path $appRoot "config.default.json") -Force
+}
+
+Write-Host "Step 4/4: Create portable zip..." -ForegroundColor Cyan
+$zipDir = Join-Path $ComposeAppDir "build\compose\binaries\main\portable"
+New-Item -ItemType Directory -Path $zipDir -Force | Out-Null
+$zipPath = Join-Path $zipDir "$PackageName-windows-portable.zip"
+if (Test-Path $zipPath) {
+    Remove-Item $zipPath -Force
+}
+Compress-Archive -Path $appRoot -DestinationPath $zipPath -Force
+
+if ($BuildMsi) {
+    Write-Host "Building MSI installer..." -ForegroundColor Cyan
+    try {
+        Invoke-Gradle @(":composeApp:packageMsi") -Retries $GradleRetries
+    } catch {
+        Write-Warning "MSI packaging failed. Portable app is still usable."
+        Write-Warning $_
+    }
+}
+
+Write-Host "Packaging complete." -ForegroundColor Green
+Write-Host "Portable app folder: $appRoot" -ForegroundColor Green
+Write-Host "Portable zip: $zipPath" -ForegroundColor Green
+if ($BuildMsi) {
+    Write-Host "MSI output is under: composeApp\build\compose\binaries\main\msi" -ForegroundColor Green
+}
