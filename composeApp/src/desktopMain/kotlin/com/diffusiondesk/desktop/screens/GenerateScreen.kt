@@ -110,12 +110,26 @@ fun GenerateScreen(
     onGoBack: () -> Unit,
     onGoForward: () -> Unit,
     onLeftPanelWidthChange: (Int) -> Unit,
+    actionBarPosition: String,
 ) {
+    val showActionBarOnTop = actionBarPosition == "top"
     Column(
         modifier = Modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background),
     ) {
+        if (showActionBarOnTop) {
+            ActionBar(
+                state = state,
+                backendState = backendState,
+                isTop = true,
+                onGenerate = onGenerate,
+                onToggleEndless = onToggleEndless,
+                onGoBack = onGoBack,
+                onGoForward = onGoForward,
+            )
+        }
+
         BoxWithConstraints(
             modifier = Modifier
                 .weight(1f)
@@ -207,14 +221,17 @@ fun GenerateScreen(
             }
         }
 
-        ActionBar(
-            state = state,
-            backendState = backendState,
-            onGenerate = onGenerate,
-            onToggleEndless = onToggleEndless,
-            onGoBack = onGoBack,
-            onGoForward = onGoForward,
-        )
+        if (!showActionBarOnTop) {
+            ActionBar(
+                state = state,
+                backendState = backendState,
+                isTop = false,
+                onGenerate = onGenerate,
+                onToggleEndless = onToggleEndless,
+                onGoBack = onGoBack,
+                onGoForward = onGoForward,
+            )
+        }
     }
 }
 
@@ -515,6 +532,7 @@ private fun ProgressCard(state: GenerationUiState) {
 private fun ActionBar(
     state: GenerationUiState,
     backendState: BackendUiState,
+    isTop: Boolean,
     onGenerate: () -> Unit,
     onToggleEndless: () -> Unit,
     onGoBack: () -> Unit,
@@ -524,7 +542,12 @@ private fun ActionBar(
         modifier = Modifier
             .fillMaxWidth()
             .height(78.dp)
-            .padding(start = 8.dp, end = 8.dp, bottom = 8.dp),
+            .padding(
+                start = 8.dp,
+                top = if (isTop) 8.dp else 0.dp,
+                end = 8.dp,
+                bottom = if (isTop) 0.dp else 8.dp,
+            ),
         shape = RoundedCornerShape(8.dp),
         color = MaterialTheme.colorScheme.surface,
         tonalElevation = 0.dp,
@@ -708,7 +731,7 @@ private fun ActionStatus(
             overflow = TextOverflow.Ellipsis,
         )
         Text(
-            text = detailText ?: workerText,
+            text = detailText,
             style = MaterialTheme.typography.bodySmall,
             color = detailColor,
             maxLines = 1,

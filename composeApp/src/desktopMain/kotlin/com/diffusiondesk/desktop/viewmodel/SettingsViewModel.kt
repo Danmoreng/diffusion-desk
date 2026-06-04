@@ -22,6 +22,9 @@ data class SettingsUiState(
     val modelDir: String,
     val outputDir: String,
     val setupCompleted: Boolean,
+    val themeMode: String,
+    val actionBarPosition: String,
+    val saveImagesAutomatically: Boolean,
     val isBusy: Boolean = false,
     val message: String = "",
     val error: String? = null,
@@ -43,6 +46,19 @@ class SettingsViewModel(
     fun updateModelDir(value: String) = update { copy(modelDir = value) }
     fun updateOutputDir(value: String) = update { copy(outputDir = value) }
     fun updateSetupCompleted(value: Boolean) = update { copy(setupCompleted = value) }
+    fun updateThemeMode(value: String) = updateAndSave { copy(themeMode = value) }
+    fun updateActionBarPosition(value: String) = updateAndSave { copy(actionBarPosition = value) }
+    fun updateSaveImagesAutomatically(value: Boolean) = updateAndSave { copy(saveImagesAutomatically = value) }
+
+    fun toggleThemeMode() {
+        updateThemeMode(
+            when (_uiState.value.themeMode) {
+                "system" -> "light"
+                "light" -> "dark"
+                else -> "system"
+            },
+        )
+    }
 
     fun useCurrentRepo() {
         val repoRoot = detectDefaultRepoRoot()
@@ -166,6 +182,9 @@ class SettingsViewModel(
             modelDir = state.modelDir.trim(),
             outputDir = state.outputDir.trim(),
             setupCompleted = state.setupCompleted,
+            themeMode = state.themeMode,
+            actionBarPosition = state.actionBarPosition,
+            saveImagesAutomatically = state.saveImagesAutomatically,
         )
     }
 
@@ -175,9 +194,17 @@ class SettingsViewModel(
         modelDir = modelDir,
         outputDir = outputDir,
         setupCompleted = setupCompleted,
+        themeMode = themeMode,
+        actionBarPosition = actionBarPosition,
+        saveImagesAutomatically = saveImagesAutomatically,
     )
 
     private fun update(transform: SettingsUiState.() -> SettingsUiState) {
         _uiState.value = _uiState.value.transform()
+    }
+
+    private fun updateAndSave(transform: SettingsUiState.() -> SettingsUiState) {
+        update(transform)
+        currentSettingsOrNull()?.let(store::save)
     }
 }

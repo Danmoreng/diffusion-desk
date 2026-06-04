@@ -35,6 +35,7 @@ data class GenerationParams(
     val seed: Int,
     val batchCount: Int,
     val sampler: String,
+    val saveImage: Boolean = true,
 )
 
 data class GenerationHistoryItem(
@@ -283,7 +284,7 @@ class GenerationViewModel(
         }
     }
 
-    fun generate() {
+    fun generate(saveImagesAutomatically: Boolean) {
         scope.launch {
             if (backendManager.state.value.status != BackendStatus.Ready) {
                 update { copy(error = "Image worker is not ready.") }
@@ -297,7 +298,7 @@ class GenerationViewModel(
             val item = GenerationHistoryItem(
                 id = UUID.randomUUID().toString(),
                 status = GenerationStatus.Pending,
-                params = params,
+                params = params.copy(saveImage = saveImagesAutomatically),
             )
 
             var shouldSelectNewItem = false
@@ -462,7 +463,7 @@ class GenerationViewModel(
             update { copy(isGenerating = false) }
 
             if (_uiState.value.isEndless) {
-                generate()
+                generate(item.params.saveImage)
             }
             processQueue()
         }
@@ -495,6 +496,7 @@ class GenerationViewModel(
         seed = seed,
         batchCount = batchCount,
         sampler = sampler,
+        saveImage = saveImage,
     )
 
     private fun updateHistoryItem(index: Int, transform: (GenerationHistoryItem) -> GenerationHistoryItem) {

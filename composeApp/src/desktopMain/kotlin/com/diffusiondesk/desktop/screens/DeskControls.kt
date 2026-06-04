@@ -74,7 +74,9 @@ internal fun DeskTextField(
         modifier = modifier,
         verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
-        DeskLabel(label)
+        if (label.isNotBlank()) {
+            DeskLabel(label)
+        }
         DeskInputFrame(minHeight = if (singleLine) 34.dp else 70.dp) {
             BasicTextField(
                 value = value,
@@ -122,7 +124,9 @@ internal fun DeskDropdownField(
         modifier = modifier,
         verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
-        DeskLabel(label)
+        if (label.isNotBlank()) {
+            DeskLabel(label)
+        }
         Box(
             modifier = Modifier.onGloballyPositioned { anchorSize = it.size },
         ) {

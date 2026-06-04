@@ -14,6 +14,9 @@ class DesktopSettingsStore {
             modelDir = detectDefaultModelDir(repoRoot),
             outputDir = detectDefaultOutputDir(repoRoot),
             setupCompleted = true,
+            themeMode = "system",
+            actionBarPosition = "bottom",
+            saveImagesAutomatically = true,
         )
 
         if (!settingsFile.exists()) {
@@ -36,6 +39,12 @@ class DesktopSettingsStore {
                 outputDir = outputDirFromSettings.takeIf { it.isNotBlank() } ?: detectedOutputDir,
                 setupCompleted = props.getProperty("setupCompleted", defaults.setupCompleted.toString()).toBooleanStrictOrNull()
                     ?: defaults.setupCompleted,
+                themeMode = props.getProperty("themeMode", defaults.themeMode).takeIf { it in setOf("system", "light", "dark") }
+                    ?: defaults.themeMode,
+                actionBarPosition = props.getProperty("actionBarPosition", defaults.actionBarPosition).takeIf { it in setOf("bottom", "top") }
+                    ?: defaults.actionBarPosition,
+                saveImagesAutomatically = props.getProperty("saveImagesAutomatically", defaults.saveImagesAutomatically.toString()).toBooleanStrictOrNull()
+                    ?: defaults.saveImagesAutomatically,
             )
         }.getOrElse { defaults }
     }
@@ -51,6 +60,9 @@ class DesktopSettingsStore {
         props.setProperty("modelDir", settings.modelDir)
         props.setProperty("outputDir", settings.outputDir)
         props.setProperty("setupCompleted", settings.setupCompleted.toString())
+        props.setProperty("themeMode", settings.themeMode)
+        props.setProperty("actionBarPosition", settings.actionBarPosition)
+        props.setProperty("saveImagesAutomatically", settings.saveImagesAutomatically.toString())
 
         settingsFile.outputStream().use { props.store(it, "Diffusion Desk Desktop Settings") }
     }
