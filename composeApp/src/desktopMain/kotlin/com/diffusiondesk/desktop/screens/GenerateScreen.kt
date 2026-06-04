@@ -2,6 +2,7 @@ package com.diffusiondesk.desktop.screens
 
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Arrangement
@@ -21,6 +22,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ChevronLeft
@@ -31,18 +33,13 @@ import androidx.compose.material.icons.filled.Recycling
 import androidx.compose.material.icons.filled.Repeat
 import androidx.compose.material.icons.filled.RestartAlt
 import androidx.compose.material.icons.filled.SwapHoriz
-import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.MenuAnchorType
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
@@ -55,6 +52,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -65,6 +63,11 @@ import com.diffusiondesk.desktop.core.BackendUiState
 import com.diffusiondesk.desktop.viewmodel.GenerationStatus
 import com.diffusiondesk.desktop.viewmodel.GenerationUiState
 import kotlin.math.roundToInt
+import org.jetbrains.jewel.ui.component.DefaultButton as Button
+import org.jetbrains.jewel.ui.component.HorizontalProgressBar
+import org.jetbrains.jewel.ui.component.IconButton
+import org.jetbrains.jewel.ui.component.Slider
+import org.jetbrains.jewel.ui.component.Text
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -180,22 +183,21 @@ private fun GenerationPanel(
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
             Label("Prompt")
-            OutlinedTextField(
+            PaddedTextArea(
                 value = state.prompt,
                 onValueChange = onPromptChange,
                 modifier = Modifier
                     .fillMaxWidth()
                     .heightIn(min = 142.dp),
-                textStyle = MaterialTheme.typography.bodyLarge,
             )
 
-            OutlinedTextField(
+            Label("Negative Prompt")
+            PaddedTextArea(
                 value = state.negativePrompt,
                 onValueChange = onNegativePromptChange,
                 modifier = Modifier
                     .fillMaxWidth()
                     .heightIn(min = 74.dp),
-                label = { Text("Negative Prompt") },
             )
 
             Label("Parameters")
@@ -242,9 +244,10 @@ private fun GenerationPanel(
                 )
             }
             Button(onClick = onResetToPresetDefaults) {
-                Icon(Icons.Default.RestartAlt, contentDescription = null)
-                Spacer(Modifier.width(8.dp))
-                Text("Reset to Preset Defaults")
+                ButtonContent(
+                    icon = Icons.Default.RestartAlt,
+                    text = "Reset to Preset Defaults",
+                )
             }
 
             state.currentHistoryItem?.let { item ->
@@ -294,10 +297,7 @@ private fun PreviewPanel(
     ) {
         Box(
             modifier = Modifier
-                .fillMaxSize()
-                .padding(12.dp)
-                .clip(RoundedCornerShape(8.dp))
-                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)),
+                .fillMaxSize(),
             contentAlignment = Alignment.Center,
         ) {
             when {
@@ -412,8 +412,8 @@ private fun ProgressCard(state: GenerationUiState) {
             overflow = TextOverflow.Ellipsis,
         )
         Text("Generating image(s)...", color = MaterialTheme.colorScheme.onSurfaceVariant)
-        LinearProgressIndicator(
-            progress = { progressFraction },
+        HorizontalProgressBar(
+            progress = progressFraction,
             modifier = Modifier
                 .fillMaxWidth()
                 .height(12.dp),
@@ -478,20 +478,15 @@ private fun ActionBar(
                     .height(52.dp)
                     .width(240.dp),
             ) {
-                Icon(Icons.Default.PlayArrow, contentDescription = null)
-                Spacer(Modifier.width(8.dp))
-                Text(
+                ButtonContent(
+                    icon = Icons.Default.PlayArrow,
                     text = when {
                         state.isGenerating && state.queueCount > 0 -> "Queue"
                         state.isGenerating -> "Generating..."
                         else -> "Generate"
                     },
-                    fontWeight = FontWeight.Bold,
+                    suffix = if (state.queueCount > 0) "(${state.queueCount})" else null,
                 )
-                if (state.queueCount > 0) {
-                    Spacer(Modifier.width(8.dp))
-                    Text("(${state.queueCount})")
-                }
             }
 
             IconButton(
@@ -708,8 +703,48 @@ private fun ResolutionSlider(
             value = currentMultiplier.toFloat(),
             onValueChange = { onScaleResolution(it.roundToInt()) },
             valueRange = minMultiplier.toFloat()..maxMultiplier.toFloat(),
-            steps = (maxMultiplier - minMultiplier - 1).coerceAtLeast(0),
+            steps = 0,
         )
+    }
+}
+
+@Composable
+private fun PaddedTextArea(
+    value: String,
+    onValueChange: (String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val shape = RoundedCornerShape(5.dp)
+    BasicTextField(
+        value = value,
+        onValueChange = onValueChange,
+        modifier = modifier
+            .clip(shape)
+            .background(MaterialTheme.colorScheme.surface)
+            .border(1.dp, MaterialTheme.colorScheme.outline, shape)
+            .padding(horizontal = 10.dp, vertical = 8.dp),
+        textStyle = MaterialTheme.typography.bodyLarge.copy(color = MaterialTheme.colorScheme.onSurface),
+        cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+    )
+}
+
+@Composable
+private fun ButtonContent(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    text: String,
+    suffix: String? = null,
+) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.Center,
+    ) {
+        Icon(icon, contentDescription = null, modifier = Modifier.size(18.dp))
+        Spacer(Modifier.width(8.dp))
+        Text(text, fontWeight = FontWeight.Bold)
+        suffix?.let {
+            Spacer(Modifier.width(8.dp))
+            Text(it, fontWeight = FontWeight.Bold)
+        }
     }
 }
 

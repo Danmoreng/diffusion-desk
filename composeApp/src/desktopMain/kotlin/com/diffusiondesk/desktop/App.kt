@@ -1,6 +1,7 @@
 package com.diffusiondesk.desktop
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -10,12 +11,8 @@ import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.NavigationRail
-import androidx.compose.material3.NavigationRailItem
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -24,12 +21,16 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.diffusiondesk.desktop.screens.GenerateScreen
 import com.diffusiondesk.desktop.screens.SettingsScreen
 import com.diffusiondesk.desktop.theme.DiffusionDeskTheme
+import org.jetbrains.jewel.ui.component.IconButton
+import org.jetbrains.jewel.ui.component.Text
 
 private enum class Screen(val label: String, val icon: ImageVector, val subtitle: String) {
     Generate("Generate", Icons.Default.Image, "Preset-driven image generation with the local SD worker."),
@@ -119,37 +120,36 @@ private fun NavigationSidebar(
     onSelect: (Screen) -> Unit,
     onToggleTheme: () -> Unit,
 ) {
-    NavigationRail(
-        modifier = Modifier.width(88.dp),
-        containerColor = MaterialTheme.colorScheme.surface,
-        header = {
-            Box(
-                modifier = Modifier
-                    .padding(vertical = 18.dp)
-                    .size(52.dp)
-                    .background(
-                        color = MaterialTheme.colorScheme.primary,
-                        shape = RoundedCornerShape(16.dp),
-                    ),
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Dashboard,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onPrimary,
-                )
-            }
-        },
+    Column(
+        modifier = Modifier
+            .width(72.dp)
+            .fillMaxHeight()
+            .background(MaterialTheme.colorScheme.surface)
+            .padding(vertical = 10.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Spacer(Modifier.height(8.dp))
+        Box(
+            modifier = Modifier
+                .size(42.dp)
+                .background(
+                    color = MaterialTheme.colorScheme.primary,
+                    shape = RoundedCornerShape(8.dp),
+                ),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                imageVector = Icons.Default.Dashboard,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onPrimary,
+            )
+        }
 
+        Spacer(Modifier.height(14.dp))
         Screen.entries.forEach { screen ->
-            NavigationRailItem(
+            SidebarItem(
+                screen = screen,
                 selected = currentScreen == screen,
                 onClick = { onSelect(screen) },
-                icon = { Icon(screen.icon, contentDescription = screen.label) },
-                label = { Text(screen.label, fontSize = 10.sp) },
-                alwaysShowLabel = true,
             )
         }
 
@@ -163,5 +163,40 @@ private fun NavigationSidebar(
         }
 
         Spacer(Modifier.height(16.dp))
+    }
+}
+
+@Composable
+private fun SidebarItem(
+    screen: Screen,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
+    val selectedColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.16f)
+    val contentColor = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+
+    Column(
+        modifier = Modifier
+            .width(58.dp)
+            .clip(RoundedCornerShape(8.dp))
+            .clickable(onClick = onClick)
+            .background(if (selected) selectedColor else MaterialTheme.colorScheme.surface)
+            .padding(vertical = 8.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        Icon(
+            imageVector = screen.icon,
+            contentDescription = screen.label,
+            tint = contentColor,
+            modifier = Modifier.size(20.dp),
+        )
+        Text(
+            text = screen.label,
+            color = contentColor,
+            fontSize = 10.sp,
+            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+            maxLines = 1,
+        )
     }
 }
