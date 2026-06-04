@@ -12,22 +12,30 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.diffusiondesk.desktop.core.BackendStatus
 import com.diffusiondesk.desktop.core.BackendUiState
+import com.diffusiondesk.desktop.viewmodel.GenerationUiState
 import com.diffusiondesk.desktop.viewmodel.SettingsUiState
 
 @Composable
 fun SettingsScreen(
     state: SettingsUiState,
     backendState: BackendUiState,
+    generationState: GenerationUiState,
     onRepoRootChange: (String) -> Unit,
     onListenPortChange: (String) -> Unit,
     onModelDirChange: (String) -> Unit,
@@ -39,7 +47,13 @@ fun SettingsScreen(
     onStopBackend: () -> Unit,
     onApplyToBackend: () -> Unit,
     onReloadFromBackend: () -> Unit,
+    onPresetIdChange: (String) -> Unit,
+    onReloadPresets: () -> Unit,
+    onLoadPreset: () -> Unit,
 ) {
+    var showPresetMenu by remember { mutableStateOf(false) }
+    val selectedPreset = generationState.presets.firstOrNull { it.id == generationState.selectedPresetId }
+
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -83,6 +97,58 @@ fun SettingsScreen(
                     enabled = !state.isBusy && backendState.status == BackendStatus.Ready,
                 ) {
                     Text("Reload Config")
+                }
+            }
+        }
+
+        SectionCard(
+            title = "Image Model",
+            subtitle = "Choose and load the image preset used by text-to-image generation.",
+        ) {
+            StatusLine("Preset Folder", generationState.presets.size.toString() + " preset(s)")
+            StatusLine("Selected Preset", selectedPreset?.name ?: "None")
+            StatusLine("Diffusion Model", selectedPreset?.diffusionModel ?: "Not selected")
+            if (!selectedPreset?.llm.isNullOrBlank()) {
+                StatusLine("Text Encoder", selectedPreset?.llm.orEmpty())
+            }
+            if (!selectedPreset?.vae.isNullOrBlank()) {
+                StatusLine("VAE", selectedPreset?.vae.orEmpty())
+            }
+
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                Column {
+                    Button(
+                        onClick = { showPresetMenu = true },
+                        enabled = generationState.presets.isNotEmpty(),
+                    ) {
+                        Text("Choose Preset")
+                    }
+                    DropdownMenu(
+                        expanded = showPresetMenu,
+                        onDismissRequest = { showPresetMenu = false },
+                    ) {
+                        generationState.presets.forEach { preset ->
+                            DropdownMenuItem(
+                                text = { Text(preset.name) },
+                                onClick = {
+                                    onPresetIdChange(preset.id)
+                                    showPresetMenu = false
+                                },
+                            )
+                        }
+                    }
+                }
+                Button(
+                    onClick = onReloadPresets,
+                    enabled = !generationState.isLoadingPresets,
+                ) {
+                    Text(if (generationState.isLoadingPresets) "Refreshing..." else "Refresh Presets")
+                }
+                Button(
+                    onClick = onLoadPreset,
+                    enabled = backendState.status == BackendStatus.Ready && !generationState.isLoadingPreset && selectedPreset != null,
+                ) {
+                    Text(if (generationState.isLoadingPreset) "Loading..." else "Load Preset")
                 }
             }
         }

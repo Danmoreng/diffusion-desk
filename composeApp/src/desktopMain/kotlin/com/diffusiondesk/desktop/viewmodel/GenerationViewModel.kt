@@ -15,6 +15,36 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
+import java.util.UUID
+
+enum class GenerationStatus {
+    Pending,
+    Processing,
+    Completed,
+    Failed,
+}
+
+data class GenerationParams(
+    val prompt: String,
+    val negativePrompt: String,
+    val width: Int,
+    val height: Int,
+    val steps: Int,
+    val cfgScale: Double,
+    val seed: Int,
+    val sampler: String,
+)
+
+data class GenerationHistoryItem(
+    val id: String,
+    val status: GenerationStatus,
+    val params: GenerationParams,
+    val imageUrl: String = "",
+    val usedSeed: Int? = null,
+    val image: ImageBitmap? = null,
+    val error: String? = null,
+    val generationTime: Double? = null,
+)
 
 data class GenerationUiState(
     val selectedPresetId: String = "",
@@ -38,9 +68,17 @@ data class GenerationUiState(
     val resultUrl: String = "",
     val usedSeed: String = "",
     val image: ImageBitmap? = null,
+    val history: List<GenerationHistoryItem> = emptyList(),
+    val historyIndex: Int = -1,
+    val isEndless: Boolean = false,
     val message: String = "",
     val error: String? = null,
-)
+) {
+    val queueCount: Int get() = history.count { it.status == GenerationStatus.Pending }
+    val canGoBack: Boolean get() = historyIndex > 0
+    val canGoForward: Boolean get() = historyIndex >= 0 && historyIndex < history.lastIndex
+    val currentHistoryItem: GenerationHistoryItem? get() = history.getOrNull(historyIndex)
+}
 
 class GenerationViewModel(
     private val scope: CoroutineScope,
@@ -115,6 +153,7 @@ class GenerationViewModel(
     fun updateCfgScale(value: String) = update { copy(cfgScale = value) }
     fun updateSeed(value: String) = update { copy(seed = value) }
     fun updateSampler(value: String) = update { copy(sampler = value) }
+    fun toggleEndless() = update { copy(isEndless = !isEndless) }
 
     fun reloadPresets() {
         scope.launch {
@@ -196,10 +235,89 @@ class GenerationViewModel(
                 return@launch
             }
 
-            val request = runCatching { buildRequest() }
+            val params = runCatching { buildParams() }
                 .onFailure { error -> update { copy(error = error.message ?: "Invalid generation parameters.") } }
                 .getOrNull() ?: return@launch
 
+            val item = GenerationHistoryItem(
+                id = UUID.randomUUID().toString(),
+                status = GenerationStatus.Pending,
+                params = params,
+            )
+
+            var shouldSelectNewItem = false
+            update {
+                shouldSelectNewItem = historyIndex == -1 || historyIndex == history.lastIndex
+                val nextHistory = history + item
+                copy(
+                    history = nextHistory,
+                    historyIndex = if (shouldSelectNewItem) nextHistory.lastIndex else historyIndex,
+                    message = if (isGenerating) "Queued generation." else "Queued generation.",
+                    error = null,
+                )
+            }
+            if (shouldSelectNewItem) {
+                seekHistory(_uiState.value.history.lastIndex)
+            }
+
+            processQueue()
+        }
+    }
+
+    fun goBack() {
+        if (_uiState.value.canGoBack) {
+            seekHistory(_uiState.value.historyIndex - 1)
+        }
+    }
+
+    fun goForward() {
+        if (_uiState.value.canGoForward) {
+            seekHistory(_uiState.value.historyIndex + 1)
+        }
+    }
+
+    fun seekHistory(index: Int) {
+        val item = _uiState.value.history.getOrNull(index) ?: return
+        update {
+            copy(
+                historyIndex = index,
+                prompt = item.params.prompt,
+                negativePrompt = item.params.negativePrompt,
+                width = item.params.width.toString(),
+                height = item.params.height.toString(),
+                steps = item.params.steps.toString(),
+                cfgScale = item.params.cfgScale.toString(),
+                seed = item.params.seed.toString(),
+                sampler = item.params.sampler,
+                resultUrl = item.imageUrl,
+                usedSeed = item.usedSeed?.toString().orEmpty(),
+                image = item.image,
+                error = item.error,
+                message = when (item.status) {
+                    GenerationStatus.Pending -> "Queued."
+                    GenerationStatus.Processing -> "Generating..."
+                    GenerationStatus.Completed -> "Image generated successfully."
+                    GenerationStatus.Failed -> "Generation failed."
+                },
+            )
+        }
+    }
+
+    private fun processQueue() {
+        if (_uiState.value.isGenerating) {
+            return
+        }
+
+        val nextIndex = _uiState.value.history.indexOfFirst { it.status == GenerationStatus.Pending }
+        if (nextIndex < 0) {
+            return
+        }
+
+        scope.launch {
+            val item = _uiState.value.history.getOrNull(nextIndex) ?: return@launch
+            val startedAt = System.currentTimeMillis()
+
+            updateHistoryItem(nextIndex) { it.copy(status = GenerationStatus.Processing, error = null) }
             update {
                 copy(
                     isGenerating = true,
@@ -208,47 +326,64 @@ class GenerationViewModel(
                     progressTime = 0.0,
                     progressPhase = "Starting...",
                     progressMessage = "",
-                    message = "Submitting generation request...",
+                    message = "Generating...",
                     error = null,
                 )
             }
 
+            if (_uiState.value.historyIndex == -1 || _uiState.value.historyIndex >= nextIndex - 1) {
+                seekHistory(nextIndex)
+            }
+
             startProgressPolling()
-            val generationResult = client.generateImage(backendManager.state.value.baseUrl, request)
+            val generationResult = client.generateImage(backendManager.state.value.baseUrl, item.params.toRequest())
             stopProgressPolling()
 
             generationResult.onSuccess { result ->
                 val bitmapResult = client.fetchImageBitmap(backendManager.state.value.baseUrl, result.imageUrl)
                 bitmapResult.onSuccess { image ->
-                    update {
-                        copy(
-                            isGenerating = false,
-                            resultUrl = result.imageUrl,
-                            usedSeed = result.usedSeed.toString(),
+                    val generationTime = (System.currentTimeMillis() - startedAt) / 1000.0
+                    updateHistoryItem(nextIndex) {
+                        it.copy(
+                            status = GenerationStatus.Completed,
+                            imageUrl = result.imageUrl,
+                            usedSeed = result.usedSeed,
                             image = image,
-                            message = "Image generated successfully.",
-                            error = null,
+                            generationTime = generationTime,
                         )
                     }
+                    if (_uiState.value.historyIndex == nextIndex) {
+                        update {
+                            copy(
+                                resultUrl = result.imageUrl,
+                                usedSeed = result.usedSeed.toString(),
+                                image = image,
+                                message = "Image generated successfully.",
+                                error = null,
+                            )
+                        }
+                    }
                 }.onFailure { error ->
-                    update {
-                        copy(
-                            isGenerating = false,
-                            resultUrl = result.imageUrl,
-                            usedSeed = result.usedSeed.toString(),
-                            image = null,
-                            error = error.message ?: "Failed to load generated image.",
-                        )
+                    val message = error.message ?: "Failed to load generated image."
+                    updateHistoryItem(nextIndex) { it.copy(status = GenerationStatus.Failed, error = message) }
+                    if (_uiState.value.historyIndex == nextIndex) {
+                        update { copy(image = null, error = message) }
                     }
                 }
             }.onFailure { error ->
-                update {
-                    copy(
-                        isGenerating = false,
-                        error = error.message ?: "Generation failed.",
-                    )
+                val message = error.message ?: "Generation failed."
+                updateHistoryItem(nextIndex) { it.copy(status = GenerationStatus.Failed, error = message) }
+                if (_uiState.value.historyIndex == nextIndex) {
+                    update { copy(image = null, error = message) }
                 }
             }
+
+            update { copy(isGenerating = false) }
+
+            if (_uiState.value.isEndless) {
+                generate()
+            }
+            processQueue()
         }
     }
 
@@ -278,11 +413,10 @@ class GenerationViewModel(
         progressJob = null
     }
 
-    private fun buildRequest(): GenerationRequest {
+    private fun buildParams(): GenerationParams {
         val state = _uiState.value
         require(state.prompt.isNotBlank()) { "Prompt is required." }
-        return GenerationRequest(
-            modelId = "",
+        return GenerationParams(
             prompt = state.prompt,
             negativePrompt = state.negativePrompt,
             width = state.width.toIntOrNull() ?: error("Width must be numeric."),
@@ -292,6 +426,27 @@ class GenerationViewModel(
             seed = state.seed.toIntOrNull() ?: error("Seed must be numeric."),
             sampler = state.sampler.trim(),
         )
+    }
+
+    private fun GenerationParams.toRequest() = GenerationRequest(
+        modelId = "",
+        prompt = prompt,
+        negativePrompt = negativePrompt,
+        width = width,
+        height = height,
+        steps = steps,
+        cfgScale = cfgScale,
+        seed = seed,
+        sampler = sampler,
+    )
+
+    private fun updateHistoryItem(index: Int, transform: (GenerationHistoryItem) -> GenerationHistoryItem) {
+        update {
+            val nextHistory = history.mapIndexed { itemIndex, item ->
+                if (itemIndex == index) transform(item) else item
+            }
+            copy(history = nextHistory)
+        }
     }
 
     private fun selectedPresetOrNull(): ImagePreset? {
