@@ -59,6 +59,7 @@ data class GenerationUiState(
     val seed: String = "-1",
     val batchCount: String = "1",
     val sampler: String = "euler_a",
+    val leftPanelWidthDp: Int = 560,
     val presets: List<ImagePreset> = emptyList(),
     val isLoadingPresets: Boolean = false,
     val isLoadingPreset: Boolean = false,
@@ -155,6 +156,7 @@ class GenerationViewModel(
     fun updateSeed(value: String) = update { copy(seed = value) }
     fun updateBatchCount(value: String) = update { copy(batchCount = value) }
     fun updateSampler(value: String) = update { copy(sampler = value) }
+    fun updateLeftPanelWidth(value: Int) = update { copy(leftPanelWidthDp = value.coerceIn(MIN_LEFT_PANEL_WIDTH_DP, MAX_LEFT_PANEL_WIDTH_DP)) }
     fun toggleEndless() = update { copy(isEndless = !isEndless) }
 
     fun randomizeSeed() = update { copy(seed = "-1") }
@@ -524,6 +526,7 @@ class GenerationViewModel(
         seed = seed,
         batchCount = batchCount,
         sampler = sampler,
+        leftPanelWidthDp = leftPanelWidthDp,
     )
 
     private fun GenerationUiState.toSavedSettings() = SavedGenerationSettings(
@@ -536,6 +539,7 @@ class GenerationViewModel(
         seed = seed,
         batchCount = batchCount,
         sampler = sampler,
+        leftPanelWidthDp = leftPanelWidthDp,
     )
 
     private fun gcd(a: Int, b: Int): Int = if (b == 0) kotlin.math.abs(a) else gcd(b, a % b)
@@ -546,5 +550,7 @@ class GenerationViewModel(
         const val RESOLUTION_STEP = 16
         const val MIN_BATCH_COUNT = 1
         const val MAX_BATCH_COUNT = 8
+        const val MIN_LEFT_PANEL_WIDTH_DP = 380
+        const val MAX_LEFT_PANEL_WIDTH_DP = 900
     }
 }

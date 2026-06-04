@@ -4,6 +4,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Arrangement
@@ -41,9 +42,11 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -52,6 +55,7 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -99,47 +103,102 @@ fun GenerateScreen(
     onToggleEndless: () -> Unit,
     onGoBack: () -> Unit,
     onGoForward: () -> Unit,
+    onLeftPanelWidthChange: (Int) -> Unit,
 ) {
     Column(
         modifier = Modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background),
     ) {
-        Row(
+        BoxWithConstraints(
             modifier = Modifier
                 .weight(1f)
                 .padding(8.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            GenerationPanel(
-                state = state,
-                samplerOptions = samplerOptions,
-                onPromptChange = onPromptChange,
-                onNegativePromptChange = onNegativePromptChange,
-                onWidthChange = onWidthChange,
-                onHeightChange = onHeightChange,
-                onStepsChange = onStepsChange,
-                onCfgScaleChange = onCfgScaleChange,
-                onSeedChange = onSeedChange,
-                onBatchCountChange = onBatchCountChange,
-                onSamplerChange = onSamplerChange,
-                onRandomizeSeed = onRandomizeSeed,
-                onReuseLastSeed = onReuseLastSeed,
-                onSwapDimensions = onSwapDimensions,
-                onApplyAspectRatio = onApplyAspectRatio,
-                onScaleResolution = onScaleResolution,
-                onResetToPresetDefaults = onResetToPresetDefaults,
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxHeight(),
-            )
+            val minPanelWidth = 380.dp
+            val maxPanelWidth = minOf(900.dp, (maxWidth - 280.dp).coerceAtLeast(minPanelWidth))
+            val density = LocalDensity.current
+            var panelWidthDp by remember { mutableStateOf(state.leftPanelWidthDp.toFloat()) }
+            var isDraggingPanel by remember { mutableStateOf(false) }
+            var dragStartWidthPx by remember { mutableStateOf(0f) }
+            var draggedPx by remember { mutableStateOf(0f) }
+            val panelWidth = panelWidthDp.dp.coerceIn(minPanelWidth, maxPanelWidth)
+            val currentPanelWidthPx by rememberUpdatedState(with(density) { panelWidth.toPx() })
+            val currentPanelWidthDp by rememberUpdatedState(panelWidthDp)
 
-            PreviewPanel(
-                state = state,
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxHeight(),
-            )
+            LaunchedEffect(state.leftPanelWidthDp, minPanelWidth, maxPanelWidth) {
+                if (!isDraggingPanel) {
+                    panelWidthDp = state.leftPanelWidthDp.dp.coerceIn(minPanelWidth, maxPanelWidth).value
+                }
+            }
+
+            Row(
+                modifier = Modifier.fillMaxSize(),
+                horizontalArrangement = Arrangement.spacedBy(0.dp),
+            ) {
+                GenerationPanel(
+                    state = state,
+                    samplerOptions = samplerOptions,
+                    onPromptChange = onPromptChange,
+                    onNegativePromptChange = onNegativePromptChange,
+                    onWidthChange = onWidthChange,
+                    onHeightChange = onHeightChange,
+                    onStepsChange = onStepsChange,
+                    onCfgScaleChange = onCfgScaleChange,
+                    onSeedChange = onSeedChange,
+                    onBatchCountChange = onBatchCountChange,
+                    onSamplerChange = onSamplerChange,
+                    onRandomizeSeed = onRandomizeSeed,
+                    onReuseLastSeed = onReuseLastSeed,
+                    onSwapDimensions = onSwapDimensions,
+                    onApplyAspectRatio = onApplyAspectRatio,
+                    onScaleResolution = onScaleResolution,
+                    onResetToPresetDefaults = onResetToPresetDefaults,
+                    modifier = Modifier
+                        .width(panelWidth)
+                        .fillMaxHeight(),
+                )
+
+                Splitter(
+                    modifier = Modifier
+                        .fillMaxHeight()
+                        .width(12.dp)
+                        .pointerInput(minPanelWidth, maxPanelWidth) {
+                            detectDragGestures(
+                                onDragStart = {
+                                    isDraggingPanel = true
+                                    dragStartWidthPx = currentPanelWidthPx
+                                    draggedPx = 0f
+                                },
+                                onDragEnd = {
+                                    isDraggingPanel = false
+                                    onLeftPanelWidthChange(currentPanelWidthDp.roundToInt())
+                                },
+                                onDragCancel = {
+                                    isDraggingPanel = false
+                                    onLeftPanelWidthChange(currentPanelWidthDp.roundToInt())
+                                },
+                                onDrag = { change, dragAmount ->
+                                    change.consume()
+                                    draggedPx += dragAmount.x
+                                    val nextWidthPx = (dragStartWidthPx + draggedPx)
+                                        .coerceIn(
+                                            with(density) { minPanelWidth.toPx() },
+                                            with(density) { maxPanelWidth.toPx() },
+                                        )
+                                    panelWidthDp = with(density) { nextWidthPx.toDp().value }
+                                },
+                            )
+                        },
+                )
+
+                PreviewPanel(
+                    state = state,
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxHeight(),
+                )
+            }
         }
 
         ActionBar(
@@ -149,6 +208,23 @@ fun GenerateScreen(
             onToggleEndless = onToggleEndless,
             onGoBack = onGoBack,
             onGoForward = onGoForward,
+        )
+    }
+}
+
+@Composable
+private fun Splitter(
+    modifier: Modifier = Modifier,
+) {
+    Box(
+        modifier = modifier,
+        contentAlignment = Alignment.Center,
+    ) {
+        Box(
+            modifier = Modifier
+                .width(1.dp)
+                .fillMaxHeight()
+                .background(MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f)),
         )
     }
 }
@@ -305,29 +381,19 @@ private fun PreviewPanel(
     state: GenerationUiState,
     modifier: Modifier = Modifier,
 ) {
-    Card(
+    Box(
         modifier = modifier,
-        shape = RoundedCornerShape(8.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        contentAlignment = Alignment.Center,
     ) {
-        Box(
-            modifier = Modifier
-                .fillMaxSize(),
-            contentAlignment = Alignment.Center,
-        ) {
-            when {
-                state.isGenerating && state.currentHistoryItem?.status == GenerationStatus.Processing -> {
-                    ProgressCard(state)
-                }
-                state.images.isNotEmpty() -> {
-                    GeneratedImageGrid(state)
-                }
-                state.currentHistoryItem?.status == GenerationStatus.Pending -> {
-                    Text("Queued", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-                else -> {
-                    Text("No generated image yet.", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
+        when {
+            state.isGenerating && state.currentHistoryItem?.status == GenerationStatus.Processing -> {
+                ProgressCard(state)
+            }
+            state.images.isNotEmpty() -> {
+                GeneratedImageGrid(state)
+            }
+            state.currentHistoryItem?.status == GenerationStatus.Pending -> {
+                Text("Queued", color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
     }
