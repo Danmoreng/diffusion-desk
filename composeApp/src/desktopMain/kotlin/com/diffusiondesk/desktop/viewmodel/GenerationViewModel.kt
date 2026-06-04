@@ -17,6 +17,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import java.util.UUID
+import kotlin.math.roundToInt
 
 enum class GenerationStatus {
     Pending,
@@ -49,6 +50,14 @@ data class GenerationHistoryItem(
     val generationTime: Double? = null,
 )
 
+data class GenerationProgressStage(
+    val key: String,
+    val label: String,
+    val progress: Float,
+    val isActive: Boolean,
+    val isComplete: Boolean,
+)
+
 data class GenerationUiState(
     val selectedPresetId: String = "",
     val prompt: String = "A cinematic, melancholic photograph of a solitary hooded figure walking through a sprawling, rain-slicked metropolis at night.",
@@ -69,8 +78,10 @@ data class GenerationUiState(
     val progressStep: Int = 0,
     val progressSteps: Int = 0,
     val progressTime: Double = 0.0,
+    val progressEtaSeconds: Int = 0,
     val progressPhase: String = "",
     val progressMessage: String = "",
+    val progressStages: List<GenerationProgressStage> = emptyList(),
     val isGenerating: Boolean = false,
     val resultUrls: List<String> = emptyList(),
     val usedSeed: String = "",
@@ -100,6 +111,12 @@ class GenerationViewModel(
     val uiState: StateFlow<GenerationUiState> = _uiState.asStateFlow()
 
     private var hasAutoLoadedPreset = false
+    private var lastProgressStep = 0
+    private var lastProgressTime = 0.0
+    private var lastProgressPhase = ""
+    private var lastProgressStageKey = ""
+    private var currentStageStartStep = 0
+    private val recentStepTimes = ArrayDeque<Double>()
 
     val samplers = listOf("euler", "euler_a", "heun", "dpm2", "dpmpp_2s_a", "dpmpp_2m", "dpmpp_2mv2", "ipndm", "ipndm_v", "lcm", "ddim_trailing", "tcd")
 
@@ -119,8 +136,10 @@ class GenerationViewModel(
                             progressStep = 0,
                             progressSteps = 0,
                             progressTime = 0.0,
+                            progressEtaSeconds = 0,
                             progressPhase = "",
                             progressMessage = "",
+                            progressStages = emptyList(),
                         )
                     }
                 }
@@ -416,6 +435,7 @@ class GenerationViewModel(
         scope.launch {
             val item = _uiState.value.history.getOrNull(nextIndex) ?: return@launch
             val startedAt = System.currentTimeMillis()
+            resetProgressEstimator()
 
             updateHistoryItem(nextIndex) { it.copy(status = GenerationStatus.Processing, error = null) }
             update {
@@ -424,8 +444,10 @@ class GenerationViewModel(
                     progressStep = 0,
                     progressSteps = 0,
                     progressTime = 0.0,
+                    progressEtaSeconds = 0,
                     progressPhase = "Starting...",
                     progressMessage = "",
+                    progressStages = initialProgressStages(),
                     message = "Generating...",
                     error = null,
                 )
@@ -448,15 +470,7 @@ class GenerationViewModel(
                         is GenerationJobEvent.Started -> update {
                             copy(message = "Generating...")
                         }
-                        is GenerationJobEvent.Progress -> update {
-                            copy(
-                                progressStep = event.step,
-                                progressSteps = event.steps,
-                                progressTime = event.time,
-                                progressPhase = event.phase,
-                                progressMessage = event.message,
-                            )
-                        }
+                        is GenerationJobEvent.Progress -> handleProgressEvent(event)
                         is GenerationJobEvent.Completed -> Unit
                         is GenerationJobEvent.Failed -> error(event.message)
                         is GenerationJobEvent.Cancelled -> error(event.message)
@@ -465,6 +479,12 @@ class GenerationViewModel(
             }
 
             generationResult.onSuccess { result ->
+                update {
+                    copy(
+                        progressEtaSeconds = 0,
+                        progressStages = progressStages.markAllComplete(),
+                    )
+                }
                 val bitmapResult = client.fetchGeneratedImages(backendManager.state.value.baseUrl, result.imageUrls)
                 bitmapResult.onSuccess { images ->
                     val generationTime = result.generationTime ?: ((System.currentTimeMillis() - startedAt) / 1000.0)
@@ -489,17 +509,19 @@ class GenerationViewModel(
                         }
                     }
                 }.onFailure { error ->
+                    resetProgressEstimator()
                     val message = error.message ?: "Failed to load generated image."
                     updateHistoryItem(nextIndex) { it.copy(status = GenerationStatus.Failed, error = message) }
                     if (_uiState.value.historyIndex == nextIndex) {
-                        update { copy(images = emptyList(), error = message) }
+                        update { copy(images = emptyList(), progressEtaSeconds = 0, error = message) }
                     }
                 }
             }.onFailure { error ->
+                resetProgressEstimator()
                 val message = error.message ?: "Generation failed."
                 updateHistoryItem(nextIndex) { it.copy(status = GenerationStatus.Failed, error = message) }
                 if (_uiState.value.historyIndex == nextIndex) {
-                    update { copy(images = emptyList(), error = message) }
+                    update { copy(images = emptyList(), progressEtaSeconds = 0, error = message) }
                 }
             }
 
@@ -541,6 +563,189 @@ class GenerationViewModel(
         sampler = sampler,
         saveImage = saveImage,
     )
+
+    private fun handleProgressEvent(event: GenerationJobEvent.Progress) {
+        update {
+            val nextPhase = displayProgressPhase(event.phase, progressPhase)
+            val nextStages = updateProgressStages(progressStages, nextPhase, event)
+            val eta = estimateProgressEta(event, nextPhase)
+            copy(
+                progressStep = event.step,
+                progressSteps = event.steps,
+                progressTime = event.time,
+                progressEtaSeconds = eta,
+                progressPhase = nextPhase,
+                progressMessage = displayProgressMessage(event.message),
+                progressStages = nextStages,
+            )
+        }
+    }
+
+    private fun displayProgressMessage(rawMessage: String): String {
+        val normalized = rawMessage.trim()
+        return when {
+            normalized.equals("High-res: VAE tiling enabled", ignoreCase = true) -> ""
+            else -> normalized
+        }
+    }
+
+    private fun displayProgressPhase(rawPhase: String, currentPhase: String): String {
+        val normalized = rawPhase.trim()
+        return when {
+            normalized.isBlank() || normalized.equals("idle", ignoreCase = true) -> {
+                currentPhase.takeUnless { it.isBlank() || it.equals("idle", ignoreCase = true) } ?: "Starting..."
+            }
+            else -> normalized
+        }
+    }
+
+    private fun updateProgressStages(
+        stages: List<GenerationProgressStage>,
+        phase: String,
+        event: GenerationJobEvent.Progress,
+    ): List<GenerationProgressStage> {
+        val stageKey = progressStageKey(phase)
+        if (stageKey != lastProgressStageKey) {
+            lastProgressStageKey = stageKey
+            currentStageStartStep = event.step
+        }
+
+        val nextStages = ensureProgressStage(stages.ifEmpty { initialProgressStages() }, stageKey, phase)
+        val activeIndex = nextStages.indexOfFirst { it.key == stageKey }.coerceAtLeast(0)
+
+        return nextStages.mapIndexed { index, stage ->
+            when {
+                index < activeIndex -> stage.copy(progress = 1f, isActive = false, isComplete = true)
+                index == activeIndex -> stage.copy(
+                    progress = activeStageProgress(stage.key, event),
+                    isActive = true,
+                    isComplete = false,
+                )
+                else -> stage.copy(
+                    progress = if (stage.isComplete) 1f else stage.progress.coerceIn(0f, 1f),
+                    isActive = false,
+                    isComplete = stage.isComplete,
+                )
+            }
+        }
+    }
+
+    private fun ensureProgressStage(
+        stages: List<GenerationProgressStage>,
+        stageKey: String,
+        phase: String,
+    ): List<GenerationProgressStage> {
+        if (stages.any { it.key == stageKey }) {
+            return stages
+        }
+
+        val stage = GenerationProgressStage(
+            key = stageKey,
+            label = progressStageLabel(stageKey, phase),
+            progress = 0f,
+            isActive = false,
+            isComplete = false,
+        )
+        val decodeIndex = stages.indexOfFirst { it.key == PROGRESS_STAGE_DECODE }
+        return if (decodeIndex >= 0) {
+            stages.take(decodeIndex) + stage + stages.drop(decodeIndex)
+        } else {
+            stages + stage
+        }
+    }
+
+    private fun activeStageProgress(stageKey: String, event: GenerationJobEvent.Progress): Float {
+        return when (stageKey) {
+            PROGRESS_STAGE_SAMPLING,
+            PROGRESS_STAGE_HIGHRES -> {
+                val denominator = (event.steps - currentStageStartStep).coerceAtLeast(1)
+                val numerator = (event.step - currentStageStartStep).coerceAtLeast(0)
+                (numerator.toFloat() / denominator.toFloat()).coerceIn(0f, 0.98f)
+            }
+            PROGRESS_STAGE_PREPARE,
+            PROGRESS_STAGE_DECODE -> 0.35f
+            else -> 0.25f
+        }
+    }
+
+    private fun progressStageKey(phase: String): String {
+        val normalized = phase.lowercase()
+        return when {
+            normalized.contains("vae") || normalized.contains("decod") || normalized.contains("sav") -> PROGRESS_STAGE_DECODE
+            normalized.contains("highres") || normalized.contains("high-res") || normalized.contains("hires") -> PROGRESS_STAGE_HIGHRES
+            normalized.contains("sampl") -> PROGRESS_STAGE_SAMPLING
+            else -> PROGRESS_STAGE_PREPARE
+        }
+    }
+
+    private fun progressStageLabel(stageKey: String, phase: String): String {
+        return when (stageKey) {
+            PROGRESS_STAGE_PREPARE -> "Prepare"
+            PROGRESS_STAGE_SAMPLING -> "Sampling"
+            PROGRESS_STAGE_HIGHRES -> "Highres-fix"
+            PROGRESS_STAGE_DECODE -> "Decode and save"
+            else -> phase.ifBlank { "Processing" }.removeSuffix("...")
+        }
+    }
+
+    private fun initialProgressStages(): List<GenerationProgressStage> = listOf(
+        GenerationProgressStage(PROGRESS_STAGE_PREPARE, "Prepare", 0.25f, isActive = true, isComplete = false),
+        GenerationProgressStage(PROGRESS_STAGE_SAMPLING, "Sampling", 0f, isActive = false, isComplete = false),
+        GenerationProgressStage(PROGRESS_STAGE_DECODE, "Decode and save", 0f, isActive = false, isComplete = false),
+    )
+
+    private fun List<GenerationProgressStage>.markAllComplete(): List<GenerationProgressStage> {
+        return map { stage ->
+            stage.copy(progress = 1f, isActive = false, isComplete = true)
+        }
+    }
+
+    private fun estimateProgressEta(event: GenerationJobEvent.Progress, phase: String): Int {
+        val phaseChanged = phase != lastProgressPhase
+        if (phaseChanged) {
+            recentStepTimes.clear()
+            lastProgressPhase = phase
+        }
+
+        if (event.step > lastProgressStep) {
+            val deltaTime = event.time - lastProgressTime
+            val deltaSteps = event.step - lastProgressStep
+            val secondsPerStep = deltaTime / deltaSteps
+            if (secondsPerStep > 0.0 && secondsPerStep.isFinite()) {
+                recentStepTimes.addLast(secondsPerStep)
+                while (recentStepTimes.size > RECENT_STEP_TIME_WINDOW) {
+                    recentStepTimes.removeFirst()
+                }
+            }
+            lastProgressTime = event.time
+            lastProgressStep = event.step
+        } else if (event.step < lastProgressStep || event.time < lastProgressTime) {
+            recentStepTimes.clear()
+            lastProgressTime = event.time
+            lastProgressStep = event.step
+        }
+
+        if (event.steps <= 0 || event.step <= 0) {
+            return 0
+        }
+
+        val secondsPerStep = if (recentStepTimes.isNotEmpty()) {
+            recentStepTimes.average()
+        } else {
+            event.time / event.step
+        }
+        val remainingSteps = (event.steps - event.step).coerceAtLeast(0)
+        return (secondsPerStep * remainingSteps).roundToInt().coerceAtLeast(0)
+    }
+
+    private fun resetProgressEstimator() {
+        lastProgressStep = 0
+        lastProgressTime = 0.0
+        lastProgressPhase = ""
+        lastProgressStageKey = ""
+        currentStageStartStep = 0
+        recentStepTimes.clear()
+    }
 
     private fun updateHistoryItem(index: Int, transform: (GenerationHistoryItem) -> GenerationHistoryItem) {
         update {
@@ -599,5 +804,10 @@ class GenerationViewModel(
         const val MAX_BATCH_COUNT = 8
         const val MIN_LEFT_PANEL_WIDTH_DP = 380
         const val MAX_LEFT_PANEL_WIDTH_DP = 900
+        private const val RECENT_STEP_TIME_WINDOW = 5
+        private const val PROGRESS_STAGE_PREPARE = "prepare"
+        private const val PROGRESS_STAGE_SAMPLING = "sampling"
+        private const val PROGRESS_STAGE_HIGHRES = "highres"
+        private const val PROGRESS_STAGE_DECODE = "decode"
     }
 }

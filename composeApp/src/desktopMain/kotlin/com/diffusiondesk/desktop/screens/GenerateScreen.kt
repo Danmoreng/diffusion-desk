@@ -80,6 +80,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import com.diffusiondesk.desktop.core.BackendStatus
 import com.diffusiondesk.desktop.core.BackendUiState
 import com.diffusiondesk.desktop.core.GeneratedImage
+import com.diffusiondesk.desktop.viewmodel.GenerationProgressStage
 import com.diffusiondesk.desktop.viewmodel.GenerationStatus
 import com.diffusiondesk.desktop.viewmodel.GenerationUiState
 import java.awt.Cursor
@@ -590,6 +591,17 @@ private fun File.withImageExtension(extension: String): File {
     return if (name.contains('.')) this else File(parentFile, "$name.$extension")
 }
 
+private fun formatProgressDuration(seconds: Double): String {
+    if (seconds < 60.0) {
+        return "${"%.1f".format(Locale.US, seconds.coerceAtLeast(0.0))}s"
+    }
+
+    val roundedSeconds = seconds.roundToInt().coerceAtLeast(0)
+    val minutes = roundedSeconds / 60
+    val remainingSeconds = roundedSeconds % 60
+    return "${minutes}m ${remainingSeconds.toString().padStart(2, '0')}s"
+}
+
 private fun activeFrame(): Frame? {
     return Frame.getFrames().firstOrNull { it.isActive }
         ?: Frame.getFrames().firstOrNull { it.isVisible }
@@ -626,22 +638,10 @@ private class ImageTransferable(
 
 @Composable
 private fun ProgressCard(state: GenerationUiState) {
-    val progressFraction = if (state.progressSteps > 0) {
-        (state.progressStep.toFloat() / state.progressSteps.toFloat()).coerceIn(0f, 1f)
-    } else {
-        0f
-    }
-    val eta = if (state.progressSteps > 0 && state.progressStep > 0 && state.progressTime > 0.0) {
-        val averageStep = state.progressTime / state.progressStep
-        ((state.progressSteps - state.progressStep) * averageStep).toInt()
-    } else {
-        0
-    }
-
     Column(
         modifier = Modifier.widthIn(max = 520.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         Text(
             text = state.progressPhase.ifBlank { "Generating..." },
@@ -651,12 +651,7 @@ private fun ProgressCard(state: GenerationUiState) {
             overflow = TextOverflow.Ellipsis,
         )
         Text("Generating image(s)...", color = MaterialTheme.colorScheme.onSurfaceVariant)
-        HorizontalProgressBar(
-            progress = progressFraction,
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(12.dp),
-        )
+        ProgressStageList(state.progressStages)
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
@@ -668,8 +663,11 @@ private fun ProgressCard(state: GenerationUiState) {
             )
             Text(
                 text = buildString {
-                    append("${"%.1f".format(state.progressTime)}s")
-                    if (eta > 0) append("   Remaining: ~${eta}s")
+                    append(formatProgressDuration(state.progressTime))
+                    if (state.progressEtaSeconds > 0) {
+                        append("   Remaining: ~")
+                        append(formatProgressDuration(state.progressEtaSeconds.toDouble()))
+                    }
                 },
                 style = MaterialTheme.typography.labelMedium,
                 fontWeight = FontWeight.Bold,
@@ -682,6 +680,68 @@ private fun ProgressCard(state: GenerationUiState) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
+    }
+}
+
+@Composable
+private fun ProgressStageList(stages: List<GenerationProgressStage>) {
+    val visibleStages = stages.ifEmpty {
+        listOf(GenerationProgressStage("starting", "Prepare", 0.25f, isActive = true, isComplete = false))
+    }
+
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        visibleStages.forEach { stage ->
+            ProgressStageRow(stage)
+        }
+    }
+}
+
+@Composable
+private fun ProgressStageRow(stage: GenerationProgressStage) {
+    val labelColor = when {
+        stage.isComplete -> MaterialTheme.colorScheme.primary
+        stage.isActive -> MaterialTheme.colorScheme.onSurface
+        else -> MaterialTheme.colorScheme.onSurfaceVariant
+    }
+    val statusText = when {
+        stage.isComplete -> "Done"
+        stage.isActive -> "Running"
+        else -> "Waiting"
+    }
+
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = stage.label,
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = if (stage.isActive) FontWeight.Bold else FontWeight.SemiBold,
+                color = labelColor,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                text = statusText,
+                style = MaterialTheme.typography.labelSmall,
+                color = labelColor,
+                maxLines = 1,
+            )
+        }
+        HorizontalProgressBar(
+            progress = stage.progress.coerceIn(0f, 1f),
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(8.dp),
+        )
     }
 }
 
