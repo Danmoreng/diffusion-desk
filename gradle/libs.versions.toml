@@ -1,14 +1,16 @@
 [versions]
-compose-plugin = "1.7.3"
-kotlin = "2.1.10"
+compose-plugin = "1.10.0"
+kotlin = "2.3.20"
 coroutines = "1.8.1"
 serialization = "1.7.3"
+jewel = "0.37.0-262.4852.51"
 
 [libraries]
 androidx-lifecycle-viewmodel-compose = "org.jetbrains.androidx.lifecycle:lifecycle-viewmodel-compose:2.8.0"
 kotlinx-coroutines-core = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version.ref = "coroutines" }
 kotlinx-coroutines-swing = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-swing", version.ref = "coroutines" }
 kotlinx-serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json", version.ref = "serialization" }
+jewel-int-ui-standalone = { module = "org.jetbrains.jewel:jewel-int-ui-standalone", version.ref = "jewel" }
 
 [plugins]
 jetbrainsCompose = { id = "org.jetbrains.compose", version.ref = "compose-plugin" }
