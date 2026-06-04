@@ -174,6 +174,8 @@ private fun GenerationPanel(
     onResetToPresetDefaults: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val showNegativePrompt = (state.cfgScale.toDoubleOrNull() ?: 0.0) > 1.0
+
     Card(
         modifier = modifier,
         shape = RoundedCornerShape(8.dp),
@@ -195,14 +197,16 @@ private fun GenerationPanel(
                     .heightIn(min = 142.dp),
             )
 
-            Label("Negative Prompt")
-            PaddedTextArea(
-                value = state.negativePrompt,
-                onValueChange = onNegativePromptChange,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(min = 74.dp),
-            )
+            if (showNegativePrompt) {
+                Label("Negative Prompt")
+                PaddedTextArea(
+                    value = state.negativePrompt,
+                    onValueChange = onNegativePromptChange,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 74.dp),
+                )
+            }
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
