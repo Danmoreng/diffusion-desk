@@ -25,6 +25,14 @@ std::string sd_basename(const std::string& path) {
     return path;
 }
 
+sd_vae_format_t sd_vae_format_from_string(const std::string& value) {
+    if (value.empty() || value == "auto") return SD_VAE_FORMAT_AUTO;
+    if (value == "flux") return SD_VAE_FORMAT_FLUX;
+    if (value == "sd3") return SD_VAE_FORMAT_SD3;
+    if (value == "flux2") return SD_VAE_FORMAT_FLUX2;
+    return SD_VAE_FORMAT_COUNT;
+}
+
 void sd_log_cb(enum sd_log_level_t level, const char* log, void* data) {
     SDSvrParams* svr_params = (SDSvrParams*)data;
     log_print(static_cast<DDLogLevel>(level), log, svr_params->verbose, svr_params->color);
@@ -262,6 +270,8 @@ sd_ctx_params_t SDContextParams::to_sd_ctx_params_t(bool vae_decode_only, bool f
     params.chroma_use_t5_mask = chroma_use_t5_mask;
     params.chroma_t5_mask_pad = chroma_t5_mask_pad;
     params.qwen_image_zero_cond_t = qwen_image_zero_cond_t;
+    params.vae_format = vae_format;
+    params.max_vram = max_vram;
 
     return params;
 }
@@ -372,6 +382,11 @@ bool SDGenerationParams::from_json_str(const std::string& json_str) {
     load_if_exists("seed", seed);
 
     load_if_exists("hires_fix", hires_fix);
+    load_if_exists("highres_pid_fix", highres_pid_fix);
+    load_if_exists("highres_pid_model", highres_pid_model);
+    load_if_exists("highres_pid_llm", highres_pid_llm);
+    load_if_exists("highres_pid_vae", highres_pid_vae);
+    load_if_exists("highres_pid_vae_format", highres_pid_vae_format);
     load_if_exists("hires_upscale_model", hires_upscale_model);
     load_if_exists("hires_upscale_factor", hires_upscale_factor);
     load_if_exists("hires_denoising_strength", hires_denoising_strength);
