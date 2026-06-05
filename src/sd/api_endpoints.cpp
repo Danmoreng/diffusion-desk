@@ -11,6 +11,8 @@
 #include <fstream>
 #include <thread>
 #include <unordered_map>
+#include <regex>
+#include <cctype>
 
 namespace fs = std::filesystem;
 
@@ -46,6 +48,31 @@ bool generation_job_status_terminal(GenerationJobStatus status) {
 int64_t unix_ms_now() {
     return std::chrono::duration_cast<std::chrono::milliseconds>(
         std::chrono::system_clock::now().time_since_epoch()).count();
+}
+
+std::string resolve_model_path(const std::string& path, const std::string& model_dir) {
+    if (path.empty()) return "";
+    fs::path fp(path);
+    if (fp.is_absolute()) return fp.string();
+    return (fs::path(model_dir) / fp).string();
+}
+
+float infer_pid_upscale_factor(const std::string& model_path) {
+    std::string name = fs::path(model_path).filename().string();
+    std::transform(name.begin(), name.end(), name.begin(), [](unsigned char c) {
+        return (char)std::tolower(c);
+    });
+
+    std::regex size_re(R"((\d+)_to_(\d+))");
+    std::smatch match;
+    if (std::regex_search(name, match, size_re) && match.size() == 3) {
+        try {
+            float src = std::stof(match[1].str());
+            float dst = std::stof(match[2].str());
+            if (src > 0.f && dst > src) return dst / src;
+        } catch (...) {}
+    }
+    return 4.f;
 }
 
 struct GenerationJobEvent {
@@ -1204,6 +1231,30 @@ void handle_generate_image(const httplib::Request& req, httplib::Response& res, 
             return;
         }
 
+        if (gen_params.highres_pid_fix) {
+            gen_params.highres_pid_model = resolve_model_path(gen_params.highres_pid_model, ctx.svr_params.model_dir);
+            gen_params.highres_pid_llm = resolve_model_path(gen_params.highres_pid_llm, ctx.svr_params.model_dir);
+            if (gen_params.highres_pid_vae.empty()) {
+                gen_params.highres_pid_vae = ctx.ctx_params.vae_path;
+            } else {
+                gen_params.highres_pid_vae = resolve_model_path(gen_params.highres_pid_vae, ctx.svr_params.model_dir);
+            }
+
+            if (!fs::exists(gen_params.highres_pid_model) ||
+                !fs::exists(gen_params.highres_pid_llm) ||
+                !fs::exists(gen_params.highres_pid_vae)) {
+                res.status = 400;
+                res.set_content(make_error_json("invalid_request", "Highres PiD is enabled, but one or more PiD model paths do not exist."), "application/json");
+                return;
+            }
+
+            if (sd_vae_format_from_string(gen_params.highres_pid_vae_format) == SD_VAE_FORMAT_COUNT) {
+                res.status = 400;
+                res.set_content(make_error_json("invalid_request", "highres_pid_vae_format must be one of auto, flux, sd3, or flux2."), "application/json");
+                return;
+            }
+        }
+
         DD_LOG_DEBUG("%s\n", gen_params.to_string().c_str());
 
         sd_image_t init_image    = {(uint32_t)gen_params.width, (uint32_t)gen_params.height, 3, nullptr};
@@ -1349,7 +1400,9 @@ void handle_generate_image(const httplib::Request& req, httplib::Response& res, 
             {
                 std::lock_guard<std::mutex> lock_prog(progress_state.mutex);
                 int sampling_steps = gen_params.sample_params.sample_steps;
-                if (gen_params.hires_fix) {
+                if (gen_params.highres_pid_fix) {
+                    progress_state.total_steps = sampling_steps + (4 * gen_params.batch_count);
+                } else if (gen_params.hires_fix) {
                     // One sampling pass for all batch + One hires pass for EACH image in batch
                     progress_state.total_steps = sampling_steps + (gen_params.hires_steps * gen_params.batch_count);
                 } else {
@@ -1431,7 +1484,125 @@ void handle_generate_image(const httplib::Request& req, httplib::Response& res, 
 
             DD_LOG_INFO("Generation done, num_results: %d, hires_fix: %s", num_results, gen_params.hires_fix ? "true" : "false");
 
-            if (gen_params.hires_fix && num_results > 0) {
+            if (gen_params.highres_pid_fix && num_results > 0) {
+                DD_LOG_INFO("Performing NVIDIA PiD highres upscale for %d images...", num_results);
+                set_progress_phase("Highres PiD Upscale...");
+
+                SDContextParams base_ctx_params = ctx.ctx_params;
+                SDContextParams pid_ctx_params = ctx.ctx_params;
+                pid_ctx_params.model_path = "";
+                pid_ctx_params.diffusion_model_path = gen_params.highres_pid_model;
+                pid_ctx_params.high_noise_diffusion_model_path = "";
+                pid_ctx_params.clip_l_path = "";
+                pid_ctx_params.clip_g_path = "";
+                pid_ctx_params.clip_vision_path = "";
+                pid_ctx_params.t5xxl_path = "";
+                pid_ctx_params.llm_path = gen_params.highres_pid_llm;
+                pid_ctx_params.llm_vision_path = "";
+                pid_ctx_params.vae_path = gen_params.highres_pid_vae;
+                pid_ctx_params.vae_format = sd_vae_format_from_string(gen_params.highres_pid_vae_format);
+                pid_ctx_params.diffusion_flash_attn = true;
+                pid_ctx_params.offload_params_to_cpu = true;
+                pid_ctx_params.clip_on_cpu = true;
+                pid_ctx_params.rng_type = CPU_RNG;
+                pid_ctx_params.sampler_rng_type = RNG_TYPE_COUNT;
+                pid_ctx_params.vae_tiling_params.enabled = true;
+                if (pid_ctx_params.vae_tiling_params.tile_size_x <= 0) {
+                    pid_ctx_params.vae_tiling_params.tile_size_x = 32;
+                    pid_ctx_params.vae_tiling_params.tile_size_y = 32;
+                }
+
+                ctx.sd_ctx.reset();
+                sd_ctx_params_t pid_ctx_raw = pid_ctx_params.to_sd_ctx_params_t(false, false, false);
+                SdCtxPtr pid_ctx(new_sd_ctx(&pid_ctx_raw));
+                if (!pid_ctx) {
+                    DD_LOG_ERROR("Failed to create PiD context.");
+                    sd_ctx_params_t base_ctx_raw = base_ctx_params.to_sd_ctx_params_t(false, false, false);
+                    ctx.sd_ctx.reset(new_sd_ctx(&base_ctx_raw));
+                    res.status = 500;
+                    res.set_content(make_error_json("generation_failed", "Failed to load NVIDIA PiD upscale context."), "application/json");
+                    free_sd_images(results, num_results);
+                    if (init_image.data) stbi_image_free(init_image.data);
+                    if (mask_image.data) stbi_image_free(mask_image.data);
+                    if (control_image.data) stbi_image_free(control_image.data);
+                    return;
+                }
+
+                sd_image_t* pid_results = (sd_image_t*)calloc(num_results, sizeof(sd_image_t));
+                bool pid_success = pid_results != nullptr;
+                float pid_factor = infer_pid_upscale_factor(gen_params.highres_pid_model);
+
+                for (int i = 0; i < num_results && pid_success; i++) {
+                    sd_image_t base_img = results[i];
+                    if (!base_img.data) {
+                        pid_success = false;
+                        break;
+                    }
+                    int pid_width = (int)std::round((float)base_img.width * pid_factor);
+                    int pid_height = (int)std::round((float)base_img.height * pid_factor);
+                    DD_LOG_INFO("PiD highres upscale target for image %d: %ux%u -> %dx%d",
+                                i + 1, base_img.width, base_img.height, pid_width, pid_height);
+
+                    sd_img_gen_params_t pid_params;
+                    sd_img_gen_params_init(&pid_params);
+                    pid_params.prompt = gen_params.prompt.c_str();
+                    pid_params.negative_prompt = "";
+                    pid_params.clip_skip = gen_params.clip_skip;
+                    pid_params.ref_images = &base_img;
+                    pid_params.ref_images_count = 1;
+                    pid_params.auto_resize_ref_image = true;
+                    pid_params.width = pid_width;
+                    pid_params.height = pid_height;
+                    pid_params.sample_params = gen_params.sample_params;
+                    pid_params.sample_params.sample_steps = 4;
+                    pid_params.sample_params.guidance.txt_cfg = 1.0f;
+                    pid_params.strength = 1.0f;
+                    pid_params.seed = gen_params.seed + i;
+                    pid_params.batch_count = 1;
+                    pid_params.vae_tiling_params = pid_ctx_params.vae_tiling_params;
+
+                    {
+                        std::lock_guard<std::mutex> lock_prog(progress_state.mutex);
+                        progress_state.sampling_steps = 4;
+                    }
+
+                    sd_image_t* pid_pass = generate_image(pid_ctx.get(), &pid_params);
+                    if (pid_pass && pid_pass[0].data && is_image_valid(pid_pass[0])) {
+                        pid_results[i] = pid_pass[0];
+                        free(pid_pass);
+                    } else {
+                        DD_LOG_ERROR("PiD highres upscale failed for image %d.", i + 1);
+                        if (pid_pass) free_sd_images(pid_pass, 1);
+                        pid_success = false;
+                    }
+
+                    {
+                        std::lock_guard<std::mutex> lock_prog(progress_state.mutex);
+                        progress_state.base_step += 4;
+                    }
+                }
+
+                pid_ctx.reset();
+                sd_ctx_params_t base_ctx_raw = base_ctx_params.to_sd_ctx_params_t(false, false, false);
+                ctx.sd_ctx.reset(new_sd_ctx(&base_ctx_raw));
+                if (!ctx.sd_ctx) {
+                    DD_LOG_WARN("Failed to restore base SD context after PiD stage. The next request may need to reload the preset.");
+                }
+
+                if (!pid_success) {
+                    free_sd_images(pid_results, num_results);
+                    res.status = 500;
+                    res.set_content(make_error_json("generation_failed", "NVIDIA PiD highres upscale failed."), "application/json");
+                    free_sd_images(results, num_results);
+                    if (init_image.data) stbi_image_free(init_image.data);
+                    if (mask_image.data) stbi_image_free(mask_image.data);
+                    if (control_image.data) stbi_image_free(control_image.data);
+                    return;
+                }
+
+                free_sd_images(results, num_results);
+                results = pid_results;
+            } else if (gen_params.hires_fix && num_results > 0) {
                 DD_LOG_INFO("Performing highres-fix for %d images...", num_results);
                 
                 if (!gen_params.hires_upscale_model.empty() && 

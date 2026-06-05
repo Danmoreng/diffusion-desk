@@ -25,6 +25,7 @@ enum SDMode {
 };
 
 std::string sd_basename(const std::string& path);
+sd_vae_format_t sd_vae_format_from_string(const std::string& value);
 
 // Resource Safety Wrappers for SD
 struct SdCtxDeleter {
@@ -83,6 +84,8 @@ struct SDContextParams {
     bool chroma_use_t5_mask  = false;
     int chroma_t5_mask_pad   = 1;
     bool qwen_image_zero_cond_t = false;
+    sd_vae_format_t vae_format = SD_VAE_FORMAT_AUTO;
+    float max_vram = 0.f;
 
     prediction_t prediction           = PREDICTION_COUNT;
     lora_apply_mode_t lora_apply_mode = LORA_APPLY_AUTO;
@@ -146,6 +149,11 @@ struct SDGenerationParams {
     bool clip_on_cpu = false;
 
     bool hires_fix = false;
+    bool highres_pid_fix = false;
+    std::string highres_pid_model;
+    std::string highres_pid_llm;
+    std::string highres_pid_vae;
+    std::string highres_pid_vae_format = "flux";
     std::string hires_upscale_model;
     float hires_upscale_factor = 2.0f;
     float hires_denoising_strength = 0.5f;
