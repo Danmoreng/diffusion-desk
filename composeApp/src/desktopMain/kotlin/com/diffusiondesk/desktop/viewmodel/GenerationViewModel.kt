@@ -2,7 +2,9 @@ package com.diffusiondesk.desktop.viewmodel
 
 import com.diffusiondesk.desktop.core.BackendManager
 import com.diffusiondesk.desktop.core.BackendStatus
+import com.diffusiondesk.desktop.core.DesktopSettingsStore
 import com.diffusiondesk.desktop.core.DiffusionDeskClient
+import com.diffusiondesk.desktop.core.GalleryRepository
 import com.diffusiondesk.desktop.core.GeneratedImage
 import com.diffusiondesk.desktop.core.GenerationJobEvent
 import com.diffusiondesk.desktop.core.GenerationRequest
@@ -10,13 +12,17 @@ import com.diffusiondesk.desktop.core.GenerationSettingsStore
 import com.diffusiondesk.desktop.core.GalleryReusableParams
 import com.diffusiondesk.desktop.core.ImagePreset
 import com.diffusiondesk.desktop.core.ImagePresetStore
+import com.diffusiondesk.desktop.core.ImageTaggingService
+import com.diffusiondesk.desktop.core.LlmPresetStore
 import com.diffusiondesk.desktop.core.SavedGenerationSettings
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.util.UUID
 import kotlin.math.roundToInt
 
@@ -131,6 +137,10 @@ class GenerationViewModel(
     private val client: DiffusionDeskClient,
     private val presetStore: ImagePresetStore,
     private val generationSettingsStore: GenerationSettingsStore,
+    private val settingsStore: DesktopSettingsStore,
+    private val llmPresetStore: LlmPresetStore,
+    private val galleryRepository: GalleryRepository,
+    private val imageTaggingService: ImageTaggingService,
 ) {
     private val _uiState = MutableStateFlow(generationSettingsStore.load().toUiState())
     val uiState: StateFlow<GenerationUiState> = _uiState.asStateFlow()
@@ -182,12 +192,6 @@ class GenerationViewModel(
             } else {
                 copy(
                     selectedPresetId = value,
-                    width = preset.defaultWidth.toString(),
-                    height = preset.defaultHeight.toString(),
-                    steps = preset.defaultSteps.toString(),
-                    cfgScale = preset.defaultCfgScale.toString(),
-                    sampler = resolveSamplerOption(preset.defaultSampler, samplerOptions) ?: sampler,
-                    negativePrompt = preset.defaultNegativePrompt,
                     message = "Selected ${preset.name}.",
                     presetLoadFailed = false,
                     error = null,
@@ -300,10 +304,8 @@ class GenerationViewModel(
     }
 
     fun reuseGalleryParams(params: GalleryReusableParams) {
-        val matchingPreset = findPresetForReusableParams(params)
         update {
             copy(
-                selectedPresetId = matchingPreset?.id ?: selectedPresetId,
                 prompt = params.prompt.ifBlank { prompt },
                 negativePrompt = params.negativePrompt,
                 width = params.width?.toString() ?: width,
@@ -315,17 +317,11 @@ class GenerationViewModel(
                 resultUrls = emptyList(),
                 images = emptyList(),
                 usedSeed = "",
-                message = if (matchingPreset != null) "Reused gallery image settings with ${matchingPreset.name}." else "Reused gallery image settings.",
+                message = "Reused gallery image settings.",
                 error = null,
             )
         }
         commitPrompt()
-        matchingPreset?.let {
-            presetStore.saveLastPresetId(it.id)
-            if (backendManager.state.value.status == BackendStatus.Ready && _uiState.value.loadedPresetId != it.id) {
-                loadSelectedPreset()
-            }
-        }
     }
 
     fun reloadPresets() {
@@ -611,6 +607,9 @@ class GenerationViewModel(
                             )
                         }
                     }
+                    if (item.params.saveImage && result.imageUrls.isNotEmpty()) {
+                        runAutoTaggingAfterGeneration(result.imageUrls.size)
+                    }
                 }.onFailure { error ->
                     resetProgressEstimator()
                     val message = error.message ?: "Failed to load generated image."
@@ -666,6 +665,34 @@ class GenerationViewModel(
         sampler = sampler,
         saveImage = saveImage,
     )
+
+    private suspend fun runAutoTaggingAfterGeneration(generatedImageCount: Int) {
+        val settings = settingsStore.load()
+        val presets = llmPresetStore.load()
+        val roles = llmPresetStore.loadRoles()
+        val preset = presets.firstOrNull { it.id == roles.taggingPresetId } ?: return
+        update { copy(message = "Image generated successfully. Tagging new image...") }
+        withContext(Dispatchers.IO) {
+            galleryRepository.indexOutputDirectory(settings.outputDir)
+        }
+        val result = imageTaggingService.tagPendingImages(
+            settings = settings,
+            preset = preset,
+            maxItems = generatedImageCount.coerceAtLeast(1),
+            refreshOutputIndex = false,
+        )
+        result.onSuccess { batch ->
+            val suffix = when {
+                batch.completed > 0 && batch.failed > 0 -> " Tagged ${batch.completed}, ${batch.failed} failed."
+                batch.completed > 0 -> " Tagged ${batch.completed}."
+                batch.failed > 0 -> " Tagging failed for ${batch.failed}."
+                else -> ""
+            }
+            update { copy(message = "Image generated successfully.$suffix") }
+        }.onFailure { error ->
+            update { copy(message = "Image generated successfully.", error = error.message ?: "Auto-tagging failed.") }
+        }
+    }
 
     private fun handleProgressEvent(event: GenerationJobEvent.Progress) {
         update {
@@ -862,20 +889,6 @@ class GenerationViewModel(
     private fun selectedPresetOrNull(): ImagePreset? {
         val state = _uiState.value
         return state.presets.firstOrNull { it.id == state.selectedPresetId }
-    }
-
-    private fun findPresetForReusableParams(params: GalleryReusableParams): ImagePreset? {
-        val state = _uiState.value
-        if (params.presetId.isNotBlank()) {
-            state.presets.firstOrNull { it.id == params.presetId }?.let { return it }
-        }
-        if (params.modelId.isBlank()) return null
-        val modelName = params.modelId.substringAfterLast('/').substringAfterLast('\\')
-        return state.presets.firstOrNull { preset ->
-            preset.diffusionModel == params.modelId ||
-                preset.diffusionModel.endsWith(params.modelId) ||
-                preset.diffusionModel.substringAfterLast('/').substringAfterLast('\\') == modelName
-        }
     }
 
     private fun update(transform: GenerationUiState.() -> GenerationUiState) {

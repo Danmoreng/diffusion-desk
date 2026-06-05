@@ -2,20 +2,26 @@ package com.diffusiondesk.desktop.viewmodel
 
 import com.diffusiondesk.desktop.core.BackendManager
 import com.diffusiondesk.desktop.core.BackendStatus
+import com.diffusiondesk.desktop.core.CommandLineArgs
 import com.diffusiondesk.desktop.core.DiffusionDeskClient
 import com.diffusiondesk.desktop.core.ImagePreset
 import com.diffusiondesk.desktop.core.ImagePresetStore
+import com.diffusiondesk.desktop.core.LlmPlacement
+import com.diffusiondesk.desktop.core.LlmPreset
+import com.diffusiondesk.desktop.core.LlmPresetStore
 import com.diffusiondesk.desktop.core.ModelSummary
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 
 enum class LibraryMode {
     List,
     Editor,
+    LlmList,
+    LlmEditor,
 }
 
 data class ImagePresetForm(
@@ -38,21 +44,34 @@ data class ImagePresetForm(
     val defaultNegativePrompt: String = "deformed, blurry, low quality, watermark",
 )
 
+data class LlmPresetForm(
+    val name: String = "",
+    val modelPath: String = "",
+    val mmprojPath: String = "",
+    val placement: LlmPlacement = LlmPlacement.Cpu,
+    val advancedArgs: String = "",
+)
+
 data class LibraryUiState(
     val mode: LibraryMode = LibraryMode.List,
     val presets: List<ImagePreset> = emptyList(),
+    val llmPresets: List<LlmPreset> = emptyList(),
     val modelSuggestions: List<ModelSummary> = emptyList(),
     val editingPresetId: String? = null,
+    val editingLlmPresetId: String? = null,
     val form: ImagePresetForm = ImagePresetForm(),
+    val llmForm: LlmPresetForm = LlmPresetForm(),
     val message: String = "",
     val error: String? = null,
 ) {
     val isEditing: Boolean get() = editingPresetId != null
+    val isEditingLlm: Boolean get() = editingLlmPresetId != null
 }
 
 class LibraryViewModel(
     private val scope: CoroutineScope,
     private val presetStore: ImagePresetStore,
+    private val llmPresetStore: LlmPresetStore,
     private val backendManager: BackendManager,
     private val client: DiffusionDeskClient,
 ) {
@@ -73,19 +92,26 @@ class LibraryViewModel(
     }
 
     fun reloadPresets() {
-        runCatching { presetStore.load() }
-            .onSuccess { presets ->
+        runCatching { presetStore.load() to llmPresetStore.load() }
+            .onSuccess { (presets, llmPresets) ->
                 update {
                     copy(
                         presets = presets,
-                        message = "Loaded ${presets.size} image preset(s) from ${presetStore.presetDir.absolutePath}.",
+                        llmPresets = llmPresets,
+                        message = "Loaded ${presets.size} image preset(s) and ${llmPresets.size} LLM preset(s).",
                         error = null,
                     )
                 }
             }
-            .onFailure { error ->
-                update { copy(error = error.message ?: "Failed to load image presets.") }
-            }
+            .onFailure { error -> update { copy(error = error.message ?: "Failed to load presets.") } }
+    }
+
+    fun showImagePresets() {
+        update { copy(mode = LibraryMode.List, editingLlmPresetId = null, error = null) }
+    }
+
+    fun showLlmPresets() {
+        update { copy(mode = LibraryMode.LlmList, editingPresetId = null, error = null) }
     }
 
     fun createPreset() {
@@ -94,6 +120,18 @@ class LibraryViewModel(
                 mode = LibraryMode.Editor,
                 editingPresetId = null,
                 form = ImagePresetForm(),
+                message = "",
+                error = null,
+            )
+        }
+    }
+
+    fun createLlmPreset() {
+        update {
+            copy(
+                mode = LibraryMode.LlmEditor,
+                editingLlmPresetId = null,
+                llmForm = LlmPresetForm(),
                 message = "",
                 error = null,
             )
@@ -117,12 +155,31 @@ class LibraryViewModel(
         }
     }
 
+    fun editLlmPreset(id: String) {
+        val preset = _uiState.value.llmPresets.firstOrNull { it.id == id }
+        if (preset == null) {
+            update { copy(error = "LLM preset not found: $id") }
+            return
+        }
+        update {
+            copy(
+                mode = LibraryMode.LlmEditor,
+                editingLlmPresetId = preset.id,
+                llmForm = preset.toForm(),
+                message = "",
+                error = null,
+            )
+        }
+    }
+
     fun cancelEditor() {
         update {
             copy(
-                mode = LibraryMode.List,
+                mode = if (mode == LibraryMode.LlmEditor) LibraryMode.LlmList else LibraryMode.List,
                 editingPresetId = null,
+                editingLlmPresetId = null,
                 form = ImagePresetForm(),
+                llmForm = LlmPresetForm(),
                 error = null,
             )
         }
@@ -132,11 +189,13 @@ class LibraryViewModel(
         update { copy(form = form, error = null) }
     }
 
+    fun updateLlmForm(form: LlmPresetForm) {
+        update { copy(llmForm = form, error = null) }
+    }
+
     private suspend fun reloadModelSuggestions(baseUrl: String) {
         client.fetchModels(baseUrl)
-            .onSuccess { models ->
-                update { copy(modelSuggestions = models) }
-            }
+            .onSuccess { models -> update { copy(modelSuggestions = models) } }
     }
 
     fun saveEditor(): Boolean {
@@ -165,9 +224,38 @@ class LibraryViewModel(
                 )
             }
             return true
-        }.onFailure { error ->
-            update { copy(error = error.message ?: "Failed to save image preset.") }
-        }
+        }.onFailure { error -> update { copy(error = error.message ?: "Failed to save image preset.") } }
+
+        return false
+    }
+
+    fun saveLlmEditor(): Boolean {
+        val state = _uiState.value
+        val preset = state.llmForm.toPreset(state.editingLlmPresetId, state.llmPresets)
+            .getOrElse { error ->
+                update { copy(error = error.message ?: "Invalid LLM preset.") }
+                return false
+            }
+
+        runCatching {
+            if (state.editingLlmPresetId != null && state.editingLlmPresetId != preset.id) {
+                llmPresetStore.delete(state.editingLlmPresetId)
+            }
+            llmPresetStore.save(preset)
+            llmPresetStore.load()
+        }.onSuccess { presets ->
+            update {
+                copy(
+                    mode = LibraryMode.LlmList,
+                    llmPresets = presets,
+                    editingLlmPresetId = null,
+                    llmForm = LlmPresetForm(),
+                    message = "Saved ${preset.name}.",
+                    error = null,
+                )
+            }
+            return true
+        }.onFailure { error -> update { copy(error = error.message ?: "Failed to save LLM preset.") } }
 
         return false
     }
@@ -186,9 +274,26 @@ class LibraryViewModel(
                 )
             }
             return true
-        }.onFailure { error ->
-            update { copy(error = error.message ?: "Failed to delete image preset.") }
-        }
+        }.onFailure { error -> update { copy(error = error.message ?: "Failed to delete image preset.") } }
+
+        return false
+    }
+
+    fun deleteLlmPreset(id: String): Boolean {
+        val preset = _uiState.value.llmPresets.firstOrNull { it.id == id }
+        runCatching {
+            llmPresetStore.delete(id)
+            llmPresetStore.load()
+        }.onSuccess { presets ->
+            update {
+                copy(
+                    llmPresets = presets,
+                    message = if (preset == null) "Deleted LLM preset." else "Deleted ${preset.name}.",
+                    error = null,
+                )
+            }
+            return true
+        }.onFailure { error -> update { copy(error = error.message ?: "Failed to delete LLM preset.") } }
 
         return false
     }
@@ -211,6 +316,14 @@ class LibraryViewModel(
         defaultCfgScale = defaultCfgScale.toString(),
         defaultSampler = defaultSampler,
         defaultNegativePrompt = defaultNegativePrompt,
+    )
+
+    private fun LlmPreset.toForm() = LlmPresetForm(
+        name = name,
+        modelPath = modelPath,
+        mmprojPath = mmprojPath,
+        placement = placement,
+        advancedArgs = advancedArgs,
     )
 
     private fun ImagePresetForm.toPreset(editingPresetId: String?, existingPresets: List<ImagePreset>): Result<ImagePreset> = runCatching {
@@ -243,23 +356,47 @@ class LibraryViewModel(
         )
     }
 
+    private fun LlmPresetForm.toPreset(editingPresetId: String?, existingPresets: List<LlmPreset>): Result<LlmPreset> = runCatching {
+        val trimmedName = name.trim()
+        require(trimmedName.isNotBlank()) { "Preset name is required." }
+        require(modelPath.trim().isNotBlank()) { "Model path is required." }
+        val args = CommandLineArgs.parse(advancedArgs).getOrThrow()
+        CommandLineArgs.validateNoReservedOptions(args).getOrThrow()
+
+        val baseId = editingPresetId ?: slugify(trimmedName)
+        val id = if (editingPresetId != null) baseId else uniqueLlmId(baseId, existingPresets)
+
+        LlmPreset(
+            id = id,
+            name = trimmedName,
+            modelPath = modelPath.trim(),
+            mmprojPath = mmprojPath.trim(),
+            placement = placement,
+            advancedArgs = advancedArgs,
+        )
+    }
+
     private fun slugify(value: String): String {
         val slug = value
             .lowercase()
             .replace(Regex("[^a-z0-9]+"), "-")
             .trim('-')
-        return slug.ifBlank { "image-preset" }
+        return slug.ifBlank { "preset" }
     }
 
     private fun uniqueId(baseId: String, existingPresets: List<ImagePreset>): String {
         val existingIds = existingPresets.map { it.id }.toSet()
-        if (baseId !in existingIds) {
-            return baseId
-        }
+        if (baseId !in existingIds) return baseId
         var index = 2
-        while ("$baseId-$index" in existingIds) {
-            index += 1
-        }
+        while ("$baseId-$index" in existingIds) index += 1
+        return "$baseId-$index"
+    }
+
+    private fun uniqueLlmId(baseId: String, existingPresets: List<LlmPreset>): String {
+        val existingIds = existingPresets.map { it.id }.toSet()
+        if (baseId !in existingIds) return baseId
+        var index = 2
+        while ("$baseId-$index" in existingIds) index += 1
         return "$baseId-$index"
     }
 

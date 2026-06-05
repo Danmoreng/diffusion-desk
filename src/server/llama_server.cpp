@@ -1,5 +1,6 @@
 #include "llama_server.hpp"
 #include "utils/common.hpp"
+#include "arg.h"
 #include "server-common.h"
 #include "ggml-backend.h"
 #include <iostream>
@@ -23,26 +24,62 @@ LlamaServer::~LlamaServer() {
     llama_backend_free();
 }
 
-bool LlamaServer::load_model(const std::string& model_path, const std::string& mmproj_path, int n_gpu_layers, int n_ctx, int image_max_tokens) {
+bool LlamaServer::load_model(
+        const std::string& model_path,
+        const std::string& mmproj_path,
+        int n_gpu_layers,
+        int n_ctx,
+        int image_max_tokens,
+        const std::vector<std::string>& advanced_args) {
     std::lock_guard<std::recursive_mutex> lock(state_mutex);
     stop();
 
     llama_params = common_params();
+    if (!advanced_args.empty()) {
+        std::vector<std::string> argv_storage;
+        argv_storage.reserve(advanced_args.size() + 1);
+        argv_storage.push_back("diffusion_desk_llm_worker");
+        for (const auto& arg : advanced_args) {
+            argv_storage.push_back(arg);
+        }
+
+        std::vector<char*> argv;
+        argv.reserve(argv_storage.size());
+        for (auto& arg : argv_storage) {
+            argv.push_back(arg.data());
+        }
+
+        if (!common_params_parse((int)argv.size(), argv.data(), llama_params, LLAMA_EXAMPLE_SERVER)) {
+            DD_LOG_ERROR("Failed to parse advanced llama.cpp arguments.");
+            return false;
+        }
+    }
+
     llama_params.model.path = model_path;
     if (!mmproj_path.empty()) {
         llama_params.mmproj.path = mmproj_path;
     }
-    llama_params.image_max_tokens = image_max_tokens;
+    if (image_max_tokens >= 0) {
+        llama_params.image_max_tokens = image_max_tokens;
+    }
 
     if (n_gpu_layers >= 0) {
         llama_params.n_gpu_layers = n_gpu_layers;
-    } else {
+    } else if (llama_params.n_gpu_layers == -1) {
         // Use GPU for the small LLM as it should fit alongside SD
         llama_params.n_gpu_layers = 99; 
     }
-    llama_params.n_ctx = n_ctx > 0 ? n_ctx : 2048;
-    llama_params.n_parallel = 1;
-    llama_params.n_predict = 512;
+    if (n_ctx > 0) {
+        llama_params.n_ctx = n_ctx;
+    } else if (llama_params.n_ctx <= 0) {
+        llama_params.n_ctx = 2048;
+    }
+    if (llama_params.n_parallel <= 0) {
+        llama_params.n_parallel = 1;
+    }
+    if (llama_params.n_predict <= 0) {
+        llama_params.n_predict = 512;
+    }
     llama_params.warmup = false;
     llama_params.fit_params = false; // Disable fitting to prevent crashes in multi-process env
     // llama_params.fit_params_target = 4ULL * 1024 * 1024 * 1024; 

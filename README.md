@@ -86,6 +86,7 @@ The Compose app expects the native worker and DLLs to exist in the repository or
 portable app root:
 
 - SD worker: `build/bin/diffusion_desk_sd_worker.exe`
+- LLM worker: `build/bin/diffusion_desk_llm_worker.exe`
 - Models: `models/`
 - Generated images: `outputs/`
 
@@ -94,6 +95,7 @@ Recommended model layout:
 - `models/stable-diffusion/`
 - `models/vae/`
 - `models/text-encoder/`
+- `models/llm/`
 - `models/lora/`
 
 ## Requirements

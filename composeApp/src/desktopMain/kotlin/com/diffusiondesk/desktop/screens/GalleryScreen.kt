@@ -86,6 +86,7 @@ fun GalleryScreen(
     state: GalleryUiState,
     outputDir: String,
     onRefresh: () -> Unit,
+    onTagAllPendingImages: () -> Unit,
     onQueryChange: (String) -> Unit,
     onSelectKeyword: (String) -> Unit,
     onClearKeywordFilter: () -> Unit,
@@ -138,6 +139,7 @@ fun GalleryScreen(
                     state = state,
                     outputDir = outputDir,
                     onRefresh = onRefresh,
+                    onTagAllPendingImages = onTagAllPendingImages,
                     onQueryChange = onQueryChange,
                     onSelectKeyword = onSelectKeyword,
                     onClearKeywordFilter = onClearKeywordFilter,
@@ -203,6 +205,7 @@ private fun GalleryToolbar(
     state: GalleryUiState,
     outputDir: String,
     onRefresh: () -> Unit,
+    onTagAllPendingImages: () -> Unit,
     onQueryChange: (String) -> Unit,
     onSelectKeyword: (String) -> Unit,
     onClearKeywordFilter: () -> Unit,
@@ -233,6 +236,12 @@ private fun GalleryToolbar(
                 icon = Icons.Default.Refresh,
                 contentDescription = "Refresh gallery",
                 onClick = onRefresh,
+                enabled = !state.isIndexing,
+            )
+            DeskIconButton(
+                icon = Icons.Default.ImageSearch,
+                contentDescription = "Tag untagged gallery images",
+                onClick = onTagAllPendingImages,
                 enabled = !state.isIndexing,
             )
         }

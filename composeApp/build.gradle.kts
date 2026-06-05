@@ -36,6 +36,12 @@ kotlin {
             implementation(libs.kotlinx.coroutines.swing)
             implementation(libs.sqlite.jdbc)
         }
+
+        val desktopTest by getting
+        desktopTest.dependencies {
+            implementation(kotlin("test"))
+            implementation(libs.sqlite.jdbc)
+        }
     }
 }
 

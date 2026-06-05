@@ -152,6 +152,9 @@ $backendBin = Join-Path $RepoRoot "build\bin"
 if (-not (Test-Path (Join-Path $backendBin "diffusion_desk_sd_worker.exe"))) {
     throw "Missing SD worker executable under $backendBin. Run scripts\build.ps1 first or omit -SkipNativeBuild."
 }
+if (-not (Test-Path (Join-Path $backendBin "diffusion_desk_llm_worker.exe"))) {
+    throw "Missing LLM worker executable under $backendBin. Run scripts\build.ps1 first or omit -SkipNativeBuild."
+}
 
 Write-Host "Step 2/4: Build Compose portable app image..." -ForegroundColor Cyan
 Invoke-Gradle @(":composeApp:createDistributable") -Retries $GradleRetries

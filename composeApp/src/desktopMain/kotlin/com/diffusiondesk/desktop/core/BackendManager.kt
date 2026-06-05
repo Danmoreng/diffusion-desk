@@ -29,6 +29,7 @@ data class BackendUiState(
 class BackendManager(
     private val scope: CoroutineScope,
     private val client: DiffusionDeskClient,
+    private val internalToken: String,
 ) {
     private val _state = MutableStateFlow(BackendUiState())
     val state: StateFlow<BackendUiState> = _state.asStateFlow()
@@ -64,7 +65,7 @@ class BackendManager(
         )
 
         return runCatching {
-            val newProcess = ProcessBuilder(
+            val args = mutableListOf(
                 executable.absolutePath,
                 "--listen-port", settings.listenPort.toString(),
                 "--listen-ip", "127.0.0.1",
@@ -72,6 +73,10 @@ class BackendManager(
                 "--output-dir", settings.outputDir,
                 "--verbose",
             )
+            if (internalToken.isNotBlank()) {
+                args += listOf("--internal-token", internalToken)
+            }
+            val newProcess = ProcessBuilder(args)
                 .directory(File(settings.repoRoot))
                 .redirectErrorStream(true)
                 .start()

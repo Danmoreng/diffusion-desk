@@ -114,25 +114,130 @@ class GalleryRepository(
     }
 
     fun addKeyword(imageId: Long, keyword: String) {
+        addKeyword(imageId, keyword, "manual")
+    }
+
+    fun addKeyword(imageId: Long, keyword: String, source: String) {
         val normalized = keyword.trim().lowercase(Locale.US)
         if (normalized.isBlank()) return
+        val normalizedSource = source.trim().ifBlank { "manual" }
         database.connection().use { conn ->
             conn.autoCommit = false
             try {
-                val keywordId = findOrCreateKeyword(conn, normalized)
-                conn.prepareStatement(
-                    "INSERT OR IGNORE INTO image_keywords(image_id, keyword_id, source) VALUES (?, ?, 'manual')",
-                ).use { statement ->
-                    statement.setLong(1, imageId)
-                    statement.setLong(2, keywordId)
-                    statement.executeUpdate()
-                }
+                addKeyword(conn, imageId, normalized, normalizedSource)
                 conn.commit()
             } catch (error: Throwable) {
                 conn.rollback()
                 throw error
             } finally {
                 conn.autoCommit = true
+            }
+        }
+    }
+
+    fun claimNextPendingLlmTag(presetId: String): GalleryImage? {
+        database.connection().use { conn ->
+            conn.autoCommit = false
+            try {
+                enqueuePendingLlmTagRows(conn)
+                val imageId = conn.prepareStatement(
+                    """
+                    SELECT q.image_id
+                    FROM llm_tagging_queue q
+                    JOIN images i ON i.id = q.image_id
+                    WHERE q.status = 'pending'
+                    ORDER BY i.created_at DESC, i.id DESC
+                    LIMIT 1
+                    """.trimIndent(),
+                ).use { statement ->
+                    statement.executeQuery().use { rs -> if (rs.next()) rs.getLong(1) else null }
+                }
+
+                if (imageId == null) {
+                    conn.commit()
+                    return null
+                }
+
+                conn.prepareStatement(
+                    """
+                    UPDATE llm_tagging_queue
+                    SET status = 'running', preset_id = ?, error = '', updated_at = ?
+                    WHERE image_id = ?
+                    """.trimIndent(),
+                ).use { statement ->
+                    statement.setString(1, presetId)
+                    statement.setLong(2, System.currentTimeMillis())
+                    statement.setLong(3, imageId)
+                    statement.executeUpdate()
+                }
+
+                val image = selectImageById(conn, imageId)
+                conn.commit()
+                return image
+            } catch (error: Throwable) {
+                conn.rollback()
+                throw error
+            } finally {
+                conn.autoCommit = true
+            }
+        }
+    }
+
+    fun completeLlmTagging(imageId: Long, presetId: String, tags: List<String>) {
+        database.connection().use { conn ->
+            conn.autoCommit = false
+            try {
+                tags.forEach { tag ->
+                    val normalized = tag.trim().lowercase(Locale.US)
+                    if (normalized.isNotBlank()) {
+                        addKeyword(conn, imageId, normalized, "llm")
+                    }
+                }
+                updateLlmTaggingStatus(conn, imageId, "completed", presetId, "")
+                conn.commit()
+            } catch (error: Throwable) {
+                conn.rollback()
+                throw error
+            } finally {
+                conn.autoCommit = true
+            }
+        }
+    }
+
+    fun failLlmTagging(imageId: Long, presetId: String, message: String) {
+        database.connection().use { conn ->
+            updateLlmTaggingStatus(conn, imageId, "failed", presetId, message.take(500))
+        }
+    }
+
+    fun listImagesPendingLlmTags(limit: Int = 1): List<GalleryImage> {
+        database.connection().use { conn ->
+            conn.prepareStatement(
+                """
+                SELECT i.id, i.file_path, i.preview_path, i.prompt, i.negative_prompt, i.seed, i.width, i.height,
+                       i.steps, i.cfg_scale, i.sampler, i.model_id, i.preset_id, i.generation_time,
+                       i.created_at, i.modified_at, i.metadata_text, i.favorite, i.rating,
+                       GROUP_CONCAT(k.name, char(31)) AS keywords
+                FROM images i
+                LEFT JOIN image_keywords ik ON ik.image_id = i.id
+                LEFT JOIN keywords k ON k.id = ik.keyword_id
+                WHERE NOT EXISTS (
+                    SELECT 1 FROM image_keywords tik
+                    WHERE tik.image_id = i.id AND tik.source = 'llm'
+                )
+                GROUP BY i.id
+                ORDER BY i.created_at DESC, i.id DESC
+                LIMIT ?
+                """.trimIndent(),
+            ).use { statement ->
+                statement.setInt(1, limit.coerceAtLeast(1))
+                statement.executeQuery().use { rs ->
+                    val rows = mutableListOf<GalleryImage>()
+                    while (rs.next()) {
+                        rows += rs.toGalleryImage()
+                    }
+                    return rows
+                }
             }
         }
     }
@@ -313,6 +418,87 @@ class GalleryRepository(
             .digest(value.toByteArray(Charsets.UTF_8))
             .joinToString("") { "%02x".format(it) }
             .take(24)
+    }
+
+    private fun enqueuePendingLlmTagRows(conn: Connection) {
+        val now = System.currentTimeMillis()
+        conn.prepareStatement(
+            """
+            INSERT OR IGNORE INTO llm_tagging_queue(image_id, status, created_at, updated_at)
+            SELECT i.id, 'pending', ?, ?
+            FROM images i
+            WHERE NOT EXISTS (
+                SELECT 1 FROM image_keywords tik
+                WHERE tik.image_id = i.id AND tik.source = 'llm'
+            )
+            """.trimIndent(),
+        ).use { statement ->
+            statement.setLong(1, now)
+            statement.setLong(2, now)
+            statement.executeUpdate()
+        }
+    }
+
+    private fun updateLlmTaggingStatus(
+        conn: Connection,
+        imageId: Long,
+        status: String,
+        presetId: String,
+        error: String,
+    ) {
+        val now = System.currentTimeMillis()
+        conn.prepareStatement(
+            """
+            INSERT INTO llm_tagging_queue(image_id, status, preset_id, error, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+            ON CONFLICT(image_id) DO UPDATE SET
+                status = excluded.status,
+                preset_id = excluded.preset_id,
+                error = excluded.error,
+                updated_at = excluded.updated_at
+            """.trimIndent(),
+        ).use { statement ->
+            statement.setLong(1, imageId)
+            statement.setString(2, status)
+            statement.setString(3, presetId)
+            statement.setString(4, error)
+            statement.setLong(5, now)
+            statement.setLong(6, now)
+            statement.executeUpdate()
+        }
+    }
+
+    private fun selectImageById(conn: Connection, imageId: Long): GalleryImage? {
+        conn.prepareStatement(
+            """
+            SELECT i.id, i.file_path, i.preview_path, i.prompt, i.negative_prompt, i.seed, i.width, i.height,
+                   i.steps, i.cfg_scale, i.sampler, i.model_id, i.preset_id, i.generation_time,
+                   i.created_at, i.modified_at, i.metadata_text, i.favorite, i.rating,
+                   GROUP_CONCAT(k.name, char(31)) AS keywords
+            FROM images i
+            LEFT JOIN image_keywords ik ON ik.image_id = i.id
+            LEFT JOIN keywords k ON k.id = ik.keyword_id
+            WHERE i.id = ?
+            GROUP BY i.id
+            """.trimIndent(),
+        ).use { statement ->
+            statement.setLong(1, imageId)
+            statement.executeQuery().use { rs ->
+                return if (rs.next()) rs.toGalleryImage() else null
+            }
+        }
+    }
+
+    private fun addKeyword(conn: Connection, imageId: Long, keyword: String, source: String) {
+        val keywordId = findOrCreateKeyword(conn, keyword)
+        conn.prepareStatement(
+            "INSERT OR IGNORE INTO image_keywords(image_id, keyword_id, source) VALUES (?, ?, ?)",
+        ).use { statement ->
+            statement.setLong(1, imageId)
+            statement.setLong(2, keywordId)
+            statement.setString(3, source)
+            statement.executeUpdate()
+        }
     }
 
     private fun findOrCreateKeyword(conn: Connection, keyword: String): Long {

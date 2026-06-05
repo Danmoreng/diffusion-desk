@@ -112,6 +112,7 @@ fun App(
                             state = galleryState,
                             outputDir = settingsState.outputDir,
                             onRefresh = { controller.galleryViewModel.refresh(settingsState.outputDir) },
+                            onTagAllPendingImages = controller.settingsViewModel::tagAllPendingImages,
                             onQueryChange = controller.galleryViewModel::updateQuery,
                             onSelectKeyword = controller.galleryViewModel::selectKeyword,
                             onClearKeywordFilter = controller.galleryViewModel::clearKeywordFilter,
@@ -145,12 +146,28 @@ fun App(
                             onReloadPresets = {
                                 controller.libraryViewModel.reloadPresets()
                                 controller.generationViewModel.reloadPresets()
+                                controller.settingsViewModel.reloadLlmPresets()
                             },
+                            onShowImagePresets = controller.libraryViewModel::showImagePresets,
+                            onShowLlmPresets = controller.libraryViewModel::showLlmPresets,
                             onCancelEditor = controller.libraryViewModel::cancelEditor,
                             onFormChange = controller.libraryViewModel::updateForm,
+                            onLlmFormChange = controller.libraryViewModel::updateLlmForm,
                             onSavePreset = {
                                 if (controller.libraryViewModel.saveEditor()) {
                                     controller.generationViewModel.reloadPresets()
+                                }
+                            },
+                            onCreateLlmPreset = controller.libraryViewModel::createLlmPreset,
+                            onEditLlmPreset = controller.libraryViewModel::editLlmPreset,
+                            onDeleteLlmPreset = { id ->
+                                if (controller.libraryViewModel.deleteLlmPreset(id)) {
+                                    controller.settingsViewModel.reloadLlmPresets()
+                                }
+                            },
+                            onSaveLlmPreset = {
+                                if (controller.libraryViewModel.saveLlmEditor()) {
+                                    controller.settingsViewModel.reloadLlmPresets()
                                 }
                             },
                         )
@@ -168,8 +185,18 @@ fun App(
                             onSaveLocal = controller.settingsViewModel::saveLocalSettings,
                             onStartBackend = controller.settingsViewModel::startBackend,
                             onStopBackend = controller.settingsViewModel::stopBackend,
+                            onUnloadImageModel = controller.settingsViewModel::unloadImageModel,
                             onApplyToBackend = controller.settingsViewModel::applySettingsToBackend,
                             onReloadFromBackend = controller.settingsViewModel::loadConfigFromBackend,
+                            onReloadLlmPresets = controller.settingsViewModel::reloadLlmPresets,
+                            onTaggingPresetChange = controller.settingsViewModel::updateTaggingPresetId,
+                            onAssistantPresetChange = controller.settingsViewModel::updateAssistantPresetId,
+                            onPromptEnhancerPresetChange = controller.settingsViewModel::updatePromptEnhancerPresetId,
+                            onLoadLlmRole = controller.settingsViewModel::loadLlmRole,
+                            onUnloadLlmPreset = controller.settingsViewModel::unloadLlmPreset,
+                            onStopLlmWorker = controller.settingsViewModel::stopLlmWorker,
+                            onStopAllLlmWorkers = controller.settingsViewModel::stopAllLlmWorkers,
+                            onTagNextImage = controller.settingsViewModel::tagNextImage,
                         )
                     }
                 }
