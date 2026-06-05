@@ -25,6 +25,7 @@ data class SettingsUiState(
     val themeMode: String,
     val actionBarPosition: String,
     val saveImagesAutomatically: Boolean,
+    val galleryPreviewWidthDp: Int,
     val isBusy: Boolean = false,
     val message: String = "",
     val error: String? = null,
@@ -49,6 +50,7 @@ class SettingsViewModel(
     fun updateThemeMode(value: String) = updateAndSave { copy(themeMode = value) }
     fun updateActionBarPosition(value: String) = updateAndSave { copy(actionBarPosition = value) }
     fun updateSaveImagesAutomatically(value: Boolean) = updateAndSave { copy(saveImagesAutomatically = value) }
+    fun updateGalleryPreviewWidth(value: Int) = updateAndSave { copy(galleryPreviewWidthDp = value.coerceIn(320, 760)) }
 
     fun toggleThemeMode() {
         updateThemeMode(
@@ -185,6 +187,7 @@ class SettingsViewModel(
             themeMode = state.themeMode,
             actionBarPosition = state.actionBarPosition,
             saveImagesAutomatically = state.saveImagesAutomatically,
+            galleryPreviewWidthDp = state.galleryPreviewWidthDp.coerceIn(320, 760),
         )
     }
 
@@ -197,6 +200,7 @@ class SettingsViewModel(
         themeMode = themeMode,
         actionBarPosition = actionBarPosition,
         saveImagesAutomatically = saveImagesAutomatically,
+        galleryPreviewWidthDp = galleryPreviewWidthDp,
     )
 
     private fun update(transform: SettingsUiState.() -> SettingsUiState) {

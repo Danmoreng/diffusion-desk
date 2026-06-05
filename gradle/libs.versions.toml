@@ -5,6 +5,7 @@ kotlin = "2.3.20"
 coroutines = "1.8.1"
 serialization = "1.7.3"
 jewel = "0.37.0-262.4852.51"
+sqlite-jdbc = "3.49.1.0"
 
 [libraries]
 androidx-lifecycle-viewmodel-compose = "org.jetbrains.androidx.lifecycle:lifecycle-viewmodel-compose:2.8.0"
@@ -12,6 +13,7 @@ kotlinx-coroutines-core = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-c
 kotlinx-coroutines-swing = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-swing", version.ref = "coroutines" }
 kotlinx-serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json", version.ref = "serialization" }
 jewel-int-ui-standalone = { module = "org.jetbrains.jewel:jewel-int-ui-standalone", version.ref = "jewel" }
+sqlite-jdbc = { module = "org.xerial:sqlite-jdbc", version.ref = "sqlite-jdbc" }
 
 [plugins]
 jetbrainsCompose = { id = "org.jetbrains.compose", version.ref = "compose-plugin" }
