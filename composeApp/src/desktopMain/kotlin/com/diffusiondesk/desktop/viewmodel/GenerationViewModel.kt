@@ -872,7 +872,7 @@ class GenerationViewModel(
         const val RESOLUTION_STEP = 16
         const val MIN_BATCH_COUNT = 1
         const val MAX_BATCH_COUNT = 8
-        const val MIN_LEFT_PANEL_WIDTH_DP = 380
+        const val MIN_LEFT_PANEL_WIDTH_DP = 480
         const val MAX_LEFT_PANEL_WIDTH_DP = 900
         private const val RECENT_STEP_TIME_WINDOW = 5
         private const val PROGRESS_STAGE_PREPARE = "prepare"

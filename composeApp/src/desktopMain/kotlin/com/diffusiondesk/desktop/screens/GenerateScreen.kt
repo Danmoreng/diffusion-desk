@@ -160,7 +160,7 @@ fun GenerateScreen(
                 .weight(1f)
                 .padding(8.dp),
         ) {
-            val minPanelWidth = 380.dp
+            val minPanelWidth = 480.dp
             val maxPanelWidth = minOf(900.dp, (maxWidth - 280.dp).coerceAtLeast(minPanelWidth))
             val density = LocalDensity.current
             var panelWidthDp by remember { mutableStateOf(state.leftPanelWidthDp.toFloat()) }
@@ -377,9 +377,9 @@ private fun GenerationPanel(
                 )
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                CompactNumberField("Steps", state.steps, onStepsChange, Modifier.weight(0.8f), step = 1.0, minValue = 1.0)
-                CompactNumberField("Batch", state.batchCount, onBatchCountChange, Modifier.weight(0.8f), step = 1.0, minValue = 1.0)
-                CompactNumberField("Seed", state.seed, onSeedChange, Modifier.weight(1.1f), step = 1.0)
+                CompactNumberField("Steps", state.steps, onStepsChange, Modifier.weight(0.8f).widthIn(min = 104.dp), step = 1.0, minValue = 1.0)
+                CompactNumberField("Batch", state.batchCount, onBatchCountChange, Modifier.weight(0.8f).widthIn(min = 104.dp), step = 1.0, minValue = 1.0)
+                CompactNumberField("Seed", state.seed, onSeedChange, Modifier.weight(1.1f).widthIn(min = 126.dp), step = 1.0)
                 CompactIconButton(
                     icon = Icons.Default.Casino,
                     contentDescription = "Random seed",
@@ -393,18 +393,18 @@ private fun GenerationPanel(
                 )
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                CompactNumberField("Width", state.width, onWidthChange, Modifier.weight(1f), step = 16.0, minValue = 64.0)
+                CompactNumberField("Width", state.width, onWidthChange, Modifier.weight(1f).widthIn(min = 126.dp), step = 16.0, minValue = 64.0)
                 CompactIconButton(
                     icon = Icons.Default.SwapHoriz,
                     contentDescription = "Swap dimensions",
                     onClick = onSwapDimensions,
                 )
-                CompactNumberField("Height", state.height, onHeightChange, Modifier.weight(1f), step = 16.0, minValue = 64.0)
+                CompactNumberField("Height", state.height, onHeightChange, Modifier.weight(1f).widthIn(min = 126.dp), step = 16.0, minValue = 64.0)
                 AspectRatioMenu(
                     width = state.width,
                     height = state.height,
                     onApplyAspectRatio = onApplyAspectRatio,
-                    modifier = Modifier.weight(0.78f),
+                    modifier = Modifier.weight(0.78f).widthIn(min = 92.dp),
                 )
             }
             ResolutionSlider(
@@ -412,12 +412,12 @@ private fun GenerationPanel(
                 onScaleResolution = onScaleResolution,
             )
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                CompactNumberField("CFG", state.cfgScale, onCfgScaleChange, Modifier.weight(1f), step = 0.1, minValue = 0.0, decimalPlaces = 1)
+                CompactNumberField("CFG", state.cfgScale, onCfgScaleChange, Modifier.weight(1f).widthIn(min = 118.dp), step = 0.1, minValue = 0.0, decimalPlaces = 1)
                 SamplerMenu(
                     value = state.sampler,
                     options = samplerOptions,
                     onChange = onSamplerChange,
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier.weight(1f).widthIn(min = 160.dp),
                 )
             }
         }
@@ -1097,7 +1097,8 @@ private fun CompactNumberField(
                 onValueChange = onChange,
                 modifier = Modifier
                     .weight(1f)
-                    .padding(end = 4.dp),
+                    .widthIn(min = 30.dp)
+                    .padding(end = 3.dp),
                 singleLine = true,
                 textStyle = MaterialTheme.typography.bodyMedium.copy(color = MaterialTheme.colorScheme.onSurface),
                 cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
@@ -1121,7 +1122,7 @@ private fun NumberStepper(
 ) {
     Column(
         modifier = Modifier
-            .width(24.dp)
+            .width(20.dp)
             .fillMaxHeight(),
     ) {
         NumberStepperButton(
@@ -1156,7 +1157,7 @@ private fun NumberStepperButton(
             imageVector = icon,
             contentDescription = contentDescription,
             tint = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.size(16.dp),
+            modifier = Modifier.size(14.dp),
         )
     }
 }
@@ -1184,6 +1185,7 @@ private fun stepNumberValue(
 private fun CompactFieldFrame(
     label: String,
     modifier: Modifier = Modifier,
+    labelMinWidth: Dp = 50.dp,
     content: @Composable () -> Unit,
 ) {
     val shape = RoundedCornerShape(5.dp)
@@ -1198,21 +1200,23 @@ private fun CompactFieldFrame(
         Box(
             modifier = Modifier
                 .fillMaxHeight()
-                .width(58.dp)
+                .widthIn(min = labelMinWidth)
                 .background(MaterialTheme.colorScheme.surfaceVariant),
             contentAlignment = Alignment.CenterStart,
         ) {
             Text(
                 text = label,
-                modifier = Modifier.padding(start = 10.dp),
+                modifier = Modifier.padding(start = 10.dp, end = 10.dp),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
             )
         }
         Box(
             modifier = Modifier
                 .weight(1f)
-                .padding(horizontal = 10.dp),
+                .padding(start = 10.dp, end = 8.dp),
             contentAlignment = Alignment.CenterStart,
         ) {
             content()
