@@ -28,7 +28,7 @@ class AppController {
 
     val settingsViewModel = SettingsViewModel(scope, settingsStore, backendManager, client)
     val generationViewModel = GenerationViewModel(scope, backendManager, client, presetStore, generationSettingsStore)
-    val libraryViewModel = LibraryViewModel(presetStore)
+    val libraryViewModel = LibraryViewModel(scope, presetStore, backendManager, client)
     val galleryViewModel = GalleryViewModel(scope, galleryRepository)
 
     init {

@@ -48,6 +48,7 @@ import androidx.compose.ui.unit.dp
 import com.diffusiondesk.desktop.core.BackendStatus
 import com.diffusiondesk.desktop.core.BackendUiState
 import com.diffusiondesk.desktop.core.ImagePreset
+import com.diffusiondesk.desktop.core.ModelSummary
 import com.diffusiondesk.desktop.viewmodel.ImagePresetForm
 import com.diffusiondesk.desktop.viewmodel.LibraryMode
 import com.diffusiondesk.desktop.viewmodel.LibraryUiState
@@ -356,6 +357,11 @@ private fun ImagePresetEditorPage(
     onFormChange: (ImagePresetForm) -> Unit,
     onSavePreset: () -> Unit,
 ) {
+    val mainModelOptions = modelOptionsFor(state.modelSuggestions, "stable-diffusion", "diffusion_models", "unet", "root")
+    val vaeOptions = modelOptionsFor(state.modelSuggestions, "vae")
+    val textEncoderOptions = modelOptionsFor(state.modelSuggestions, "text-encoder", "text_encoders", "clip")
+    val llmOptions = modelOptionsFor(state.modelSuggestions, "llm", "text-encoder", "text_encoders")
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -416,48 +422,54 @@ private fun ImagePresetEditorPage(
             }
 
             EditorSection("Model Components") {
-                LabeledField(
+                ModelPathField(
                     label = "UNet / Main Model (required)",
                     value = state.form.diffusionModel,
+                    options = mainModelOptions,
                     onValueChange = { onFormChange(state.form.copy(diffusionModel = it)) },
-                    placeholder = "stable-diffusion/model.gguf",
+                    placeholder = "stable-diffusion/model.gguf or D:\\models\\model.gguf",
                     modifier = Modifier.fillMaxWidth(),
                 )
                 TwoColumnRow {
-                    LabeledField(
+                    ModelPathField(
                         label = "VAE (optional)",
                         value = state.form.vae,
+                        options = vaeOptions,
                         onValueChange = { onFormChange(state.form.copy(vae = it)) },
                         placeholder = "vae/ae.safetensors",
                         modifier = Modifier.weight(1f),
                     )
-                    LabeledField(
+                    ModelPathField(
                         label = "T5 / Text Encoder 2 (optional)",
                         value = state.form.t5xxl,
+                        options = textEncoderOptions,
                         onValueChange = { onFormChange(state.form.copy(t5xxl = it)) },
                         placeholder = "text-encoder/t5.gguf",
                         modifier = Modifier.weight(1f),
                     )
                 }
                 TwoColumnRow {
-                    LabeledField(
+                    ModelPathField(
                         label = "LLM Text Encoder 3 (optional)",
                         value = state.form.llm,
+                        options = llmOptions,
                         onValueChange = { onFormChange(state.form.copy(llm = it)) },
                         placeholder = "text-encoder/qwen.gguf",
                         modifier = Modifier.weight(1f),
                     )
-                    LabeledField(
+                    ModelPathField(
                         label = "CLIP L (optional)",
                         value = state.form.clipL,
+                        options = textEncoderOptions,
                         onValueChange = { onFormChange(state.form.copy(clipL = it)) },
                         placeholder = "clip/clip_l.gguf",
                         modifier = Modifier.weight(1f),
                     )
                 }
-                LabeledField(
+                ModelPathField(
                     label = "CLIP G (optional)",
                     value = state.form.clipG,
+                    options = textEncoderOptions,
                     onValueChange = { onFormChange(state.form.copy(clipG = it)) },
                     placeholder = "clip/clip_g.gguf",
                     modifier = Modifier.fillMaxWidth(),
@@ -545,6 +557,18 @@ private fun ImagePresetEditorPage(
     }
 }
 
+private fun modelOptionsFor(models: List<ModelSummary>, vararg types: String): List<String> {
+    val acceptedTypes = types.toSet()
+    return models
+        .asSequence()
+        .filter { it.type in acceptedTypes }
+        .map { it.id }
+        .filter { it.isNotBlank() }
+        .distinct()
+        .sorted()
+        .toList()
+}
+
 @Composable
 private fun EditorSection(
     title: String,
@@ -592,6 +616,25 @@ private fun LabeledField(
         placeholder = placeholder,
         modifier = modifier,
         singleLine = singleLine,
+    )
+}
+
+@Composable
+private fun ModelPathField(
+    label: String,
+    value: String,
+    options: List<String>,
+    onValueChange: (String) -> Unit,
+    placeholder: String,
+    modifier: Modifier = Modifier,
+) {
+    DeskSearchableTextDropdownField(
+        label = label,
+        value = value,
+        options = options,
+        onValueChange = onValueChange,
+        placeholder = placeholder,
+        modifier = modifier,
     )
 }
 

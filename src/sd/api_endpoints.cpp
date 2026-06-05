@@ -729,9 +729,13 @@ void handle_get_models(const httplib::Request&, httplib::Response& res, ServerCo
 
     try {
         scan_dir("stable-diffusion");
+        scan_dir("diffusion_models");
+        scan_dir("unet");
         scan_dir("lora");
         scan_dir("vae");
         scan_dir("text-encoder");
+        scan_dir("text_encoders");
+        scan_dir("clip");
         scan_dir("llm");
         scan_dir("esrgan");
         
@@ -765,11 +769,11 @@ void handle_load_model(const httplib::Request& req, httplib::Response& res, Serv
         diffusion_desk::json body = diffusion_desk::json::parse(req.body);
         if (!body.contains("model_id")) {
             res.status = 400;
-            res.set_content(make_error_json("invalid_request", "model_id (relative path) required"), "application/json");
+            res.set_content(make_error_json("invalid_request", "model_id path required"), "application/json");
             return;
         }
         std::string model_id = body["model_id"];
-        fs::path model_path = fs::path(ctx.svr_params.model_dir) / model_id;
+        fs::path model_path = resolve_model_path(model_id, ctx.svr_params.model_dir);
         
         if (!fs::exists(model_path)) {
             res.status = 404;

@@ -29,6 +29,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.onGloballyPositioned
@@ -171,6 +172,101 @@ internal fun DeskDropdownField(
 }
 
 @Composable
+internal fun DeskSearchableTextDropdownField(
+    label: String,
+    value: String,
+    options: List<String>,
+    onValueChange: (String) -> Unit,
+    modifier: Modifier = Modifier,
+    placeholder: String = "",
+) {
+    var focused by remember { mutableStateOf(false) }
+    var expanded by remember { mutableStateOf(false) }
+    var anchorSize by remember { mutableStateOf(IntSize.Zero) }
+    val query = value.trim()
+    val filteredOptions = remember(options, query) {
+        val normalizedQuery = query.lowercase()
+        options
+            .filter { option -> normalizedQuery.isBlank() || option.lowercase().contains(normalizedQuery) }
+            .take(10)
+    }
+
+    Column(
+        modifier = modifier,
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        if (label.isNotBlank()) {
+            DeskLabel(label)
+        }
+        Box(
+            modifier = Modifier.onGloballyPositioned { anchorSize = it.size },
+        ) {
+            DeskInputFrame(minHeight = 34.dp) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(start = 9.dp, end = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    BasicTextField(
+                        value = value,
+                        onValueChange = {
+                            onValueChange(it)
+                            expanded = true
+                        },
+                        modifier = Modifier
+                            .weight(1f)
+                            .onFocusChanged {
+                                focused = it.isFocused
+                                if (it.isFocused) expanded = true
+                            },
+                        singleLine = true,
+                        textStyle = MaterialTheme.typography.bodyMedium.copy(color = MaterialTheme.colorScheme.onSurface),
+                        cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                        decorationBox = { innerTextField ->
+                            Box(
+                                modifier = Modifier.fillMaxWidth(),
+                                contentAlignment = Alignment.CenterStart,
+                            ) {
+                                if (value.isEmpty() && placeholder.isNotBlank()) {
+                                    Text(
+                                        text = placeholder,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
+                                }
+                                innerTextField()
+                            }
+                        },
+                    )
+                    Icon(
+                        imageVector = Icons.Default.ArrowDropDown,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier
+                            .size(18.dp)
+                            .clickable { expanded = true },
+                    )
+                }
+            }
+            DeskDropdownPopup(
+                expanded = focused && expanded && filteredOptions.isNotEmpty(),
+                anchorSize = anchorSize,
+                options = filteredOptions,
+                focusable = false,
+                onDismissRequest = { expanded = false },
+                onSelect = {
+                    onValueChange(it)
+                    expanded = false
+                },
+            )
+        }
+    }
+}
+
+@Composable
 internal fun DeskIconButton(
     icon: ImageVector,
     contentDescription: String,
@@ -238,6 +334,7 @@ private fun DeskDropdownPopup(
     expanded: Boolean,
     anchorSize: IntSize,
     options: List<String>,
+    focusable: Boolean = true,
     onDismissRequest: () -> Unit,
     onSelect: (String) -> Unit,
 ) {
@@ -252,7 +349,7 @@ private fun DeskDropdownPopup(
     Popup(
         popupPositionProvider = DeskDropdownPositionProvider(gapPx),
         onDismissRequest = onDismissRequest,
-        properties = PopupProperties(focusable = true),
+        properties = PopupProperties(focusable = focusable),
     ) {
         Column(
             modifier = Modifier

@@ -1,10 +1,17 @@
 package com.diffusiondesk.desktop.viewmodel
 
+import com.diffusiondesk.desktop.core.BackendManager
+import com.diffusiondesk.desktop.core.BackendStatus
+import com.diffusiondesk.desktop.core.DiffusionDeskClient
 import com.diffusiondesk.desktop.core.ImagePreset
 import com.diffusiondesk.desktop.core.ImagePresetStore
+import com.diffusiondesk.desktop.core.ModelSummary
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
 
 enum class LibraryMode {
     List,
@@ -34,6 +41,7 @@ data class ImagePresetForm(
 data class LibraryUiState(
     val mode: LibraryMode = LibraryMode.List,
     val presets: List<ImagePreset> = emptyList(),
+    val modelSuggestions: List<ModelSummary> = emptyList(),
     val editingPresetId: String? = null,
     val form: ImagePresetForm = ImagePresetForm(),
     val message: String = "",
@@ -43,13 +51,25 @@ data class LibraryUiState(
 }
 
 class LibraryViewModel(
+    private val scope: CoroutineScope,
     private val presetStore: ImagePresetStore,
+    private val backendManager: BackendManager,
+    private val client: DiffusionDeskClient,
 ) {
     private val _uiState = MutableStateFlow(LibraryUiState())
     val uiState: StateFlow<LibraryUiState> = _uiState.asStateFlow()
 
     init {
         reloadPresets()
+        scope.launch {
+            backendManager.state.collectLatest { backend ->
+                if (backend.status == BackendStatus.Ready) {
+                    reloadModelSuggestions(backend.baseUrl)
+                } else {
+                    update { copy(modelSuggestions = emptyList()) }
+                }
+            }
+        }
     }
 
     fun reloadPresets() {
@@ -110,6 +130,13 @@ class LibraryViewModel(
 
     fun updateForm(form: ImagePresetForm) {
         update { copy(form = form, error = null) }
+    }
+
+    private suspend fun reloadModelSuggestions(baseUrl: String) {
+        client.fetchModels(baseUrl)
+            .onSuccess { models ->
+                update { copy(modelSuggestions = models) }
+            }
     }
 
     fun saveEditor(): Boolean {
