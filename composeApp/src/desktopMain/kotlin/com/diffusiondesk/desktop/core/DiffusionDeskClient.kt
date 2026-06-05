@@ -453,8 +453,8 @@ class DiffusionDeskClient(
                         ),
                     ),
                 )
-                put("temperature", JsonPrimitive(0.1))
-                put("response_format", buildJsonObject { put("type", JsonPrimitive("json_object")) })
+                put("temperature", JsonPrimitive(0.0))
+                put("response_format", imageTagsResponseFormat())
                 put("stream", JsonPrimitive(false))
             }
 
@@ -468,6 +468,46 @@ class DiffusionDeskClient(
             check(response.statusCode() in 200..299) { response.body().ifBlank { "Vision chat completion failed with ${response.statusCode()}" } }
             parseChatContent(json.parseToJsonElement(response.body()).jsonObject)
         }
+    }
+
+    private fun imageTagsResponseFormat() = buildJsonObject {
+        put("type", JsonPrimitive("json_schema"))
+        put(
+            "json_schema",
+            buildJsonObject {
+                put("name", JsonPrimitive("image_tags"))
+                put("strict", JsonPrimitive(true))
+                put(
+                    "schema",
+                    buildJsonObject {
+                        put("type", JsonPrimitive("object"))
+                        put("additionalProperties", JsonPrimitive(false))
+                        put("required", JsonArray(listOf(JsonPrimitive("tags"))))
+                        put(
+                            "properties",
+                            buildJsonObject {
+                                put(
+                                    "tags",
+                                    buildJsonObject {
+                                        put("type", JsonPrimitive("array"))
+                                        put("minItems", JsonPrimitive(8))
+                                        put("maxItems", JsonPrimitive(12))
+                                        put(
+                                            "items",
+                                            buildJsonObject {
+                                                put("type", JsonPrimitive("string"))
+                                                put("minLength", JsonPrimitive(2))
+                                                put("maxLength", JsonPrimitive(40))
+                                            },
+                                        )
+                                    },
+                                )
+                            },
+                        )
+                    },
+                )
+            },
+        )
     }
 
     suspend fun generateImage(baseUrl: String, requestData: GenerationRequest): Result<GenerationResult> = withContext(Dispatchers.IO) {

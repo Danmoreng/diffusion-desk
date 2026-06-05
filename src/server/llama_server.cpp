@@ -69,6 +69,12 @@ bool LlamaServer::load_model(
         // Use GPU for the small LLM as it should fit alongside SD
         llama_params.n_gpu_layers = 99; 
     }
+    if (llama_params.n_gpu_layers == 0) {
+        llama_params.mmproj_use_gpu = false;
+        llama_params.no_kv_offload = true;
+        llama_params.no_op_offload = true;
+        llama_params.devices.clear();
+    }
     if (n_ctx > 0) {
         llama_params.n_ctx = n_ctx;
     } else if (llama_params.n_ctx <= 0) {
@@ -84,8 +90,14 @@ bool LlamaServer::load_model(
     llama_params.fit_params = false; // Disable fitting to prevent crashes in multi-process env
     // llama_params.fit_params_target = 4ULL * 1024 * 1024 * 1024; 
 
-    DD_LOG_INFO("Initializing LLM server context: ctx=%d, parallel=%d, predict=%d, gpu_layers=%d", 
-             llama_params.n_ctx, llama_params.n_parallel, llama_params.n_predict, llama_params.n_gpu_layers);
+    DD_LOG_INFO("Initializing LLM server context: ctx=%d, parallel=%d, predict=%d, gpu_layers=%d, mmproj_gpu=%s, kv_offload=%s, op_offload=%s",
+             llama_params.n_ctx,
+             llama_params.n_parallel,
+             llama_params.n_predict,
+             llama_params.n_gpu_layers,
+             llama_params.mmproj_use_gpu ? "true" : "false",
+             llama_params.no_kv_offload ? "false" : "true",
+             llama_params.no_op_offload ? "false" : "true");
 
     server_ctx = std::make_unique<server_context>();
     try {

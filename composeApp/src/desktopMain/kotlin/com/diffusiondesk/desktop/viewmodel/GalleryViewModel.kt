@@ -3,6 +3,9 @@ package com.diffusiondesk.desktop.viewmodel
 import com.diffusiondesk.desktop.core.GalleryImage
 import com.diffusiondesk.desktop.core.GalleryRepository
 import com.diffusiondesk.desktop.core.GalleryReusableParams
+import com.diffusiondesk.desktop.core.DesktopSettingsStore
+import com.diffusiondesk.desktop.core.ImageTaggingService
+import com.diffusiondesk.desktop.core.LlmPresetStore
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -19,6 +22,7 @@ data class GalleryUiState(
     val selectedKeyword: String = "",
     val keywordDraft: String = "",
     val isIndexing: Boolean = false,
+    val isTaggingSelectedImage: Boolean = false,
     val message: String = "",
     val error: String? = null,
 ) {
@@ -28,6 +32,9 @@ data class GalleryUiState(
 class GalleryViewModel(
     private val scope: CoroutineScope,
     private val repository: GalleryRepository,
+    private val settingsStore: DesktopSettingsStore,
+    private val llmPresetStore: LlmPresetStore,
+    private val imageTaggingService: ImageTaggingService,
 ) {
     private val _uiState = MutableStateFlow(GalleryUiState())
     val uiState: StateFlow<GalleryUiState> = _uiState.asStateFlow()
@@ -114,6 +121,45 @@ class GalleryViewModel(
             }.onFailure { error ->
                 update { copy(error = error.message ?: "Failed to remove keyword.") }
             }
+        }
+    }
+
+    fun tagSelectedImage() {
+        val image = _uiState.value.selectedImage ?: return
+        scope.launch {
+            val settings = settingsStore.load()
+            val roles = llmPresetStore.loadRoles()
+            val preset = llmPresetStore.load().firstOrNull { it.id == roles.taggingPresetId }
+            if (preset == null) {
+                update { copy(error = "Select a tagging LLM preset first.") }
+                return@launch
+            }
+
+            update { copy(isTaggingSelectedImage = true, message = "Tagging ${image.displayName}...", error = null) }
+            imageTaggingService.tagImage(settings, preset, image)
+                .onSuccess { result ->
+                    loadCachedList(keepIndexing = _uiState.value.isIndexing)
+                    update {
+                        copy(
+                            isTaggingSelectedImage = false,
+                            selectedImageId = result.imageId,
+                            message = if (result.tags.isEmpty()) {
+                                "No new keywords found for ${result.imageName}."
+                            } else {
+                                "Added ${result.tags.size} keyword(s): ${result.tags.joinToString(", ")}"
+                            },
+                            error = null,
+                        )
+                    }
+                }
+                .onFailure { error ->
+                    update {
+                        copy(
+                            isTaggingSelectedImage = false,
+                            error = error.message ?: "Failed to tag selected image.",
+                        )
+                    }
+                }
         }
     }
 

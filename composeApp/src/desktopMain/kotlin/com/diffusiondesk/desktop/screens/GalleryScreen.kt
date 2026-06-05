@@ -94,6 +94,7 @@ fun GalleryScreen(
     onKeywordDraftChange: (String) -> Unit,
     onAddKeyword: () -> Unit,
     onRemoveKeyword: (Long, String) -> Unit,
+    onTagSelectedImage: () -> Unit,
     previewPanelWidthDp: Int,
     onPreviewPanelWidthChange: (Int) -> Unit,
     onReuseImage: (GalleryImage) -> Unit,
@@ -188,9 +189,11 @@ fun GalleryScreen(
             GalleryDetails(
                 image = state.selectedImage,
                 keywordDraft = state.keywordDraft,
+                isTaggingSelectedImage = state.isTaggingSelectedImage,
                 onKeywordDraftChange = onKeywordDraftChange,
                 onAddKeyword = onAddKeyword,
                 onRemoveKeyword = onRemoveKeyword,
+                onTagSelectedImage = onTagSelectedImage,
                 onReuseImage = onReuseImage,
                 modifier = Modifier
                     .width(previewWidth)
@@ -210,6 +213,8 @@ private fun GalleryToolbar(
     onSelectKeyword: (String) -> Unit,
     onClearKeywordFilter: () -> Unit,
 ) {
+    var keywordFilterDraft by remember(state.selectedKeyword) { mutableStateOf("") }
+
     DeskPanel(modifier = Modifier.fillMaxWidth()) {
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -269,27 +274,21 @@ private fun GalleryToolbar(
             )
         }
 
-        if (state.keywords.isNotEmpty()) {
-            FlowRow(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                verticalArrangement = Arrangement.spacedBy(6.dp),
-            ) {
-                if (state.selectedKeyword.isNotBlank()) {
-                    KeywordChip(
-                        text = "All",
-                        selected = false,
-                        onClick = onClearKeywordFilter,
-                    )
-                }
-                state.keywords.forEach { keyword ->
-                    KeywordChip(
-                        text = keyword,
-                        selected = keyword == state.selectedKeyword,
-                        onClick = { onSelectKeyword(keyword) },
-                    )
-                }
-            }
+        if (state.keywords.isNotEmpty() || state.selectedKeyword.isNotBlank()) {
+            GalleryKeywordFilter(
+                keywords = state.keywords,
+                selectedKeyword = state.selectedKeyword,
+                draft = keywordFilterDraft,
+                onDraftChange = { keywordFilterDraft = it },
+                onSelectKeyword = {
+                    onSelectKeyword(it)
+                    keywordFilterDraft = ""
+                },
+                onClearKeywordFilter = {
+                    onClearKeywordFilter()
+                    keywordFilterDraft = ""
+                },
+            )
         }
 
         state.error?.let {
@@ -297,6 +296,53 @@ private fun GalleryToolbar(
                 text = it,
                 color = MaterialTheme.colorScheme.error,
                 style = MaterialTheme.typography.bodySmall,
+            )
+        }
+    }
+}
+
+@Composable
+private fun GalleryKeywordFilter(
+    keywords: List<String>,
+    selectedKeyword: String,
+    draft: String,
+    onDraftChange: (String) -> Unit,
+    onSelectKeyword: (String) -> Unit,
+    onClearKeywordFilter: () -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = "Keywords",
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            fontWeight = FontWeight.SemiBold,
+            maxLines = 1,
+        )
+        if (selectedKeyword.isNotBlank()) {
+            KeywordChip(
+                text = selectedKeyword,
+                selected = true,
+                onClick = onClearKeywordFilter,
+            )
+        }
+        DeskSearchableTextDropdownField(
+            label = "",
+            value = draft,
+            options = keywords.filterNot { it == selectedKeyword },
+            onValueChange = onDraftChange,
+            onOptionSelected = onSelectKeyword,
+            placeholder = "+ Add filter",
+            modifier = Modifier.widthIn(min = 190.dp, max = 340.dp),
+        )
+        if (selectedKeyword.isNotBlank()) {
+            DeskIconButton(
+                icon = Icons.Default.Close,
+                contentDescription = "Clear keyword filter",
+                onClick = onClearKeywordFilter,
             )
         }
     }
@@ -468,9 +514,11 @@ private fun GalleryTile(
 private fun GalleryDetails(
     image: GalleryImage?,
     keywordDraft: String,
+    isTaggingSelectedImage: Boolean,
     onKeywordDraftChange: (String) -> Unit,
     onAddKeyword: () -> Unit,
     onRemoveKeyword: (Long, String) -> Unit,
+    onTagSelectedImage: () -> Unit,
     onReuseImage: (GalleryImage) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -516,6 +564,12 @@ private fun GalleryDetails(
                     icon = Icons.Default.FolderOpen,
                     contentDescription = "Show image in folder",
                     onClick = { showInFolder(image.file) },
+                )
+                DeskIconButton(
+                    icon = Icons.Default.ImageSearch,
+                    contentDescription = "Tag selected image with LLM",
+                    onClick = onTagSelectedImage,
+                    enabled = !isTaggingSelectedImage,
                 )
             }
 

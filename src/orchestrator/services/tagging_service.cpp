@@ -4,12 +4,65 @@
 #include <iostream>
 #include <fstream>
 #include <chrono>
+#include <algorithm>
+#include <cctype>
+#include <sstream>
+#include <vector>
 
 namespace diffusion_desk {
 
 static bool str_ends_with(const std::string& str, const std::string& suffix) {
     return str.size() >= suffix.size() && 
            str.compare(str.size() - suffix.size(), suffix.size(), suffix) == 0;
+}
+
+static std::string trim_tag_token(std::string value) {
+    for (char& ch : value) {
+        if (ch == '{' || ch == '}' || ch == '[' || ch == ']' || ch == '"') {
+            ch = ' ';
+        }
+    }
+    auto is_trim_char = [](unsigned char ch) {
+        return std::isspace(ch) || ch == '-' || ch == '*' || ch == '.' || ch == ':';
+    };
+    value.erase(value.begin(), std::find_if(value.begin(), value.end(), [&](unsigned char ch) { return !is_trim_char(ch); }));
+    value.erase(std::find_if(value.rbegin(), value.rend(), [&](unsigned char ch) { return !is_trim_char(ch); }).base(), value.end());
+
+    std::string lowered;
+    lowered.reserve(value.size());
+    for (unsigned char ch : value) {
+        lowered.push_back(static_cast<char>(std::tolower(ch)));
+    }
+
+    const std::vector<std::string> prefixes = {"tags=", "tags:", "keywords=", "keywords:"};
+    for (const auto& prefix : prefixes) {
+        if (lowered.rfind(prefix, 0) == 0) {
+            lowered = lowered.substr(prefix.size());
+            lowered.erase(lowered.begin(), std::find_if(lowered.begin(), lowered.end(), [&](unsigned char ch) { return !is_trim_char(ch); }));
+            break;
+        }
+    }
+    return lowered;
+}
+
+static std::vector<std::string> split_tag_text(const std::string& value) {
+    std::string normalized = value;
+    for (char& ch : normalized) {
+        if (ch == ';' || ch == '|' || ch == '\n' || ch == '\r') {
+            ch = ',';
+        }
+    }
+
+    std::vector<std::string> tags;
+    std::stringstream stream(normalized);
+    std::string token;
+    while (std::getline(stream, token, ',')) {
+        std::string tag = trim_tag_token(token);
+        if (tag.size() >= 2 && tag.size() <= 40 && tag != "tags" && tag != "keywords") {
+            tags.push_back(tag);
+        }
+    }
+    return tags;
 }
 
 TaggingService::TaggingService(std::shared_ptr<Database> db, int llm_port, int orchestrator_port, const std::string& token, const std::string& system_prompt)
@@ -352,7 +405,7 @@ void TaggingService::loop() {
             if (!loaded_mmproj.empty()) {
                 // Vision Request
                 diffusion_desk::json user_content = diffusion_desk::json::array();
-                user_content.push_back({{"type", "text"}, {"text", "Analyze this image and provide descriptive tags (Subject, Style, Mood). Return JSON."}});
+                user_content.push_back({{"type", "text"}, {"text", "Extract the requested fields from this image."}});
                 user_content.push_back({{"type", "image_url"}, {"image_url", {{"url", data_uri}}}});
                 chat_req["messages"].push_back({{"role", "user"}, {"content", user_content}});
                 std::cout << "[Tagging Service] Tagging image ID " << id << " (Vision)..." << std::endl;
@@ -362,8 +415,31 @@ void TaggingService::loop() {
                 std::cout << "[Tagging Service] Tagging image ID " << id << " (Text-Only)..." << std::endl;
             }
 
-            chat_req["temperature"] = 0.1;
-            chat_req["response_format"] = {{"type", "json_object"}};
+            chat_req["temperature"] = 0.0;
+            chat_req["response_format"] = {
+                {"type", "json_schema"},
+                {"json_schema", {
+                    {"name", "image_tags"},
+                    {"strict", true},
+                    {"schema", {
+                        {"type", "object"},
+                        {"additionalProperties", false},
+                        {"required", diffusion_desk::json::array({"tags"})},
+                        {"properties", {
+                            {"tags", {
+                                {"type", "array"},
+                                {"minItems", 8},
+                                {"maxItems", 12},
+                                {"items", {
+                                    {"type", "string"},
+                                    {"minLength", 2},
+                                    {"maxLength", 40}
+                                }}
+                            }}
+                        }}
+                    }}
+                }}
+            };
             
             cli.set_read_timeout(120);
             
@@ -387,29 +463,46 @@ void TaggingService::loop() {
 
                     if (!json_part.empty()) {
                         auto tags_json = diffusion_desk::json::parse(json_part);
-                        diffusion_desk::json tags_arr = diffusion_desk::json::array();
+                        std::vector<std::string> tags;
 
                         if (tags_json.is_array()) {
-                            tags_arr = tags_json;
+                            for (const auto& tag_val : tags_json) {
+                                if (tag_val.is_string()) {
+                                    auto split = split_tag_text(tag_val.get<std::string>());
+                                    tags.insert(tags.end(), split.begin(), split.end());
+                                }
+                            }
                         } else if (tags_json.is_object()) {
                             if (tags_json.contains("tags") && tags_json["tags"].is_array()) {
-                                tags_arr = tags_json["tags"];
+                                for (const auto& tag_val : tags_json["tags"]) {
+                                    if (tag_val.is_string()) {
+                                        auto split = split_tag_text(tag_val.get<std::string>());
+                                        tags.insert(tags.end(), split.begin(), split.end());
+                                    }
+                                }
+                            } else if (tags_json.contains("tags") && tags_json["tags"].is_string()) {
+                                auto split = split_tag_text(tags_json["tags"].get<std::string>());
+                                tags.insert(tags.end(), split.begin(), split.end());
                             } else {
-                                // Take first array found in object
                                 for (auto& el : tags_json.items()) {
                                     if (el.value().is_array()) {
-                                        tags_arr = el.value();
-                                        break;
+                                        for (const auto& tag_val : el.value()) {
+                                            if (tag_val.is_string()) {
+                                                auto split = split_tag_text(tag_val.get<std::string>());
+                                                tags.insert(tags.end(), split.begin(), split.end());
+                                            }
+                                        }
+                                    } else if (el.value().is_string()) {
+                                        auto split = split_tag_text(el.value().get<std::string>());
+                                        tags.insert(tags.end(), split.begin(), split.end());
                                     }
                                 }
                             }
                         }
 
-                        if (tags_arr.is_array() && !tags_arr.empty()) {
+                        if (!tags.empty()) {
                             int count = 0;
-                            for (const auto& tag_val : tags_arr) {
-                                if (!tag_val.is_string()) continue;
-                                std::string tag = tag_val.get<std::string>();
+                            for (const auto& tag : tags) {
                                 if (tag.length() < 2) continue;
                                 m_db->add_tag_by_id(id, tag, "llm_vision");
                                 count++;

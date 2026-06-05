@@ -12,6 +12,7 @@ import java.io.File
 import java.net.InetSocketAddress
 import java.net.ServerSocket
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 
 enum class LlmWorkerStatus {
     Stopped,
@@ -64,9 +65,11 @@ class LlmWorkerPool(
     val state: StateFlow<List<LlmWorkerState>> = _state.asStateFlow()
 
     private val workers = mutableMapOf<String, ManagedWorker>()
+    private val closing = AtomicBoolean(false)
 
     suspend fun ensureWorkerForPreset(settings: DesktopSettings, preset: LlmPreset): Result<LlmWorkerHandle> {
         return runCatching {
+            check(!closing.get()) { "LLM worker pool is closing." }
             val parsedArgs = parsedArgsFor(preset)
             val signature = signatureFor(preset, parsedArgs)
             workers[signature]?.takeIf { it.process.isAlive }?.let { existing ->
@@ -118,6 +121,11 @@ class LlmWorkerPool(
                 .directory(File(settings.repoRoot))
                 .redirectErrorStream(true)
                 .start()
+
+            if (closing.get()) {
+                destroyProcess(process)
+                error("LLM worker pool is closing.")
+            }
 
             val logJob = watchLogs(signature, process)
             val monitorJob = monitorProcess(signature, process)
@@ -173,16 +181,12 @@ class LlmWorkerPool(
     }
 
     fun close() {
+        closing.set(true)
         workers.toMap().forEach { (id, worker) ->
             worker.logJob.cancel()
             worker.monitorJob.cancel()
             runCatching { client.shutdownLlmWorkerBlocking(baseUrl(worker.port)) }
-            if (worker.process.isAlive) {
-                worker.process.destroy()
-                if (!worker.process.waitFor(3, TimeUnit.SECONDS)) {
-                    worker.process.destroyForcibly()
-                }
-            }
+            destroyProcess(worker.process)
             workers.remove(id)
         }
         _state.value = emptyList()
@@ -192,12 +196,7 @@ class LlmWorkerPool(
         worker.logJob.cancel()
         worker.monitorJob.cancel()
         runCatching { client.shutdownLlmWorker(baseUrl(worker.port)).getOrThrow() }
-        if (worker.process.isAlive) {
-            worker.process.destroy()
-            if (!worker.process.waitFor(3, TimeUnit.SECONDS)) {
-                worker.process.destroyForcibly()
-            }
-        }
+        destroyProcess(worker.process)
         workers.remove(id)
         if (notify) {
             updateWorker(id) {
@@ -328,6 +327,15 @@ class LlmWorkerPool(
     }
 
     private fun baseUrl(port: Int): String = "http://127.0.0.1:$port"
+
+    private fun destroyProcess(process: Process) {
+        if (process.isAlive) {
+            process.destroy()
+            if (!process.waitFor(3, TimeUnit.SECONDS)) {
+                process.destroyForcibly()
+            }
+        }
+    }
 
     private fun updateWorkerState(workerState: LlmWorkerState) {
         _state.value = _state.value

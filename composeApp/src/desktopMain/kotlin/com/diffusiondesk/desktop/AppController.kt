@@ -20,6 +20,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.swing.Swing
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.UUID
 
 class AppController {
@@ -49,15 +50,21 @@ class AppController {
         imageTaggingService,
     )
     val libraryViewModel = LibraryViewModel(scope, presetStore, llmPresetStore, backendManager, client)
-    val galleryViewModel = GalleryViewModel(scope, galleryRepository)
+    val galleryViewModel = GalleryViewModel(scope, galleryRepository, settingsStore, llmPresetStore, imageTaggingService)
+    private val closed = AtomicBoolean(false)
+    private val shutdownHook = Thread({ close() }, "diffusion-desk-shutdown")
 
     init {
+        Runtime.getRuntime().addShutdownHook(shutdownHook)
         settingsViewModel.startBackend()
     }
 
     fun close() {
+        if (!closed.compareAndSet(false, true)) {
+            return
+        }
+        scope.cancel()
         llmWorkerPool.close()
         backendManager.close()
-        scope.cancel()
     }
 }

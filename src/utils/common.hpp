@@ -153,7 +153,9 @@ struct SDSvrParams {
     int sd_idle_timeout = 600; 
     int safe_mode_crashes = 2;
     std::string internal_token;
-    std::string tagger_system_prompt = "You are a specialized image tagging engine. Output a JSON object with a 'tags' key containing an array of 5-8 descriptive tags (Subject, Style, Mood). Example: {\"tags\": [\"cat\", \"forest\", \"ethereal\"]}. Output ONLY valid JSON.";
+    std::string tagger_system_prompt = "Extract the following fields from the image:\n\n"
+        "tags: A JSON array of 8 to 12 concise lowercase gallery search keywords covering the main subject, specific visible objects, medium or style, composition, lighting, background, mood, and any readable text. Prefer visually specific tags over generic category labels.\n\n"
+        "Respond with only a JSON object. Do not include any text outside the JSON.";
     std::string assistant_system_prompt = "You are an integrated creative assistant for DiffusionDesk. You help users refine their artistic vision, improve prompts, and organize their library. You can control the application through tools. Be concise, professional, and inspiring.";
     std::string style_extractor_system_prompt = "You are an expert art style analyzer. Analyze the given image prompt and extract distinct art styles, artists, or aesthetic descriptors. Return a JSON object with a 'styles' key containing an array of objects. Each style object must have 'name' (concise style name), 'prompt' (keywords to append, MUST include '{prompt}' placeholder), and 'negative_prompt' (optional tags to avoid). Example: {\"styles\": [{\"name\": \"Cyberpunk\", \"prompt\": \"{prompt}, cyberpunk, neon lights\", \"negative_prompt\": \"organic\"}]}";
     bool normal_exit      = false;

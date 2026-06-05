@@ -120,6 +120,7 @@ fun App(
                             onKeywordDraftChange = controller.galleryViewModel::updateKeywordDraft,
                             onAddKeyword = controller.galleryViewModel::addKeywordToSelected,
                             onRemoveKeyword = controller.galleryViewModel::removeKeyword,
+                            onTagSelectedImage = controller.galleryViewModel::tagSelectedImage,
                             previewPanelWidthDp = settingsState.galleryPreviewWidthDp,
                             onPreviewPanelWidthChange = controller.settingsViewModel::updateGalleryPreviewWidth,
                             onReuseImage = { image ->
