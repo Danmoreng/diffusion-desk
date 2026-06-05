@@ -10,6 +10,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import java.io.File
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 
 enum class BackendStatus {
     Stopped,
@@ -36,8 +37,12 @@ class BackendManager(
 
     private var process: Process? = null
     private var logJob: Job? = null
+    private val closing = AtomicBoolean(false)
 
     suspend fun start(settings: DesktopSettings): Result<Unit> {
+        if (closing.get()) {
+            return Result.failure(IllegalStateException("Image worker manager is closing."))
+        }
         if (process?.isAlive == true && _state.value.status == BackendStatus.Ready) {
             return Result.success(Unit)
         }
@@ -81,6 +86,11 @@ class BackendManager(
                 .redirectErrorStream(true)
                 .start()
 
+            if (closing.get()) {
+                destroyProcess(newProcess)
+                throw IllegalStateException("Image worker manager is closing.")
+            }
+
             process = newProcess
             watchLogs(newProcess)
 
@@ -119,6 +129,7 @@ class BackendManager(
     }
 
     suspend fun stop() {
+        closing.set(false)
         logJob?.cancel()
         logJob = null
 
@@ -126,14 +137,7 @@ class BackendManager(
             client.shutdownImageWorker(_state.value.baseUrl)
         }
 
-        process?.let { running ->
-            if (running.isAlive) {
-                running.destroy()
-                if (!running.waitFor(3, TimeUnit.SECONDS)) {
-                    running.destroyForcibly()
-                }
-            }
-        }
+        process?.let(::destroyProcess)
         process = null
 
         _state.value = _state.value.copy(
@@ -144,6 +148,7 @@ class BackendManager(
     }
 
     fun close() {
+        closing.set(true)
         logJob?.cancel()
         logJob = null
 
@@ -151,15 +156,17 @@ class BackendManager(
             runCatching { client.shutdownImageWorkerBlocking(_state.value.baseUrl) }
         }
 
-        process?.let { running ->
-            if (running.isAlive) {
-                running.destroy()
-                if (!running.waitFor(3, TimeUnit.SECONDS)) {
-                    running.destroyForcibly()
-                }
+        process?.let(::destroyProcess)
+        process = null
+    }
+
+    private fun destroyProcess(running: Process) {
+        if (running.isAlive) {
+            running.destroy()
+            if (!running.waitFor(3, TimeUnit.SECONDS)) {
+                running.destroyForcibly()
             }
         }
-        process = null
     }
 
     private fun watchLogs(process: Process) {

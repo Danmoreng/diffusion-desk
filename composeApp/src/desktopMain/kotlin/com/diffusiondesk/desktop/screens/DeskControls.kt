@@ -179,6 +179,7 @@ internal fun DeskSearchableTextDropdownField(
     onValueChange: (String) -> Unit,
     modifier: Modifier = Modifier,
     placeholder: String = "",
+    onOptionSelected: ((String) -> Unit)? = null,
 ) {
     var focused by remember { mutableStateOf(false) }
     var expanded by remember { mutableStateOf(false) }
@@ -258,7 +259,7 @@ internal fun DeskSearchableTextDropdownField(
                 focusable = false,
                 onDismissRequest = { expanded = false },
                 onSelect = {
-                    onValueChange(it)
+                    (onOptionSelected ?: onValueChange)(it)
                     expanded = false
                 },
             )
