@@ -67,9 +67,23 @@ class GalleryDatabase(
                     )
                     """.trimIndent(),
                 )
+                statement.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS llm_tagging_queue (
+                        image_id INTEGER PRIMARY KEY,
+                        status TEXT NOT NULL DEFAULT 'pending',
+                        preset_id TEXT NOT NULL DEFAULT '',
+                        error TEXT NOT NULL DEFAULT '',
+                        created_at INTEGER NOT NULL,
+                        updated_at INTEGER NOT NULL,
+                        FOREIGN KEY(image_id) REFERENCES images(id) ON DELETE CASCADE
+                    )
+                    """.trimIndent(),
+                )
                 statement.execute("CREATE INDEX IF NOT EXISTS idx_images_created_at ON images(created_at DESC)")
                 statement.execute("CREATE INDEX IF NOT EXISTS idx_images_prompt ON images(prompt)")
                 statement.execute("CREATE INDEX IF NOT EXISTS idx_keywords_name ON keywords(name)")
+                statement.execute("CREATE INDEX IF NOT EXISTS idx_llm_tagging_status ON llm_tagging_queue(status, updated_at)")
             }
         }
     }

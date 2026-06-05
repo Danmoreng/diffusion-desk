@@ -20,6 +20,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.diffusiondesk.desktop.core.BackendStatus
 import com.diffusiondesk.desktop.core.BackendUiState
+import com.diffusiondesk.desktop.core.LlmWorkerStatus
 import com.diffusiondesk.desktop.viewmodel.SettingsUiState
 import org.jetbrains.jewel.ui.component.Checkbox
 import org.jetbrains.jewel.ui.component.DefaultButton as Button
@@ -40,8 +41,18 @@ fun SettingsScreen(
     onSaveLocal: () -> Unit,
     onStartBackend: () -> Unit,
     onStopBackend: () -> Unit,
+    onUnloadImageModel: () -> Unit,
     onApplyToBackend: () -> Unit,
     onReloadFromBackend: () -> Unit,
+    onReloadLlmPresets: () -> Unit,
+    onTaggingPresetChange: (String) -> Unit,
+    onAssistantPresetChange: (String) -> Unit,
+    onPromptEnhancerPresetChange: (String) -> Unit,
+    onLoadLlmRole: (String) -> Unit,
+    onUnloadLlmPreset: (String) -> Unit,
+    onStopLlmWorker: (String) -> Unit,
+    onStopAllLlmWorkers: () -> Unit,
+    onTagNextImage: () -> Unit,
 ) {
     BoxWithConstraints(
         modifier = Modifier
@@ -74,6 +85,19 @@ fun SettingsScreen(
                         backendState = backendState,
                         onStartBackend = onStartBackend,
                         onStopBackend = onStopBackend,
+                        onUnloadImageModel = onUnloadImageModel,
+                    )
+                    LlmSection(
+                        state = state,
+                        onReloadLlmPresets = onReloadLlmPresets,
+                        onTaggingPresetChange = onTaggingPresetChange,
+                        onAssistantPresetChange = onAssistantPresetChange,
+                        onPromptEnhancerPresetChange = onPromptEnhancerPresetChange,
+                        onLoadLlmRole = onLoadLlmRole,
+                        onUnloadLlmPreset = onUnloadLlmPreset,
+                        onStopLlmWorker = onStopLlmWorker,
+                        onStopAllLlmWorkers = onStopAllLlmWorkers,
+                        onTagNextImage = onTagNextImage,
                     )
                 }
 
@@ -113,6 +137,19 @@ fun SettingsScreen(
                     backendState = backendState,
                     onStartBackend = onStartBackend,
                     onStopBackend = onStopBackend,
+                    onUnloadImageModel = onUnloadImageModel,
+                )
+                LlmSection(
+                    state = state,
+                    onReloadLlmPresets = onReloadLlmPresets,
+                    onTaggingPresetChange = onTaggingPresetChange,
+                    onAssistantPresetChange = onAssistantPresetChange,
+                    onPromptEnhancerPresetChange = onPromptEnhancerPresetChange,
+                    onLoadLlmRole = onLoadLlmRole,
+                    onUnloadLlmPreset = onUnloadLlmPreset,
+                    onStopLlmWorker = onStopLlmWorker,
+                    onStopAllLlmWorkers = onStopAllLlmWorkers,
+                    onTagNextImage = onTagNextImage,
                 )
                 DesktopSettingsSection(
                     state = state,
@@ -197,6 +234,7 @@ private fun WorkerSection(
     backendState: BackendUiState,
     onStartBackend: () -> Unit,
     onStopBackend: () -> Unit,
+    onUnloadImageModel: () -> Unit,
 ) {
     SectionCard(
         title = "Image Worker",
@@ -221,6 +259,136 @@ private fun WorkerSection(
             ) {
                 Text("Stop Worker")
             }
+            Button(
+                onClick = onUnloadImageModel,
+                enabled = !state.isBusy && backendState.status == BackendStatus.Ready,
+            ) {
+                Text("Unload Model")
+            }
+        }
+    }
+}
+
+@Composable
+private fun LlmSection(
+    state: SettingsUiState,
+    onReloadLlmPresets: () -> Unit,
+    onTaggingPresetChange: (String) -> Unit,
+    onAssistantPresetChange: (String) -> Unit,
+    onPromptEnhancerPresetChange: (String) -> Unit,
+    onLoadLlmRole: (String) -> Unit,
+    onUnloadLlmPreset: (String) -> Unit,
+    onStopLlmWorker: (String) -> Unit,
+    onStopAllLlmWorkers: () -> Unit,
+    onTagNextImage: () -> Unit,
+) {
+    val presetOptions = listOf("None") + state.llmPresets.map { it.name }
+    fun selectedName(id: String): String = state.llmPresets.firstOrNull { it.id == id }?.name ?: "None"
+    fun idForName(name: String): String = state.llmPresets.firstOrNull { it.name == name }?.id ?: ""
+
+    SectionCard(
+        title = "LLM Workers",
+        subtitle = "Role-specific llama.cpp workers for tagging, assistant, and prompt enhancement.",
+    ) {
+        RolePresetRow(
+            label = "Tagging",
+            value = selectedName(state.llmRoles.taggingPresetId),
+            options = presetOptions,
+            onValueChange = { onTaggingPresetChange(idForName(it)) },
+            onLoad = { onLoadLlmRole("tagging") },
+        )
+        RolePresetRow(
+            label = "Assistant",
+            value = selectedName(state.llmRoles.assistantPresetId),
+            options = presetOptions,
+            onValueChange = { onAssistantPresetChange(idForName(it)) },
+            onLoad = { onLoadLlmRole("assistant") },
+        )
+        RolePresetRow(
+            label = "Prompt Enhancer",
+            value = selectedName(state.llmRoles.promptEnhancerPresetId),
+            options = presetOptions,
+            onValueChange = { onPromptEnhancerPresetChange(idForName(it)) },
+            onLoad = { onLoadLlmRole("prompt enhancement") },
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Button(onClick = onReloadLlmPresets) {
+                Text("Reload Presets")
+            }
+            Button(
+                onClick = onTagNextImage,
+                enabled = !state.isBusy && state.llmRoles.taggingPresetId.isNotBlank(),
+            ) {
+                Text("Tag Next Image")
+            }
+            Button(
+                onClick = onStopAllLlmWorkers,
+                enabled = state.llmWorkers.any { it.status != LlmWorkerStatus.Stopped && it.status != LlmWorkerStatus.Error },
+            ) {
+                Text("Stop All")
+            }
+        }
+        if (state.llmWorkers.isEmpty()) {
+            StatusLine("Active LLM workers", "None")
+        } else {
+            state.llmWorkers.forEach { worker ->
+                DeskPanel(modifier = Modifier.fillMaxWidth()) {
+                    StatusLine(worker.presetName, "${worker.status.name} ${worker.baseUrl}")
+                    StatusLine("Model", worker.modelPath)
+                    StatusLine("Placement", worker.placement.name.uppercase())
+                    StatusLine("GPU layers", worker.nGpuLayers.toString())
+                    StatusLine("VRAM", "${worker.vramAllocatedMb} MB allocated, ${worker.vramFreeMb} MB free")
+                    if (worker.parsedArgs.isNotEmpty()) {
+                        StatusLine("Parsed args", worker.parsedArgs.joinToString(" "))
+                    }
+                    if (worker.lastLogLine.isNotBlank()) {
+                        StatusLine("Last log", worker.lastLogLine)
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Button(
+                            onClick = { onUnloadLlmPreset(worker.presetId) },
+                            enabled = worker.status == LlmWorkerStatus.Ready,
+                        ) {
+                            Text("Unload Model")
+                        }
+                        Button(
+                            onClick = { onStopLlmWorker(worker.id) },
+                            enabled = worker.status != LlmWorkerStatus.Stopped && worker.status != LlmWorkerStatus.Error,
+                        ) {
+                            Text("Stop Worker")
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun RolePresetRow(
+    label: String,
+    value: String,
+    options: List<String>,
+    onValueChange: (String) -> Unit,
+    onLoad: () -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.Bottom,
+    ) {
+        DeskDropdownField(
+            label = label,
+            value = value,
+            options = options,
+            onValueChange = onValueChange,
+            modifier = Modifier.weight(1f),
+        )
+        Button(
+            onClick = onLoad,
+            enabled = value != "None",
+        ) {
+            Text("Load")
         }
     }
 }

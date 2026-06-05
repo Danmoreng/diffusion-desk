@@ -7,13 +7,20 @@
 #include <string>
 #include <thread>
 #include <mutex>
+#include <vector>
 
 class LlamaServer {
 public:
     LlamaServer();
     ~LlamaServer();
 
-    bool load_model(const std::string& model_path, const std::string& mmproj_path = "", int n_gpu_layers = -1, int n_ctx = 2048, int image_max_tokens = -1);
+    bool load_model(
+        const std::string& model_path,
+        const std::string& mmproj_path = "",
+        int n_gpu_layers = -1,
+        int n_ctx = -1,
+        int image_max_tokens = -1,
+        const std::vector<std::string>& advanced_args = {});
     void offload_to_cpu();
     void stop();
 
@@ -21,6 +28,7 @@ public:
 
     bool is_loaded() const { return !!server_ctx; }
     void set_idle_timeout(int seconds) { idle_timeout_seconds = seconds; }
+    int effective_gpu_layers() const { return llama_params.n_gpu_layers; }
 
 private:
     std::unique_ptr<server_context> server_ctx;

@@ -2,6 +2,7 @@ package com.diffusiondesk.desktop.screens
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -48,10 +49,13 @@ import androidx.compose.ui.unit.dp
 import com.diffusiondesk.desktop.core.BackendStatus
 import com.diffusiondesk.desktop.core.BackendUiState
 import com.diffusiondesk.desktop.core.ImagePreset
+import com.diffusiondesk.desktop.core.LlmPlacement
+import com.diffusiondesk.desktop.core.LlmPreset
 import com.diffusiondesk.desktop.core.ModelSummary
 import com.diffusiondesk.desktop.viewmodel.ImagePresetForm
 import com.diffusiondesk.desktop.viewmodel.LibraryMode
 import com.diffusiondesk.desktop.viewmodel.LibraryUiState
+import com.diffusiondesk.desktop.viewmodel.LlmPresetForm
 import org.jetbrains.jewel.ui.component.Checkbox
 import org.jetbrains.jewel.ui.component.DefaultButton as Button
 import org.jetbrains.jewel.ui.component.Text
@@ -67,9 +71,16 @@ fun LibraryScreen(
     onDeletePreset: (String) -> Unit,
     onLoadPreset: (String) -> Unit,
     onReloadPresets: () -> Unit,
+    onShowImagePresets: () -> Unit,
+    onShowLlmPresets: () -> Unit,
     onCancelEditor: () -> Unit,
     onFormChange: (ImagePresetForm) -> Unit,
+    onLlmFormChange: (LlmPresetForm) -> Unit,
     onSavePreset: () -> Unit,
+    onCreateLlmPreset: () -> Unit,
+    onEditLlmPreset: (String) -> Unit,
+    onDeleteLlmPreset: (String) -> Unit,
+    onSaveLlmPreset: () -> Unit,
 ) {
     when (state.mode) {
         LibraryMode.List -> ImagePresetLibrary(
@@ -81,6 +92,8 @@ fun LibraryScreen(
             onDeletePreset = onDeletePreset,
             onLoadPreset = onLoadPreset,
             onReloadPresets = onReloadPresets,
+            onShowImagePresets = onShowImagePresets,
+            onShowLlmPresets = onShowLlmPresets,
         )
         LibraryMode.Editor -> ImagePresetEditorPage(
             state = state,
@@ -88,6 +101,21 @@ fun LibraryScreen(
             onCancelEditor = onCancelEditor,
             onFormChange = onFormChange,
             onSavePreset = onSavePreset,
+        )
+        LibraryMode.LlmList -> LlmPresetLibrary(
+            state = state,
+            onReloadPresets = onReloadPresets,
+            onShowImagePresets = onShowImagePresets,
+            onShowLlmPresets = onShowLlmPresets,
+            onCreateLlmPreset = onCreateLlmPreset,
+            onEditLlmPreset = onEditLlmPreset,
+            onDeleteLlmPreset = onDeleteLlmPreset,
+        )
+        LibraryMode.LlmEditor -> LlmPresetEditorPage(
+            state = state,
+            onCancelEditor = onCancelEditor,
+            onFormChange = onLlmFormChange,
+            onSavePreset = onSaveLlmPreset,
         )
     }
 }
@@ -103,6 +131,8 @@ private fun ImagePresetLibrary(
     onDeletePreset: (String) -> Unit,
     onLoadPreset: (String) -> Unit,
     onReloadPresets: () -> Unit,
+    onShowImagePresets: () -> Unit,
+    onShowLlmPresets: () -> Unit,
 ) {
     Column(
         modifier = Modifier
@@ -110,37 +140,11 @@ private fun ImagePresetLibrary(
             .padding(18.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text(
-                    text = "Library Manager",
-                    style = MaterialTheme.typography.headlineMedium,
-                    color = MaterialTheme.colorScheme.onBackground,
-                )
-                Text(
-                    text = "Image presets are stored as JSON files in the DiffusionDesk app folder.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(onClick = onReloadPresets) {
-                    Text("Refresh")
-                }
-                Button(onClick = onCreatePreset) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
-                        Text("New Preset")
-                    }
-                }
-            }
-        }
-
-        LibraryTabHeader()
+        LibraryTabHeader(
+            selected = "image",
+            onShowImagePresets = onShowImagePresets,
+            onShowLlmPresets = onShowLlmPresets,
+        )
 
         Row(
             modifier = Modifier
@@ -156,11 +160,22 @@ private fun ImagePresetLibrary(
                 fontWeight = FontWeight.SemiBold,
                 color = MaterialTheme.colorScheme.onSurface,
             )
-            Text(
-                text = "${state.presets.size} preset(s)",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = "${state.presets.size} preset(s)",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Button(onClick = onReloadPresets) {
+                    Text("Refresh")
+                }
+                Button(onClick = onCreatePreset) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Text("New Preset")
+                    }
+                }
+            }
         }
 
         Box(modifier = Modifier.weight(1f)) {
@@ -194,7 +209,11 @@ private fun ImagePresetLibrary(
 }
 
 @Composable
-private fun LibraryTabHeader() {
+private fun LibraryTabHeader(
+    selected: String,
+    onShowImagePresets: () -> Unit,
+    onShowLlmPresets: () -> Unit,
+) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -203,17 +222,41 @@ private fun LibraryTabHeader() {
         horizontalArrangement = Arrangement.spacedBy(18.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Row(
-            modifier = Modifier
-                .clip(RoundedCornerShape(6.dp))
-                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.16f))
-                .padding(horizontal = 10.dp, vertical = 6.dp),
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Icon(Icons.Default.Tune, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(16.dp))
-            Text("Image Presets", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold)
-        }
+        LibraryTab(
+            selected = selected == "image",
+            icon = Icons.Default.Tune,
+            label = "Image Presets",
+            onClick = onShowImagePresets,
+        )
+        LibraryTab(
+            selected = selected == "llm",
+            icon = Icons.Default.TextFields,
+            label = "LLM Presets",
+            onClick = onShowLlmPresets,
+        )
+    }
+}
+
+@Composable
+private fun LibraryTab(
+    selected: Boolean,
+    icon: ImageVector,
+    label: String,
+    onClick: () -> Unit,
+) {
+    val container = if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.16f) else Color.Transparent
+    val content = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+    Row(
+        modifier = Modifier
+            .clip(RoundedCornerShape(6.dp))
+            .background(container)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 10.dp, vertical = 6.dp),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(icon, contentDescription = null, tint = content, modifier = Modifier.size(16.dp))
+        Text(label, color = content, fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal)
     }
 }
 
@@ -326,6 +369,252 @@ private fun PresetPathLine(icon: ImageVector, path: String) {
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun LlmPresetLibrary(
+    state: LibraryUiState,
+    onReloadPresets: () -> Unit,
+    onShowImagePresets: () -> Unit,
+    onShowLlmPresets: () -> Unit,
+    onCreateLlmPreset: () -> Unit,
+    onEditLlmPreset: (String) -> Unit,
+    onDeleteLlmPreset: (String) -> Unit,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(18.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        LibraryTabHeader(
+            selected = "llm",
+            onShowImagePresets = onShowImagePresets,
+            onShowLlmPresets = onShowLlmPresets,
+        )
+
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(8.dp))
+                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f))
+                .padding(horizontal = 12.dp, vertical = 8.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text("LLM Presets", fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = "${state.llmPresets.size} preset(s)",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Button(onClick = onReloadPresets) {
+                    Text("Refresh")
+                }
+                Button(onClick = onCreateLlmPreset) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Text("New LLM")
+                    }
+                }
+            }
+        }
+
+        Box(modifier = Modifier.weight(1f)) {
+            if (state.llmPresets.isEmpty()) {
+                Column(
+                    modifier = Modifier.fillMaxSize(),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center,
+                ) {
+                    Text("No LLM presets yet.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Spacer(Modifier.height(10.dp))
+                    Button(onClick = onCreateLlmPreset) {
+                        Text("Create LLM Preset")
+                    }
+                }
+            } else {
+                FlowRow(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .verticalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                    maxItemsInEachRow = 3,
+                ) {
+                    state.llmPresets.forEach { preset ->
+                        LlmPresetCard(
+                            preset = preset,
+                            onEdit = { onEditLlmPreset(preset.id) },
+                            onDelete = { onDeleteLlmPreset(preset.id) },
+                        )
+                    }
+                }
+            }
+        }
+
+        StatusMessages(state.message, state.error)
+    }
+}
+
+@Composable
+private fun LlmPresetCard(
+    preset: LlmPreset,
+    onEdit: () -> Unit,
+    onDelete: () -> Unit,
+) {
+    DeskPanel(
+        modifier = Modifier
+            .widthIn(min = 310.dp, max = 440.dp)
+            .heightIn(min = 142.dp),
+    ) {
+        Column(
+            modifier = Modifier.fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Text(
+                text = preset.name,
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            PresetPathLine(Icons.Default.TextFields, preset.modelPath)
+            if (preset.mmprojPath.isNotBlank()) {
+                PresetPathLine(Icons.Default.Palette, preset.mmprojPath)
+            }
+            Text(
+                text = "Placement: ${preset.placement.name.uppercase()}",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            if (preset.advancedArgs.isNotBlank()) {
+                Text(
+                    text = preset.advancedArgs,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            Spacer(Modifier.weight(1f))
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                DeskIconButton(Icons.Default.Edit, "Edit LLM preset", onEdit)
+                Spacer(Modifier.width(4.dp))
+                DeskIconButton(Icons.Default.Delete, "Delete LLM preset", onDelete, destructive = true)
+            }
+        }
+    }
+}
+
+@Composable
+private fun LlmPresetEditorPage(
+    state: LibraryUiState,
+    onCancelEditor: () -> Unit,
+    onFormChange: (LlmPresetForm) -> Unit,
+    onSavePreset: () -> Unit,
+) {
+    val llmOptions = modelOptionsFor(state.modelSuggestions, "llm", "text-encoder", "text_encoders")
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(18.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                DeskIconButton(
+                    icon = Icons.AutoMirrored.Filled.ArrowBack,
+                    contentDescription = "Back",
+                    onClick = onCancelEditor,
+                )
+                Column {
+                    Text(
+                        text = if (state.isEditingLlm) "Edit LLM Preset" else "New LLM Preset",
+                        style = MaterialTheme.typography.headlineMedium,
+                        color = MaterialTheme.colorScheme.onBackground,
+                    )
+                    Text(
+                        text = "Keep the normal preset simple; use advanced args only when needed.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(onClick = onCancelEditor) {
+                    Text("Cancel")
+                }
+                Button(onClick = onSavePreset) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.Save, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Text("Save Preset")
+                    }
+                }
+            }
+        }
+
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            EditorSection("Preset") {
+                LabeledField(
+                    label = "Preset Name",
+                    value = state.llmForm.name,
+                    onValueChange = { onFormChange(state.llmForm.copy(name = it)) },
+                    placeholder = "e.g. Small Tagger CPU",
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                ModelPathField(
+                    label = "Model Path",
+                    value = state.llmForm.modelPath,
+                    options = llmOptions,
+                    onValueChange = { onFormChange(state.llmForm.copy(modelPath = it)) },
+                    placeholder = "llm/model.gguf or D:\\models\\model.gguf",
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                ModelPathField(
+                    label = "Vision Projector (optional)",
+                    value = state.llmForm.mmprojPath,
+                    options = llmOptions,
+                    onValueChange = { onFormChange(state.llmForm.copy(mmprojPath = it)) },
+                    placeholder = "llm/mmproj-model-f16.gguf",
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                DeskDropdownField(
+                    label = "Placement",
+                    value = state.llmForm.placement.name.uppercase(),
+                    options = listOf("CPU", "GPU"),
+                    onValueChange = {
+                        onFormChange(state.llmForm.copy(placement = if (it == "GPU") LlmPlacement.Gpu else LlmPlacement.Cpu))
+                    },
+                    modifier = Modifier.widthIn(min = 180.dp, max = 220.dp),
+                )
+            }
+            EditorSection("Advanced llama.cpp Arguments") {
+                LabeledField(
+                    label = "Arguments",
+                    value = state.llmForm.advancedArgs,
+                    onValueChange = { onFormChange(state.llmForm.copy(advancedArgs = it)) },
+                    placeholder = "--ctx-size 4096 --threads 8",
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = false,
+                )
+            }
+        }
+
+        StatusMessages(state.message, state.error)
     }
 }
 

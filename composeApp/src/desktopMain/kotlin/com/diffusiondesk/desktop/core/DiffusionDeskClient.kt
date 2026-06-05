@@ -6,6 +6,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
@@ -81,6 +82,21 @@ data class GenerationJobSubmission(
     val status: String,
 )
 
+data class LlmHealth(
+    val modelLoaded: Boolean,
+    val modelPath: String,
+    val placement: String,
+    val nGpuLayers: Int,
+    val advancedArgs: List<String>,
+    val vramAllocatedMb: Int,
+    val vramFreeMb: Int,
+)
+
+data class LlmChatMessage(
+    val role: String,
+    val content: String,
+)
+
 sealed class GenerationJobEvent {
     data class Queued(val jobId: String, val queuePosition: Int) : GenerationJobEvent()
     data class Started(val jobId: String) : GenerationJobEvent()
@@ -97,7 +113,9 @@ sealed class GenerationJobEvent {
     data class Cancelled(val jobId: String, val message: String) : GenerationJobEvent()
 }
 
-class DiffusionDeskClient {
+class DiffusionDeskClient(
+    private val internalToken: String = "",
+) {
     private val httpClient = HttpClient.newBuilder()
         .connectTimeout(Duration.ofSeconds(5))
         .build()
@@ -106,9 +124,16 @@ class DiffusionDeskClient {
         ignoreUnknownKeys = true
     }
 
+    private fun requestBuilder(uri: String): HttpRequest.Builder =
+        HttpRequest.newBuilder(URI.create(uri)).apply {
+            if (internalToken.isNotBlank()) {
+                header("X-Internal-Token", internalToken)
+            }
+        }
+
     suspend fun fetchConfig(baseUrl: String): Result<ServerConfig> = withContext(Dispatchers.IO) {
         runCatching {
-            val request = HttpRequest.newBuilder(URI.create("$baseUrl/v1/config"))
+            val request = requestBuilder("$baseUrl/v1/config")
                 .GET()
                 .timeout(Duration.ofSeconds(5))
                 .build()
@@ -127,7 +152,7 @@ class DiffusionDeskClient {
 
     suspend fun fetchModels(baseUrl: String): Result<List<ModelSummary>> = withContext(Dispatchers.IO) {
         runCatching {
-            val request = HttpRequest.newBuilder(URI.create("$baseUrl/v1/models"))
+            val request = requestBuilder("$baseUrl/v1/models")
                 .GET()
                 .timeout(Duration.ofSeconds(10))
                 .build()
@@ -164,7 +189,7 @@ class DiffusionDeskClient {
                 put("flash_attn", JsonPrimitive(preset.flashAttention))
             }
 
-            val request = HttpRequest.newBuilder(URI.create("$baseUrl/v1/models/load"))
+            val request = requestBuilder("$baseUrl/v1/models/load")
                 .header("Content-Type", "application/json")
                 .POST(HttpRequest.BodyPublishers.ofString(payload.toString()))
                 .timeout(Duration.ofMinutes(2))
@@ -177,7 +202,7 @@ class DiffusionDeskClient {
 
     suspend fun verifyImageWorker(baseUrl: String): Result<Unit> = withContext(Dispatchers.IO) {
         runCatching {
-            val request = HttpRequest.newBuilder(URI.create("$baseUrl/internal/health"))
+            val request = requestBuilder("$baseUrl/internal/health")
                 .GET()
                 .timeout(Duration.ofSeconds(5))
                 .build()
@@ -192,7 +217,7 @@ class DiffusionDeskClient {
 
     suspend fun fetchProgress(baseUrl: String): Result<ProgressSnapshot> = withContext(Dispatchers.IO) {
         runCatching {
-            val request = HttpRequest.newBuilder(URI.create("$baseUrl/v1/progress"))
+            val request = requestBuilder("$baseUrl/v1/progress")
                 .GET()
                 .timeout(Duration.ofSeconds(5))
                 .build()
@@ -211,9 +236,34 @@ class DiffusionDeskClient {
         }
     }
 
+    suspend fun verifyLlmWorker(baseUrl: String): Result<LlmHealth> = withContext(Dispatchers.IO) {
+        runCatching {
+            val request = requestBuilder("$baseUrl/internal/health")
+                .GET()
+                .timeout(Duration.ofSeconds(5))
+                .build()
+
+            val response = httpClient.send(request, HttpResponse.BodyHandlers.ofString())
+            check(response.statusCode() in 200..299) { "LLM worker health request failed with ${response.statusCode()}" }
+
+            val root = json.parseToJsonElement(response.body()).jsonObject
+            check(root["service"]?.jsonPrimitive?.content == "llm") { "Port is not running the LLM worker." }
+            LlmHealth(
+                modelLoaded = root["model_loaded"]?.jsonPrimitive?.booleanOrNull ?: false,
+                modelPath = root["model_path"]?.jsonPrimitive?.content.orEmpty(),
+                placement = root["placement"]?.jsonPrimitive?.content.orEmpty(),
+                nGpuLayers = root["n_gpu_layers"]?.jsonPrimitive?.intOrNull ?: -1,
+                advancedArgs = root["advanced_args"]?.jsonArray.orEmpty()
+                    .mapNotNull { it.jsonPrimitive.content.takeIf(String::isNotBlank) },
+                vramAllocatedMb = root["vram_allocated_mb"]?.jsonPrimitive?.intOrNull ?: 0,
+                vramFreeMb = root["vram_free_mb"]?.jsonPrimitive?.intOrNull ?: 0,
+            )
+        }
+    }
+
     suspend fun fetchSamplerOptions(baseUrl: String): Result<List<String>> = withContext(Dispatchers.IO) {
         runCatching {
-            val request = HttpRequest.newBuilder(URI.create("$baseUrl/v1/options/samplers"))
+            val request = requestBuilder("$baseUrl/v1/options/samplers")
                 .GET()
                 .timeout(Duration.ofSeconds(5))
                 .build()
@@ -236,7 +286,7 @@ class DiffusionDeskClient {
                 put("setup_completed", JsonPrimitive(settings.setupCompleted))
             }
 
-            val request = HttpRequest.newBuilder(URI.create("$baseUrl/v1/config"))
+            val request = requestBuilder("$baseUrl/v1/config")
                 .header("Content-Type", "application/json")
                 .POST(HttpRequest.BodyPublishers.ofString(payload.toString()))
                 .timeout(Duration.ofSeconds(10))
@@ -254,12 +304,170 @@ class DiffusionDeskClient {
     }
 
     fun shutdownImageWorkerBlocking(baseUrl: String) {
-        val request = HttpRequest.newBuilder(URI.create("$baseUrl/internal/shutdown"))
+        val request = requestBuilder("$baseUrl/internal/shutdown")
             .header("Content-Type", "application/json")
             .POST(HttpRequest.BodyPublishers.noBody())
             .timeout(Duration.ofSeconds(3))
             .build()
         httpClient.send(request, HttpResponse.BodyHandlers.discarding())
+    }
+
+    suspend fun shutdownLlmWorker(baseUrl: String): Result<Unit> = withContext(Dispatchers.IO) {
+        runCatching {
+            shutdownLlmWorkerBlocking(baseUrl)
+        }
+    }
+
+    fun shutdownLlmWorkerBlocking(baseUrl: String) {
+        val request = requestBuilder("$baseUrl/internal/shutdown")
+            .header("Content-Type", "application/json")
+            .POST(HttpRequest.BodyPublishers.noBody())
+            .timeout(Duration.ofSeconds(3))
+            .build()
+        httpClient.send(request, HttpResponse.BodyHandlers.discarding())
+    }
+
+    suspend fun unloadImageModel(baseUrl: String): Result<Unit> = withContext(Dispatchers.IO) {
+        runCatching {
+            val request = requestBuilder("$baseUrl/v1/models/unload")
+                .header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.noBody())
+                .timeout(Duration.ofSeconds(15))
+                .build()
+            val response = httpClient.send(request, HttpResponse.BodyHandlers.ofString())
+            check(response.statusCode() in 200..299) { response.body().ifBlank { "Image model unload failed with ${response.statusCode()}" } }
+        }
+    }
+
+    suspend fun loadLlmPreset(baseUrl: String, preset: LlmPreset): Result<Unit> = withContext(Dispatchers.IO) {
+        runCatching {
+            val advancedArgs = CommandLineArgs.parse(preset.advancedArgs).getOrThrow()
+            CommandLineArgs.validateNoReservedOptions(advancedArgs).getOrThrow()
+            val payload = buildJsonObject {
+                put("model_id", JsonPrimitive(preset.modelPath))
+                if (preset.mmprojPath.isNotBlank()) {
+                    put("mmproj_id", JsonPrimitive(preset.mmprojPath))
+                }
+                if (preset.placement == LlmPlacement.Cpu) {
+                    put("n_gpu_layers", JsonPrimitive(0))
+                }
+                put("advanced_args", JsonArray(advancedArgs.map { JsonPrimitive(it) }))
+            }
+
+            val request = requestBuilder("$baseUrl/v1/llm/load")
+                .header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString(payload.toString()))
+                .timeout(Duration.ofMinutes(5))
+                .build()
+
+            val response = httpClient.send(request, HttpResponse.BodyHandlers.ofString())
+            check(response.statusCode() in 200..299) { response.body().ifBlank { "LLM load failed with ${response.statusCode()}" } }
+        }
+    }
+
+    suspend fun unloadLlmModel(baseUrl: String): Result<Unit> = withContext(Dispatchers.IO) {
+        runCatching {
+            val request = requestBuilder("$baseUrl/v1/llm/unload")
+                .header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.noBody())
+                .timeout(Duration.ofSeconds(20))
+                .build()
+            val response = httpClient.send(request, HttpResponse.BodyHandlers.ofString())
+            check(response.statusCode() in 200..299) { response.body().ifBlank { "LLM unload failed with ${response.statusCode()}" } }
+        }
+    }
+
+    suspend fun chatCompletion(baseUrl: String, model: String, messages: List<LlmChatMessage>): Result<String> = withContext(Dispatchers.IO) {
+        runCatching {
+            val payload = buildJsonObject {
+                put("model", JsonPrimitive(model))
+                put(
+                    "messages",
+                    JsonArray(
+                        messages.map { message ->
+                            buildJsonObject {
+                                put("role", JsonPrimitive(message.role))
+                                put("content", JsonPrimitive(message.content))
+                            }
+                        },
+                    ),
+                )
+                put("stream", JsonPrimitive(false))
+            }
+
+            val request = requestBuilder("$baseUrl/v1/chat/completions")
+                .header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString(payload.toString()))
+                .timeout(Duration.ofMinutes(3))
+                .build()
+
+            val response = httpClient.send(request, HttpResponse.BodyHandlers.ofString())
+            check(response.statusCode() in 200..299) { response.body().ifBlank { "Chat completion failed with ${response.statusCode()}" } }
+
+            val root = json.parseToJsonElement(response.body()).jsonObject
+            parseChatContent(root)
+        }
+    }
+
+    suspend fun visionChatCompletion(
+        baseUrl: String,
+        model: String,
+        systemPrompt: String,
+        userPrompt: String,
+        imageDataUri: String,
+    ): Result<String> = withContext(Dispatchers.IO) {
+        runCatching {
+            val payload = buildJsonObject {
+                put("model", JsonPrimitive(model))
+                put(
+                    "messages",
+                    JsonArray(
+                        listOf(
+                            buildJsonObject {
+                                put("role", JsonPrimitive("system"))
+                                put("content", JsonPrimitive(systemPrompt))
+                            },
+                            buildJsonObject {
+                                put("role", JsonPrimitive("user"))
+                                put(
+                                    "content",
+                                    JsonArray(
+                                        listOf(
+                                            buildJsonObject {
+                                                put("type", JsonPrimitive("text"))
+                                                put("text", JsonPrimitive(userPrompt))
+                                            },
+                                            buildJsonObject {
+                                                put("type", JsonPrimitive("image_url"))
+                                                put(
+                                                    "image_url",
+                                                    buildJsonObject {
+                                                        put("url", JsonPrimitive(imageDataUri))
+                                                    },
+                                                )
+                                            },
+                                        ),
+                                    ),
+                                )
+                            },
+                        ),
+                    ),
+                )
+                put("temperature", JsonPrimitive(0.1))
+                put("response_format", buildJsonObject { put("type", JsonPrimitive("json_object")) })
+                put("stream", JsonPrimitive(false))
+            }
+
+            val request = requestBuilder("$baseUrl/v1/chat/completions")
+                .header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString(payload.toString()))
+                .timeout(Duration.ofMinutes(3))
+                .build()
+
+            val response = httpClient.send(request, HttpResponse.BodyHandlers.ofString())
+            check(response.statusCode() in 200..299) { response.body().ifBlank { "Vision chat completion failed with ${response.statusCode()}" } }
+            parseChatContent(json.parseToJsonElement(response.body()).jsonObject)
+        }
     }
 
     suspend fun generateImage(baseUrl: String, requestData: GenerationRequest): Result<GenerationResult> = withContext(Dispatchers.IO) {
@@ -282,7 +490,7 @@ class DiffusionDeskClient {
                 put("no_base64", JsonPrimitive(true))
             }
 
-            val request = HttpRequest.newBuilder(URI.create("$baseUrl/v1/images/generations"))
+            val request = requestBuilder("$baseUrl/v1/images/generations")
                 .header("Content-Type", "application/json")
                 .POST(HttpRequest.BodyPublishers.ofString(payload.toString()))
                 .timeout(Duration.ofMinutes(5))
@@ -308,7 +516,7 @@ class DiffusionDeskClient {
     suspend fun submitGenerationJob(baseUrl: String, requestData: GenerationRequest): Result<GenerationJobSubmission> = withContext(Dispatchers.IO) {
         runCatching {
             val payload = generationPayload(requestData)
-            val request = HttpRequest.newBuilder(URI.create("$baseUrl/v1/generation-jobs"))
+            val request = requestBuilder("$baseUrl/v1/generation-jobs")
                 .header("Content-Type", "application/json")
                 .POST(HttpRequest.BodyPublishers.ofString(payload.toString()))
                 .timeout(Duration.ofSeconds(30))
@@ -331,7 +539,7 @@ class DiffusionDeskClient {
         onEvent: (GenerationJobEvent) -> Unit,
     ): Result<GenerationResult> = withContext(Dispatchers.IO) {
         runCatching {
-            val request = HttpRequest.newBuilder(URI.create("$baseUrl/v1/generation-jobs/$jobId/events"))
+            val request = requestBuilder("$baseUrl/v1/generation-jobs/$jobId/events")
                 .header("Accept", "text/event-stream")
                 .GET()
                 .build()
@@ -396,7 +604,7 @@ class DiffusionDeskClient {
             var lastError: Throwable? = null
             repeat(8) { attempt ->
                 val attemptResult = runCatching {
-                    val request = HttpRequest.newBuilder(URI.create(resolvedUrl))
+                    val request = requestBuilder(resolvedUrl)
                         .GET()
                         .timeout(Duration.ofSeconds(30))
                         .build()
@@ -504,5 +712,18 @@ class DiffusionDeskClient {
             usedSeed = first["seed"]?.jsonPrimitive?.intOrNull ?: -1,
             generationTime = root["generation_time"]?.jsonPrimitive?.doubleOrNull,
         )
+    }
+
+    private fun parseChatContent(root: kotlinx.serialization.json.JsonObject): String {
+        return root["choices"]
+            ?.jsonArray
+            ?.firstOrNull()
+            ?.jsonObject
+            ?.get("message")
+            ?.jsonObject
+            ?.get("content")
+            ?.jsonPrimitive
+            ?.content
+            .orEmpty()
     }
 }
