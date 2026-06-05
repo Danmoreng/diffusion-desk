@@ -5,8 +5,6 @@ Diffusion Desk is a minimal local desktop app for generating images with
 Multiplatform and focuses on a direct, quiet workflow: choose a model preset,
 write a prompt, generate, inspect the image, and keep moving.
 
-![Diffusion Desk Compose app](screenshots/Screenshot_2.png)
-
 The older Vue/orchestrator README is archived here:
 [docs/LEGACY_WEBUI_README.md](docs/LEGACY_WEBUI_README.md).
 
@@ -20,6 +18,9 @@ Main screens:
 - **Generate:** prompt editor, negative prompt, compact generation controls,
   prompt history, image queue/history navigation, live progress stages, ETA,
   and generated image preview.
+- **Gallery:** SQLite-backed browser for generated images, with prompt and
+  metadata import, manual keywords, searchable image history, reusable
+  generation parameters, and thumbnail previews for smooth scrolling.
 - **Library:** JSON-backed image preset editor for model components and default
   generation parameters.
 - **Settings:** theme, action bar placement, model/output paths, worker status,
@@ -27,6 +28,32 @@ Main screens:
 
 Generated images support a desktop context menu for copy, save, open, and show
 in Explorer.
+
+## Screenshots
+
+Generate view:
+
+![Diffusion Desk generate view](screenshots/Screenshot_2.png)
+
+Gallery view:
+
+![Diffusion Desk gallery view](screenshots/Screenshot_3.png)
+
+Settings view:
+
+![Diffusion Desk settings view](screenshots/Screenshot_4.png)
+
+## Gallery
+
+The Gallery screen indexes the configured output directory into a local SQLite
+database stored in the Diffusion Desk app data directory. It reads current `.txt`
+sidecar metadata and embedded PNG metadata, then exposes the prompt, negative
+prompt, dimensions, seed, sampler, model id, and user-managed keywords.
+
+Selecting **Reuse** imports the image parameters back into Generate so an older
+image can be used as the starting point for a new run. Existing orchestrator
+thumbnail mappings are reused when available, and missing thumbnails are created
+under `outputs/previews/` to keep browsing and scrolling responsive.
 
 ## Preset-Driven Generation
 
