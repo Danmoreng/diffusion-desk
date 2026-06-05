@@ -27,6 +27,27 @@ enum class GenerationStatus {
     Failed,
 }
 
+private val DEFAULT_SAMPLERS = listOf(
+    "euler",
+    "euler_a",
+    "heun",
+    "dpm2",
+    "dpm++2s_a",
+    "dpm++2m",
+    "dpm++2mv2",
+    "ipndm",
+    "ipndm_v",
+    "lcm",
+    "ddim_trailing",
+    "tcd",
+    "res_multistep",
+    "res_2s",
+    "er_sde",
+    "euler_cfg_pp",
+    "euler_a_cfg_pp",
+    "euler_ge",
+)
+
 data class GenerationParams(
     val prompt: String,
     val negativePrompt: String,
@@ -73,6 +94,7 @@ data class GenerationUiState(
     val seed: String = "-1",
     val batchCount: String = "1",
     val sampler: String = "euler_a",
+    val samplerOptions: List<String> = DEFAULT_SAMPLERS,
     val leftPanelWidthDp: Int = 560,
     val presets: List<ImagePreset> = emptyList(),
     val isLoadingPresets: Boolean = false,
@@ -121,14 +143,13 @@ class GenerationViewModel(
     private var currentStageStartStep = 0
     private val recentStepTimes = ArrayDeque<Double>()
 
-    val samplers = listOf("euler", "euler_a", "heun", "dpm2", "dpmpp_2s_a", "dpmpp_2m", "dpmpp_2mv2", "ipndm", "ipndm_v", "lcm", "ddim_trailing", "tcd")
-
     init {
         reloadPresets()
         scope.launch {
             backendManager.state.collectLatest { state ->
                 if (state.status == BackendStatus.Ready) {
                     update { copy(message = "Image worker ready.") }
+                    loadSamplerOptions(state.baseUrl)
                     if (!hasAutoLoadedPreset) {
                         hasAutoLoadedPreset = true
                         loadSelectedPreset()
@@ -165,7 +186,7 @@ class GenerationViewModel(
                     height = preset.defaultHeight.toString(),
                     steps = preset.defaultSteps.toString(),
                     cfgScale = preset.defaultCfgScale.toString(),
-                    sampler = preset.defaultSampler,
+                    sampler = resolveSamplerOption(preset.defaultSampler, samplerOptions) ?: sampler,
                     negativePrompt = preset.defaultNegativePrompt,
                     message = "Selected ${preset.name}.",
                     presetLoadFailed = false,
@@ -270,7 +291,7 @@ class GenerationViewModel(
                 height = preset.defaultHeight.toString(),
                 steps = preset.defaultSteps.toString(),
                 cfgScale = preset.defaultCfgScale.toString(),
-                sampler = preset.defaultSampler,
+                sampler = resolveSamplerOption(preset.defaultSampler, samplerOptions) ?: sampler,
                 negativePrompt = preset.defaultNegativePrompt,
                 message = "Reset generation settings to ${preset.name}.",
                 error = null,
@@ -289,7 +310,7 @@ class GenerationViewModel(
                 height = params.height?.toString() ?: height,
                 steps = params.steps?.toString() ?: steps,
                 cfgScale = params.cfgScale?.toString() ?: cfgScale,
-                sampler = params.sampler.takeIf { it in samplers } ?: sampler,
+                sampler = resolveSamplerOption(params.sampler, samplerOptions) ?: sampler,
                 seed = params.seed?.toString() ?: seed,
                 resultUrls = emptyList(),
                 images = emptyList(),
@@ -338,6 +359,32 @@ class GenerationViewModel(
                     }
                 }
         }
+    }
+
+    private suspend fun loadSamplerOptions(baseUrl: String) {
+        client.fetchSamplerOptions(baseUrl)
+            .onSuccess { options ->
+                if (options.isNotEmpty()) {
+                    update {
+                        copy(
+                            samplerOptions = options,
+                            sampler = resolveSamplerOption(sampler, options) ?: options.first(),
+                        )
+                    }
+                }
+            }
+    }
+
+    private fun resolveSamplerOption(value: String, options: List<String>): String? {
+        val normalized = value.trim()
+        if (normalized in options) return normalized
+        val legacyDpmpp = when (normalized) {
+            "dpmpp_2s_a" -> "dpm++2s_a"
+            "dpmpp_2m" -> "dpm++2m"
+            "dpmpp_2mv2" -> "dpm++2mv2"
+            else -> ""
+        }
+        return legacyDpmpp.takeIf { it in options }
     }
 
     fun selectAndLoadPreset(value: String) {

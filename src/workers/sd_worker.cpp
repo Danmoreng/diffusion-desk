@@ -143,6 +143,10 @@ int run_sd_worker(SDSvrParams& svr_params, SDContextParams& ctx_params, SDGenera
         handle_post_config(req, res, ctx);
     });
 
+    svr.Get("/v1/options/samplers", [&](const httplib::Request& req, httplib::Response& res) {
+        handle_get_sampler_options(req, res);
+    });
+
     svr.Get("/v1/progress", [&](const httplib::Request& req, httplib::Response& res) {
         handle_get_progress(req, res);
     });

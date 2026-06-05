@@ -211,6 +211,23 @@ class DiffusionDeskClient {
         }
     }
 
+    suspend fun fetchSamplerOptions(baseUrl: String): Result<List<String>> = withContext(Dispatchers.IO) {
+        runCatching {
+            val request = HttpRequest.newBuilder(URI.create("$baseUrl/v1/options/samplers"))
+                .GET()
+                .timeout(Duration.ofSeconds(5))
+                .build()
+
+            val response = httpClient.send(request, HttpResponse.BodyHandlers.ofString())
+            check(response.statusCode() in 200..299) { "Sampler options request failed with ${response.statusCode()}" }
+
+            val root = json.parseToJsonElement(response.body()).jsonObject
+            root["data"]?.jsonArray.orEmpty()
+                .mapNotNull { it.jsonPrimitive.content.takeIf(String::isNotBlank) }
+                .distinct()
+        }
+    }
+
     suspend fun updateConfig(baseUrl: String, settings: DesktopSettings): Result<Unit> = withContext(Dispatchers.IO) {
         runCatching {
             val payload = buildJsonObject {
