@@ -3,8 +3,11 @@ package com.diffusiondesk.desktop
 import com.diffusiondesk.desktop.core.BackendManager
 import com.diffusiondesk.desktop.core.DesktopSettingsStore
 import com.diffusiondesk.desktop.core.DiffusionDeskClient
+import com.diffusiondesk.desktop.core.GalleryDatabase
+import com.diffusiondesk.desktop.core.GalleryRepository
 import com.diffusiondesk.desktop.core.GenerationSettingsStore
 import com.diffusiondesk.desktop.core.ImagePresetStore
+import com.diffusiondesk.desktop.viewmodel.GalleryViewModel
 import com.diffusiondesk.desktop.viewmodel.GenerationViewModel
 import com.diffusiondesk.desktop.viewmodel.LibraryViewModel
 import com.diffusiondesk.desktop.viewmodel.SettingsViewModel
@@ -20,11 +23,13 @@ class AppController {
     private val settingsStore = DesktopSettingsStore()
     private val presetStore = ImagePresetStore()
     private val generationSettingsStore = GenerationSettingsStore()
+    private val galleryRepository = GalleryRepository(GalleryDatabase())
     private val backendManager = BackendManager(scope, client)
 
     val settingsViewModel = SettingsViewModel(scope, settingsStore, backendManager, client)
     val generationViewModel = GenerationViewModel(scope, backendManager, client, presetStore, generationSettingsStore)
     val libraryViewModel = LibraryViewModel(presetStore)
+    val galleryViewModel = GalleryViewModel(scope, galleryRepository)
 
     init {
         settingsViewModel.startBackend()

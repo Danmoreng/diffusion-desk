@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.DarkMode
+import androidx.compose.material.icons.filled.Collections
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Inventory2
 import androidx.compose.material.icons.filled.LightMode
@@ -27,6 +28,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.diffusiondesk.desktop.screens.GalleryScreen
 import com.diffusiondesk.desktop.screens.GenerateScreen
 import com.diffusiondesk.desktop.screens.LibraryScreen
 import com.diffusiondesk.desktop.screens.SettingsScreen
@@ -36,6 +38,7 @@ import org.jetbrains.jewel.ui.component.Text
 
 private enum class Screen(val label: String, val icon: ImageVector, val subtitle: String) {
     Generate("Generate", Icons.Default.Image, "Preset-driven image generation with the local SD worker."),
+    Gallery("Gallery", Icons.Default.Collections, "Browse generated images and reuse embedded parameters."),
     Library("Library", Icons.Default.Inventory2, "Manage JSON-backed image generation presets."),
     Settings("Settings", Icons.Default.Settings, "Local paths, worker status, and preset storage."),
 }
@@ -49,6 +52,7 @@ fun App(
     val backendState by controller.settingsViewModel.backendState.collectAsState()
     val generationState by controller.generationViewModel.uiState.collectAsState()
     val libraryState by controller.libraryViewModel.uiState.collectAsState()
+    val galleryState by controller.galleryViewModel.uiState.collectAsState()
     val systemDarkTheme = isSystemInDarkTheme()
     val darkTheme = when (settingsState.themeMode) {
         "light" -> false
@@ -103,6 +107,24 @@ fun App(
                             onLeftPanelWidthChange = controller.generationViewModel::updateLeftPanelWidth,
                             actionBarPosition = settingsState.actionBarPosition,
                             outputDir = settingsState.outputDir,
+                        )
+                        Screen.Gallery -> GalleryScreen(
+                            state = galleryState,
+                            outputDir = settingsState.outputDir,
+                            onRefresh = { controller.galleryViewModel.refresh(settingsState.outputDir) },
+                            onQueryChange = controller.galleryViewModel::updateQuery,
+                            onSelectKeyword = controller.galleryViewModel::selectKeyword,
+                            onClearKeywordFilter = controller.galleryViewModel::clearKeywordFilter,
+                            onSelectImage = controller.galleryViewModel::selectImage,
+                            onKeywordDraftChange = controller.galleryViewModel::updateKeywordDraft,
+                            onAddKeyword = controller.galleryViewModel::addKeywordToSelected,
+                            onRemoveKeyword = controller.galleryViewModel::removeKeyword,
+                            previewPanelWidthDp = settingsState.galleryPreviewWidthDp,
+                            onPreviewPanelWidthChange = controller.settingsViewModel::updateGalleryPreviewWidth,
+                            onReuseImage = { image ->
+                                controller.generationViewModel.reuseGalleryParams(controller.galleryViewModel.reusableParams(image))
+                                currentScreen = Screen.Generate
+                            },
                         )
                         Screen.Library -> LibraryScreen(
                             state = libraryState,

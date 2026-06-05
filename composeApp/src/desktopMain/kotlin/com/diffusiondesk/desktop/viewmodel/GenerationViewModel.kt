@@ -7,6 +7,7 @@ import com.diffusiondesk.desktop.core.GeneratedImage
 import com.diffusiondesk.desktop.core.GenerationJobEvent
 import com.diffusiondesk.desktop.core.GenerationRequest
 import com.diffusiondesk.desktop.core.GenerationSettingsStore
+import com.diffusiondesk.desktop.core.GalleryReusableParams
 import com.diffusiondesk.desktop.core.ImagePreset
 import com.diffusiondesk.desktop.core.ImagePresetStore
 import com.diffusiondesk.desktop.core.SavedGenerationSettings
@@ -274,6 +275,35 @@ class GenerationViewModel(
                 message = "Reset generation settings to ${preset.name}.",
                 error = null,
             )
+        }
+    }
+
+    fun reuseGalleryParams(params: GalleryReusableParams) {
+        val matchingPreset = findPresetForReusableParams(params)
+        update {
+            copy(
+                selectedPresetId = matchingPreset?.id ?: selectedPresetId,
+                prompt = params.prompt.ifBlank { prompt },
+                negativePrompt = params.negativePrompt,
+                width = params.width?.toString() ?: width,
+                height = params.height?.toString() ?: height,
+                steps = params.steps?.toString() ?: steps,
+                cfgScale = params.cfgScale?.toString() ?: cfgScale,
+                sampler = params.sampler.takeIf { it in samplers } ?: sampler,
+                seed = params.seed?.toString() ?: seed,
+                resultUrls = emptyList(),
+                images = emptyList(),
+                usedSeed = "",
+                message = if (matchingPreset != null) "Reused gallery image settings with ${matchingPreset.name}." else "Reused gallery image settings.",
+                error = null,
+            )
+        }
+        commitPrompt()
+        matchingPreset?.let {
+            presetStore.saveLastPresetId(it.id)
+            if (backendManager.state.value.status == BackendStatus.Ready && _uiState.value.loadedPresetId != it.id) {
+                loadSelectedPreset()
+            }
         }
     }
 
@@ -785,6 +815,20 @@ class GenerationViewModel(
     private fun selectedPresetOrNull(): ImagePreset? {
         val state = _uiState.value
         return state.presets.firstOrNull { it.id == state.selectedPresetId }
+    }
+
+    private fun findPresetForReusableParams(params: GalleryReusableParams): ImagePreset? {
+        val state = _uiState.value
+        if (params.presetId.isNotBlank()) {
+            state.presets.firstOrNull { it.id == params.presetId }?.let { return it }
+        }
+        if (params.modelId.isBlank()) return null
+        val modelName = params.modelId.substringAfterLast('/').substringAfterLast('\\')
+        return state.presets.firstOrNull { preset ->
+            preset.diffusionModel == params.modelId ||
+                preset.diffusionModel.endsWith(params.modelId) ||
+                preset.diffusionModel.substringAfterLast('/').substringAfterLast('\\') == modelName
+        }
     }
 
     private fun update(transform: GenerationUiState.() -> GenerationUiState) {

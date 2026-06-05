@@ -14,6 +14,7 @@ data class DesktopSettings(
     val themeMode: String,
     val actionBarPosition: String,
     val saveImagesAutomatically: Boolean,
+    val galleryPreviewWidthDp: Int,
 )
 
 fun detectDefaultRepoRoot(): String {
