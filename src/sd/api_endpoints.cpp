@@ -367,6 +367,20 @@ void handle_post_config(const httplib::Request& req, httplib::Response& res, Ser
     }
 }
 
+void handle_get_sampler_options(const httplib::Request&, httplib::Response& res) {
+    diffusion_desk::json samplers = diffusion_desk::json::array();
+    for (int i = 0; i < SAMPLE_METHOD_COUNT; ++i) {
+        const char* name = sd_sample_method_name(static_cast<sample_method_t>(i));
+        if (name != nullptr && name[0] != '\0') {
+            samplers.push_back(name);
+        }
+    }
+
+    diffusion_desk::json out;
+    out["data"] = samplers;
+    res.set_content(out.dump(), "application/json");
+}
+
 void handle_get_progress(const httplib::Request&, httplib::Response& res) {
     diffusion_desk::json r;
     {

@@ -78,7 +78,7 @@ fun App(
                         Screen.Generate -> GenerateScreen(
                             state = generationState,
                             backendState = backendState,
-                            samplerOptions = controller.generationViewModel.samplers,
+                            samplerOptions = generationState.samplerOptions,
                             onPromptChange = controller.generationViewModel::updatePrompt,
                             onPromptCommit = controller.generationViewModel::commitPrompt,
                             onUndoPrompt = controller.generationViewModel::undoPrompt,
@@ -130,7 +130,7 @@ fun App(
                             state = libraryState,
                             backendState = backendState,
                             selectedPresetId = generationState.selectedPresetId,
-                            samplerOptions = controller.generationViewModel.samplers,
+                            samplerOptions = generationState.samplerOptions,
                             onCreatePreset = controller.libraryViewModel::createPreset,
                             onEditPreset = controller.libraryViewModel::editPreset,
                             onDeletePreset = { id ->

@@ -33,6 +33,7 @@ void handle_get_outputs(const httplib::Request& req, httplib::Response& res, Ser
 void handle_health(const httplib::Request& req, httplib::Response& res, ServerContext& ctx);
 void handle_get_config(const httplib::Request& req, httplib::Response& res, ServerContext& ctx);
 void handle_post_config(const httplib::Request& req, httplib::Response& res, ServerContext& ctx);
+void handle_get_sampler_options(const httplib::Request& req, httplib::Response& res);
 void handle_get_progress(const httplib::Request& req, httplib::Response& res);
 void handle_stream_progress(const httplib::Request& req, httplib::Response& res);
 void handle_get_models(const httplib::Request& req, httplib::Response& res, ServerContext& ctx);
