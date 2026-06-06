@@ -112,7 +112,6 @@ fun App(
                             state = galleryState,
                             outputDir = settingsState.outputDir,
                             isTaggingGallery = settingsState.isBusy && settingsState.message.contains("Tagging", ignoreCase = true),
-                            galleryTaggingMessage = settingsState.message.takeIf { it.contains("Tagging", ignoreCase = true) }.orEmpty(),
                             onRefresh = { controller.galleryViewModel.refresh(settingsState.outputDir) },
                             onTagAllPendingImages = controller.settingsViewModel::tagAllPendingImages,
                             onQueryChange = controller.galleryViewModel::updateQuery,
