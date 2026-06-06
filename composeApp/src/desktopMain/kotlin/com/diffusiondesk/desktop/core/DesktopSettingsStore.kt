@@ -17,6 +17,7 @@ class DesktopSettingsStore {
             themeMode = "system",
             actionBarPosition = "bottom",
             saveImagesAutomatically = true,
+            autostartLlmWorkers = false,
             galleryPreviewWidthDp = 420,
         )
 
@@ -46,6 +47,8 @@ class DesktopSettingsStore {
                     ?: defaults.actionBarPosition,
                 saveImagesAutomatically = props.getProperty("saveImagesAutomatically", defaults.saveImagesAutomatically.toString()).toBooleanStrictOrNull()
                     ?: defaults.saveImagesAutomatically,
+                autostartLlmWorkers = props.getProperty("autostartLlmWorkers", defaults.autostartLlmWorkers.toString()).toBooleanStrictOrNull()
+                    ?: defaults.autostartLlmWorkers,
                 galleryPreviewWidthDp = props.getProperty("galleryPreviewWidthDp", defaults.galleryPreviewWidthDp.toString()).toIntOrNull()
                     ?.coerceIn(320, 760)
                     ?: defaults.galleryPreviewWidthDp,
@@ -67,6 +70,7 @@ class DesktopSettingsStore {
         props.setProperty("themeMode", settings.themeMode)
         props.setProperty("actionBarPosition", settings.actionBarPosition)
         props.setProperty("saveImagesAutomatically", settings.saveImagesAutomatically.toString())
+        props.setProperty("autostartLlmWorkers", settings.autostartLlmWorkers.toString())
         props.setProperty("galleryPreviewWidthDp", settings.galleryPreviewWidthDp.toString())
 
         settingsFile.outputStream().use { props.store(it, "Diffusion Desk Desktop Settings") }

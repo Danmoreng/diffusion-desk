@@ -36,6 +36,7 @@ import androidx.compose.material.icons.filled.ChevronLeft
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Casino
 import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.AutoFixHigh
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.PlayArrow
@@ -127,6 +128,7 @@ fun GenerateScreen(
     onApplyAspectRatio: (Int, Int) -> Unit,
     onScaleResolution: (Int) -> Unit,
     onResetToPresetDefaults: () -> Unit,
+    onEnhancePrompt: () -> Unit,
     onGenerate: () -> Unit,
     onToggleEndless: () -> Unit,
     onPresetSelected: (String) -> Unit,
@@ -202,6 +204,7 @@ fun GenerateScreen(
                     onApplyAspectRatio = onApplyAspectRatio,
                     onScaleResolution = onScaleResolution,
                     onResetToPresetDefaults = onResetToPresetDefaults,
+                    onEnhancePrompt = onEnhancePrompt,
                     modifier = Modifier
                         .width(panelWidth)
                         .fillMaxHeight(),
@@ -307,6 +310,7 @@ private fun GenerationPanel(
     onApplyAspectRatio: (Int, Int) -> Unit,
     onScaleResolution: (Int) -> Unit,
     onResetToPresetDefaults: () -> Unit,
+    onEnhancePrompt: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val showNegativePrompt = (state.cfgScale.toDoubleOrNull() ?: 0.0) > 1.0
@@ -330,6 +334,12 @@ private fun GenerationPanel(
             ) {
                 Label("Prompt")
                 Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    SubtleTextButton(
+                        icon = Icons.Default.AutoFixHigh,
+                        text = if (state.isEnhancingPrompt) "Enhancing..." else "Enhance",
+                        onClick = onEnhancePrompt,
+                        enabled = state.prompt.isNotBlank() && !state.isEnhancingPrompt,
+                    )
                     PromptHistoryButton(
                         icon = Icons.AutoMirrored.Filled.Undo,
                         contentDescription = "Previous prompt",
@@ -348,6 +358,7 @@ private fun GenerationPanel(
                 value = state.prompt,
                 onValueChange = onPromptChange,
                 onFocusLost = onPromptCommit,
+                enabled = !state.isEnhancingPrompt,
                 modifier = Modifier
                     .fillMaxWidth()
                     .heightIn(min = 142.dp),
@@ -1229,12 +1240,18 @@ private fun SubtleTextButton(
     icon: ImageVector,
     text: String,
     onClick: () -> Unit,
+    enabled: Boolean = true,
 ) {
     val shape = RoundedCornerShape(5.dp)
+    val tint = if (enabled) {
+        MaterialTheme.colorScheme.onSurfaceVariant
+    } else {
+        MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f)
+    }
     Row(
         modifier = Modifier
             .clip(shape)
-            .clickable(onClick = onClick)
+            .then(if (enabled) Modifier.clickable(onClick = onClick) else Modifier)
             .padding(horizontal = 8.dp, vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(5.dp),
@@ -1242,13 +1259,13 @@ private fun SubtleTextButton(
         Icon(
             imageVector = icon,
             contentDescription = null,
-            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            tint = tint,
             modifier = Modifier.size(14.dp),
         )
         Text(
             text = text,
             style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            color = tint,
         )
     }
 }
@@ -1509,12 +1526,14 @@ private fun PaddedTextArea(
     onValueChange: (String) -> Unit,
     modifier: Modifier = Modifier,
     onFocusLost: (() -> Unit)? = null,
+    enabled: Boolean = true,
 ) {
     val shape = RoundedCornerShape(5.dp)
     var hadFocus by remember { mutableStateOf(false) }
     BasicTextField(
         value = value,
         onValueChange = onValueChange,
+        enabled = enabled,
         modifier = modifier
             .onFocusChanged { focusState ->
                 if (hadFocus && !focusState.isFocused) {
@@ -1523,10 +1542,22 @@ private fun PaddedTextArea(
                 hadFocus = focusState.isFocused
             }
             .clip(shape)
-            .background(MaterialTheme.colorScheme.surface)
+            .background(
+                if (enabled) {
+                    MaterialTheme.colorScheme.surface
+                } else {
+                    MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f)
+                },
+            )
             .border(1.dp, MaterialTheme.colorScheme.outline, shape)
             .padding(horizontal = 10.dp, vertical = 8.dp),
-        textStyle = MaterialTheme.typography.bodyLarge.copy(color = MaterialTheme.colorScheme.onSurface),
+        textStyle = MaterialTheme.typography.bodyLarge.copy(
+            color = if (enabled) {
+                MaterialTheme.colorScheme.onSurface
+            } else {
+                MaterialTheme.colorScheme.onSurfaceVariant
+            },
+        ),
         cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
     )
 }

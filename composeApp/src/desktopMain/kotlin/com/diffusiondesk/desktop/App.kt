@@ -103,6 +103,7 @@ fun App(
                             onApplyAspectRatio = controller.generationViewModel::applyAspectRatio,
                             onScaleResolution = controller.generationViewModel::scaleResolution,
                             onResetToPresetDefaults = controller.generationViewModel::resetToPresetDefaults,
+                            onEnhancePrompt = controller.generationViewModel::enhancePrompt,
                             onGenerate = {
                                 controller.generationViewModel.generate(settingsState.saveImagesAutomatically)
                             },
@@ -189,6 +190,7 @@ fun App(
                             onTaggingPresetChange = controller.settingsViewModel::updateTaggingPresetId,
                             onAssistantPresetChange = controller.settingsViewModel::updateAssistantPresetId,
                             onPromptEnhancerPresetChange = controller.settingsViewModel::updatePromptEnhancerPresetId,
+                            onAutostartLlmWorkersChange = controller.settingsViewModel::updateAutostartLlmWorkers,
                             onLoadLlmRole = controller.settingsViewModel::loadLlmRole,
                             onUnloadLlmPreset = controller.settingsViewModel::unloadLlmPreset,
                             onStopLlmWorker = controller.settingsViewModel::stopLlmWorker,

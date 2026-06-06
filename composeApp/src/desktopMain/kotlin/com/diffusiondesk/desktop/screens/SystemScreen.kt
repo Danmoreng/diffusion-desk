@@ -37,6 +37,7 @@ import com.diffusiondesk.desktop.core.BackendUiState
 import com.diffusiondesk.desktop.core.LlmWorkerState
 import com.diffusiondesk.desktop.core.LlmWorkerStatus
 import com.diffusiondesk.desktop.viewmodel.SettingsUiState
+import org.jetbrains.jewel.ui.component.Checkbox
 import org.jetbrains.jewel.ui.component.DefaultButton as Button
 import org.jetbrains.jewel.ui.component.Text
 
@@ -63,6 +64,7 @@ fun SystemScreen(
     onTaggingPresetChange: (String) -> Unit,
     onAssistantPresetChange: (String) -> Unit,
     onPromptEnhancerPresetChange: (String) -> Unit,
+    onAutostartLlmWorkersChange: (Boolean) -> Unit,
     onLoadLlmRole: (String) -> Unit,
     onUnloadLlmPreset: (String) -> Unit,
     onStopLlmWorker: (String) -> Unit,
@@ -94,6 +96,7 @@ fun SystemScreen(
                 onTaggingPresetChange = onTaggingPresetChange,
                 onAssistantPresetChange = onAssistantPresetChange,
                 onPromptEnhancerPresetChange = onPromptEnhancerPresetChange,
+                onAutostartLlmWorkersChange = onAutostartLlmWorkersChange,
                 onLoadLlmRole = onLoadLlmRole,
                 onUnloadLlmPreset = onUnloadLlmPreset,
                 onStopLlmWorker = onStopLlmWorker,
@@ -121,6 +124,7 @@ private fun SystemOverview(
     onTaggingPresetChange: (String) -> Unit,
     onAssistantPresetChange: (String) -> Unit,
     onPromptEnhancerPresetChange: (String) -> Unit,
+    onAutostartLlmWorkersChange: (Boolean) -> Unit,
     onLoadLlmRole: (String) -> Unit,
     onUnloadLlmPreset: (String) -> Unit,
     onStopLlmWorker: (String) -> Unit,
@@ -142,6 +146,7 @@ private fun SystemOverview(
                         onTaggingPresetChange = onTaggingPresetChange,
                         onAssistantPresetChange = onAssistantPresetChange,
                         onPromptEnhancerPresetChange = onPromptEnhancerPresetChange,
+                        onAutostartLlmWorkersChange = onAutostartLlmWorkersChange,
                         onLoadLlmRole = onLoadLlmRole,
                         onUnloadLlmPreset = onUnloadLlmPreset,
                         onStopLlmWorker = onStopLlmWorker,
@@ -160,6 +165,7 @@ private fun SystemOverview(
                     onTaggingPresetChange = onTaggingPresetChange,
                     onAssistantPresetChange = onAssistantPresetChange,
                     onPromptEnhancerPresetChange = onPromptEnhancerPresetChange,
+                    onAutostartLlmWorkersChange = onAutostartLlmWorkersChange,
                     onLoadLlmRole = onLoadLlmRole,
                     onUnloadLlmPreset = onUnloadLlmPreset,
                     onStopLlmWorker = onStopLlmWorker,
@@ -253,6 +259,7 @@ private fun LlmWorkersOverview(
     onTaggingPresetChange: (String) -> Unit,
     onAssistantPresetChange: (String) -> Unit,
     onPromptEnhancerPresetChange: (String) -> Unit,
+    onAutostartLlmWorkersChange: (Boolean) -> Unit,
     onLoadLlmRole: (String) -> Unit,
     onUnloadLlmPreset: (String) -> Unit,
     onStopLlmWorker: (String) -> Unit,
@@ -282,6 +289,16 @@ private fun LlmWorkersOverview(
             ) {
                 Text("Stop All")
             }
+        }
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Checkbox(
+                checked = state.autostartLlmWorkers,
+                onCheckedChange = onAutostartLlmWorkersChange,
+            )
+            Text("Autostart configured LLM roles")
         }
 
         roles.forEach { role ->
