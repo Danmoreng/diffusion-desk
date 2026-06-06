@@ -12,6 +12,7 @@ import com.diffusiondesk.desktop.core.LlmPresetStore
 import com.diffusiondesk.desktop.core.LlmRoleSettings
 import com.diffusiondesk.desktop.core.LlmWorkerPool
 import com.diffusiondesk.desktop.core.LlmWorkerState
+import com.diffusiondesk.desktop.core.NotificationCenter
 import com.diffusiondesk.desktop.core.detectDefaultModelDir
 import com.diffusiondesk.desktop.core.detectDefaultOutputDir
 import com.diffusiondesk.desktop.core.detectDefaultRepoRoot
@@ -36,6 +37,7 @@ data class SettingsUiState(
     val llmRoles: LlmRoleSettings = LlmRoleSettings(),
     val llmWorkers: List<LlmWorkerState> = emptyList(),
     val isBusy: Boolean = false,
+    val isTaggingGallery: Boolean = false,
     val message: String = "",
     val error: String? = null,
 )
@@ -48,6 +50,7 @@ class SettingsViewModel(
     private val llmWorkerPool: LlmWorkerPool,
     private val taggingService: ImageTaggingService,
     private val client: DiffusionDeskClient,
+    private val notifications: NotificationCenter,
 ) {
     private val _uiState = MutableStateFlow(
         store.load().toUiState().copy(
@@ -105,10 +108,13 @@ class SettingsViewModel(
         runCatching { currentSettings() }
             .onSuccess {
                 store.save(it)
-                update { copy(message = "Saved desktop settings.", error = null) }
+                notifications.success("Saved desktop settings.")
+                update { copy(message = "", error = null) }
             }
             .onFailure { error ->
-                update { copy(error = error.message ?: "Invalid settings.") }
+                val message = error.message ?: "Invalid settings."
+                notifications.error(message)
+                update { copy(error = message) }
             }
     }
 
@@ -116,18 +122,22 @@ class SettingsViewModel(
         scope.launch {
             val settings = currentSettingsOrReport() ?: return@launch
             store.save(settings)
-            update { copy(isBusy = true, message = "Starting image worker...", error = null) }
+            notifications.info("Starting image worker...")
+            update { copy(isBusy = true, message = "", error = null) }
 
             val startResult = backendManager.start(settings)
             if (startResult.isSuccess) {
-                applySettingsToBackendInternal(settings)
-                loadConfigFromBackendInternal()
-                update { copy(isBusy = false, message = "Image worker started.", error = null) }
+                applySettingsToBackendInternal(settings, notify = false)
+                loadConfigFromBackendInternal(notify = false)
+                notifications.success("Image worker started.")
+                update { copy(isBusy = false, message = "", error = null) }
             } else {
+                val message = startResult.exceptionOrNull()?.message ?: "Failed to start image worker."
+                notifications.error(message)
                 update {
                     copy(
                         isBusy = false,
-                        error = startResult.exceptionOrNull()?.message ?: "Failed to start image worker.",
+                        error = message,
                     )
                 }
             }
@@ -136,22 +146,32 @@ class SettingsViewModel(
 
     fun stopBackend() {
         scope.launch {
-            update { copy(isBusy = true, message = "Stopping image worker...", error = null) }
+            notifications.info("Stopping image worker...")
+            update { copy(isBusy = true, message = "", error = null) }
             backendManager.stop()
-            update { copy(isBusy = false, message = "Image worker stopped.", error = null) }
+            notifications.success("Image worker stopped.")
+            update { copy(isBusy = false, message = "", error = null) }
         }
     }
 
     fun unloadImageModel() {
         scope.launch {
             if (backendState.value.status != BackendStatus.Ready) {
-                update { copy(message = "Image worker is not ready yet.") }
+                notifications.warning("Image worker is not ready yet.")
                 return@launch
             }
-            update { copy(isBusy = true, message = "Unloading image model...", error = null) }
+            notifications.info("Unloading image model...")
+            update { copy(isBusy = true, message = "", error = null) }
             client.unloadImageModel(backendState.value.baseUrl)
-                .onSuccess { update { copy(isBusy = false, message = "Image model unloaded.", error = null) } }
-                .onFailure { error -> update { copy(isBusy = false, error = error.message ?: "Failed to unload image model.") } }
+                .onSuccess {
+                    notifications.success("Image model unloaded.")
+                    update { copy(isBusy = false, message = "", error = null) }
+                }
+                .onFailure { error ->
+                    val message = error.message ?: "Failed to unload image model."
+                    notifications.error(message)
+                    update { copy(isBusy = false, error = message) }
+                }
         }
     }
 
@@ -163,13 +183,16 @@ class SettingsViewModel(
                 copy(
                     llmPresets = presets,
                     llmRoles = roles.sanitizeFor(presets),
-                    message = "Loaded ${presets.size} LLM preset(s).",
+                    message = "",
                     error = null,
                 )
             }
             llmPresetStore.saveRoles(_uiState.value.llmRoles)
+            notifications.success("Loaded ${presets.size} LLM preset(s).")
         }.onFailure { error ->
-            update { copy(error = error.message ?: "Failed to load LLM presets.") }
+            val message = error.message ?: "Failed to load LLM presets."
+            notifications.error(message)
+            update { copy(error = message) }
         }
     }
 
@@ -178,36 +201,61 @@ class SettingsViewModel(
             val settings = currentSettingsOrReport() ?: return@launch
             val preset = presetForRole(role)
             if (preset == null) {
-                update { copy(error = "Select an LLM preset for $role first.") }
+                val message = "Select an LLM preset for $role first."
+                notifications.warning(message)
+                update { copy(error = message) }
                 return@launch
             }
-            update { copy(isBusy = true, message = "Loading ${preset.name} for $role...", error = null) }
+            notifications.info("Loading ${preset.name} for $role...")
+            update { copy(isBusy = true, message = "", error = null) }
             llmWorkerPool.ensureWorkerForPreset(settings, preset)
-                .onSuccess { update { copy(isBusy = false, message = "Loaded ${preset.name} for $role.", error = null) } }
-                .onFailure { error -> update { copy(isBusy = false, error = error.message ?: "Failed to load LLM preset.") } }
+                .onSuccess {
+                    notifications.success("Loaded ${preset.name} for $role.")
+                    update { copy(isBusy = false, message = "", error = null) }
+                }
+                .onFailure { error ->
+                    val message = error.message ?: "Failed to load LLM preset."
+                    notifications.error(message)
+                    update { copy(isBusy = false, error = message) }
+                }
         }
     }
 
     fun unloadLlmPreset(presetId: String) {
         scope.launch {
             llmWorkerPool.unloadPreset(presetId)
-                .onSuccess { update { copy(message = "LLM model unloaded.", error = null) } }
-                .onFailure { error -> update { copy(error = error.message ?: "Failed to unload LLM model.") } }
+                .onSuccess {
+                    notifications.success("LLM model unloaded.")
+                    update { copy(message = "", error = null) }
+                }
+                .onFailure { error ->
+                    val message = error.message ?: "Failed to unload LLM model."
+                    notifications.error(message)
+                    update { copy(error = message) }
+                }
         }
     }
 
     fun stopLlmWorker(workerId: String) {
         scope.launch {
             llmWorkerPool.stopWorker(workerId)
-                .onSuccess { update { copy(message = "LLM worker stopped.", error = null) } }
-                .onFailure { error -> update { copy(error = error.message ?: "Failed to stop LLM worker.") } }
+                .onSuccess {
+                    notifications.success("LLM worker stopped.")
+                    update { copy(message = "", error = null) }
+                }
+                .onFailure { error ->
+                    val message = error.message ?: "Failed to stop LLM worker."
+                    notifications.error(message)
+                    update { copy(error = message) }
+                }
         }
     }
 
     fun stopAllLlmWorkers() {
         scope.launch {
             llmWorkerPool.stopAll()
-            update { copy(message = "Stopped all LLM workers.", error = null) }
+            notifications.success("Stopped all LLM workers.")
+            update { copy(message = "", error = null) }
         }
     }
 
@@ -216,22 +264,22 @@ class SettingsViewModel(
             val settings = currentSettingsOrReport() ?: return@launch
             val preset = presetForRole("tagging")
             if (preset == null) {
-                update { copy(error = "Select a tagging LLM preset first.") }
+                val message = "Select a tagging LLM preset first."
+                notifications.warning(message)
+                update { copy(error = message) }
                 return@launch
             }
-            update { copy(isBusy = true, message = "Tagging next image...", error = null) }
+            notifications.info("Tagging next image...")
+            update { copy(isBusy = true, message = "", error = null) }
             taggingService.tagNextImage(settings, preset)
                 .onSuccess { result ->
-                    update {
-                        copy(
-                            isBusy = false,
-                            message = "Tagged ${result.imageName}: ${result.tags.joinToString(", ")}",
-                            error = null,
-                        )
-                    }
+                    notifications.success("Tagged ${result.imageName}: ${result.tags.joinToString(", ")}")
+                    update { copy(isBusy = false, message = "", error = null) }
                 }
                 .onFailure { error ->
-                    update { copy(isBusy = false, error = error.message ?: "Failed to tag image.") }
+                    val message = error.message ?: "Failed to tag image."
+                    notifications.error(message)
+                    update { copy(isBusy = false, error = message) }
                 }
         }
     }
@@ -241,22 +289,22 @@ class SettingsViewModel(
             val settings = currentSettingsOrReport() ?: return@launch
             val preset = presetForRole("tagging")
             if (preset == null) {
-                update { copy(error = "Select a tagging LLM preset first.") }
+                val message = "Select a tagging LLM preset first."
+                notifications.warning(message)
+                update { copy(error = message) }
                 return@launch
             }
-            update { copy(isBusy = true, message = "Tagging untagged gallery images...", error = null) }
+            notifications.info("Generating gallery tags...")
+            update { copy(isBusy = true, isTaggingGallery = true, message = "", error = null) }
             taggingService.tagPendingImages(settings, preset, maxItems = Int.MAX_VALUE, refreshOutputIndex = true)
                 .onSuccess { result ->
-                    update {
-                        copy(
-                            isBusy = false,
-                            message = "Tagged ${result.completed} image(s). ${result.failed} failed.",
-                            error = null,
-                        )
-                    }
+                    notifications.success("Tagged ${result.completed} image(s). ${result.failed} failed.")
+                    update { copy(isBusy = false, isTaggingGallery = false, message = "", error = null) }
                 }
                 .onFailure { error ->
-                    update { copy(isBusy = false, error = error.message ?: "Failed to tag gallery.") }
+                    val message = error.message ?: "Failed to tag gallery."
+                    notifications.error(message)
+                    update { copy(isBusy = false, isTaggingGallery = false, error = message) }
                 }
         }
     }
@@ -274,23 +322,26 @@ class SettingsViewModel(
         }
     }
 
-    private suspend fun applySettingsToBackendInternal(settings: DesktopSettings) {
+    private suspend fun applySettingsToBackendInternal(settings: DesktopSettings, notify: Boolean = true) {
         if (backendState.value.status != BackendStatus.Ready) {
-            update { copy(message = "Image worker is not ready yet.") }
+            if (notify) notifications.warning("Image worker is not ready yet.")
             return
         }
 
         val result = client.updateConfig(backendState.value.baseUrl, settings)
         if (result.isSuccess) {
-            update { copy(message = "Settings applied to image worker.", error = null) }
+            if (notify) notifications.success("Settings applied to image worker.")
+            update { copy(message = "", error = null) }
         } else {
-            update { copy(error = result.exceptionOrNull()?.message ?: "Failed to apply image worker settings.") }
+            val message = result.exceptionOrNull()?.message ?: "Failed to apply image worker settings."
+            if (notify) notifications.error(message)
+            update { copy(error = message) }
         }
     }
 
-    private suspend fun loadConfigFromBackendInternal() {
+    private suspend fun loadConfigFromBackendInternal(notify: Boolean = true) {
         if (backendState.value.status != BackendStatus.Ready) {
-            update { copy(message = "Image worker is not ready yet.") }
+            if (notify) notifications.warning("Image worker is not ready yet.")
             return
         }
 
@@ -301,19 +352,26 @@ class SettingsViewModel(
                     modelDir = config.modelDir.ifBlank { modelDir },
                     outputDir = config.outputDir.ifBlank { outputDir },
                     setupCompleted = config.setupCompleted,
-                    message = "Loaded image worker config.",
+                    message = "",
                     error = null,
                 )
             }
             currentSettingsOrNull()?.let(store::save)
+            if (notify) notifications.success("Loaded image worker config.")
         }.onFailure { error ->
-            update { copy(error = error.message ?: "Failed to load image worker config.") }
+            val message = error.message ?: "Failed to load image worker config."
+            if (notify) notifications.error(message)
+            update { copy(error = message) }
         }
     }
 
     private fun currentSettingsOrReport(): DesktopSettings? {
         return runCatching { currentSettings() }
-            .onFailure { error -> update { copy(error = error.message ?: "Invalid settings.") } }
+            .onFailure { error ->
+                val message = error.message ?: "Invalid settings."
+                notifications.error(message)
+                update { copy(error = message) }
+            }
             .getOrNull()
     }
 
@@ -353,7 +411,7 @@ class SettingsViewModel(
     private fun updateRoles(transform: LlmRoleSettings.() -> LlmRoleSettings) {
         val next = _uiState.value.llmRoles.transform().sanitizeFor(_uiState.value.llmPresets)
         llmPresetStore.saveRoles(next)
-        update { copy(llmRoles = next, message = "Saved LLM role settings.", error = null) }
+        update { copy(llmRoles = next, message = "", error = null) }
     }
 
     private fun LlmRoleSettings.sanitizeFor(presets: List<LlmPreset>): LlmRoleSettings {
