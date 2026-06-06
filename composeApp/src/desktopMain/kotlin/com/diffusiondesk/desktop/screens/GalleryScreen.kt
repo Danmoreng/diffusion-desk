@@ -74,6 +74,9 @@ import java.awt.Toolkit
 import java.awt.datatransfer.DataFlavor
 import java.awt.datatransfer.Transferable
 import java.io.File
+import java.time.Instant
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 import kotlin.math.roundToInt
 import javax.imageio.ImageIO
 import kotlinx.coroutines.Dispatchers
@@ -81,12 +84,14 @@ import kotlinx.coroutines.withContext
 import org.jetbrains.jewel.ui.component.DefaultButton as Button
 import org.jetbrains.jewel.ui.component.Text
 
+private val GalleryTileDateFormatter: DateTimeFormatter =
+    DateTimeFormatter.ofPattern("MMM d, HH:mm").withZone(ZoneId.systemDefault())
+
 @Composable
 fun GalleryScreen(
     state: GalleryUiState,
     outputDir: String,
     isTaggingGallery: Boolean,
-    galleryTaggingMessage: String,
     onRefresh: () -> Unit,
     onTagAllPendingImages: () -> Unit,
     onQueryChange: (String) -> Unit,
@@ -140,9 +145,7 @@ fun GalleryScreen(
             ) {
                 GalleryToolbar(
                     state = state,
-                    outputDir = outputDir,
                     isTaggingGallery = isTaggingGallery,
-                    galleryTaggingMessage = galleryTaggingMessage,
                     onRefresh = onRefresh,
                     onTagAllPendingImages = onTagAllPendingImages,
                     onQueryChange = onQueryChange,
@@ -210,9 +213,7 @@ fun GalleryScreen(
 @Composable
 private fun GalleryToolbar(
     state: GalleryUiState,
-    outputDir: String,
     isTaggingGallery: Boolean,
-    galleryTaggingMessage: String,
     onRefresh: () -> Unit,
     onTagAllPendingImages: () -> Unit,
     onQueryChange: (String) -> Unit,
@@ -227,21 +228,15 @@ private fun GalleryToolbar(
             horizontalArrangement = Arrangement.spacedBy(10.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Column(modifier = Modifier.weight(1f)) {
+            Box(
+                modifier = Modifier.weight(1f),
+            ) {
                 Text(
                     text = "Gallery",
                     style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
                 )
-                SelectionContainer {
-                    Text(
-                        text = outputDir,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
             }
             DeskIconButton(
                 icon = Icons.Default.Refresh,
@@ -268,9 +263,26 @@ private fun GalleryToolbar(
                 label = "",
                 value = state.query,
                 onValueChange = onQueryChange,
-                placeholder = "Search prompts, model names, or filenames",
+                placeholder = "Search images",
                 modifier = Modifier.weight(1f),
             )
+            if (state.keywords.isNotEmpty() || state.selectedKeyword.isNotBlank()) {
+                GalleryKeywordFilter(
+                    keywords = state.keywords,
+                    selectedKeyword = state.selectedKeyword,
+                    draft = keywordFilterDraft,
+                    onDraftChange = { keywordFilterDraft = it },
+                    onSelectKeyword = {
+                        onSelectKeyword(it)
+                        keywordFilterDraft = ""
+                    },
+                    onClearKeywordFilter = {
+                        onClearKeywordFilter()
+                        keywordFilterDraft = ""
+                    },
+                    modifier = Modifier.weight(1f),
+                )
+            }
             Text(
                 text = when {
                     state.isIndexing && state.images.isEmpty() -> "Indexing..."
@@ -279,34 +291,6 @@ private fun GalleryToolbar(
                 },
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-
-        if (state.keywords.isNotEmpty() || state.selectedKeyword.isNotBlank()) {
-            GalleryKeywordFilter(
-                keywords = state.keywords,
-                selectedKeyword = state.selectedKeyword,
-                draft = keywordFilterDraft,
-                onDraftChange = { keywordFilterDraft = it },
-                onSelectKeyword = {
-                    onSelectKeyword(it)
-                    keywordFilterDraft = ""
-                },
-                onClearKeywordFilter = {
-                    onClearKeywordFilter()
-                    keywordFilterDraft = ""
-                },
-            )
-        }
-
-        if (isTaggingGallery || galleryTaggingMessage.isNotBlank() || state.message.isNotBlank()) {
-            GalleryStatusLine(
-                text = when {
-                    isTaggingGallery -> galleryTaggingMessage.ifBlank { "Tagging gallery images with the LLM..." }
-                    galleryTaggingMessage.isNotBlank() -> galleryTaggingMessage
-                    else -> state.message
-                },
-                active = isTaggingGallery || state.isTaggingSelectedImage,
             )
         }
 
@@ -328,9 +312,10 @@ private fun GalleryKeywordFilter(
     onDraftChange: (String) -> Unit,
     onSelectKeyword: (String) -> Unit,
     onClearKeywordFilter: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     Row(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = modifier,
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -355,7 +340,7 @@ private fun GalleryKeywordFilter(
             onValueChange = onDraftChange,
             onOptionSelected = onSelectKeyword,
             placeholder = "+ Add filter",
-            modifier = Modifier.widthIn(min = 190.dp, max = 340.dp),
+            modifier = Modifier.weight(1f).widthIn(min = 190.dp, max = 340.dp),
         )
         if (selectedKeyword.isNotBlank()) {
             DeskIconButton(
@@ -501,28 +486,32 @@ private fun GalleryTile(
                 .clip(RoundedCornerShape(5.dp)),
         )
         Text(
-            text = image.prompt.ifBlank { image.displayName },
+            text = image.displayName,
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurface,
-            maxLines = 2,
+            maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
-        Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
-            if (image.dimensions.isNotBlank()) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = formatGalleryTileDate(image.createdAt),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f),
+            )
+            image.dimensions.takeIf { it.isNotBlank() }?.let { dimensions ->
                 Text(
-                    text = image.dimensions,
+                    text = dimensions,
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.primary,
                     fontWeight = FontWeight.SemiBold,
-                )
-            }
-            if (image.seed != null) {
-                Text(
-                    text = "Seed ${image.seed}",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
                 )
             }
         }
@@ -647,33 +636,6 @@ private fun GalleryDetails(
 }
 
 @Composable
-private fun GalleryStatusLine(
-    text: String,
-    active: Boolean,
-) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        if (active) {
-            androidx.compose.material3.CircularProgressIndicator(
-                modifier = Modifier.size(14.dp),
-                strokeWidth = 2.dp,
-                color = MaterialTheme.colorScheme.primary,
-            )
-        }
-        Text(
-            text = text,
-            style = MaterialTheme.typography.bodySmall,
-            color = if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
-    }
-}
-
-@Composable
 private fun GalleryImagePreview(
     file: File,
     displayFile: File = file,
@@ -737,6 +699,12 @@ private fun DetailBlock(label: String, value: String) {
             )
         }
     }
+}
+
+private fun formatGalleryTileDate(epochMillis: Long): String {
+    return runCatching {
+        GalleryTileDateFormatter.format(Instant.ofEpochMilli(epochMillis))
+    }.getOrDefault("")
 }
 
 private fun runAfterPopupClick(action: () -> Unit) {
