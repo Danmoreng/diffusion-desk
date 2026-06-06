@@ -2,7 +2,6 @@ package com.diffusiondesk.desktop.screens
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -20,7 +19,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Dashboard
 import androidx.compose.material.icons.filled.Terminal
-import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -31,7 +29,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -78,8 +75,8 @@ fun SystemScreen(
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
-            .padding(24.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
+            .padding(DeskScreenPadding),
+        verticalArrangement = Arrangement.spacedBy(DeskSectionSpacing),
     ) {
         SystemTabHeader(
             activeTab = activeTab,
@@ -133,12 +130,12 @@ private fun SystemOverview(
     BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
         val twoColumns = maxWidth >= 980.dp
         if (twoColumns) {
-            Row(horizontalArrangement = Arrangement.spacedBy(16.dp), modifier = Modifier.fillMaxWidth()) {
-                Column(modifier = Modifier.weight(0.95f), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(DeskSectionSpacing), modifier = Modifier.fillMaxWidth()) {
+                Column(modifier = Modifier.weight(0.95f), verticalArrangement = Arrangement.spacedBy(DeskSectionSpacing)) {
                     SystemSummary(state, backendState)
                     ImageWorkerOverview(state, backendState, onStartBackend, onStopBackend, onUnloadImageModel)
                 }
-                Column(modifier = Modifier.weight(1.35f), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                Column(modifier = Modifier.weight(1.35f), verticalArrangement = Arrangement.spacedBy(DeskSectionSpacing)) {
                     LlmWorkersOverview(
                         state = state,
                         onReloadLlmPresets = onReloadLlmPresets,
@@ -154,7 +151,7 @@ private fun SystemOverview(
                 }
             }
         } else {
-            Column(verticalArrangement = Arrangement.spacedBy(16.dp), modifier = Modifier.fillMaxWidth()) {
+            Column(verticalArrangement = Arrangement.spacedBy(DeskSectionSpacing), modifier = Modifier.fillMaxWidth()) {
                 SystemSummary(state, backendState)
                 ImageWorkerOverview(state, backendState, onStartBackend, onStopBackend, onUnloadImageModel)
                 LlmWorkersOverview(
@@ -315,7 +312,7 @@ private fun LlmRoleOverviewRow(
     DeskPanel(modifier = Modifier.fillMaxWidth()) {
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            horizontalArrangement = Arrangement.spacedBy(DeskControlSpacing),
             verticalAlignment = Alignment.Bottom,
         ) {
             Column(modifier = Modifier.width(150.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -369,7 +366,7 @@ private fun SystemDiagnostics(
     onUnloadLlmPreset: (String) -> Unit,
     onStopLlmWorker: (String) -> Unit,
 ) {
-    Column(verticalArrangement = Arrangement.spacedBy(16.dp), modifier = Modifier.fillMaxWidth()) {
+    Column(verticalArrangement = Arrangement.spacedBy(DeskSectionSpacing), modifier = Modifier.fillMaxWidth()) {
         SystemSectionCard(title = "Image Worker Diagnostics") {
             StatusLine("Status", backendState.status.name)
             StatusLine("Message", backendState.message)
@@ -439,50 +436,22 @@ private fun SystemTabHeader(
     activeTab: SystemTab,
     onSelect: (SystemTab) -> Unit,
 ) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f), RoundedCornerShape(8.dp))
-            .padding(horizontal = 10.dp, vertical = 8.dp),
-        horizontalArrangement = Arrangement.spacedBy(18.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        SystemTabButton(
-            selected = activeTab == SystemTab.Overview,
-            icon = Icons.Default.Dashboard,
-            label = SystemTab.Overview.label,
-            onClick = { onSelect(SystemTab.Overview) },
-        )
-        SystemTabButton(
-            selected = activeTab == SystemTab.Diagnostics,
-            icon = Icons.Default.Terminal,
-            label = SystemTab.Diagnostics.label,
-            onClick = { onSelect(SystemTab.Diagnostics) },
-        )
-    }
-}
-
-@Composable
-private fun SystemTabButton(
-    selected: Boolean,
-    icon: ImageVector,
-    label: String,
-    onClick: () -> Unit,
-) {
-    val container = if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.16f) else Color.Transparent
-    val content = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-    Row(
-        modifier = Modifier
-            .clip(RoundedCornerShape(6.dp))
-            .background(container)
-            .clickable(onClick = onClick)
-            .padding(horizontal = 10.dp, vertical = 6.dp),
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Icon(icon, contentDescription = null, tint = content, modifier = Modifier.size(16.dp))
-        Text(label, color = content, fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal)
-    }
+    DeskTabHeader(
+        tabs = listOf(
+            DeskTabItem(
+                selected = activeTab == SystemTab.Overview,
+                icon = Icons.Default.Dashboard,
+                label = SystemTab.Overview.label,
+                onClick = { onSelect(SystemTab.Overview) },
+            ),
+            DeskTabItem(
+                selected = activeTab == SystemTab.Diagnostics,
+                icon = Icons.Default.Terminal,
+                label = SystemTab.Diagnostics.label,
+                onClick = { onSelect(SystemTab.Diagnostics) },
+            ),
+        ),
+    )
 }
 
 @Composable
@@ -493,7 +462,7 @@ private fun SystemSectionCard(
     DeskPanel(modifier = Modifier.fillMaxWidth()) {
         Column(
             modifier = Modifier.fillMaxWidth(),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
+            verticalArrangement = Arrangement.spacedBy(DeskControlSpacing),
         ) {
             Text(
                 text = title,

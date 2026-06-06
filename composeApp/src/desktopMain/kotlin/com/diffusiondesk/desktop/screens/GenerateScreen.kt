@@ -158,7 +158,7 @@ fun GenerateScreen(
         BoxWithConstraints(
             modifier = Modifier
                 .weight(1f)
-                .padding(8.dp),
+                .padding(DeskScreenPadding),
         ) {
             val minPanelWidth = 480.dp
             val maxPanelWidth = minOf(900.dp, (maxWidth - 280.dp).coerceAtLeast(minPanelWidth))
@@ -313,15 +313,15 @@ private fun GenerationPanel(
 
     Card(
         modifier = modifier,
-        shape = RoundedCornerShape(8.dp),
+        shape = RoundedCornerShape(DeskPanelCornerRadius),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
     ) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
-                .padding(14.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp),
+                .padding(DeskPanelPadding),
+            verticalArrangement = Arrangement.spacedBy(DeskPanelSpacing),
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -766,12 +766,12 @@ private fun ActionBar(
             .fillMaxWidth()
             .height(78.dp)
             .padding(
-                start = 8.dp,
-                top = if (isTop) 8.dp else 0.dp,
-                end = 8.dp,
-                bottom = if (isTop) 0.dp else 8.dp,
+                start = DeskScreenPadding,
+                top = if (isTop) DeskScreenPadding else 0.dp,
+                end = DeskScreenPadding,
+                bottom = if (isTop) 0.dp else DeskScreenPadding,
             ),
-        shape = RoundedCornerShape(8.dp),
+        shape = RoundedCornerShape(DeskPanelCornerRadius),
         color = MaterialTheme.colorScheme.surface,
         tonalElevation = 0.dp,
     ) {
@@ -784,7 +784,7 @@ private fun ActionBar(
                     .fillMaxSize()
                     .padding(horizontal = 22.dp),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(16.dp),
+                horizontalArrangement = Arrangement.spacedBy(DeskGroupSpacing),
             ) {
                 Button(
                     onClick = onGenerate,
@@ -816,7 +816,7 @@ private fun ActionBar(
                     )
                     Surface(
                         modifier = Modifier.height(44.dp),
-                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = DeskSubtleSurfaceAlpha),
                         shape = RoundedCornerShape(0.dp),
                     ) {
                         Box(
@@ -908,7 +908,7 @@ private fun PresetActionControl(
                 .fillMaxSize()
                 .clickable(enabled = state.presets.isNotEmpty()) { expanded = true },
             shape = RoundedCornerShape(8.dp),
-            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
+            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = DeskSubtleSurfaceAlpha),
         ) {
             Row(
                 modifier = Modifier

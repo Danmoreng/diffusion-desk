@@ -114,7 +114,7 @@ fun GalleryScreen(
         modifier = Modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
-            .padding(12.dp),
+            .padding(DeskScreenPadding),
     ) {
         val minPreviewWidth = 320.dp
         val maxPreviewWidth = minOf(760.dp, (maxWidth - 380.dp).coerceAtLeast(minPreviewWidth))
@@ -225,7 +225,7 @@ private fun GalleryToolbar(
     DeskPanel(modifier = Modifier.fillMaxWidth()) {
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            horizontalArrangement = Arrangement.spacedBy(DeskControlSpacing),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Box(
@@ -424,7 +424,7 @@ private fun EmptyGallery(modifier: Modifier) {
             .fillMaxHeight(),
     ) {
         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(DeskControlSpacing)) {
                 Icon(
                     imageVector = Icons.Default.ImageSearch,
                     contentDescription = null,
@@ -463,19 +463,15 @@ private fun GalleryTile(
     selected: Boolean,
     onClick: () -> Unit,
 ) {
-    val shape = RoundedCornerShape(8.dp)
+    val shape = RoundedCornerShape(DeskPanelCornerRadius)
     Column(
         modifier = Modifier
             .clip(shape)
             .background(MaterialTheme.colorScheme.surface)
-            .border(
-                width = if (selected) 2.dp else 1.dp,
-                color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant,
-                shape = shape,
-            )
+            .then(if (selected) Modifier.border(2.dp, MaterialTheme.colorScheme.primary, shape) else Modifier)
             .clickable(onClick = onClick)
-            .padding(7.dp),
-        verticalArrangement = Arrangement.spacedBy(6.dp),
+            .padding(DeskControlSpacing),
+        verticalArrangement = Arrangement.spacedBy(DeskCompactControlSpacing),
     ) {
         GalleryImagePreview(
             file = image.file,
@@ -494,7 +490,7 @@ private fun GalleryTile(
         )
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            horizontalArrangement = Arrangement.spacedBy(DeskControlSpacing),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
@@ -542,7 +538,7 @@ private fun GalleryDetails(
             modifier = Modifier
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState()),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+            verticalArrangement = Arrangement.spacedBy(DeskPanelSpacing),
         ) {
             GalleryImagePreview(
                 file = image.file,
