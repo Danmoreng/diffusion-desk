@@ -179,7 +179,7 @@ private fun SystemSummary(
     SystemSectionCard(title = "Status") {
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            horizontalArrangement = Arrangement.spacedBy(DeskLayoutGap),
         ) {
             SummaryTile(
                 label = "Image Worker",
@@ -223,7 +223,7 @@ private fun ImageWorkerOverview(
             }
             StatusBadge(backendState.status)
         }
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        Row(horizontalArrangement = Arrangement.spacedBy(DeskLayoutGap)) {
             Button(
                 onClick = onStartBackend,
                 enabled = !state.isBusy && backendState.status != BackendStatus.Ready,
@@ -266,7 +266,7 @@ private fun LlmWorkersOverview(
     )
 
     SystemSectionCard(title = "LLM Workers") {
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        Row(horizontalArrangement = Arrangement.spacedBy(DeskLayoutGap)) {
             Button(onClick = onReloadLlmPresets) {
                 Text("Reload Presets")
             }
@@ -414,7 +414,7 @@ private fun LlmWorkerDiagnosticsCard(
         if (worker.parsedArgs.isNotEmpty()) {
             StatusLine("Parsed args", worker.parsedArgs.joinToString(" "))
         }
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        Row(horizontalArrangement = Arrangement.spacedBy(DeskLayoutGap)) {
             Button(
                 onClick = { onUnloadLlmPreset(worker.presetId) },
                 enabled = worker.status == LlmWorkerStatus.Ready,
@@ -486,7 +486,7 @@ private fun SummaryTile(
         modifier = modifier
             .clip(RoundedCornerShape(6.dp))
             .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(6.dp))
-            .padding(10.dp),
+            .padding(DeskLayoutGap),
         verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
         Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)

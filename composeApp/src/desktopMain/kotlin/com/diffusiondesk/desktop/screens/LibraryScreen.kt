@@ -142,39 +142,18 @@ private fun ImagePresetLibrary(
             selected = "image",
             onShowImagePresets = onShowImagePresets,
             onShowLlmPresets = onShowLlmPresets,
-        )
-
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(DeskPanelCornerRadius))
-                .background(MaterialTheme.colorScheme.surface)
-                .padding(horizontal = DeskPanelPadding, vertical = DeskControlSpacing),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                text = "Image Generation Presets",
-                fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.onSurface,
-            )
-            Row(horizontalArrangement = Arrangement.spacedBy(DeskControlSpacing), verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    text = "${state.presets.size} preset(s)",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+            actions = {
                 Button(onClick = onReloadPresets) {
                     Text("Refresh")
                 }
                 Button(onClick = onCreatePreset) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(DeskCompactControlSpacing), verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(DeskIconSize))
                         Text("New Preset")
                     }
                 }
-            }
-        }
+            },
+        )
 
         Box(modifier = Modifier.weight(1f)) {
             if (state.presets.isEmpty()) {
@@ -184,8 +163,8 @@ private fun ImagePresetLibrary(
                     modifier = Modifier
                         .fillMaxSize()
                         .verticalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                    horizontalArrangement = Arrangement.spacedBy(DeskLayoutGap),
+                    verticalArrangement = Arrangement.spacedBy(DeskLayoutGap),
                     maxItemsInEachRow = 3,
                 ) {
                     state.presets.forEach { preset ->
@@ -211,6 +190,7 @@ private fun LibraryTabHeader(
     selected: String,
     onShowImagePresets: () -> Unit,
     onShowLlmPresets: () -> Unit,
+    actions: @Composable RowScope.() -> Unit = {},
 ) {
     DeskTabHeader(
         tabs = listOf(
@@ -227,6 +207,7 @@ private fun LibraryTabHeader(
                 onClick = onShowLlmPresets,
             ),
         ),
+        actions = actions,
     )
 }
 
@@ -238,7 +219,7 @@ private fun EmptyLibrary(onCreatePreset: () -> Unit) {
         verticalArrangement = Arrangement.Center,
     ) {
         Text("No image presets yet.", color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Spacer(Modifier.height(10.dp))
+        Spacer(Modifier.height(DeskLayoutGap))
         Button(onClick = onCreatePreset) {
             Text("Create Image Preset")
         }
@@ -261,7 +242,7 @@ private fun ImagePresetCard(
     ) {
         Column(
             modifier = Modifier.fillMaxWidth(),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
+            verticalArrangement = Arrangement.spacedBy(DeskLayoutGap),
         ) {
             Text(
                 text = preset.name,
@@ -363,35 +344,18 @@ private fun LlmPresetLibrary(
             selected = "llm",
             onShowImagePresets = onShowImagePresets,
             onShowLlmPresets = onShowLlmPresets,
-        )
-
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(DeskPanelCornerRadius))
-                .background(MaterialTheme.colorScheme.surface)
-                .padding(horizontal = DeskPanelPadding, vertical = DeskControlSpacing),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text("LLM Presets", fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
-            Row(horizontalArrangement = Arrangement.spacedBy(DeskControlSpacing), verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    text = "${state.llmPresets.size} preset(s)",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+            actions = {
                 Button(onClick = onReloadPresets) {
                     Text("Refresh")
                 }
                 Button(onClick = onCreateLlmPreset) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(DeskCompactControlSpacing), verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(DeskIconSize))
                         Text("New LLM")
                     }
                 }
-            }
-        }
+            },
+        )
 
         Box(modifier = Modifier.weight(1f)) {
             if (state.llmPresets.isEmpty()) {
@@ -401,7 +365,7 @@ private fun LlmPresetLibrary(
                     verticalArrangement = Arrangement.Center,
                 ) {
                     Text("No LLM presets yet.", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Spacer(Modifier.height(10.dp))
+                    Spacer(Modifier.height(DeskLayoutGap))
                     Button(onClick = onCreateLlmPreset) {
                         Text("Create LLM Preset")
                     }
@@ -411,8 +375,8 @@ private fun LlmPresetLibrary(
                     modifier = Modifier
                         .fillMaxSize()
                         .verticalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                    horizontalArrangement = Arrangement.spacedBy(DeskLayoutGap),
+                    verticalArrangement = Arrangement.spacedBy(DeskLayoutGap),
                     maxItemsInEachRow = 3,
                 ) {
                     state.llmPresets.forEach { preset ->
@@ -443,7 +407,7 @@ private fun LlmPresetCard(
     ) {
         Column(
             modifier = Modifier.fillMaxWidth(),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
+            verticalArrangement = Arrangement.spacedBy(DeskLayoutGap),
         ) {
             Text(
                 text = preset.name,
@@ -500,7 +464,7 @@ private fun LlmPresetEditorPage(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+            Row(horizontalArrangement = Arrangement.spacedBy(DeskLayoutGap), verticalAlignment = Alignment.CenterVertically) {
                 DeskIconButton(
                     icon = Icons.AutoMirrored.Filled.ArrowBack,
                     contentDescription = "Back",
@@ -632,7 +596,7 @@ private fun ImagePresetEditorPage(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+            Row(horizontalArrangement = Arrangement.spacedBy(DeskLayoutGap), verticalAlignment = Alignment.CenterVertically) {
                 DeskIconButton(
                     icon = Icons.AutoMirrored.Filled.ArrowBack,
                     contentDescription = "Back",
@@ -854,7 +818,7 @@ private fun EditorSection(
 private fun TwoColumnRow(content: @Composable RowScope.() -> Unit) {
     Row(
         modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        horizontalArrangement = Arrangement.spacedBy(DeskLayoutGap),
         content = content,
     )
 }
@@ -922,7 +886,7 @@ private fun ToggleLine(
 ) {
     Row(
         modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        horizontalArrangement = Arrangement.spacedBy(DeskLayoutGap),
         verticalAlignment = Alignment.Top,
     ) {
         Checkbox(

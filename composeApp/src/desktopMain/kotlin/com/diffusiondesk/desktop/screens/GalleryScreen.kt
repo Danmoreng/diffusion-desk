@@ -141,7 +141,7 @@ fun GalleryScreen(
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxHeight(),
-                verticalArrangement = Arrangement.spacedBy(10.dp),
+                verticalArrangement = Arrangement.spacedBy(DeskLayoutGap),
             ) {
                 GalleryToolbar(
                     state = state,
@@ -163,7 +163,7 @@ fun GalleryScreen(
             GallerySplitter(
                 modifier = Modifier
                     .fillMaxHeight()
-                    .width(12.dp)
+                    .width(DeskLayoutGap)
                     .pointerInput(minPreviewWidth, maxPreviewWidth) {
                         detectDragGestures(
                             onDragStart = {
@@ -256,7 +256,7 @@ private fun GalleryToolbar(
 
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            horizontalArrangement = Arrangement.spacedBy(DeskLayoutGap),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             DeskTextField(
@@ -378,8 +378,8 @@ private fun GalleryGrid(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(end = 12.dp),
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp),
+                horizontalArrangement = Arrangement.spacedBy(DeskLayoutGap),
+                verticalArrangement = Arrangement.spacedBy(DeskLayoutGap),
             ) {
                 items(images, key = { it.id }) { image ->
                     GalleryTile(

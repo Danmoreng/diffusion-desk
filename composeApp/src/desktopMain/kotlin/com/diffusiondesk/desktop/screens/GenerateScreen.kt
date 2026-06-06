@@ -210,7 +210,7 @@ fun GenerateScreen(
                 Splitter(
                     modifier = Modifier
                         .fillMaxHeight()
-                        .width(12.dp)
+                        .width(DeskLayoutGap)
                         .pointerInput(minPanelWidth, maxPanelWidth) {
                             detectDragGestures(
                                 onDragStart = {
@@ -646,7 +646,7 @@ private fun ProgressCard(state: GenerationUiState) {
     Column(
         modifier = Modifier.widthIn(max = 520.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(10.dp),
+        verticalArrangement = Arrangement.spacedBy(DeskLayoutGap),
     ) {
         Text(
             text = state.progressPhase.ifBlank { "Generating..." },

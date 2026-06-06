@@ -196,7 +196,7 @@ private fun DesktopSettingsSection(
             onValueChange = onRepoRootChange,
             modifier = Modifier.fillMaxWidth(),
         )
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        Row(horizontalArrangement = Arrangement.spacedBy(DeskLayoutGap)) {
             DeskTextField(
                 label = "Listen Port",
                 value = state.listenPort,
@@ -210,7 +210,7 @@ private fun DesktopSettingsSection(
                 Text("Save Local")
             }
         }
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        Row(horizontalArrangement = Arrangement.spacedBy(DeskLayoutGap)) {
             Button(
                 onClick = onApplyToBackend,
                 enabled = !state.isBusy && backendState.status == BackendStatus.Ready,

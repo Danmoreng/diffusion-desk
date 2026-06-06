@@ -8,6 +8,8 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -50,14 +52,15 @@ import androidx.compose.ui.window.PopupPositionProvider
 import androidx.compose.ui.window.PopupProperties
 import org.jetbrains.jewel.ui.component.Text
 
-internal val DeskScreenPadding = 8.dp
+internal val DeskLayoutGap = 8.dp
+internal val DeskScreenPadding = DeskLayoutGap
 internal val DeskPanelPadding = 14.dp
-internal val DeskPanelSpacing = 14.dp
-internal val DeskSectionSpacing = 14.dp
-internal val DeskControlSpacing = 8.dp
+internal val DeskPanelSpacing = DeskLayoutGap
+internal val DeskSectionSpacing = DeskLayoutGap
+internal val DeskControlSpacing = DeskLayoutGap
 internal val DeskCompactControlSpacing = 6.dp
-internal val DeskGroupSpacing = 16.dp
-internal val DeskTabSpacing = 18.dp
+internal val DeskGroupSpacing = DeskLayoutGap
+internal val DeskTabSpacing = DeskLayoutGap
 internal val DeskTabHorizontalPadding = 10.dp
 internal val DeskIconSize = 16.dp
 internal val DeskPanelCornerRadius = 8.dp
@@ -92,6 +95,7 @@ internal fun DeskPanel(
 internal fun DeskTabHeader(
     tabs: List<DeskTabItem>,
     modifier: Modifier = Modifier,
+    actions: @Composable RowScope.() -> Unit = {},
 ) {
     Row(
         modifier = modifier
@@ -105,6 +109,12 @@ internal fun DeskTabHeader(
         tabs.forEach { tab ->
             DeskTabButton(tab)
         }
+        Spacer(Modifier.weight(1f))
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(DeskControlSpacing),
+            verticalAlignment = Alignment.CenterVertically,
+            content = actions,
+        )
     }
 }
 
