@@ -11,6 +11,7 @@ import androidx.compose.material.icons.filled.Collections
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Inventory2
 import androidx.compose.material.icons.filled.LightMode
+import androidx.compose.material.icons.filled.Memory
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -31,7 +32,9 @@ import androidx.compose.ui.unit.sp
 import com.diffusiondesk.desktop.screens.GalleryScreen
 import com.diffusiondesk.desktop.screens.GenerateScreen
 import com.diffusiondesk.desktop.screens.LibraryScreen
+import com.diffusiondesk.desktop.screens.NotificationStack
 import com.diffusiondesk.desktop.screens.SettingsScreen
+import com.diffusiondesk.desktop.screens.SystemScreen
 import com.diffusiondesk.desktop.theme.DiffusionDeskTheme
 import org.jetbrains.jewel.ui.component.IconButton
 import org.jetbrains.jewel.ui.component.Text
@@ -40,7 +43,8 @@ private enum class Screen(val label: String, val icon: ImageVector, val subtitle
     Generate("Generate", Icons.Default.Image, "Preset-driven image generation with the local SD worker."),
     Gallery("Gallery", Icons.Default.Collections, "Browse generated images and reuse embedded parameters."),
     Library("Library", Icons.Default.Inventory2, "Manage JSON-backed image generation presets."),
-    Settings("Settings", Icons.Default.Settings, "Local paths, worker status, and preset storage."),
+    System("System", Icons.Default.Memory, "Worker status, runtime controls, and diagnostics."),
+    Settings("Settings", Icons.Default.Settings, "Local paths and static app configuration."),
 }
 
 @Composable
@@ -53,6 +57,7 @@ fun App(
     val generationState by controller.generationViewModel.uiState.collectAsState()
     val libraryState by controller.libraryViewModel.uiState.collectAsState()
     val galleryState by controller.galleryViewModel.uiState.collectAsState()
+    val notifications by controller.notificationCenter.notifications.collectAsState()
     val systemDarkTheme = isSystemInDarkTheme()
     val darkTheme = when (settingsState.themeMode) {
         "light" -> false
@@ -111,7 +116,7 @@ fun App(
                         Screen.Gallery -> GalleryScreen(
                             state = galleryState,
                             outputDir = settingsState.outputDir,
-                            isTaggingGallery = settingsState.isBusy && settingsState.message.contains("Tagging", ignoreCase = true),
+                            isTaggingGallery = settingsState.isTaggingGallery,
                             onRefresh = { controller.galleryViewModel.refresh(settingsState.outputDir) },
                             onTagAllPendingImages = controller.settingsViewModel::tagAllPendingImages,
                             onQueryChange = controller.galleryViewModel::updateQuery,
@@ -173,6 +178,22 @@ fun App(
                                 }
                             },
                         )
+                        Screen.System -> SystemScreen(
+                            state = settingsState,
+                            backendState = backendState,
+                            onStartBackend = controller.settingsViewModel::startBackend,
+                            onStopBackend = controller.settingsViewModel::stopBackend,
+                            onUnloadImageModel = controller.settingsViewModel::unloadImageModel,
+                            onReloadLlmPresets = controller.settingsViewModel::reloadLlmPresets,
+                            onTaggingPresetChange = controller.settingsViewModel::updateTaggingPresetId,
+                            onAssistantPresetChange = controller.settingsViewModel::updateAssistantPresetId,
+                            onPromptEnhancerPresetChange = controller.settingsViewModel::updatePromptEnhancerPresetId,
+                            onLoadLlmRole = controller.settingsViewModel::loadLlmRole,
+                            onUnloadLlmPreset = controller.settingsViewModel::unloadLlmPreset,
+                            onStopLlmWorker = controller.settingsViewModel::stopLlmWorker,
+                            onStopAllLlmWorkers = controller.settingsViewModel::stopAllLlmWorkers,
+                            onTagNextImage = controller.settingsViewModel::tagNextImage,
+                        )
                         Screen.Settings -> SettingsScreen(
                             state = settingsState,
                             backendState = backendState,
@@ -185,22 +206,17 @@ fun App(
                             onSaveImagesAutomaticallyChange = controller.settingsViewModel::updateSaveImagesAutomatically,
                             onUseCurrentRepo = controller.settingsViewModel::useCurrentRepo,
                             onSaveLocal = controller.settingsViewModel::saveLocalSettings,
-                            onStartBackend = controller.settingsViewModel::startBackend,
-                            onStopBackend = controller.settingsViewModel::stopBackend,
-                            onUnloadImageModel = controller.settingsViewModel::unloadImageModel,
                             onApplyToBackend = controller.settingsViewModel::applySettingsToBackend,
                             onReloadFromBackend = controller.settingsViewModel::loadConfigFromBackend,
-                            onReloadLlmPresets = controller.settingsViewModel::reloadLlmPresets,
-                            onTaggingPresetChange = controller.settingsViewModel::updateTaggingPresetId,
-                            onAssistantPresetChange = controller.settingsViewModel::updateAssistantPresetId,
-                            onPromptEnhancerPresetChange = controller.settingsViewModel::updatePromptEnhancerPresetId,
-                            onLoadLlmRole = controller.settingsViewModel::loadLlmRole,
-                            onUnloadLlmPreset = controller.settingsViewModel::unloadLlmPreset,
-                            onStopLlmWorker = controller.settingsViewModel::stopLlmWorker,
-                            onStopAllLlmWorkers = controller.settingsViewModel::stopAllLlmWorkers,
-                            onTagNextImage = controller.settingsViewModel::tagNextImage,
                         )
                     }
+                    NotificationStack(
+                        notifications = notifications,
+                        onDismiss = controller.notificationCenter::dismiss,
+                        modifier = Modifier
+                            .align(Alignment.BottomEnd)
+                            .padding(16.dp),
+                    )
                 }
             }
         }
