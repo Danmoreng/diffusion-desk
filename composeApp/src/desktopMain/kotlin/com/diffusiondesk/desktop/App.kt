@@ -32,6 +32,7 @@ import androidx.compose.ui.unit.sp
 import com.diffusiondesk.desktop.screens.GalleryScreen
 import com.diffusiondesk.desktop.screens.GenerateScreen
 import com.diffusiondesk.desktop.screens.LibraryScreen
+import com.diffusiondesk.desktop.screens.DeskCompactControlSpacing
 import com.diffusiondesk.desktop.screens.NotificationStack
 import com.diffusiondesk.desktop.screens.SettingsScreen
 import com.diffusiondesk.desktop.screens.SystemScreen
@@ -238,12 +239,17 @@ private fun NavigationSidebar(
             .padding(vertical = 10.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Screen.entries.forEach { screen ->
-            SidebarItem(
-                screen = screen,
-                selected = currentScreen == screen,
-                onClick = { onSelect(screen) },
-            )
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(DeskCompactControlSpacing),
+        ) {
+            Screen.entries.forEach { screen ->
+                SidebarItem(
+                    screen = screen,
+                    selected = currentScreen == screen,
+                    onClick = { onSelect(screen) },
+                )
+            }
         }
 
         Spacer(Modifier.weight(1f))
