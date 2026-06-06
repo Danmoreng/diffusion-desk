@@ -85,6 +85,8 @@ import org.jetbrains.jewel.ui.component.Text
 fun GalleryScreen(
     state: GalleryUiState,
     outputDir: String,
+    isTaggingGallery: Boolean,
+    galleryTaggingMessage: String,
     onRefresh: () -> Unit,
     onTagAllPendingImages: () -> Unit,
     onQueryChange: (String) -> Unit,
@@ -139,6 +141,8 @@ fun GalleryScreen(
                 GalleryToolbar(
                     state = state,
                     outputDir = outputDir,
+                    isTaggingGallery = isTaggingGallery,
+                    galleryTaggingMessage = galleryTaggingMessage,
                     onRefresh = onRefresh,
                     onTagAllPendingImages = onTagAllPendingImages,
                     onQueryChange = onQueryChange,
@@ -207,6 +211,8 @@ fun GalleryScreen(
 private fun GalleryToolbar(
     state: GalleryUiState,
     outputDir: String,
+    isTaggingGallery: Boolean,
+    galleryTaggingMessage: String,
     onRefresh: () -> Unit,
     onTagAllPendingImages: () -> Unit,
     onQueryChange: (String) -> Unit,
@@ -245,9 +251,11 @@ private fun GalleryToolbar(
             )
             DeskIconButton(
                 icon = Icons.Default.ImageSearch,
-                contentDescription = "Tag untagged gallery images",
+                contentDescription = "Generate tags",
                 onClick = onTagAllPendingImages,
-                enabled = !state.isIndexing,
+                enabled = !state.isIndexing && !isTaggingGallery,
+                loading = isTaggingGallery,
+                tooltip = "Generate tags",
             )
         }
 
@@ -291,6 +299,17 @@ private fun GalleryToolbar(
             )
         }
 
+        if (isTaggingGallery || galleryTaggingMessage.isNotBlank() || state.message.isNotBlank()) {
+            GalleryStatusLine(
+                text = when {
+                    isTaggingGallery -> galleryTaggingMessage.ifBlank { "Tagging gallery images with the LLM..." }
+                    galleryTaggingMessage.isNotBlank() -> galleryTaggingMessage
+                    else -> state.message
+                },
+                active = isTaggingGallery || state.isTaggingSelectedImage,
+            )
+        }
+
         state.error?.let {
             Text(
                 text = it,
@@ -316,7 +335,7 @@ private fun GalleryKeywordFilter(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
-            text = "Keywords",
+            text = "Tags",
             style = MaterialTheme.typography.labelMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             fontWeight = FontWeight.SemiBold,
@@ -341,7 +360,7 @@ private fun GalleryKeywordFilter(
         if (selectedKeyword.isNotBlank()) {
             DeskIconButton(
                 icon = Icons.Default.Close,
-                contentDescription = "Clear keyword filter",
+                contentDescription = "Clear tag filter",
                 onClick = onClearKeywordFilter,
             )
         }
@@ -567,9 +586,11 @@ private fun GalleryDetails(
                 )
                 DeskIconButton(
                     icon = Icons.Default.ImageSearch,
-                    contentDescription = "Tag selected image with LLM",
+                    contentDescription = "Generate tags",
                     onClick = onTagSelectedImage,
                     enabled = !isTaggingSelectedImage,
+                    loading = isTaggingSelectedImage,
+                    tooltip = "Generate tags",
                 )
             }
 
@@ -591,7 +612,7 @@ private fun GalleryDetails(
             )
 
             Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
-                DeskLabel("Keywords")
+                DeskLabel("Tags")
                 if (image.keywords.isNotEmpty()) {
                     FlowRow(
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -610,7 +631,7 @@ private fun GalleryDetails(
                         label = "",
                         value = keywordDraft,
                         onValueChange = onKeywordDraftChange,
-                        placeholder = "Add keyword",
+                        placeholder = "Add tag",
                         modifier = Modifier.weight(1f),
                     )
                     Button(
@@ -622,6 +643,33 @@ private fun GalleryDetails(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun GalleryStatusLine(
+    text: String,
+    active: Boolean,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (active) {
+            androidx.compose.material3.CircularProgressIndicator(
+                modifier = Modifier.size(14.dp),
+                strokeWidth = 2.dp,
+                color = MaterialTheme.colorScheme.primary,
+            )
+        }
+        Text(
+            text = text,
+            style = MaterialTheme.typography.bodySmall,
+            color = if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
     }
 }
 

@@ -512,7 +512,7 @@ class GalleryRepository(
                 if (rs.next()) return rs.getLong(1)
             }
         }
-        error("Failed to create keyword.")
+        error("Failed to create tag.")
     }
 
     private fun ResultSet.toGalleryImage(): GalleryImage {

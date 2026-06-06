@@ -149,10 +149,10 @@ class ImageTaggingService(
             "Return only concise comma-separated image tags. Do not write a sentence."
         const val VISION_TAGGING_SYSTEM_PROMPT =
             "Extract the following fields from the image:\n\n" +
-                "tags: A JSON array of 8 to 12 concise lowercase gallery search keywords covering the main subject, specific visible objects, medium or style, composition, lighting, background, mood, and any readable text. Prefer visually specific tags over generic category labels.\n\n" +
+                "tags: A JSON array of 8 to 12 concise lowercase gallery tags covering the main subject, specific visible objects, medium or style, composition, lighting, background, mood, and any readable text. Prefer visually specific tags over generic category labels.\n\n" +
                 "Respond with only a JSON object. Do not include any text outside the JSON."
         const val VISION_TAGGING_USER_PROMPT =
-            "Analyze this image and extract useful gallery search keywords."
+            "Analyze this image and extract useful gallery search tags."
         val TAG_FIELD_NAMES = setOf("tags", "tag", "keywords", "keyword")
     }
 

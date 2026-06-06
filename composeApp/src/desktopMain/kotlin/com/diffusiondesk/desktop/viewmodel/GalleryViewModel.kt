@@ -107,7 +107,7 @@ class GalleryViewModel(
                 update { copy(keywordDraft = "") }
                 reloadList()
             }.onFailure { error ->
-                update { copy(error = error.message ?: "Failed to add keyword.") }
+                update { copy(error = error.message ?: "Failed to add tag.") }
             }
         }
     }
@@ -119,7 +119,7 @@ class GalleryViewModel(
             }.onSuccess {
                 reloadList()
             }.onFailure { error ->
-                update { copy(error = error.message ?: "Failed to remove keyword.") }
+                update { copy(error = error.message ?: "Failed to remove tag.") }
             }
         }
     }
@@ -144,9 +144,9 @@ class GalleryViewModel(
                             isTaggingSelectedImage = false,
                             selectedImageId = result.imageId,
                             message = if (result.tags.isEmpty()) {
-                                "No new keywords found for ${result.imageName}."
+                                "No new tags found for ${result.imageName}."
                             } else {
-                                "Added ${result.tags.size} keyword(s): ${result.tags.joinToString(", ")}"
+                                "Added ${result.tags.size} tag(s): ${result.tags.joinToString(", ")}"
                             },
                             error = null,
                         )
