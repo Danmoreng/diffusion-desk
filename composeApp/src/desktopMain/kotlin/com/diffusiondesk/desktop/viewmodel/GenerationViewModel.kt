@@ -14,9 +14,11 @@ import com.diffusiondesk.desktop.core.ImagePreset
 import com.diffusiondesk.desktop.core.ImagePresetStore
 import com.diffusiondesk.desktop.core.ImageTaggingService
 import com.diffusiondesk.desktop.core.LlmPresetStore
+import com.diffusiondesk.desktop.core.LlmRoleService
 import com.diffusiondesk.desktop.core.SavedGenerationSettings
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -120,6 +122,7 @@ data class GenerationUiState(
     val history: List<GenerationHistoryItem> = emptyList(),
     val historyIndex: Int = -1,
     val isEndless: Boolean = false,
+    val isEnhancingPrompt: Boolean = false,
     val message: String = "",
     val error: String? = null,
 ) {
@@ -141,6 +144,7 @@ class GenerationViewModel(
     private val llmPresetStore: LlmPresetStore,
     private val galleryRepository: GalleryRepository,
     private val imageTaggingService: ImageTaggingService,
+    private val llmRoleService: LlmRoleService,
 ) {
     private val _uiState = MutableStateFlow(generationSettingsStore.load().toUiState())
     val uiState: StateFlow<GenerationUiState> = _uiState.asStateFlow()
@@ -151,6 +155,8 @@ class GenerationViewModel(
     private var lastProgressPhase = ""
     private var lastProgressStageKey = ""
     private var currentStageStartStep = 0
+    private var autoTaggingJob: Job? = null
+    private var pendingAutoTagImageCount = 0
     private val recentStepTimes = ArrayDeque<Double>()
 
     init {
@@ -300,6 +306,58 @@ class GenerationViewModel(
                 message = "Reset generation settings to ${preset.name}.",
                 error = null,
             )
+        }
+    }
+
+    fun enhancePrompt() {
+        scope.launch {
+            val currentPrompt = _uiState.value.prompt.trim()
+            if (currentPrompt.isBlank()) {
+                update { copy(error = "Prompt is required before enhancement.") }
+                return@launch
+            }
+
+            update {
+                copy(
+                    isEnhancingPrompt = true,
+                    message = "Enhancing prompt...",
+                    error = null,
+                )
+            }
+
+            val settings = settingsStore.load()
+            val presets = llmPresetStore.load()
+            val roles = llmPresetStore.loadRoles()
+            llmRoleService.enhancePrompt(settings, presets, roles, currentPrompt)
+                .onSuccess { enhanced ->
+                    val normalized = enhanced.trim().trim('"')
+                    if (normalized.isBlank()) {
+                        update {
+                            copy(
+                                isEnhancingPrompt = false,
+                                error = "Prompt enhancer returned an empty prompt.",
+                            )
+                        }
+                    } else {
+                        update {
+                            copy(
+                                prompt = normalized,
+                                isEnhancingPrompt = false,
+                                message = "Prompt enhanced.",
+                                error = null,
+                            )
+                        }
+                        commitPrompt()
+                    }
+                }
+                .onFailure { error ->
+                    update {
+                        copy(
+                            isEnhancingPrompt = false,
+                            error = error.message ?: "Prompt enhancement failed.",
+                        )
+                    }
+                }
         }
     }
 
@@ -608,7 +666,7 @@ class GenerationViewModel(
                         }
                     }
                     if (item.params.saveImage && result.imageUrls.isNotEmpty()) {
-                        runAutoTaggingAfterGeneration(result.imageUrls.size)
+                        scheduleAutoTaggingAfterGeneration(result.imageUrls.size)
                     }
                 }.onFailure { error ->
                     resetProgressEstimator()
@@ -666,12 +724,30 @@ class GenerationViewModel(
         saveImage = saveImage,
     )
 
+    private fun scheduleAutoTaggingAfterGeneration(generatedImageCount: Int) {
+        pendingAutoTagImageCount += generatedImageCount.coerceAtLeast(1)
+        if (autoTaggingJob?.isActive == true) {
+            return
+        }
+
+        autoTaggingJob = scope.launch {
+            while (pendingAutoTagImageCount > 0) {
+                val batchSize = pendingAutoTagImageCount
+                pendingAutoTagImageCount = 0
+                runAutoTaggingAfterGeneration(batchSize)
+            }
+            autoTaggingJob = null
+        }
+    }
+
     private suspend fun runAutoTaggingAfterGeneration(generatedImageCount: Int) {
         val settings = settingsStore.load()
         val presets = llmPresetStore.load()
         val roles = llmPresetStore.loadRoles()
         val preset = presets.firstOrNull { it.id == roles.taggingPresetId } ?: return
-        update { copy(message = "Image generated successfully. Tagging new image...") }
+        if (!_uiState.value.isGenerating) {
+            update { copy(message = "Image generated successfully. Tagging new image...") }
+        }
         withContext(Dispatchers.IO) {
             galleryRepository.indexOutputDirectory(settings.outputDir)
         }
@@ -688,9 +764,13 @@ class GenerationViewModel(
                 batch.failed > 0 -> " Tagging failed for ${batch.failed}."
                 else -> ""
             }
-            update { copy(message = "Image generated successfully.$suffix") }
+            if (!_uiState.value.isGenerating) {
+                update { copy(message = "Image generated successfully.$suffix") }
+            }
         }.onFailure { error ->
-            update { copy(message = "Image generated successfully.", error = error.message ?: "Auto-tagging failed.") }
+            if (!_uiState.value.isGenerating) {
+                update { copy(message = "Image generated successfully.", error = error.message ?: "Auto-tagging failed.") }
+            }
         }
     }
 

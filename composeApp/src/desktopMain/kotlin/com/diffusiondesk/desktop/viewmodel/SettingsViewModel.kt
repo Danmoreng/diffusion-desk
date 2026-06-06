@@ -32,6 +32,7 @@ data class SettingsUiState(
     val themeMode: String,
     val actionBarPosition: String,
     val saveImagesAutomatically: Boolean,
+    val autostartLlmWorkers: Boolean,
     val galleryPreviewWidthDp: Int,
     val llmPresets: List<LlmPreset> = emptyList(),
     val llmRoles: LlmRoleSettings = LlmRoleSettings(),
@@ -78,6 +79,7 @@ class SettingsViewModel(
     fun updateThemeMode(value: String) = updateAndSave { copy(themeMode = value) }
     fun updateActionBarPosition(value: String) = updateAndSave { copy(actionBarPosition = value) }
     fun updateSaveImagesAutomatically(value: Boolean) = updateAndSave { copy(saveImagesAutomatically = value) }
+    fun updateAutostartLlmWorkers(value: Boolean) = updateAndSave { copy(autostartLlmWorkers = value) }
     fun updateGalleryPreviewWidth(value: Int) = updateAndSave { copy(galleryPreviewWidthDp = value.coerceIn(320, 760)) }
     fun updateTaggingPresetId(value: String) = updateRoles { copy(taggingPresetId = value) }
     fun updateAssistantPresetId(value: String) = updateRoles { copy(assistantPresetId = value) }
@@ -151,6 +153,53 @@ class SettingsViewModel(
             backendManager.stop()
             notifications.success("Image worker stopped.")
             update { copy(isBusy = false, message = "", error = null) }
+        }
+    }
+
+    fun autostartLlmWorkersIfEnabled() {
+        scope.launch {
+            val settings = currentSettingsOrNull() ?: return@launch
+            if (!settings.autostartLlmWorkers) {
+                return@launch
+            }
+
+            val presets = llmPresetStore.load()
+            val roles = llmPresetStore.loadRoles().sanitizeFor(presets)
+            val presetIds = listOf(
+                roles.taggingPresetId,
+                roles.assistantPresetId,
+                roles.promptEnhancerPresetId,
+            ).filter(String::isNotBlank).distinct()
+
+            if (presetIds.isEmpty()) {
+                notifications.warning("LLM autostart is enabled, but no LLM roles are configured.")
+                return@launch
+            }
+
+            update { copy(isBusy = true, message = "", error = null) }
+            var started = 0
+            var failureMessage: String? = null
+            presetIds.forEach { presetId ->
+                val preset = presets.firstOrNull { it.id == presetId } ?: return@forEach
+                llmWorkerPool.ensureWorkerForPreset(settings, preset)
+                    .onSuccess { started += 1 }
+                    .onFailure { error ->
+                        failureMessage = error.message ?: "Failed to autostart ${preset.name}."
+                    }
+            }
+
+            val message = failureMessage
+            when {
+                message != null -> {
+                    notifications.error(message)
+                    update { copy(isBusy = false, error = message) }
+                }
+                started > 0 -> {
+                    notifications.success("Started $started LLM worker(s).")
+                    update { copy(isBusy = false, message = "", error = null) }
+                }
+                else -> update { copy(isBusy = false, message = "", error = null) }
+            }
         }
     }
 
@@ -392,6 +441,7 @@ class SettingsViewModel(
             themeMode = state.themeMode,
             actionBarPosition = state.actionBarPosition,
             saveImagesAutomatically = state.saveImagesAutomatically,
+            autostartLlmWorkers = state.autostartLlmWorkers,
             galleryPreviewWidthDp = state.galleryPreviewWidthDp.coerceIn(320, 760),
         )
     }
@@ -432,6 +482,7 @@ class SettingsViewModel(
         themeMode = themeMode,
         actionBarPosition = actionBarPosition,
         saveImagesAutomatically = saveImagesAutomatically,
+        autostartLlmWorkers = autostartLlmWorkers,
         galleryPreviewWidthDp = galleryPreviewWidthDp,
     )
 

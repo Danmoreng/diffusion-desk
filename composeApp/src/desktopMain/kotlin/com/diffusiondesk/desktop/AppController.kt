@@ -50,6 +50,7 @@ class AppController {
         llmPresetStore,
         galleryRepository,
         imageTaggingService,
+        llmRoleService,
     )
     val libraryViewModel = LibraryViewModel(scope, presetStore, llmPresetStore, backendManager, client)
     val galleryViewModel = GalleryViewModel(scope, galleryRepository, settingsStore, llmPresetStore, imageTaggingService)
@@ -59,6 +60,7 @@ class AppController {
     init {
         Runtime.getRuntime().addShutdownHook(shutdownHook)
         settingsViewModel.startBackend()
+        settingsViewModel.autostartLlmWorkersIfEnabled()
     }
 
     fun close() {
