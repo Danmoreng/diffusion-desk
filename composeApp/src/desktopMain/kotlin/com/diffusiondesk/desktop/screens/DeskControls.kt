@@ -33,6 +33,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.input.pointer.pointerMoveFilter
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.onGloballyPositioned
@@ -49,20 +50,80 @@ import androidx.compose.ui.window.PopupPositionProvider
 import androidx.compose.ui.window.PopupProperties
 import org.jetbrains.jewel.ui.component.Text
 
+internal val DeskScreenPadding = 8.dp
+internal val DeskPanelPadding = 14.dp
+internal val DeskPanelSpacing = 14.dp
+internal val DeskSectionSpacing = 14.dp
+internal val DeskControlSpacing = 8.dp
+internal val DeskCompactControlSpacing = 6.dp
+internal val DeskGroupSpacing = 16.dp
+internal val DeskTabSpacing = 18.dp
+internal val DeskTabHorizontalPadding = 10.dp
+internal val DeskIconSize = 16.dp
+internal val DeskPanelCornerRadius = 8.dp
+internal val DeskControlCornerRadius = 6.dp
+internal const val DeskSubtleSurfaceAlpha = 0.45f
+internal const val DeskSelectedContainerAlpha = 0.16f
+
+internal data class DeskTabItem(
+    val selected: Boolean,
+    val icon: ImageVector,
+    val label: String,
+    val onClick: () -> Unit,
+)
+
 @Composable
 internal fun DeskPanel(
     modifier: Modifier = Modifier,
     content: @Composable ColumnScope.() -> Unit,
 ) {
+    val shape = RoundedCornerShape(DeskPanelCornerRadius)
     Column(
         modifier = modifier
-            .clip(RoundedCornerShape(8.dp))
+            .clip(shape)
             .background(MaterialTheme.colorScheme.surface)
-            .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f), RoundedCornerShape(8.dp))
-            .padding(12.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp),
+            .padding(DeskPanelPadding),
+        verticalArrangement = Arrangement.spacedBy(DeskPanelSpacing),
         content = content,
     )
+}
+
+@Composable
+internal fun DeskTabHeader(
+    tabs: List<DeskTabItem>,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(DeskPanelCornerRadius))
+            .background(MaterialTheme.colorScheme.surface)
+            .padding(horizontal = DeskPanelPadding, vertical = DeskControlSpacing),
+        horizontalArrangement = Arrangement.spacedBy(DeskTabSpacing),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        tabs.forEach { tab ->
+            DeskTabButton(tab)
+        }
+    }
+}
+
+@Composable
+private fun DeskTabButton(tab: DeskTabItem) {
+    val container = if (tab.selected) MaterialTheme.colorScheme.primary.copy(alpha = DeskSelectedContainerAlpha) else Color.Transparent
+    val content = if (tab.selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+    Row(
+        modifier = Modifier
+            .clip(RoundedCornerShape(DeskControlCornerRadius))
+            .background(container)
+            .clickable(onClick = tab.onClick)
+            .padding(horizontal = DeskTabHorizontalPadding, vertical = DeskCompactControlSpacing),
+        horizontalArrangement = Arrangement.spacedBy(DeskCompactControlSpacing),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(tab.icon, contentDescription = null, tint = content, modifier = Modifier.size(DeskIconSize))
+        Text(tab.label, color = content, fontWeight = if (tab.selected) FontWeight.SemiBold else FontWeight.Normal)
+    }
 }
 
 @Composable

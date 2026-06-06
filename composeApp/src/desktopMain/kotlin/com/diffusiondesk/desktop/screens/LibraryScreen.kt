@@ -1,8 +1,6 @@
 package com.diffusiondesk.desktop.screens
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -137,8 +135,8 @@ private fun ImagePresetLibrary(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(18.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp),
+            .padding(DeskScreenPadding),
+        verticalArrangement = Arrangement.spacedBy(DeskSectionSpacing),
     ) {
         LibraryTabHeader(
             selected = "image",
@@ -149,9 +147,9 @@ private fun ImagePresetLibrary(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .clip(RoundedCornerShape(8.dp))
-                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f))
-                .padding(horizontal = 12.dp, vertical = 8.dp),
+                .clip(RoundedCornerShape(DeskPanelCornerRadius))
+                .background(MaterialTheme.colorScheme.surface)
+                .padding(horizontal = DeskPanelPadding, vertical = DeskControlSpacing),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -160,7 +158,7 @@ private fun ImagePresetLibrary(
                 fontWeight = FontWeight.SemiBold,
                 color = MaterialTheme.colorScheme.onSurface,
             )
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+            Row(horizontalArrangement = Arrangement.spacedBy(DeskControlSpacing), verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     text = "${state.presets.size} preset(s)",
                     style = MaterialTheme.typography.bodySmall,
@@ -214,50 +212,22 @@ private fun LibraryTabHeader(
     onShowImagePresets: () -> Unit,
     onShowLlmPresets: () -> Unit,
 ) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f), RoundedCornerShape(8.dp))
-            .padding(horizontal = 10.dp, vertical = 8.dp),
-        horizontalArrangement = Arrangement.spacedBy(18.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        LibraryTab(
-            selected = selected == "image",
-            icon = Icons.Default.Tune,
-            label = "Image Presets",
-            onClick = onShowImagePresets,
-        )
-        LibraryTab(
-            selected = selected == "llm",
-            icon = Icons.Default.TextFields,
-            label = "LLM Presets",
-            onClick = onShowLlmPresets,
-        )
-    }
-}
-
-@Composable
-private fun LibraryTab(
-    selected: Boolean,
-    icon: ImageVector,
-    label: String,
-    onClick: () -> Unit,
-) {
-    val container = if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.16f) else Color.Transparent
-    val content = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-    Row(
-        modifier = Modifier
-            .clip(RoundedCornerShape(6.dp))
-            .background(container)
-            .clickable(onClick = onClick)
-            .padding(horizontal = 10.dp, vertical = 6.dp),
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Icon(icon, contentDescription = null, tint = content, modifier = Modifier.size(16.dp))
-        Text(label, color = content, fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal)
-    }
+    DeskTabHeader(
+        tabs = listOf(
+            DeskTabItem(
+                selected = selected == "image",
+                icon = Icons.Default.Tune,
+                label = "Image Presets",
+                onClick = onShowImagePresets,
+            ),
+            DeskTabItem(
+                selected = selected == "llm",
+                icon = Icons.Default.TextFields,
+                label = "LLM Presets",
+                onClick = onShowLlmPresets,
+            ),
+        ),
+    )
 }
 
 @Composable
@@ -386,8 +356,8 @@ private fun LlmPresetLibrary(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(18.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp),
+            .padding(DeskScreenPadding),
+        verticalArrangement = Arrangement.spacedBy(DeskSectionSpacing),
     ) {
         LibraryTabHeader(
             selected = "llm",
@@ -398,14 +368,14 @@ private fun LlmPresetLibrary(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .clip(RoundedCornerShape(8.dp))
-                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f))
-                .padding(horizontal = 12.dp, vertical = 8.dp),
+                .clip(RoundedCornerShape(DeskPanelCornerRadius))
+                .background(MaterialTheme.colorScheme.surface)
+                .padding(horizontal = DeskPanelPadding, vertical = DeskControlSpacing),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text("LLM Presets", fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+            Row(horizontalArrangement = Arrangement.spacedBy(DeskControlSpacing), verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     text = "${state.llmPresets.size} preset(s)",
                     style = MaterialTheme.typography.bodySmall,
@@ -522,8 +492,8 @@ private fun LlmPresetEditorPage(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(18.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp),
+            .padding(DeskScreenPadding),
+        verticalArrangement = Arrangement.spacedBy(DeskSectionSpacing),
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -549,7 +519,7 @@ private fun LlmPresetEditorPage(
                     )
                 }
             }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(DeskControlSpacing)) {
                 Button(onClick = onCancelEditor) {
                     Text("Cancel")
                 }
@@ -566,7 +536,7 @@ private fun LlmPresetEditorPage(
             modifier = Modifier
                 .weight(1f)
                 .verticalScroll(rememberScrollState()),
-            verticalArrangement = Arrangement.spacedBy(14.dp),
+            verticalArrangement = Arrangement.spacedBy(DeskSectionSpacing),
         ) {
             EditorSection("Preset") {
                 LabeledField(
@@ -654,8 +624,8 @@ private fun ImagePresetEditorPage(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(18.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp),
+            .padding(DeskScreenPadding),
+        verticalArrangement = Arrangement.spacedBy(DeskSectionSpacing),
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -681,7 +651,7 @@ private fun ImagePresetEditorPage(
                     )
                 }
             }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(DeskControlSpacing)) {
                 Button(onClick = onCancelEditor) {
                     Text("Cancel")
                 }
@@ -698,7 +668,7 @@ private fun ImagePresetEditorPage(
             modifier = Modifier
                 .weight(1f)
                 .verticalScroll(rememberScrollState()),
-            verticalArrangement = Arrangement.spacedBy(14.dp),
+            verticalArrangement = Arrangement.spacedBy(DeskSectionSpacing),
         ) {
             EditorSection("Preset") {
                 LabeledField(
@@ -867,7 +837,7 @@ private fun EditorSection(
         modifier = Modifier.fillMaxWidth(),
     ) {
         Column(
-            verticalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(DeskControlSpacing),
         ) {
             Text(
                 text = title,
