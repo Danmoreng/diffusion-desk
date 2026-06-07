@@ -94,6 +94,7 @@ fun App(
                             onGenerateStructuredJson = controller.generationViewModel::generateIdeogramJsonPrompt,
                             onStructuredJsonPromptChange = controller.generationViewModel::updateIdeogramJsonPrompt,
                             onFormatStructuredJson = controller.generationViewModel::formatIdeogramJsonPrompt,
+                            onCompositionBboxChange = controller.generationViewModel::updateIdeogramElementBbox,
                             onWidthChange = controller.generationViewModel::updateWidth,
                             onHeightChange = controller.generationViewModel::updateHeight,
                             onStepsChange = controller.generationViewModel::updateSteps,

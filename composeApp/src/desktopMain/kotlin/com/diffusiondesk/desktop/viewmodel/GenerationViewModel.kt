@@ -110,6 +110,8 @@ enum class IdeogramStructureTab {
     Preview,
 }
 
+internal const val IDEOGRAM_BBOX_GRID = 10
+
 private fun ImagePromptMode.toIdeogramTab(): IdeogramStructureTab = when (this) {
     ImagePromptMode.Text -> IdeogramStructureTab.Text
     ImagePromptMode.Json -> IdeogramStructureTab.Json
@@ -240,6 +242,24 @@ private fun validateIdeogramJson(value: String): Pair<String, String?> {
     }
 
     return "Valid Ideogram JSON (${elements.size} element${if (elements.size == 1) "" else "s"})." to null
+}
+
+private fun snapIdeogramBboxCoord(value: Int): Int =
+    ((value.toFloat() / IDEOGRAM_BBOX_GRID).roundToInt() * IDEOGRAM_BBOX_GRID).coerceIn(0, 1000)
+
+private fun sanitizeIdeogramBbox(values: List<Int>): List<Int>? {
+    if (values.size != 4) return null
+    val yMin = snapIdeogramBboxCoord(values[0])
+    val xMin = snapIdeogramBboxCoord(values[1])
+    val yMax = snapIdeogramBboxCoord(values[2])
+    val xMax = snapIdeogramBboxCoord(values[3])
+    val minSize = IDEOGRAM_BBOX_GRID
+    return listOf(
+        yMin.coerceIn(0, (yMax - minSize).coerceAtLeast(0)),
+        xMin.coerceIn(0, (xMax - minSize).coerceAtLeast(0)),
+        yMax.coerceIn((yMin + minSize).coerceAtMost(1000), 1000),
+        xMax.coerceIn((xMin + minSize).coerceAtMost(1000), 1000),
+    )
 }
 
 private fun normalizeIdeogramJsonPrompt(value: String): String? {
@@ -501,6 +521,39 @@ class GenerationViewModel(
         copy(
             ideogram = ideogram.copy(
                 jsonPrompt = value,
+                jsonStatus = validation.first,
+                jsonError = validation.second,
+            ),
+        )
+    }
+
+    fun updateIdeogramElementBbox(index: Int, bbox: List<Int>) = update {
+        val sanitized = sanitizeIdeogramBbox(bbox)
+            ?: return@update copy(ideogram = ideogram.copy(jsonError = "Bbox must have four values."))
+        val root = runCatching { ideogramJson.parseToJsonElement(ideogram.jsonPrompt).jsonObject }.getOrElse {
+            return@update copy(ideogram = ideogram.copy(jsonError = it.message ?: "JSON is invalid."))
+        }
+        val composition = root["compositional_deconstruction"]?.jsonObjectOrNull()
+            ?: return@update copy(ideogram = ideogram.copy(jsonError = "compositional_deconstruction is required."))
+        val elements = composition["elements"]?.jsonArrayOrNull()?.toMutableList()
+            ?: return@update copy(ideogram = ideogram.copy(jsonError = "compositional_deconstruction.elements is required."))
+        val element = elements.getOrNull(index)?.jsonObjectOrNull()?.toMutableMap()
+            ?: return@update copy(ideogram = ideogram.copy(jsonError = "Element ${index + 1} is missing."))
+
+        element["bbox"] = JsonArray(sanitized.map { JsonPrimitive(it) })
+        elements[index] = JsonObject(element)
+
+        val compositionMap = composition.toMutableMap()
+        compositionMap["elements"] = JsonArray(elements)
+
+        val rootMap = root.toMutableMap()
+        rootMap["compositional_deconstruction"] = JsonObject(compositionMap)
+
+        val formatted = ideogramJsonPretty.encodeToString(JsonElement.serializer(), JsonObject(rootMap))
+        val validation = validateIdeogramJson(formatted)
+        copy(
+            ideogram = ideogram.copy(
+                jsonPrompt = formatted,
                 jsonStatus = validation.first,
                 jsonError = validation.second,
             ),
