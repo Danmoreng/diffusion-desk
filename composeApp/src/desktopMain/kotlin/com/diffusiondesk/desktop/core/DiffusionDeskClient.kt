@@ -381,7 +381,16 @@ class DiffusionDeskClient(
         }
     }
 
-    suspend fun chatCompletion(baseUrl: String, model: String, messages: List<LlmChatMessage>): Result<String> = withContext(Dispatchers.IO) {
+    suspend fun chatCompletion(
+        baseUrl: String,
+        model: String,
+        messages: List<LlmChatMessage>,
+        maxTokens: Int? = null,
+        temperature: Double? = null,
+        jsonResponse: Boolean = false,
+        reasoningFormat: String? = null,
+        enableThinking: Boolean? = null,
+    ): Result<String> = withContext(Dispatchers.IO) {
         runCatching {
             val payload = buildJsonObject {
                 put("model", JsonPrimitive(model))
@@ -397,6 +406,25 @@ class DiffusionDeskClient(
                     ),
                 )
                 put("stream", JsonPrimitive(false))
+                maxTokens?.let { put("max_tokens", JsonPrimitive(it)) }
+                temperature?.let { put("temperature", JsonPrimitive(it)) }
+                reasoningFormat?.let { put("reasoning_format", JsonPrimitive(it)) }
+                enableThinking?.let {
+                    put(
+                        "chat_template_kwargs",
+                        buildJsonObject {
+                            put("enable_thinking", JsonPrimitive(it))
+                        },
+                    )
+                }
+                if (jsonResponse) {
+                    put(
+                        "response_format",
+                        buildJsonObject {
+                            put("type", JsonPrimitive("json_object"))
+                        },
+                    )
+                }
             }
 
             val request = requestBuilder("$baseUrl/v1/chat/completions")
@@ -409,7 +437,9 @@ class DiffusionDeskClient(
             check(response.statusCode() in 200..299) { response.body().ifBlank { "Chat completion failed with ${response.statusCode()}" } }
 
             val root = json.parseToJsonElement(response.body()).jsonObject
-            parseChatContent(root)
+            parseChatContent(root).ifBlank {
+                error("Chat completion returned empty content. Raw response: ${response.body().compactPreview()}")
+            }
         }
     }
 
@@ -759,15 +789,30 @@ class DiffusionDeskClient(
     }
 
     private fun parseChatContent(root: kotlinx.serialization.json.JsonObject): String {
-        return root["choices"]
+        val message = root["choices"]
             ?.jsonArray
             ?.firstOrNull()
             ?.jsonObject
             ?.get("message")
             ?.jsonObject
-            ?.get("content")
-            ?.jsonPrimitive
-            ?.content
-            .orEmpty()
+            ?: return ""
+        return message["content"]?.let(::parseChatContentValue).orEmpty()
+            .ifBlank { message["reasoning_content"]?.jsonPrimitive?.content.orEmpty() }
+    }
+
+    private fun parseChatContentValue(value: JsonElement): String = when {
+        value is JsonPrimitive -> value.content
+        value is JsonArray -> value.joinToString("") { part ->
+            val obj = part as? kotlinx.serialization.json.JsonObject ?: return@joinToString ""
+            obj["text"]?.jsonPrimitive?.content
+                ?: obj["content"]?.jsonPrimitive?.content
+                ?: ""
+        }
+        else -> ""
+    }
+
+    private fun String.compactPreview(maxLength: Int = 800): String {
+        val compact = replace(Regex("\\s+"), " ").trim()
+        return if (compact.length <= maxLength) compact else compact.take(maxLength) + "..."
     }
 }

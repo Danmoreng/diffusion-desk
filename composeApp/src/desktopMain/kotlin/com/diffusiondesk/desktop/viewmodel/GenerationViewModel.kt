@@ -339,6 +339,11 @@ private fun extractJsonObject(value: String): String? {
     return if (start >= 0 && end > start) trimmed.substring(start, end + 1) else null
 }
 
+private fun compactLlmPreview(value: String, maxLength: Int = 500): String {
+    val compact = value.replace(Regex("\\s+"), " ").trim()
+    return if (compact.length <= maxLength) compact else compact.take(maxLength) + "..."
+}
+
 private fun JsonElement.jsonObjectOrNull(): JsonObject? = this as? JsonObject
 private fun JsonElement.jsonArrayOrNull(): JsonArray? = this as? JsonArray
 private fun JsonElement.jsonPrimitiveOrNull(): JsonPrimitive? = this as? JsonPrimitive
@@ -629,7 +634,7 @@ class GenerationViewModel(
                             copy(
                                 ideogram = ideogram.copy(
                                     isGeneratingJson = false,
-                                    jsonError = "LLM response did not contain a valid JSON object.",
+                                    jsonError = "LLM response did not contain a valid JSON object. Response: ${compactLlmPreview(response)}",
                                 ),
                             )
                         }
