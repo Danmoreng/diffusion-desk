@@ -535,9 +535,17 @@ private fun LlmPresetEditorPage(
                 DeskDropdownField(
                     label = "Placement",
                     value = state.llmForm.placement.name.uppercase(),
-                    options = listOf("CPU", "GPU"),
+                    options = listOf("AUTO", "CPU", "GPU"),
                     onValueChange = {
-                        onFormChange(state.llmForm.copy(placement = if (it == "GPU") LlmPlacement.Gpu else LlmPlacement.Cpu))
+                        onFormChange(
+                            state.llmForm.copy(
+                                placement = when (it) {
+                                    "AUTO" -> LlmPlacement.Auto
+                                    "GPU" -> LlmPlacement.Gpu
+                                    else -> LlmPlacement.Cpu
+                                },
+                            ),
+                        )
                     },
                     modifier = Modifier.widthIn(min = 180.dp, max = 220.dp),
                 )

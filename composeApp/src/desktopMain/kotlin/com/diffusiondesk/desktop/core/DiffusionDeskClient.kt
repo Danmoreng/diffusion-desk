@@ -345,8 +345,7 @@ class DiffusionDeskClient(
 
     suspend fun loadLlmPreset(baseUrl: String, preset: LlmPreset): Result<Unit> = withContext(Dispatchers.IO) {
         runCatching {
-            val advancedArgs = CommandLineArgs.parse(preset.advancedArgs).getOrThrow()
-            CommandLineArgs.validateNoReservedOptions(advancedArgs).getOrThrow()
+            val advancedArgs = preset.effectiveAdvancedArgs().getOrThrow()
             val payload = buildJsonObject {
                 put("model_id", JsonPrimitive(preset.modelPath))
                 if (preset.mmprojPath.isNotBlank()) {
@@ -390,6 +389,8 @@ class DiffusionDeskClient(
         jsonResponse: Boolean = false,
         reasoningFormat: String? = null,
         enableThinking: Boolean? = null,
+        reasoningBudgetTokens: Int? = null,
+        timeout: Duration = Duration.ofMinutes(3),
     ): Result<String> = withContext(Dispatchers.IO) {
         runCatching {
             val payload = buildJsonObject {
@@ -409,6 +410,7 @@ class DiffusionDeskClient(
                 maxTokens?.let { put("max_tokens", JsonPrimitive(it)) }
                 temperature?.let { put("temperature", JsonPrimitive(it)) }
                 reasoningFormat?.let { put("reasoning_format", JsonPrimitive(it)) }
+                reasoningBudgetTokens?.let { put("thinking_budget_tokens", JsonPrimitive(it)) }
                 enableThinking?.let {
                     put(
                         "chat_template_kwargs",
@@ -430,7 +432,7 @@ class DiffusionDeskClient(
             val request = requestBuilder("$baseUrl/v1/chat/completions")
                 .header("Content-Type", "application/json")
                 .POST(HttpRequest.BodyPublishers.ofString(payload.toString()))
-                .timeout(Duration.ofMinutes(3))
+                .timeout(timeout)
                 .build()
 
             val response = httpClient.send(request, HttpResponse.BodyHandlers.ofString())
@@ -797,7 +799,6 @@ class DiffusionDeskClient(
             ?.jsonObject
             ?: return ""
         return message["content"]?.let(::parseChatContentValue).orEmpty()
-            .ifBlank { message["reasoning_content"]?.jsonPrimitive?.content.orEmpty() }
     }
 
     private fun parseChatContentValue(value: JsonElement): String = when {

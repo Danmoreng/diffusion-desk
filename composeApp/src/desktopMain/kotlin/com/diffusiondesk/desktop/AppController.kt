@@ -51,6 +51,7 @@ class AppController {
         galleryRepository,
         imageTaggingService,
         llmRoleService,
+        llmWorkerPool,
     )
     val libraryViewModel = LibraryViewModel(scope, presetStore, llmPresetStore, backendManager, client)
     val galleryViewModel = GalleryViewModel(scope, galleryRepository, settingsStore, llmPresetStore, imageTaggingService)

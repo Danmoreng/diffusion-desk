@@ -167,6 +167,27 @@ class LlmWorkerPool(
         }
     }
 
+    suspend fun unloadGpuModelsForImageGeneration(): Result<Unit> {
+        val matches = workers.filterValues { worker ->
+            worker.preset.placement != LlmPlacement.Cpu && worker.process.isAlive
+        }
+        if (matches.isEmpty()) {
+            return Result.success(Unit)
+        }
+
+        return runCatching {
+            matches.forEach { (id, worker) ->
+                client.unloadLlmModel(baseUrl(worker.port)).getOrThrow()
+                updateFromHealth(
+                    id = id,
+                    baseUrl = baseUrl(worker.port),
+                    status = LlmWorkerStatus.ReadyNoModel,
+                    message = "Unloaded ${worker.preset.name} for image generation.",
+                )
+            }
+        }
+    }
+
     suspend fun stopWorker(id: String): Result<Unit> {
         val worker = workers[id] ?: return Result.success(Unit)
         return runCatching {
@@ -312,9 +333,7 @@ class LlmWorkerPool(
     }
 
     private fun parsedArgsFor(preset: LlmPreset): List<String> {
-        val args = CommandLineArgs.parse(preset.advancedArgs).getOrThrow()
-        CommandLineArgs.validateNoReservedOptions(args).getOrThrow()
-        return args
+        return preset.effectiveAdvancedArgs().getOrThrow()
     }
 
     private fun signatureFor(preset: LlmPreset, args: List<String>): String {
