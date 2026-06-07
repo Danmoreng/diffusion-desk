@@ -2,6 +2,7 @@ package com.diffusiondesk.desktop.core
 
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import java.time.Duration
 
 class LlmRoleService(
     private val llmWorkerPool: LlmWorkerPool,
@@ -42,6 +43,9 @@ class LlmRoleService(
                     ),
                     LlmChatMessage(role = "user", content = prompt),
                 ),
+                maxTokens = 1024,
+                temperature = 0.0,
+                enableThinking = false,
             ).getOrThrow()
         }
     }
@@ -72,29 +76,30 @@ class LlmRoleService(
                         content = "Canvas: ${width}x${height}\nRaw prompt: $prompt",
                     ),
                 ),
-                maxTokens = 2048,
+                maxTokens = 4096,
                 temperature = 0.0,
                 jsonResponse = true,
                 reasoningFormat = "deepseek",
-                enableThinking = false,
+                enableThinking = true,
+                reasoningBudgetTokens = 512,
+                timeout = Duration.ofMinutes(10),
             ).getOrThrow()
         }
     }
 
     private companion object {
         private const val IDEOGRAM_JSON_SYSTEM_PROMPT = """
-You convert raw image prompts into Ideogram 4 structured JSON captions. Return only valid JSON, with no markdown fences or commentary.
+You convert raw image prompts into Ideogram 4 structured JSON captions. Think briefly, decide the visual layout once, then return only valid JSON. Do not write markdown or commentary.
 
-Use exactly these top-level keys in this order:
-1. high_level_description
-2. style_description
-3. compositional_deconstruction
+Required top-level keys: high_level_description, style_description, compositional_deconstruction.
 
-style_description must contain aesthetics, lighting, exactly one of photo or art_style, medium, and optionally color_palette. If the image is a photograph, include a non-empty photo field and do not use art_style. Do not substitute medium for photo: medium: "photograph" still requires a separate photo field. For photographs, order keys as aesthetics, lighting, photo, medium, color_palette. For non-photographic images, order keys as aesthetics, lighting, medium, art_style, color_palette.
+style_description requires aesthetics, lighting, medium, and exactly one of photo or art_style. If the result is photographic, include photo and omit art_style. color_palette is optional.
 
-compositional_deconstruction must contain background then elements. elements is an array of objects. Object elements use keys type, bbox, desc, color_palette. Text elements use keys type, bbox, text, desc, color_palette. Use type "obj" or "text". bbox is optional and must be [y_min, x_min, y_max, x_max] in normalized 0-1000 coordinates.
+compositional_deconstruction requires background and elements. background must be a single string, not an object. Elements use type "obj" or "text". obj keys: type, bbox, desc, optional color_palette. text keys: type, bbox, text, desc, optional color_palette. bbox is [y_min, x_min, y_max, x_max] in 0-1000 coordinates on a 10-unit grid.
 
-Use uppercase #RRGGBB color strings. Use no more than 16 global colors and no more than 5 per element. If the user asks for readable text in the image, create text elements with the literal text in the text field.
+Keep the JSON compact. Use 3-8 important elements for most prompts, maximum 12. Create one obj for each named foreground character or distinct foreground subject. Do not collapse named lineups into one group element. Use group elements only for anonymous crowds, scenery, or low-importance background items. Omit minor props unless they are central to the prompt.
+
+Descriptions should be concise, visual, and specific. Avoid analysis, alternatives, and long explanations. Use uppercase #RRGGBB colors, at most 16 global colors and at most 5 per element. If readable text is requested, create a text element with the exact literal text.
 """
     }
 }

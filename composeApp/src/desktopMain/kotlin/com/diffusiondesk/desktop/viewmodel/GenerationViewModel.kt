@@ -16,6 +16,7 @@ import com.diffusiondesk.desktop.core.ImagePromptMode
 import com.diffusiondesk.desktop.core.ImageTaggingService
 import com.diffusiondesk.desktop.core.LlmPresetStore
 import com.diffusiondesk.desktop.core.LlmRoleService
+import com.diffusiondesk.desktop.core.LlmWorkerPool
 import com.diffusiondesk.desktop.core.SavedGenerationSettings
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -267,7 +268,13 @@ private fun normalizeIdeogramJsonPrompt(value: String): String? {
     val style = root["style_description"]?.jsonObjectOrNull() ?: return value
     val hasPhoto = style.containsKey("photo")
     val hasArtStyle = style.containsKey("art_style")
-    if (hasPhoto != hasArtStyle) return value
+    val rootMap = root.toMutableMap()
+    normalizeIdeogramElementBboxes(root)?.let { composition ->
+        rootMap["compositional_deconstruction"] = composition
+    }
+    if (hasPhoto != hasArtStyle) {
+        return ideogramJsonPretty.encodeToString(JsonElement.serializer(), JsonObject(rootMap))
+    }
 
     val medium = style["medium"]?.jsonPrimitiveOrNull()?.content.orEmpty()
     val aesthetics = style["aesthetics"]?.jsonPrimitiveOrNull()?.content.orEmpty()
@@ -291,9 +298,43 @@ private fun normalizeIdeogramJsonPrompt(value: String): String? {
         }
     }
 
-    val rootMap = root.toMutableMap()
     rootMap["style_description"] = JsonObject(styleMap)
     return ideogramJsonPretty.encodeToString(JsonElement.serializer(), JsonObject(rootMap))
+}
+
+private fun normalizeIdeogramElementBboxes(root: JsonObject): JsonObject? {
+    val composition = root["compositional_deconstruction"]?.jsonObjectOrNull() ?: return null
+    val elements = composition["elements"]?.jsonArrayOrNull() ?: return null
+    var changed = false
+    val compositionMap = composition.toMutableMap()
+    normalizeIdeogramBackground(composition["background"])?.let { background ->
+        compositionMap["background"] = JsonPrimitive(background)
+        changed = true
+    }
+    val normalizedElements = elements.map { element ->
+        val obj = element.jsonObjectOrNull() ?: return@map element
+        val bbox = obj["bbox"]?.jsonArrayOrNull() ?: return@map element
+        val values = bbox.mapNotNull { it.jsonPrimitiveOrNull()?.content?.toIntOrNull() }
+        val sanitized = sanitizeIdeogramBbox(values) ?: return@map element
+        if (sanitized != values) {
+            changed = true
+            JsonObject(obj.toMutableMap().also { map ->
+                map["bbox"] = JsonArray(sanitized.map { JsonPrimitive(it) })
+            })
+        } else {
+            element
+        }
+    }
+    if (!changed) return null
+    return JsonObject(compositionMap.also { map ->
+        map["elements"] = JsonArray(normalizedElements)
+    })
+}
+
+private fun normalizeIdeogramBackground(background: JsonElement?): String? {
+    val obj = background?.jsonObjectOrNull() ?: return null
+    return listOf("desc", "description", "text", "prompt")
+        .firstNotNullOfOrNull { key -> obj[key]?.jsonPrimitiveOrNull()?.content?.trim()?.takeIf(String::isNotBlank) }
 }
 
 internal fun ideogramElementPreviews(value: String): List<IdeogramElementPreview> {
@@ -331,13 +372,48 @@ private fun validatePalette(element: JsonElement, maxColors: Int, label: String)
 
 private fun extractJsonObject(value: String): String? {
     val trimmed = value.trim()
-    if (trimmed.startsWith("{") && trimmed.endsWith("}")) return trimmed
+    if (trimmed.startsWith("{") && trimmed.endsWith("}") && isValidJsonObject(trimmed)) return trimmed
     val fenced = Regex("```(?:json)?\\s*(\\{[\\s\\S]*?})\\s*```").find(trimmed)?.groupValues?.getOrNull(1)
-    if (fenced != null) return fenced
-    val start = trimmed.indexOf('{')
-    val end = trimmed.lastIndexOf('}')
-    return if (start >= 0 && end > start) trimmed.substring(start, end + 1) else null
+    if (fenced != null && isValidJsonObject(fenced)) return fenced
+
+    val candidates = mutableListOf<String>()
+    var start = -1
+    var depth = 0
+    var inString = false
+    var escaped = false
+    trimmed.forEachIndexed { index, char ->
+        if (inString) {
+            when {
+                escaped -> escaped = false
+                char == '\\' -> escaped = true
+                char == '"' -> inString = false
+            }
+            return@forEachIndexed
+        }
+
+        when (char) {
+            '"' -> inString = true
+            '{' -> {
+                if (depth == 0) start = index
+                depth++
+            }
+            '}' -> {
+                if (depth > 0) {
+                    depth--
+                    if (depth == 0 && start >= 0) {
+                        candidates += trimmed.substring(start, index + 1)
+                        start = -1
+                    }
+                }
+            }
+        }
+    }
+
+    return candidates.lastOrNull(::isValidJsonObject)
 }
+
+private fun isValidJsonObject(value: String): Boolean =
+    runCatching { ideogramJson.parseToJsonElement(value).jsonObject }.isSuccess
 
 private fun compactLlmPreview(value: String, maxLength: Int = 500): String {
     val compact = value.replace(Regex("\\s+"), " ").trim()
@@ -406,6 +482,7 @@ class GenerationViewModel(
     private val galleryRepository: GalleryRepository,
     private val imageTaggingService: ImageTaggingService,
     private val llmRoleService: LlmRoleService,
+    private val llmWorkerPool: LlmWorkerPool,
 ) {
     private val _uiState = MutableStateFlow(generationSettingsStore.load().toUiState())
     val uiState: StateFlow<GenerationUiState> = _uiState.asStateFlow()
@@ -1099,6 +1176,29 @@ class GenerationViewModel(
             }
 
             val baseUrl = backendManager.state.value.baseUrl
+            update {
+                copy(
+                    progressPhase = "Releasing LLM VRAM...",
+                    progressMessage = "Unloading GPU LLM models before image generation.",
+                    message = "Releasing LLM VRAM...",
+                )
+            }
+            llmWorkerPool.unloadGpuModelsForImageGeneration()
+                .onFailure { error ->
+                    val message = error.message ?: "Failed to unload GPU LLM models before image generation."
+                    updateHistoryItem(nextIndex) { it.copy(status = GenerationStatus.Failed, error = message) }
+                    update {
+                        copy(
+                            isGenerating = false,
+                            progressEtaSeconds = 0,
+                            error = message,
+                            message = "Generation failed.",
+                        )
+                    }
+                    processQueue()
+                    return@launch
+                }
+
             val jobSubmission = client.submitGenerationJob(baseUrl, item.params.toRequest())
 
             val generationResult = jobSubmission.mapCatching { submission ->
@@ -1261,7 +1361,7 @@ class GenerationViewModel(
 
     private fun handleProgressEvent(event: GenerationJobEvent.Progress) {
         update {
-            val nextPhase = displayProgressPhase(event.phase, progressPhase)
+            val nextPhase = displayProgressPhase(event, progressPhase)
             val nextStages = updateProgressStages(progressStages, nextPhase, event)
             val timing = estimateProgressTiming(event, nextPhase)
             copy(
@@ -1284,9 +1384,12 @@ class GenerationViewModel(
         }
     }
 
-    private fun displayProgressPhase(rawPhase: String, currentPhase: String): String {
-        val normalized = rawPhase.trim()
+    private fun displayProgressPhase(event: GenerationJobEvent.Progress, currentPhase: String): String {
+        val normalized = event.phase.trim()
+        val hasStepProgress = event.steps > 0 && event.step > 0
         return when {
+            hasStepProgress && (normalized.isBlank() || normalized.equals("idle", ignoreCase = true)) -> "Sampling..."
+            hasStepProgress && normalized.startsWith("Encoding Prompt", ignoreCase = true) -> "Sampling..."
             normalized.isBlank() || normalized.equals("idle", ignoreCase = true) -> {
                 currentPhase.takeUnless { it.isBlank() || it.equals("idle", ignoreCase = true) } ?: "Starting..."
             }
@@ -1299,7 +1402,7 @@ class GenerationViewModel(
         phase: String,
         event: GenerationJobEvent.Progress,
     ): List<GenerationProgressStage> {
-        val stageKey = progressStageKey(phase)
+        val stageKey = progressStageKey(phase, event)
         if (stageKey != lastProgressStageKey) {
             lastProgressStageKey = stageKey
             currentStageStartStep = event.step
@@ -1351,7 +1454,13 @@ class GenerationViewModel(
 
     private fun activeStageProgress(stageKey: String, event: GenerationJobEvent.Progress): Float {
         return when (stageKey) {
-            PROGRESS_STAGE_SAMPLING,
+            PROGRESS_STAGE_SAMPLING -> {
+                if (event.steps > 0 && event.step > 0) {
+                    (event.step.toFloat() / event.steps.toFloat()).coerceIn(0.02f, 0.98f)
+                } else {
+                    0.1f
+                }
+            }
             PROGRESS_STAGE_HIGHRES -> {
                 val denominator = (event.steps - currentStageStartStep).coerceAtLeast(1)
                 val numerator = (event.step - currentStageStartStep).coerceAtLeast(0)
@@ -1363,12 +1472,13 @@ class GenerationViewModel(
         }
     }
 
-    private fun progressStageKey(phase: String): String {
+    private fun progressStageKey(phase: String, event: GenerationJobEvent.Progress): String {
         val normalized = phase.lowercase()
         return when {
             normalized.contains("vae") || normalized.contains("decod") || normalized.contains("sav") -> PROGRESS_STAGE_DECODE
             normalized.contains("highres") || normalized.contains("high-res") || normalized.contains("hires") -> PROGRESS_STAGE_HIGHRES
             normalized.contains("sampl") -> PROGRESS_STAGE_SAMPLING
+            event.steps > 0 && event.step > 0 -> PROGRESS_STAGE_SAMPLING
             else -> PROGRESS_STAGE_PREPARE
         }
     }
@@ -1377,7 +1487,7 @@ class GenerationViewModel(
         return when (stageKey) {
             PROGRESS_STAGE_PREPARE -> "Prepare"
             PROGRESS_STAGE_SAMPLING -> "Sampling"
-            PROGRESS_STAGE_HIGHRES -> "Highres-fix"
+            PROGRESS_STAGE_HIGHRES -> "High-res fix"
             PROGRESS_STAGE_DECODE -> "Decode and save"
             else -> phase.ifBlank { "Processing" }.removeSuffix("...")
         }

@@ -89,7 +89,11 @@ class LlmPresetStore {
             name = root.string("name", root.string("id")),
             modelPath = root.string("model_path"),
             mmprojPath = root.string("mmproj_path"),
-            placement = if (placement == "gpu") LlmPlacement.Gpu else LlmPlacement.Cpu,
+            placement = when (placement) {
+                "auto" -> LlmPlacement.Auto
+                "gpu" -> LlmPlacement.Gpu
+                else -> LlmPlacement.Cpu
+            },
             advancedArgs = root.string("advanced_args"),
         )
     }

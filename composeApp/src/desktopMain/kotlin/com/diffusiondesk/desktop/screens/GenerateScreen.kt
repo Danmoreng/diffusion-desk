@@ -1,5 +1,6 @@
 package com.diffusiondesk.desktop.screens
 
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.ContextMenuArea
 import androidx.compose.foundation.ContextMenuItem
@@ -32,7 +33,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.Article
 import androidx.compose.material.icons.automirrored.filled.Redo
 import androidx.compose.material.icons.automirrored.filled.Undo
 import androidx.compose.material.icons.filled.ChevronLeft
@@ -50,6 +50,7 @@ import androidx.compose.material.icons.filled.Recycling
 import androidx.compose.material.icons.filled.Repeat
 import androidx.compose.material.icons.filled.RestartAlt
 import androidx.compose.material.icons.filled.SwapHoriz
+import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
@@ -111,7 +112,6 @@ import java.nio.charset.StandardCharsets
 import java.util.Locale
 import kotlin.math.roundToInt
 import org.jetbrains.jewel.ui.component.DefaultButton as Button
-import org.jetbrains.jewel.ui.component.HorizontalProgressBar
 import org.jetbrains.jewel.ui.component.IconButton
 import org.jetbrains.jewel.ui.component.Slider
 import org.jetbrains.jewel.ui.component.Text
@@ -427,8 +427,8 @@ private fun PromptTabsHeader(
         tabs = listOf(
             DeskTabItem(
                 selected = state.ideogram.selectedTab == IdeogramStructureTab.Text,
-                icon = Icons.AutoMirrored.Filled.Article,
-                label = "Text",
+                icon = Icons.Default.Tune,
+                label = "Controls",
                 onClick = { onStructuredTabSelected(IdeogramStructureTab.Text) },
             ),
             DeskTabItem(
@@ -1206,19 +1206,38 @@ private class ImageTransferable(
 
 @Composable
 private fun ProgressCard(state: GenerationUiState) {
+    val overallProgress = generationOverallProgress(state)
+    val progressPercent = (overallProgress * 100f).roundToInt().coerceIn(0, 99)
     Column(
         modifier = Modifier.widthIn(max = 520.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(DeskLayoutGap),
     ) {
-        Text(
-            text = state.progressPhase.ifBlank { "Generating..." },
-            style = MaterialTheme.typography.headlineSmall,
-            color = MaterialTheme.colorScheme.primary,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = state.progressPhase.ifBlank { "Generating..." },
+                style = MaterialTheme.typography.headlineSmall,
+                color = MaterialTheme.colorScheme.primary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                text = "$progressPercent%",
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.primary,
+                fontWeight = FontWeight.Bold,
+            )
+        }
+        GenerationProgressTrack(
+            progress = overallProgress,
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(12.dp),
         )
-        Text("Generating image(s)...", color = MaterialTheme.colorScheme.onSurfaceVariant)
         ProgressStageList(state.progressStages)
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -1249,6 +1268,29 @@ private fun ProgressCard(state: GenerationUiState) {
             )
         }
     }
+}
+
+private fun generationOverallProgress(state: GenerationUiState): Float {
+    if (state.progressSteps > 0 && state.progressStep > 0) {
+        return (state.progressStep.toFloat() / state.progressSteps.toFloat()).coerceIn(0.02f, 0.99f)
+    }
+
+    val stages = state.progressStages
+    if (stages.isEmpty()) {
+        return 0.02f
+    }
+
+    val weightedProgress = stages.map { stage ->
+        when (stage.key) {
+            "prepare" -> stage.progress * 0.08f
+            "sampling" -> 0.08f + stage.progress * 0.82f
+            "highres" -> 0.55f + stage.progress * 0.35f
+            "decode" -> 0.9f + stage.progress * 0.09f
+            else -> stage.progress * 0.9f
+        }
+    }.maxOrNull() ?: 0f
+
+    return weightedProgress.coerceIn(0.02f, 0.99f)
 }
 
 @Composable
@@ -1304,11 +1346,36 @@ private fun ProgressStageRow(stage: GenerationProgressStage) {
                 maxLines = 1,
             )
         }
-        HorizontalProgressBar(
+        GenerationProgressTrack(
             progress = stage.progress.coerceIn(0f, 1f),
             modifier = Modifier
                 .fillMaxWidth()
                 .height(8.dp),
+        )
+    }
+}
+
+@Composable
+private fun GenerationProgressTrack(
+    progress: Float,
+    modifier: Modifier = Modifier,
+) {
+    val animatedProgress by animateFloatAsState(
+        targetValue = progress.coerceIn(0f, 1f),
+        label = "generation-progress",
+    )
+    val shape = RoundedCornerShape(999.dp)
+    Box(
+        modifier = modifier
+            .clip(shape)
+            .background(MaterialTheme.colorScheme.surfaceVariant),
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxHeight()
+                .fillMaxWidth(animatedProgress.coerceIn(0f, 1f))
+                .clip(shape)
+                .background(MaterialTheme.colorScheme.primary),
         )
     }
 }

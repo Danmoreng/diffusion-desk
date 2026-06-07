@@ -43,7 +43,7 @@ import org.jetbrains.jewel.ui.component.Text
 private enum class Screen(val label: String, val icon: ImageVector, val subtitle: String) {
     Generate("Generate", Icons.Default.Image, "Preset-driven image generation with the local SD worker."),
     Gallery("Gallery", Icons.Default.Collections, "Browse generated images and reuse embedded parameters."),
-    Library("Library", Icons.Default.Inventory2, "Manage JSON-backed image generation presets."),
+    Library("Presets", Icons.Default.Inventory2, "Manage JSON-backed image generation presets."),
     System("System", Icons.Default.Memory, "Worker status, runtime controls, and diagnostics."),
     Settings("Settings", Icons.Default.Settings, "Local paths and static app configuration."),
 }
