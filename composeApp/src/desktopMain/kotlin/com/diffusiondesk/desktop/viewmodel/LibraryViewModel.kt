@@ -6,6 +6,7 @@ import com.diffusiondesk.desktop.core.CommandLineArgs
 import com.diffusiondesk.desktop.core.DiffusionDeskClient
 import com.diffusiondesk.desktop.core.ImagePreset
 import com.diffusiondesk.desktop.core.ImagePresetStore
+import com.diffusiondesk.desktop.core.ImagePromptMode
 import com.diffusiondesk.desktop.core.LlmPlacement
 import com.diffusiondesk.desktop.core.LlmPreset
 import com.diffusiondesk.desktop.core.LlmPresetStore
@@ -38,6 +39,7 @@ data class ImagePresetForm(
     val offloadParamsToCpu: Boolean = false,
     val flashAttention: Boolean = false,
     val streamLayers: Boolean = false,
+    val promptMode: ImagePromptMode = ImagePromptMode.Text,
     val defaultWidth: String = "1024",
     val defaultHeight: String = "1024",
     val defaultSteps: String = "4",
@@ -314,6 +316,7 @@ class LibraryViewModel(
         offloadParamsToCpu = offloadParamsToCpu,
         flashAttention = flashAttention,
         streamLayers = streamLayers,
+        promptMode = promptMode,
         defaultWidth = defaultWidth.toString(),
         defaultHeight = defaultHeight.toString(),
         defaultSteps = defaultSteps.toString(),
@@ -354,6 +357,7 @@ class LibraryViewModel(
             flashAttention = flashAttention,
             maxVramGb = 0.0,
             streamLayers = streamLayers,
+            promptMode = promptMode,
             defaultWidth = defaultWidth.toIntOrNull()?.coerceIn(64, 4096) ?: error("Width must be numeric."),
             defaultHeight = defaultHeight.toIntOrNull()?.coerceIn(64, 4096) ?: error("Height must be numeric."),
             defaultSteps = defaultSteps.toIntOrNull()?.coerceIn(1, 200) ?: error("Steps must be numeric."),

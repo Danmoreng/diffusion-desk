@@ -85,7 +85,7 @@ Use exactly these top-level keys in this order:
 2. style_description
 3. compositional_deconstruction
 
-style_description must contain aesthetics, lighting, exactly one of photo or art_style, medium, and optionally color_palette. For photographs, order keys as aesthetics, lighting, photo, medium, color_palette. For non-photographic images, order keys as aesthetics, lighting, medium, art_style, color_palette.
+style_description must contain aesthetics, lighting, exactly one of photo or art_style, medium, and optionally color_palette. If the image is a photograph, include a non-empty photo field and do not use art_style. Do not substitute medium for photo: medium: "photograph" still requires a separate photo field. For photographs, order keys as aesthetics, lighting, photo, medium, color_palette. For non-photographic images, order keys as aesthetics, lighting, medium, art_style, color_palette.
 
 compositional_deconstruction must contain background then elements. elements is an array of objects. Object elements use keys type, bbox, desc, color_palette. Text elements use keys type, bbox, text, desc, color_palette. Use type "obj" or "text". bbox is optional and must be [y_min, x_min, y_max, x_max] in normalized 0-1000 coordinates.
 

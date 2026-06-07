@@ -1,5 +1,23 @@
 package com.diffusiondesk.desktop.core
 
+enum class ImagePromptMode(
+    val storageValue: String,
+    val displayName: String,
+) {
+    Text("text", "Text"),
+    Json("json", "JSON"),
+    ;
+
+    companion object {
+        fun fromStorage(value: String, default: ImagePromptMode = Text): ImagePromptMode =
+            values().firstOrNull { mode ->
+                value.equals(mode.storageValue, ignoreCase = true) ||
+                    value.equals(mode.name, ignoreCase = true) ||
+                    value.equals(mode.displayName, ignoreCase = true)
+            } ?: default
+    }
+}
+
 data class ImagePreset(
     val id: String,
     val name: String,
@@ -16,6 +34,7 @@ data class ImagePreset(
     val flashAttention: Boolean = false,
     val maxVramGb: Double = 0.0,
     val streamLayers: Boolean = false,
+    val promptMode: ImagePromptMode = ImagePromptMode.Text,
     val defaultWidth: Int = 1024,
     val defaultHeight: Int = 1024,
     val defaultSteps: Int = 4,

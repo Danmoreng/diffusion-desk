@@ -12,6 +12,7 @@ import com.diffusiondesk.desktop.core.GenerationSettingsStore
 import com.diffusiondesk.desktop.core.GalleryReusableParams
 import com.diffusiondesk.desktop.core.ImagePreset
 import com.diffusiondesk.desktop.core.ImagePresetStore
+import com.diffusiondesk.desktop.core.ImagePromptMode
 import com.diffusiondesk.desktop.core.ImageTaggingService
 import com.diffusiondesk.desktop.core.LlmPresetStore
 import com.diffusiondesk.desktop.core.LlmRoleService
@@ -82,6 +83,7 @@ data class GenerationHistoryItem(
     val id: String,
     val status: GenerationStatus,
     val params: GenerationParams,
+    val promptMode: ImagePromptMode = ImagePromptMode.Text,
     val imageUrls: List<String> = emptyList(),
     val usedSeed: Int? = null,
     val images: List<GeneratedImage> = emptyList(),
@@ -106,6 +108,11 @@ enum class IdeogramStructureTab {
     Text,
     Json,
     Preview,
+}
+
+private fun ImagePromptMode.toIdeogramTab(): IdeogramStructureTab = when (this) {
+    ImagePromptMode.Text -> IdeogramStructureTab.Text
+    ImagePromptMode.Json -> IdeogramStructureTab.Json
 }
 
 data class IdeogramElementPreview(
@@ -233,6 +240,40 @@ private fun validateIdeogramJson(value: String): Pair<String, String?> {
     }
 
     return "Valid Ideogram JSON (${elements.size} element${if (elements.size == 1) "" else "s"})." to null
+}
+
+private fun normalizeIdeogramJsonPrompt(value: String): String? {
+    val root = runCatching { ideogramJson.parseToJsonElement(value).jsonObject }.getOrNull() ?: return null
+    val style = root["style_description"]?.jsonObjectOrNull() ?: return value
+    val hasPhoto = style.containsKey("photo")
+    val hasArtStyle = style.containsKey("art_style")
+    if (hasPhoto != hasArtStyle) return value
+
+    val medium = style["medium"]?.jsonPrimitiveOrNull()?.content.orEmpty()
+    val aesthetics = style["aesthetics"]?.jsonPrimitiveOrNull()?.content.orEmpty()
+    val styleMap = style.toMutableMap()
+    val photoHint = listOf(medium, aesthetics)
+        .joinToString(" ")
+        .lowercase()
+        .let { it.contains("photo") || it.contains("camera") || it.contains("realistic") }
+
+    if (!hasPhoto && !hasArtStyle) {
+        if (photoHint) {
+            styleMap["photo"] = JsonPrimitive("photograph, realistic camera capture")
+        } else {
+            styleMap["art_style"] = JsonPrimitive(medium.ifBlank { "illustration" })
+        }
+    } else if (hasPhoto && hasArtStyle) {
+        if (photoHint) {
+            styleMap.remove("art_style")
+        } else {
+            styleMap.remove("photo")
+        }
+    }
+
+    val rootMap = root.toMutableMap()
+    rootMap["style_description"] = JsonObject(styleMap)
+    return ideogramJsonPretty.encodeToString(JsonElement.serializer(), JsonObject(rootMap))
 }
 
 internal fun ideogramElementPreviews(value: String): List<IdeogramElementPreview> {
@@ -396,6 +437,7 @@ class GenerationViewModel(
                     selectedPresetId = value,
                     message = "Selected ${preset.name}.",
                     presetLoadFailed = false,
+                    ideogram = ideogram.copy(selectedTab = preset.promptMode.toIdeogramTab()),
                     error = null,
                 )
             }
@@ -471,7 +513,8 @@ class GenerationViewModel(
 
     fun formatIdeogramJsonPrompt() = update {
         val formatted = runCatching {
-            ideogramJsonPretty.encodeToString(JsonElement.serializer(), ideogramJson.parseToJsonElement(ideogram.jsonPrompt))
+            val normalized = normalizeIdeogramJsonPrompt(ideogram.jsonPrompt) ?: ideogram.jsonPrompt
+            ideogramJsonPretty.encodeToString(JsonElement.serializer(), ideogramJson.parseToJsonElement(normalized))
         }.getOrNull()
         if (formatted == null) {
             copy(ideogram = ideogram.copy(jsonError = "JSON is invalid and cannot be formatted."))
@@ -524,7 +567,8 @@ class GenerationViewModel(
                     val jsonText = extractJsonObject(response)
                     val formatted = jsonText?.let {
                         runCatching {
-                            ideogramJsonPretty.encodeToString(JsonElement.serializer(), ideogramJson.parseToJsonElement(it))
+                            val normalized = normalizeIdeogramJsonPrompt(it) ?: it
+                            ideogramJsonPretty.encodeToString(JsonElement.serializer(), ideogramJson.parseToJsonElement(normalized))
                         }.getOrNull()
                     }
                     if (formatted == null) {
@@ -545,7 +589,7 @@ class GenerationViewModel(
                                     isGeneratingJson = false,
                                     jsonStatus = validation.first,
                                     jsonError = validation.second,
-                                    selectedTab = if (validation.second == null) IdeogramStructureTab.Preview else IdeogramStructureTab.Json,
+                                    selectedTab = IdeogramStructureTab.Json,
                                 ),
                             )
                         }
@@ -765,7 +809,10 @@ class GenerationViewModel(
 
     fun generate(saveImagesAutomatically: Boolean) {
         scope.launch {
-            commitPrompt()
+            val promptMode = selectedPresetOrNull()?.promptMode ?: ImagePromptMode.Text
+            if (promptMode == ImagePromptMode.Text) {
+                commitPrompt()
+            }
 
             if (backendManager.state.value.status != BackendStatus.Ready) {
                 update { copy(error = "Image worker is not ready.") }
@@ -775,7 +822,7 @@ class GenerationViewModel(
                 return@launch
             }
 
-            val params = if (_uiState.value.ideogram.selectedTab == IdeogramStructureTab.Text) {
+            val params = if (promptMode == ImagePromptMode.Text) {
                 runCatching { buildParams() }
                     .onFailure { error -> update { copy(error = error.message ?: "Invalid generation parameters.") } }
                     .getOrNull()
@@ -784,7 +831,7 @@ class GenerationViewModel(
             }
             params ?: return@launch
 
-            enqueueGeneration(params.copy(saveImage = saveImagesAutomatically))
+            enqueueGeneration(params.copy(saveImage = saveImagesAutomatically), promptMode)
         }
     }
 
@@ -880,11 +927,12 @@ class GenerationViewModel(
         return result.isSuccess
     }
 
-    private fun enqueueGeneration(params: GenerationParams) {
+    private fun enqueueGeneration(params: GenerationParams, promptMode: ImagePromptMode) {
         val item = GenerationHistoryItem(
             id = UUID.randomUUID().toString(),
             status = GenerationStatus.Pending,
             params = params,
+            promptMode = promptMode,
         )
 
         var shouldSelectNewItem = false
@@ -919,11 +967,23 @@ class GenerationViewModel(
 
     fun seekHistory(index: Int) {
         val item = _uiState.value.history.getOrNull(index) ?: return
+        val validation = if (item.promptMode == ImagePromptMode.Text) null else validateIdeogramJson(item.params.prompt)
         update {
+            val nextIdeogram = if (item.promptMode == ImagePromptMode.Text) {
+                ideogram.copy(selectedTab = IdeogramStructureTab.Text)
+            } else {
+                ideogram.copy(
+                    jsonPrompt = item.params.prompt,
+                    selectedTab = IdeogramStructureTab.Json,
+                    jsonStatus = validation?.first ?: ideogram.jsonStatus,
+                    jsonError = validation?.second,
+                )
+            }
             copy(
                 historyIndex = index,
-                prompt = item.params.prompt,
-                negativePrompt = item.params.negativePrompt,
+                prompt = if (item.promptMode == ImagePromptMode.Text) item.params.prompt else prompt,
+                negativePrompt = if (item.promptMode == ImagePromptMode.Text) item.params.negativePrompt else negativePrompt,
+                ideogram = nextIdeogram,
                 width = item.params.width.toString(),
                 height = item.params.height.toString(),
                 steps = item.params.steps.toString(),
