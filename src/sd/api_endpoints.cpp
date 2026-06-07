@@ -3,7 +3,6 @@
 #include "server_state.hpp"
 #include "model_loader.hpp"
 #include <atomic>
-#include <algorithm>
 #include <condition_variable>
 #include <deque>
 #include <sstream>
@@ -798,6 +797,7 @@ void handle_load_model(const httplib::Request& req, httplib::Response& res, Serv
             } else {
                     // Main model load - Reset optional paths and flags
                     ctx.ctx_params.diffusion_model_path = model_path.string();
+                    ctx.ctx_params.uncond_diffusion_model_path = "";
                     ctx.ctx_params.model_path = "";
                     ctx.ctx_params.vae_path = "";
                     ctx.ctx_params.clip_l_path = "";
@@ -809,6 +809,8 @@ void handle_load_model(const httplib::Request& req, httplib::Response& res, Serv
                     ctx.ctx_params.vae_on_cpu = false;
                     ctx.ctx_params.offload_params_to_cpu = false;
                     ctx.ctx_params.vae_tiling_params.enabled = false;
+                    ctx.ctx_params.max_vram = 0.0f;
+                    ctx.ctx_params.stream_layers = false;
                     ctx.ctx_params.prediction = PREDICTION_COUNT;
                     ctx.ctx_params.flow_shift = INFINITY;
 
@@ -825,11 +827,42 @@ void handle_load_model(const httplib::Request& req, httplib::Response& res, Serv
                     if (body.contains("clip_g") && body["clip_g"].is_string()) ctx.ctx_params.clip_g_path = resolve_path(body["clip_g"].get<std::string>(), ctx.svr_params.model_dir);
                     if (body.contains("t5xxl") && body["t5xxl"].is_string()) ctx.ctx_params.t5xxl_path = resolve_path(body["t5xxl"].get<std::string>(), ctx.svr_params.model_dir);
                     if (body.contains("llm") && body["llm"].is_string()) ctx.ctx_params.llm_path = resolve_path(body["llm"].get<std::string>(), ctx.svr_params.model_dir);
-                    
+                    if (body.contains("uncond_diffusion_model") && body["uncond_diffusion_model"].is_string()) ctx.ctx_params.uncond_diffusion_model_path = resolve_path(body["uncond_diffusion_model"].get<std::string>(), ctx.svr_params.model_dir);
+                    if (body.contains("uncond_diffusion_model_path") && body["uncond_diffusion_model_path"].is_string()) ctx.ctx_params.uncond_diffusion_model_path = resolve_path(body["uncond_diffusion_model_path"].get<std::string>(), ctx.svr_params.model_dir);
+
                     if (body.contains("vae_tiling")) ctx.ctx_params.vae_tiling_params.enabled = body["vae_tiling"];
                     if (body.contains("clip_on_cpu")) ctx.ctx_params.clip_on_cpu = body["clip_on_cpu"];
                     if (body.contains("vae_on_cpu")) ctx.ctx_params.vae_on_cpu = body["vae_on_cpu"];
+                    if (body.contains("offload_to_cpu")) ctx.ctx_params.offload_params_to_cpu = body["offload_to_cpu"];
+                    if (body.contains("offload_params_to_cpu")) ctx.ctx_params.offload_params_to_cpu = body["offload_params_to_cpu"];
                     if (body.contains("flash_attn")) ctx.ctx_params.diffusion_flash_attn = body["flash_attn"];
+                    if (body.contains("diffusion_flash_attn")) ctx.ctx_params.diffusion_flash_attn = body["diffusion_flash_attn"];
+                    if (body.contains("max_vram") && body["max_vram"].is_number()) ctx.ctx_params.max_vram = body["max_vram"].get<float>();
+                    if (body.contains("max_vram_gb") && body["max_vram_gb"].is_number()) ctx.ctx_params.max_vram = body["max_vram_gb"].get<float>();
+
+                    if (body.contains("stream_layers")) {
+                        ctx.ctx_params.stream_layers = body["stream_layers"];
+                    } else {
+                        ctx.ctx_params.stream_layers = ctx.ctx_params.offload_params_to_cpu && ctx.ctx_params.max_vram != 0.0f;
+                    }
+                    if (ctx.ctx_params.stream_layers && ctx.ctx_params.max_vram == 0.0f) {
+                        DD_LOG_WARN("stream_layers requested without max_vram; disabling stream_layers");
+                        ctx.ctx_params.stream_layers = false;
+                    }
+
+                    auto validate_component_path = [&](const char* field_name, const std::string& path) {
+                        if (path.empty() || fs::exists(path)) return true;
+                        res.status = 404;
+                        res.set_content(make_error_json("model_component_not_found", std::string(field_name) + " file not found at " + path), "application/json");
+                        return false;
+                    };
+
+                    if (!validate_component_path("vae", ctx.ctx_params.vae_path)) return;
+                    if (!validate_component_path("clip_l", ctx.ctx_params.clip_l_path)) return;
+                    if (!validate_component_path("clip_g", ctx.ctx_params.clip_g_path)) return;
+                    if (!validate_component_path("t5xxl", ctx.ctx_params.t5xxl_path)) return;
+                    if (!validate_component_path("llm", ctx.ctx_params.llm_path)) return;
+                    if (!validate_component_path("uncond_diffusion_model", ctx.ctx_params.uncond_diffusion_model_path)) return;
             }
 
             sd_ctx_params_t sd_ctx_p = ctx.ctx_params.to_sd_ctx_params_t(false, false, false);
@@ -840,7 +873,14 @@ void handle_load_model(const httplib::Request& req, httplib::Response& res, Serv
             }
         }
 
-        res.set_content(R"({\"status\":\"success\",\"model\":\")" + model_id + R"("})", "application/json");
+        diffusion_desk::json response = {
+            {"status", "success"},
+            {"model", model_id},
+            {"max_vram_gb", ctx.ctx_params.max_vram},
+            {"stream_layers", ctx.ctx_params.stream_layers},
+            {"offload_params_to_cpu", ctx.ctx_params.offload_params_to_cpu}
+        };
+        res.set_content(response.dump(), "application/json");
 
     } catch (const std::exception& e) {
         DD_LOG_ERROR("error loading model: %s", e.what());

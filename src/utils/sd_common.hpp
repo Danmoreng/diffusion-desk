@@ -56,6 +56,7 @@ struct SDContextParams {
     std::string llm_model_path; 
     std::string diffusion_model_path;
     std::string high_noise_diffusion_model_path;
+    std::string uncond_diffusion_model_path;
     std::string vae_path;
     std::string taesd_path;
     std::string esrgan_path;
@@ -86,6 +87,7 @@ struct SDContextParams {
     bool qwen_image_zero_cond_t = false;
     sd_vae_format_t vae_format = SD_VAE_FORMAT_AUTO;
     float max_vram = 0.f;
+    bool stream_layers = false;
 
     prediction_t prediction           = PREDICTION_COUNT;
     lora_apply_mode_t lora_apply_mode = LORA_APPLY_AUTO;

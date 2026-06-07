@@ -17,6 +17,7 @@ interface ImagePreset {
   id: number
   name: string
   unet_path: string
+  uncond_path: string
   vae_path: string
   clip_l_path: string
   clip_g_path: string
@@ -67,7 +68,7 @@ const presetModalRef = ref<HTMLElement | null>(null)
 let presetModalInstance: Modal | null = null
 const isEditingPreset = ref(false)
 const editingImagePreset = ref<ImagePreset>({
-  id: 0, name: '', unet_path: '', vae_path: '', clip_l_path: '', clip_g_path: '', t5xxl_path: '', llm_path: '', vram_weights_mb_estimate: 0, default_params: {}
+  id: 0, name: '', unet_path: '', uncond_path: '', vae_path: '', clip_l_path: '', clip_g_path: '', t5xxl_path: '', llm_path: '', vram_weights_mb_estimate: 0, default_params: {}, preferred_params: { memory: { force_clip_cpu: false, force_vae_tiling: false, max_vram_gb: 0, stream_layers: false } }
 })
 const editingLlmPreset = ref<LlmPreset>({
   id: 0, name: '', model_path: '', mmproj_path: '', n_ctx: 2048
@@ -320,7 +321,7 @@ function openPresetModal(type: 'image' | 'llm', preset?: any) {
   isEditingPreset.value = !!preset
   if (type === 'image') {
     if (preset) editingImagePreset.value = { ...preset }
-    else editingImagePreset.value = { id: 0, name: '', unet_path: '', vae_path: '', clip_l_path: '', clip_g_path: '', t5xxl_path: '', llm_path: '', vram_weights_mb_estimate: 0, default_params: {}, preferred_params: { memory: { force_clip_cpu: false } } }
+    else editingImagePreset.value = { id: 0, name: '', unet_path: '', uncond_path: '', vae_path: '', clip_l_path: '', clip_g_path: '', t5xxl_path: '', llm_path: '', vram_weights_mb_estimate: 0, default_params: {}, preferred_params: { memory: { force_clip_cpu: false, force_vae_tiling: false, max_vram_gb: 0, stream_layers: false } } }
   } else {
     if (preset) editingLlmPreset.value = { ...preset }
     else editingLlmPreset.value = { id: 0, name: '', model_path: '', mmproj_path: '', n_ctx: 2048, system_prompt_assistant: '', system_prompt_tagging: '', system_prompt_style: '' }
@@ -489,6 +490,7 @@ onUnmounted(() => {
                             <h5 class="card-title">{{ preset.name }}</h5>
                             <div class="small text-muted mb-2">
                                 <div v-if="preset.unet_path" class="text-truncate" title="UNet"><i class="bi bi-cpu"></i> {{ preset.unet_path.split('/').pop() }}</div>
+                                <div v-if="preset.uncond_path" class="text-truncate" title="Unconditional"><i class="bi bi-cpu-fill"></i> {{ preset.uncond_path.split('/').pop() }}</div>
                                 <div v-if="preset.vae_path" class="text-truncate" title="VAE"><i class="bi bi-palette"></i> {{ preset.vae_path.split('/').pop() }}</div>
                                 <div v-if="preset.t5xxl_path" class="text-truncate" title="T5"><i class="bi bi-fonts"></i> {{ preset.t5xxl_path.split('/').pop() }}</div>
                             </div>

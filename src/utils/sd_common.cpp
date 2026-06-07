@@ -53,6 +53,7 @@ ArgOptions SDContextParams::get_options() {
         {"", "--qwen2vl_vision", "alias of --llm_vision. Deprecated.", &llm_vision_path},
         {"", "--diffusion-model", "path to the standalone diffusion model", &diffusion_model_path},
         {"", "--high-noise-diffusion-model", "path to the standalone high noise diffusion model", &high_noise_diffusion_model_path},
+        {"", "--uncond-diffusion-model", "path to the standalone unconditional diffusion model, currently used by Ideogram4 CFG", &uncond_diffusion_model_path},
         {"", "--vae", "path to standalone vae model", &vae_path},
         {"", "--taesd", "path to taesd. Using Tiny AutoEncoder for fast decoding (low quality)", &taesd_path},
         {"", "--tae", "alias of --taesd", &taesd_path},
@@ -72,6 +73,7 @@ ArgOptions SDContextParams::get_options() {
     options.float_options = {
         {"", "--vae-tile-overlap", "tile overlap for vae tiling, in fraction of tile size (default: 0.5)", &vae_tiling_params.target_overlap},
         {"", "--flow-shift", "shift value for Flow models like SD3.x or WAN (default: auto)", &flow_shift},
+        {"", "--max-vram", "GiB budget for segmented diffusion compute (0: disabled, -1: auto)", &max_vram},
     };
 
     options.bool_options = {
@@ -83,6 +85,7 @@ ArgOptions SDContextParams::get_options() {
         {"", "--clip-on-cpu", "keep clip in cpu (for low vram)", true, &clip_on_cpu},
         {"", "--vae-on-cpu", "keep vae in cpu (for low vram)", true, &vae_on_cpu},
         {"", "--diffusion-fa", "use flash attention in the diffusion model", true, &diffusion_flash_attn},
+        {"", "--stream-layers", "stream diffusion layers when --max-vram is set and params are offloaded", true, &stream_layers},
         {"", "--diffusion-conv-direct", "use ggml_conv2d_direct in the diffusion model", true, &diffusion_conv_direct},
         {"", "--vae-conv-direct", "use ggml_conv2d_direct in the vae model", true, &vae_conv_direct},
         {"", "--chroma-disable-dit-mask", "disable dit mask for chroma", false, &chroma_use_dit_mask},
@@ -241,6 +244,7 @@ sd_ctx_params_t SDContextParams::to_sd_ctx_params_t(bool vae_decode_only, bool f
     params.llm_vision_path = llm_vision_path.c_str();
     params.diffusion_model_path = diffusion_model_path.c_str();
     params.high_noise_diffusion_model_path = high_noise_diffusion_model_path.c_str();
+    params.uncond_diffusion_model_path = uncond_diffusion_model_path.c_str();
     params.vae_path = vae_path.c_str();
     params.taesd_path = taesd_path.c_str();
     params.control_net_path = control_net_path.c_str();
@@ -272,6 +276,7 @@ sd_ctx_params_t SDContextParams::to_sd_ctx_params_t(bool vae_decode_only, bool f
     params.qwen_image_zero_cond_t = qwen_image_zero_cond_t;
     params.vae_format = vae_format;
     params.max_vram = max_vram;
+    params.stream_layers = stream_layers;
 
     return params;
 }

@@ -178,6 +178,7 @@ class DiffusionDeskClient(
         runCatching {
             val payload = buildJsonObject {
                 put("model_id", JsonPrimitive(preset.diffusionModel))
+                putIfNotBlank("uncond_diffusion_model", preset.uncondDiffusionModel)
                 putIfNotBlank("vae", preset.vae)
                 putIfNotBlank("clip_l", preset.clipL)
                 putIfNotBlank("clip_g", preset.clipG)
@@ -187,6 +188,12 @@ class DiffusionDeskClient(
                 put("vae_on_cpu", JsonPrimitive(preset.vaeOnCpu))
                 put("offload_to_cpu", JsonPrimitive(preset.offloadParamsToCpu))
                 put("flash_attn", JsonPrimitive(preset.flashAttention))
+                if (preset.maxVramGb > 0.0) {
+                    put("max_vram_gb", JsonPrimitive(preset.maxVramGb))
+                }
+                if (preset.offloadParamsToCpu || !preset.streamLayers) {
+                    put("stream_layers", JsonPrimitive(preset.streamLayers))
+                }
             }
 
             val request = requestBuilder("$baseUrl/v1/models/load")

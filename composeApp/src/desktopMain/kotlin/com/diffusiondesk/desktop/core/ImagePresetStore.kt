@@ -72,6 +72,10 @@ class ImagePresetStore {
         if (!seedFile.exists() || seedFile.readText().contains("z-image-turbo.gguf") || seedFile.readText().contains("Qwen3-4B.gguf")) {
             seedFile.writeText(json.encodeToString(JsonObject.serializer(), zImageTurboExample().toJson()))
         }
+        val ideogramFile = File(presetDir, "ideogram4.example.json")
+        if (!ideogramFile.exists()) {
+            ideogramFile.writeText(json.encodeToString(JsonObject.serializer(), ideogram4Example().toJson()))
+        }
     }
 
     private fun parsePreset(raw: String): ImagePreset {
@@ -84,6 +88,7 @@ class ImagePresetStore {
             id = root.string("id"),
             name = root.string("name", root.string("id")),
             diffusionModel = components.string("diffusion_model", root.string("diffusion_model")),
+            uncondDiffusionModel = components.string("uncond_diffusion_model", components.string("uncond_diffusion_model_path")),
             vae = components.string("vae"),
             clipL = components.string("clip_l"),
             clipG = components.string("clip_g"),
@@ -93,6 +98,8 @@ class ImagePresetStore {
             vaeOnCpu = placement.boolean("vae_on_cpu"),
             offloadParamsToCpu = placement.boolean("offload_params_to_cpu"),
             flashAttention = placement.boolean("flash_attn"),
+            maxVramGb = placement.double("max_vram_gb", placement.double("max_vram", 0.0)),
+            streamLayers = placement.boolean("stream_layers", true),
             defaultWidth = defaults.int("width", 1024),
             defaultHeight = defaults.int("height", 1024),
             defaultSteps = defaults.int("steps", 4),
@@ -107,6 +114,7 @@ class ImagePresetStore {
         put("name", JsonPrimitive(name))
         put("components", buildJsonObject {
             put("diffusion_model", JsonPrimitive(diffusionModel))
+            putIfNotBlank("uncond_diffusion_model", uncondDiffusionModel)
             putIfNotBlank("vae", vae)
             putIfNotBlank("clip_l", clipL)
             putIfNotBlank("clip_g", clipG)
@@ -118,6 +126,8 @@ class ImagePresetStore {
             put("vae_on_cpu", JsonPrimitive(vaeOnCpu))
             put("offload_params_to_cpu", JsonPrimitive(offloadParamsToCpu))
             put("flash_attn", JsonPrimitive(flashAttention))
+            put("max_vram_gb", JsonPrimitive(maxVramGb))
+            put("stream_layers", JsonPrimitive(streamLayers))
         })
         put("defaults", buildJsonObject {
             put("width", JsonPrimitive(defaultWidth))
@@ -142,6 +152,26 @@ class ImagePresetStore {
         defaultSteps = 4,
         defaultCfgScale = 1.0,
         defaultSampler = "euler_a",
+    )
+
+    private fun ideogram4Example() = ImagePreset(
+        id = "ideogram4.example",
+        name = "Ideogram4 Example",
+        diffusionModel = "stable-diffusion/ideogram4-Q8_0.gguf",
+        uncondDiffusionModel = "stable-diffusion/ideogram4_uncond-Q8_0.gguf",
+        llm = "text-encoder/Qwen3VL-8B-Instruct-Q4_K_M.gguf",
+        vae = "vae/flux2dev_ae.safetensors",
+        vaeOnCpu = true,
+        offloadParamsToCpu = true,
+        flashAttention = true,
+        maxVramGb = 12.0,
+        streamLayers = true,
+        defaultWidth = 1024,
+        defaultHeight = 1024,
+        defaultSteps = 20,
+        defaultCfgScale = 5.0,
+        defaultSampler = "euler",
+        defaultNegativePrompt = "",
     )
 
     private fun JsonObject.string(key: String, default: String = ""): String =
