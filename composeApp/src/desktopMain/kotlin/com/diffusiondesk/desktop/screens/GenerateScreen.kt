@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -93,6 +94,7 @@ import com.diffusiondesk.desktop.core.ImagePromptMode
 import com.diffusiondesk.desktop.viewmodel.GenerationProgressStage
 import com.diffusiondesk.desktop.viewmodel.GenerationStatus
 import com.diffusiondesk.desktop.viewmodel.GenerationUiState
+import com.diffusiondesk.desktop.viewmodel.IDEOGRAM_BBOX_GRID
 import com.diffusiondesk.desktop.viewmodel.IdeogramStructureTab
 import com.diffusiondesk.desktop.viewmodel.ideogramElementPreviews
 import java.awt.Cursor
@@ -128,6 +130,7 @@ fun GenerateScreen(
     onGenerateStructuredJson: () -> Unit,
     onStructuredJsonPromptChange: (String) -> Unit,
     onFormatStructuredJson: () -> Unit,
+    onCompositionBboxChange: (Int, List<Int>) -> Unit,
     onWidthChange: (String) -> Unit,
     onHeightChange: (String) -> Unit,
     onStepsChange: (String) -> Unit,
@@ -209,6 +212,7 @@ fun GenerateScreen(
                     onGenerateStructuredJson = onGenerateStructuredJson,
                     onStructuredJsonPromptChange = onStructuredJsonPromptChange,
                     onFormatStructuredJson = onFormatStructuredJson,
+                    onCompositionBboxChange = onCompositionBboxChange,
                     onWidthChange = onWidthChange,
                     onHeightChange = onHeightChange,
                     onStepsChange = onStepsChange,
@@ -320,6 +324,7 @@ private fun GenerationPanel(
     onGenerateStructuredJson: () -> Unit,
     onStructuredJsonPromptChange: (String) -> Unit,
     onFormatStructuredJson: () -> Unit,
+    onCompositionBboxChange: (Int, List<Int>) -> Unit,
     onWidthChange: (String) -> Unit,
     onHeightChange: (String) -> Unit,
     onStepsChange: (String) -> Unit,
@@ -372,6 +377,7 @@ private fun GenerationPanel(
                     onGenerateStructuredJson = onGenerateStructuredJson,
                     onStructuredJsonPromptChange = onStructuredJsonPromptChange,
                     onFormatStructuredJson = onFormatStructuredJson,
+                    onCompositionBboxChange = onCompositionBboxChange,
                     onEnhancePrompt = onEnhancePrompt,
                 )
 
@@ -454,6 +460,7 @@ private fun PromptTabContent(
     onGenerateStructuredJson: () -> Unit,
     onStructuredJsonPromptChange: (String) -> Unit,
     onFormatStructuredJson: () -> Unit,
+    onCompositionBboxChange: (Int, List<Int>) -> Unit,
     onEnhancePrompt: () -> Unit,
 ) {
     when (state.ideogram.selectedTab) {
@@ -479,6 +486,7 @@ private fun PromptTabContent(
                 jsonPrompt = state.ideogram.jsonPrompt,
                 width = state.width.toIntOrNull() ?: 1024,
                 height = state.height.toIntOrNull() ?: 1024,
+                onElementBboxChange = onCompositionBboxChange,
                 modifier = Modifier.heightIn(min = 300.dp),
             )
         }
@@ -615,9 +623,21 @@ private fun IdeogramLayoutPreview(
     jsonPrompt: String,
     width: Int,
     height: Int,
+    onElementBboxChange: (Int, List<Int>) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val elements = ideogramElementPreviews(jsonPrompt)
+    val density = LocalDensity.current
+    val latestElements by rememberUpdatedState(elements)
+    val latestOnElementBboxChange by rememberUpdatedState(onElementBboxChange)
+    var selectedIndex by remember { mutableStateOf(0) }
+    LaunchedEffect(elements.size) {
+        if (elements.isEmpty()) {
+            selectedIndex = 0
+        } else if (selectedIndex !in elements.indices) {
+            selectedIndex = elements.lastIndex
+        }
+    }
     Column(
         modifier = modifier
             .fillMaxWidth(),
@@ -631,9 +651,19 @@ private fun IdeogramLayoutPreview(
                 .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = DeskSubtleSurfaceAlpha))
                 .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(DeskControlCornerRadius)),
         ) {
-            val aspect = width.toFloat() / height.coerceAtLeast(1).toFloat()
-            val canvasWidth = maxWidth
-            val canvasHeight = (canvasWidth / aspect).coerceAtMost(maxHeight).coerceAtLeast(200.dp)
+            val aspect = width.coerceAtLeast(1).toFloat() / height.coerceAtLeast(1).toFloat()
+            val heightAtFullWidth = maxWidth / aspect
+            val canvasWidth: Dp
+            val canvasHeight: Dp
+            if (heightAtFullWidth <= maxHeight) {
+                canvasWidth = maxWidth
+                canvasHeight = heightAtFullWidth
+            } else {
+                canvasHeight = maxHeight
+                canvasWidth = (canvasHeight * aspect).coerceAtMost(maxWidth)
+            }
+            val canvasWidthPx = with(density) { canvasWidth.toPx() }.coerceAtLeast(1f)
+            val canvasHeightPx = with(density) { canvasHeight.toPx() }.coerceAtLeast(1f)
             Box(
                 modifier = Modifier
                     .width(canvasWidth)
@@ -643,19 +673,43 @@ private fun IdeogramLayoutPreview(
                     .border(1.dp, MaterialTheme.colorScheme.outlineVariant),
             ) {
                 elements.forEachIndexed { index, element ->
-                    if (element.bbox.size == 4) {
-                        val top = canvasHeight * (element.bbox[0] / 1000f)
-                        val left = canvasWidth * (element.bbox[1] / 1000f)
-                        val bottom = canvasHeight * (element.bbox[2] / 1000f)
-                        val right = canvasWidth * (element.bbox[3] / 1000f)
+                    val bbox = normalizeCompositionBbox(element.bbox)
+                    if (bbox != null) {
+                        val top = canvasHeight * (bbox[0] / 1000f)
+                        val left = canvasWidth * (bbox[1] / 1000f)
+                        val bottom = canvasHeight * (bbox[2] / 1000f)
+                        val right = canvasWidth * (bbox[3] / 1000f)
                         val boxColor = if (element.type == "text") MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.primary
+                        val isSelected = index == selectedIndex
                         Box(
                             modifier = Modifier
                                 .offset(left, top)
                                 .width((right - left).coerceAtLeast(8.dp))
                                 .height((bottom - top).coerceAtLeast(8.dp))
-                                .border(2.dp, boxColor, RoundedCornerShape(2.dp))
+                                .border(if (isSelected) 3.dp else 2.dp, boxColor, RoundedCornerShape(2.dp))
                                 .background(boxColor.copy(alpha = 0.10f))
+                                .pointerInput(index, canvasWidthPx, canvasHeightPx) {
+                                    var startBbox = emptyList<Int>()
+                                    var dragX = 0f
+                                    var dragY = 0f
+                                    detectDragGestures(
+                                        onDragStart = {
+                                            selectedIndex = index
+                                            startBbox = latestElements.getOrNull(index)?.bbox.orEmpty()
+                                            dragX = 0f
+                                            dragY = 0f
+                                        },
+                                        onDrag = { _, dragAmount ->
+                                            dragX += dragAmount.x
+                                            dragY += dragAmount.y
+                                            val deltaX = ((dragX / canvasWidthPx) * 1000f).roundToInt()
+                                            val deltaY = ((dragY / canvasHeightPx) * 1000f).roundToInt()
+                                            moveCompositionBbox(startBbox, deltaX, deltaY)?.let { nextBbox ->
+                                                latestOnElementBboxChange(index, nextBbox)
+                                            }
+                                        },
+                                    )
+                                }
                                 .padding(4.dp),
                         ) {
                             Text(
@@ -665,6 +719,23 @@ private fun IdeogramLayoutPreview(
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
                             )
+                            if (isSelected) {
+                                CompositionResizeHandle.values().forEach { handle ->
+                                    CompositionResizeHandleBox(
+                                        handle = handle,
+                                        color = boxColor,
+                                        startBbox = { latestElements.getOrNull(index)?.bbox.orEmpty() },
+                                        onDragStart = { selectedIndex = index },
+                                        onDrag = { startBbox, deltaX, deltaY ->
+                                            val deltaNormX = ((deltaX / canvasWidthPx) * 1000f).roundToInt()
+                                            val deltaNormY = ((deltaY / canvasHeightPx) * 1000f).roundToInt()
+                                            resizeCompositionBbox(startBbox, deltaNormX, deltaNormY, handle)?.let { nextBbox ->
+                                                latestOnElementBboxChange(index, nextBbox)
+                                            }
+                                        },
+                                    )
+                                }
+                            }
                         }
                     }
                 }
@@ -674,19 +745,144 @@ private fun IdeogramLayoutPreview(
             Text("No valid elements to preview.", color = MaterialTheme.colorScheme.onSurfaceVariant)
         } else {
             elements.forEachIndexed { index, element ->
-                ElementPreviewRow(index + 1, element.type, element.text, element.desc)
+                ElementPreviewRow(
+                    index = index + 1,
+                    type = element.type,
+                    textValue = element.text,
+                    desc = element.desc,
+                    selected = index == selectedIndex,
+                    onClick = { selectedIndex = index },
+                )
             }
         }
     }
 }
 
+private enum class CompositionResizeHandle {
+    TopLeft,
+    TopRight,
+    BottomLeft,
+    BottomRight,
+}
+
 @Composable
-private fun ElementPreviewRow(index: Int, type: String, textValue: String, desc: String) {
+private fun BoxScope.CompositionResizeHandleBox(
+    handle: CompositionResizeHandle,
+    color: Color,
+    startBbox: () -> List<Int>,
+    onDragStart: () -> Unit,
+    onDrag: (List<Int>, Float, Float) -> Unit,
+) {
+    val alignment = when (handle) {
+        CompositionResizeHandle.TopLeft -> Alignment.TopStart
+        CompositionResizeHandle.TopRight -> Alignment.TopEnd
+        CompositionResizeHandle.BottomLeft -> Alignment.BottomStart
+        CompositionResizeHandle.BottomRight -> Alignment.BottomEnd
+    }
+    Box(
+        modifier = Modifier
+            .align(alignment)
+            .size(12.dp)
+            .clip(RoundedCornerShape(2.dp))
+            .background(MaterialTheme.colorScheme.surface)
+            .border(2.dp, color, RoundedCornerShape(2.dp))
+            .pointerInput(handle) {
+                var capturedBbox = emptyList<Int>()
+                var dragX = 0f
+                var dragY = 0f
+                detectDragGestures(
+                    onDragStart = {
+                        onDragStart()
+                        capturedBbox = startBbox()
+                        dragX = 0f
+                        dragY = 0f
+                    },
+                    onDrag = { _, dragAmount ->
+                        dragX += dragAmount.x
+                        dragY += dragAmount.y
+                        onDrag(capturedBbox, dragX, dragY)
+                    },
+                )
+            },
+    )
+}
+
+private fun normalizeCompositionBbox(values: List<Int>): List<Int>? {
+    if (values.size != 4) return null
+    val yMin = snapCompositionCoord(values[0])
+    val xMin = snapCompositionCoord(values[1])
+    val yMax = snapCompositionCoord(values[2])
+    val xMax = snapCompositionCoord(values[3])
+    val minSize = IDEOGRAM_BBOX_GRID
+    return listOf(
+        yMin.coerceIn(0, (yMax - minSize).coerceAtLeast(0)),
+        xMin.coerceIn(0, (xMax - minSize).coerceAtLeast(0)),
+        yMax.coerceIn((yMin + minSize).coerceAtMost(1000), 1000),
+        xMax.coerceIn((xMin + minSize).coerceAtMost(1000), 1000),
+    )
+}
+
+private fun moveCompositionBbox(values: List<Int>, deltaX: Int, deltaY: Int): List<Int>? {
+    val bbox = normalizeCompositionBbox(values) ?: return null
+    val boxHeight = (bbox[2] - bbox[0]).coerceAtLeast(IDEOGRAM_BBOX_GRID)
+    val boxWidth = (bbox[3] - bbox[1]).coerceAtLeast(IDEOGRAM_BBOX_GRID)
+    val nextYMin = snapCompositionCoord(bbox[0] + deltaY).coerceIn(0, 1000 - boxHeight)
+    val nextXMin = snapCompositionCoord(bbox[1] + deltaX).coerceIn(0, 1000 - boxWidth)
+    return listOf(nextYMin, nextXMin, nextYMin + boxHeight, nextXMin + boxWidth)
+}
+
+private fun resizeCompositionBbox(values: List<Int>, deltaX: Int, deltaY: Int, handle: CompositionResizeHandle): List<Int>? {
+    val bbox = normalizeCompositionBbox(values) ?: return null
+    val minSize = IDEOGRAM_BBOX_GRID
+    var yMin = bbox[0]
+    var xMin = bbox[1]
+    var yMax = bbox[2]
+    var xMax = bbox[3]
+    when (handle) {
+        CompositionResizeHandle.TopLeft -> {
+            yMin = snapCompositionCoord(bbox[0] + deltaY).coerceIn(0, yMax - minSize)
+            xMin = snapCompositionCoord(bbox[1] + deltaX).coerceIn(0, xMax - minSize)
+        }
+        CompositionResizeHandle.TopRight -> {
+            yMin = snapCompositionCoord(bbox[0] + deltaY).coerceIn(0, yMax - minSize)
+            xMax = snapCompositionCoord(bbox[3] + deltaX).coerceIn(xMin + minSize, 1000)
+        }
+        CompositionResizeHandle.BottomLeft -> {
+            yMax = snapCompositionCoord(bbox[2] + deltaY).coerceIn(yMin + minSize, 1000)
+            xMin = snapCompositionCoord(bbox[1] + deltaX).coerceIn(0, xMax - minSize)
+        }
+        CompositionResizeHandle.BottomRight -> {
+            yMax = snapCompositionCoord(bbox[2] + deltaY).coerceIn(yMin + minSize, 1000)
+            xMax = snapCompositionCoord(bbox[3] + deltaX).coerceIn(xMin + minSize, 1000)
+        }
+    }
+    return listOf(yMin, xMin, yMax, xMax)
+}
+
+private fun snapCompositionCoord(value: Int): Int =
+    ((value.toFloat() / IDEOGRAM_BBOX_GRID).roundToInt() * IDEOGRAM_BBOX_GRID).coerceIn(0, 1000)
+
+@Composable
+private fun ElementPreviewRow(
+    index: Int,
+    type: String,
+    textValue: String,
+    desc: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
+    val shape = RoundedCornerShape(DeskControlCornerRadius)
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(DeskControlCornerRadius))
+            .clip(shape)
+            .clickable(onClick = onClick)
             .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = DeskSubtleSurfaceAlpha))
+            .border(
+                1.dp,
+                if (selected) MaterialTheme.colorScheme.primary else Color.Transparent,
+                shape,
+            )
             .padding(DeskControlSpacing),
         verticalArrangement = Arrangement.spacedBy(2.dp),
     ) {
