@@ -23,14 +23,6 @@ void apply_memory_preferences_to_config(const diffusion_desk::json& source, diff
     }
 }
 
-void apply_memory_preferences_to_generation(const diffusion_desk::json& source, diffusion_desk::json& request) {
-    if (!source.contains("preferred_params") || !source["preferred_params"].contains("memory")) return;
-
-    const auto& mem = source["preferred_params"]["memory"];
-    if (mem.value("force_clip_cpu", false)) request["clip_on_cpu"] = true;
-    if (mem.value("force_vae_tiling", false)) request["vae_tiling"] = true;
-}
-
 std::string lowercase_copy(std::string value) {
     std::transform(value.begin(), value.end(), value.begin(), [](unsigned char c) {
         return static_cast<char>(std::tolower(c));
@@ -723,17 +715,11 @@ void ServiceController::register_routes(httplib::Server& svr) {
         // 3. Apply Mitigations and Proxy
         try {
             auto j = diffusion_desk::json::parse(modified_body);
-            const bool request_had_clip_on_cpu = j.contains("clip_on_cpu");
-            const bool request_had_vae_tiling = j.contains("vae_tiling");
-            const bool ideogram_clip_on_cpu_before_preferences =
-                ideogram4_request && request_had_clip_on_cpu && j.value("clip_on_cpu", false);
-            const bool ideogram_vae_tiling_before_preferences =
-                ideogram4_request && request_had_vae_tiling && j.value("vae_tiling", false);
-
             if (arb.request_clip_offload && !ideogram4_request) j["clip_on_cpu"] = true;
             if (arb.request_vae_tiling && !ideogram4_request) j["vae_tiling"] = true;
 
-            // Apply Preset Overrides
+            // Apply model metadata mitigations. Preset memory preferences are
+            // load-time settings; applying them here can force per-job reloads.
             if (m_db) {
                 auto meta = m_db->get_model_metadata(requested_model_id);
                 if (meta.contains("memory") && !ideogram4_request) {
@@ -742,20 +728,11 @@ void ServiceController::register_routes(httplib::Server& svr) {
                     if (mem.value("force_vae_tiling", false)) j["vae_tiling"] = true;
                 }
 
-                if (m_last_image_preset_id > 0) {
-                    auto presets = m_db->get_image_presets();
-                    for (const auto& p : presets) {
-                        if (p.value("id", -1) == m_last_image_preset_id) {
-                            apply_memory_preferences_to_generation(p, j);
-                            break;
-                        }
-                    }
-                }
             }
 
             if (ideogram4_request) {
-                if (!ideogram_clip_on_cpu_before_preferences) j.erase("clip_on_cpu");
-                if (!ideogram_vae_tiling_before_preferences) j.erase("vae_tiling");
+                j.erase("clip_on_cpu");
+                j.erase("vae_tiling");
             }
             
             modified_body = j.dump();
