@@ -781,18 +781,11 @@ private fun ImagePresetEditorPage(
                     title = "Flash attention",
                     subtitle = "Enable when supported by the selected model and backend build.",
                 )
-                LabeledField(
-                    label = "Max VRAM GiB",
-                    value = state.form.maxVramGb,
-                    onValueChange = { onFormChange(state.form.copy(maxVramGb = it)) },
-                    placeholder = "0 = uncapped",
-                    modifier = Modifier.fillMaxWidth(),
-                )
                 ToggleLine(
                     checked = state.form.streamLayers,
                     onCheckedChange = { onFormChange(state.form.copy(streamLayers = it, offloadParamsToCpu = state.form.offloadParamsToCpu || it)) },
                     title = "Stream diffusion layers",
-                    subtitle = "Load diffusion layers in segments to avoid crossing the VRAM cap.",
+                    subtitle = "Stream offloaded diffusion layers using the backend's automatic memory budget.",
                 )
             }
         }

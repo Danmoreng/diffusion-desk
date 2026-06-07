@@ -126,7 +126,9 @@ class ImagePresetStore {
             put("vae_on_cpu", JsonPrimitive(vaeOnCpu))
             put("offload_params_to_cpu", JsonPrimitive(offloadParamsToCpu))
             put("flash_attn", JsonPrimitive(flashAttention))
-            put("max_vram_gb", JsonPrimitive(maxVramGb))
+            if (maxVramGb > 0.0) {
+                put("max_vram_gb", JsonPrimitive(maxVramGb))
+            }
             put("stream_layers", JsonPrimitive(streamLayers))
         })
         put("defaults", buildJsonObject {
@@ -164,7 +166,7 @@ class ImagePresetStore {
         vaeOnCpu = false,
         offloadParamsToCpu = true,
         flashAttention = true,
-        maxVramGb = 12.0,
+        maxVramGb = 0.0,
         streamLayers = true,
         defaultWidth = 1024,
         defaultHeight = 1024,

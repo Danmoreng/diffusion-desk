@@ -127,7 +127,6 @@ fun App(
                             onJsonPromptChange = controller.generationViewModel::updateIdeogramJsonPrompt,
                             onFormatJson = controller.generationViewModel::formatIdeogramJsonPrompt,
                             onTabSelected = controller.generationViewModel::selectIdeogramTab,
-                            onQualityPresetSelected = controller.generationViewModel::applyIdeogramQualityPreset,
                             onWidthChange = controller.generationViewModel::updateWidth,
                             onHeightChange = controller.generationViewModel::updateHeight,
                             onStepsChange = controller.generationViewModel::updateSteps,
@@ -136,6 +135,11 @@ fun App(
                             onBatchCountChange = controller.generationViewModel::updateBatchCount,
                             onSamplerChange = controller.generationViewModel::updateSampler,
                             onRandomizeSeed = controller.generationViewModel::randomizeSeed,
+                            onReuseLastSeed = controller.generationViewModel::reuseLastSeed,
+                            onSwapDimensions = controller.generationViewModel::swapDimensions,
+                            onApplyAspectRatio = controller.generationViewModel::applyAspectRatio,
+                            onScaleResolution = controller.generationViewModel::scaleResolution,
+                            onResetToPresetDefaults = controller.generationViewModel::resetToPresetDefaults,
                             onGenerate = {
                                 controller.generationViewModel.generateIdeogram(settingsState.saveImagesAutomatically)
                             },

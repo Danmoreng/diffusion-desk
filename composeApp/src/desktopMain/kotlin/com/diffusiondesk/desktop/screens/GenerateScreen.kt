@@ -389,51 +389,104 @@ private fun GenerationPanel(
                     onClick = onResetToPresetDefaults,
                 )
             }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                CompactNumberField("Steps", state.steps, onStepsChange, Modifier.weight(0.8f).widthIn(min = 104.dp), step = 1.0, minValue = 1.0)
-                CompactNumberField("Batch", state.batchCount, onBatchCountChange, Modifier.weight(0.8f).widthIn(min = 104.dp), step = 1.0, minValue = 1.0)
-                CompactNumberField("Seed", state.seed, onSeedChange, Modifier.weight(1.1f).widthIn(min = 126.dp), step = 1.0)
-                CompactIconButton(
-                    icon = Icons.Default.Casino,
-                    contentDescription = "Random seed",
-                    onClick = onRandomizeSeed,
-                )
-                CompactIconButton(
-                    icon = Icons.Default.Recycling,
-                    contentDescription = "Reuse last seed",
-                    onClick = onReuseLastSeed,
-                    enabled = state.history.any { it.usedSeed != null },
-                )
-            }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                CompactNumberField("Width", state.width, onWidthChange, Modifier.weight(1f).widthIn(min = 126.dp), step = 16.0, minValue = 64.0)
-                CompactIconButton(
-                    icon = Icons.Default.SwapHoriz,
-                    contentDescription = "Swap dimensions",
-                    onClick = onSwapDimensions,
-                )
-                CompactNumberField("Height", state.height, onHeightChange, Modifier.weight(1f).widthIn(min = 126.dp), step = 16.0, minValue = 64.0)
-                AspectRatioMenu(
-                    width = state.width,
-                    height = state.height,
-                    onApplyAspectRatio = onApplyAspectRatio,
-                    modifier = Modifier.weight(0.78f).widthIn(min = 92.dp),
-                )
-            }
-            ResolutionSlider(
+            GenerationParameterControls(
                 state = state,
+                samplerOptions = samplerOptions,
+                onWidthChange = onWidthChange,
+                onHeightChange = onHeightChange,
+                onStepsChange = onStepsChange,
+                onCfgScaleChange = onCfgScaleChange,
+                onSeedChange = onSeedChange,
+                onBatchCountChange = onBatchCountChange,
+                onSamplerChange = onSamplerChange,
+                onRandomizeSeed = onRandomizeSeed,
+                onReuseLastSeed = onReuseLastSeed,
+                onSwapDimensions = onSwapDimensions,
+                onApplyAspectRatio = onApplyAspectRatio,
                 onScaleResolution = onScaleResolution,
+                showReset = false,
+                onResetToPresetDefaults = onResetToPresetDefaults,
             )
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                CompactNumberField("CFG", state.cfgScale, onCfgScaleChange, Modifier.weight(1f).widthIn(min = 118.dp), step = 0.1, minValue = 0.0, decimalPlaces = 1)
-                SamplerMenu(
-                    value = state.sampler,
-                    options = samplerOptions,
-                    onChange = onSamplerChange,
-                    modifier = Modifier.weight(1f).widthIn(min = 160.dp),
-                )
-            }
         }
+    }
+}
+
+@Composable
+internal fun GenerationParameterControls(
+    state: GenerationUiState,
+    samplerOptions: List<String>,
+    onWidthChange: (String) -> Unit,
+    onHeightChange: (String) -> Unit,
+    onStepsChange: (String) -> Unit,
+    onCfgScaleChange: (String) -> Unit,
+    onSeedChange: (String) -> Unit,
+    onBatchCountChange: (String) -> Unit,
+    onSamplerChange: (String) -> Unit,
+    onRandomizeSeed: () -> Unit,
+    onReuseLastSeed: () -> Unit,
+    onSwapDimensions: () -> Unit,
+    onApplyAspectRatio: (Int, Int) -> Unit,
+    onScaleResolution: (Int) -> Unit,
+    showReset: Boolean = true,
+    onResetToPresetDefaults: () -> Unit,
+) {
+    if (showReset) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Label("Parameters")
+            SubtleTextButton(
+                icon = Icons.Default.RestartAlt,
+                text = "Reset to defaults",
+                onClick = onResetToPresetDefaults,
+            )
+        }
+    }
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        CompactNumberField("Steps", state.steps, onStepsChange, Modifier.weight(0.8f).widthIn(min = 104.dp), step = 1.0, minValue = 1.0)
+        CompactNumberField("Batch", state.batchCount, onBatchCountChange, Modifier.weight(0.8f).widthIn(min = 104.dp), step = 1.0, minValue = 1.0)
+        CompactNumberField("Seed", state.seed, onSeedChange, Modifier.weight(1.1f).widthIn(min = 126.dp), step = 1.0)
+        CompactIconButton(
+            icon = Icons.Default.Casino,
+            contentDescription = "Random seed",
+            onClick = onRandomizeSeed,
+        )
+        CompactIconButton(
+            icon = Icons.Default.Recycling,
+            contentDescription = "Reuse last seed",
+            onClick = onReuseLastSeed,
+            enabled = state.history.any { it.usedSeed != null },
+        )
+    }
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        CompactNumberField("Width", state.width, onWidthChange, Modifier.weight(1f).widthIn(min = 126.dp), step = 16.0, minValue = 64.0)
+        CompactIconButton(
+            icon = Icons.Default.SwapHoriz,
+            contentDescription = "Swap dimensions",
+            onClick = onSwapDimensions,
+        )
+        CompactNumberField("Height", state.height, onHeightChange, Modifier.weight(1f).widthIn(min = 126.dp), step = 16.0, minValue = 64.0)
+        AspectRatioMenu(
+            width = state.width,
+            height = state.height,
+            onApplyAspectRatio = onApplyAspectRatio,
+            modifier = Modifier.weight(0.78f).widthIn(min = 92.dp),
+        )
+    }
+    ResolutionSlider(
+        state = state,
+        onScaleResolution = onScaleResolution,
+    )
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        CompactNumberField("CFG", state.cfgScale, onCfgScaleChange, Modifier.weight(1f).widthIn(min = 118.dp), step = 0.1, minValue = 0.0, decimalPlaces = 1)
+        SamplerMenu(
+            value = state.sampler,
+            options = samplerOptions,
+            onChange = onSamplerChange,
+            modifier = Modifier.weight(1f).widthIn(min = 160.dp),
+        )
     }
 }
 
@@ -1239,7 +1292,7 @@ private fun CompactFieldFrame(
 }
 
 @Composable
-private fun SubtleTextButton(
+internal fun SubtleTextButton(
     icon: ImageVector,
     text: String,
     onClick: () -> Unit,

@@ -28,8 +28,8 @@ import androidx.compose.material.icons.automirrored.filled.Article
 import androidx.compose.material.icons.filled.AutoFixHigh
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Code
+import androidx.compose.material.icons.filled.RestartAlt
 import androidx.compose.material.icons.filled.UnfoldLess
-import androidx.compose.material.icons.filled.UnfoldMore
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -48,7 +48,6 @@ import androidx.compose.ui.unit.dp
 import com.diffusiondesk.desktop.core.BackendStatus
 import com.diffusiondesk.desktop.core.BackendUiState
 import com.diffusiondesk.desktop.viewmodel.GenerationUiState
-import com.diffusiondesk.desktop.viewmodel.IdeogramQualityPreset
 import com.diffusiondesk.desktop.viewmodel.IdeogramStructureTab
 import com.diffusiondesk.desktop.viewmodel.ideogramElementPreviews
 import org.jetbrains.jewel.ui.component.DefaultButton as Button
@@ -64,7 +63,6 @@ fun IdeogramScreen(
     onJsonPromptChange: (String) -> Unit,
     onFormatJson: () -> Unit,
     onTabSelected: (IdeogramStructureTab) -> Unit,
-    onQualityPresetSelected: (IdeogramQualityPreset) -> Unit,
     onWidthChange: (String) -> Unit,
     onHeightChange: (String) -> Unit,
     onStepsChange: (String) -> Unit,
@@ -73,6 +71,11 @@ fun IdeogramScreen(
     onBatchCountChange: (String) -> Unit,
     onSamplerChange: (String) -> Unit,
     onRandomizeSeed: () -> Unit,
+    onReuseLastSeed: () -> Unit,
+    onSwapDimensions: () -> Unit,
+    onApplyAspectRatio: (Int, Int) -> Unit,
+    onScaleResolution: (Int) -> Unit,
+    onResetToPresetDefaults: () -> Unit,
     onGenerate: () -> Unit,
     onToggleEndless: () -> Unit,
     onPresetSelected: (String) -> Unit,
@@ -131,7 +134,6 @@ fun IdeogramScreen(
                             samplerOptions = samplerOptions,
                             onRawPromptChange = onRawPromptChange,
                             onGenerateJson = onGenerateJson,
-                            onQualityPresetSelected = onQualityPresetSelected,
                             onWidthChange = onWidthChange,
                             onHeightChange = onHeightChange,
                             onStepsChange = onStepsChange,
@@ -140,6 +142,11 @@ fun IdeogramScreen(
                             onBatchCountChange = onBatchCountChange,
                             onSamplerChange = onSamplerChange,
                             onRandomizeSeed = onRandomizeSeed,
+                            onReuseLastSeed = onReuseLastSeed,
+                            onSwapDimensions = onSwapDimensions,
+                            onApplyAspectRatio = onApplyAspectRatio,
+                            onScaleResolution = onScaleResolution,
+                            onResetToPresetDefaults = onResetToPresetDefaults,
                         )
                     }
                     CollapsiblePanel(
@@ -188,7 +195,6 @@ fun IdeogramScreen(
                             samplerOptions = samplerOptions,
                             onRawPromptChange = onRawPromptChange,
                             onGenerateJson = onGenerateJson,
-                            onQualityPresetSelected = onQualityPresetSelected,
                             onWidthChange = onWidthChange,
                             onHeightChange = onHeightChange,
                             onStepsChange = onStepsChange,
@@ -197,6 +203,11 @@ fun IdeogramScreen(
                             onBatchCountChange = onBatchCountChange,
                             onSamplerChange = onSamplerChange,
                             onRandomizeSeed = onRandomizeSeed,
+                            onReuseLastSeed = onReuseLastSeed,
+                            onSwapDimensions = onSwapDimensions,
+                            onApplyAspectRatio = onApplyAspectRatio,
+                            onScaleResolution = onScaleResolution,
+                            onResetToPresetDefaults = onResetToPresetDefaults,
                         )
                     }
                     CollapsiblePanel(
@@ -334,7 +345,6 @@ private fun IdeogramParametersPanel(
     samplerOptions: List<String>,
     onRawPromptChange: (String) -> Unit,
     onGenerateJson: () -> Unit,
-    onQualityPresetSelected: (IdeogramQualityPreset) -> Unit,
     onWidthChange: (String) -> Unit,
     onHeightChange: (String) -> Unit,
     onStepsChange: (String) -> Unit,
@@ -343,6 +353,11 @@ private fun IdeogramParametersPanel(
     onBatchCountChange: (String) -> Unit,
     onSamplerChange: (String) -> Unit,
     onRandomizeSeed: () -> Unit,
+    onReuseLastSeed: () -> Unit,
+    onSwapDimensions: () -> Unit,
+    onApplyAspectRatio: (Int, Int) -> Unit,
+    onScaleResolution: (Int) -> Unit,
+    onResetToPresetDefaults: () -> Unit,
 ) {
     Column(
         modifier = Modifier
@@ -368,34 +383,36 @@ private fun IdeogramParametersPanel(
             )
         }
 
-        DeskLabel("Ideogram Quality")
-        Row(horizontalArrangement = Arrangement.spacedBy(DeskControlSpacing)) {
-            IdeogramQualityPreset.entries.forEach { preset ->
-                QualityButton(
-                    preset = preset,
-                    selected = state.ideogram.qualityPreset == preset,
-                    onClick = { onQualityPresetSelected(preset) },
-                    modifier = Modifier.weight(1f),
-                )
-            }
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            DeskLabel("Parameters")
+            SubtleTextButton(
+                icon = Icons.Default.RestartAlt,
+                text = "Reset to defaults",
+                onClick = onResetToPresetDefaults,
+            )
         }
-
-        Row(horizontalArrangement = Arrangement.spacedBy(DeskControlSpacing)) {
-            DeskTextField("Steps", state.steps, onStepsChange, Modifier.weight(1f))
-            DeskTextField("Batch", state.batchCount, onBatchCountChange, Modifier.weight(1f))
-        }
-        Row(horizontalArrangement = Arrangement.spacedBy(DeskControlSpacing)) {
-            DeskTextField("Width", state.width, onWidthChange, Modifier.weight(1f))
-            DeskTextField("Height", state.height, onHeightChange, Modifier.weight(1f))
-        }
-        Row(horizontalArrangement = Arrangement.spacedBy(DeskControlSpacing), verticalAlignment = Alignment.Bottom) {
-            DeskTextField("Seed", state.seed, onSeedChange, Modifier.weight(1f))
-            DeskIconButton(Icons.Default.UnfoldMore, "Randomize seed", onRandomizeSeed, tooltip = "Randomize seed")
-        }
-        Row(horizontalArrangement = Arrangement.spacedBy(DeskControlSpacing)) {
-            DeskTextField("CFG", state.cfgScale, onCfgScaleChange, Modifier.weight(1f))
-            DeskDropdownField("Sampler", state.sampler, samplerOptions, onSamplerChange, Modifier.weight(1.35f))
-        }
+        GenerationParameterControls(
+            state = state,
+            samplerOptions = samplerOptions,
+            onWidthChange = onWidthChange,
+            onHeightChange = onHeightChange,
+            onStepsChange = onStepsChange,
+            onCfgScaleChange = onCfgScaleChange,
+            onSeedChange = onSeedChange,
+            onBatchCountChange = onBatchCountChange,
+            onSamplerChange = onSamplerChange,
+            onRandomizeSeed = onRandomizeSeed,
+            onReuseLastSeed = onReuseLastSeed,
+            onSwapDimensions = onSwapDimensions,
+            onApplyAspectRatio = onApplyAspectRatio,
+            onScaleResolution = onScaleResolution,
+            showReset = false,
+            onResetToPresetDefaults = onResetToPresetDefaults,
+        )
 
         Text(
             text = when (backendState.status) {
@@ -406,37 +423,6 @@ private fun IdeogramParametersPanel(
             },
             style = MaterialTheme.typography.bodySmall,
             color = if (backendState.status == BackendStatus.Ready) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-    }
-}
-
-@Composable
-private fun QualityButton(
-    preset: IdeogramQualityPreset,
-    selected: Boolean,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    val shape = RoundedCornerShape(DeskControlCornerRadius)
-    val bg = if (selected) MaterialTheme.colorScheme.primary.copy(alpha = DeskSelectedContainerAlpha) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = DeskSubtleSurfaceAlpha)
-    val fg = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-    Box(
-        modifier = modifier
-            .height(36.dp)
-            .clip(shape)
-            .background(bg)
-            .border(1.dp, if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.35f) else MaterialTheme.colorScheme.outlineVariant, shape)
-            .clickable(onClick = onClick)
-            .padding(horizontal = 8.dp),
-        contentAlignment = Alignment.Center,
-    ) {
-        Text(
-            text = preset.label,
-            style = MaterialTheme.typography.labelMedium,
-            color = fg,
-            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
         )
     }
 }
