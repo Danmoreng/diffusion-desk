@@ -65,8 +65,8 @@ std::string lowercase_copy(std::string value) {
 
 void sanitize_context_params_for_backend(SDContextParams& params) {
     if (params.stream_layers && params.max_vram == 0.0f) {
-        DD_LOG_WARN("stream_layers requested without max_vram; disabling stream_layers");
-        params.stream_layers = false;
+        DD_LOG_INFO("stream_layers requested without max_vram; using automatic VRAM budget");
+        params.max_vram = -1.0f;
     }
     if (params.stream_layers && !params.offload_params_to_cpu) {
         DD_LOG_WARN("stream_layers requested without CPU parameter offload; disabling stream_layers");

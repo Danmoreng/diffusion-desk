@@ -102,17 +102,6 @@ private data class ProgressTiming(
     val etaSeconds: Int,
 )
 
-enum class IdeogramQualityPreset(
-    val label: String,
-    val steps: String,
-    val cfgScale: String,
-    val sampler: String,
-) {
-    Turbo("Turbo 12", "12", "7.0", "euler"),
-    Default("Default 20", "20", "7.0", "euler"),
-    Quality("Quality 48", "48", "7.0", "euler"),
-}
-
 enum class IdeogramStructureTab {
     Json,
     Preview,
@@ -121,7 +110,6 @@ enum class IdeogramStructureTab {
 data class IdeogramPanelState(
     val parametersCollapsed: Boolean = false,
     val structureCollapsed: Boolean = false,
-    val outputCollapsed: Boolean = false,
 )
 
 data class IdeogramElementPreview(
@@ -136,7 +124,6 @@ data class IdeogramUiState(
     val rawPrompt: String = "Cinematic macro photography of a single ripe, juicy strawberry with glossy red skin and a handwritten-style caption in bold white letters at the bottom that reads EAT ME.",
     val jsonPrompt: String = defaultIdeogramJsonPrompt(),
     val selectedTab: IdeogramStructureTab = IdeogramStructureTab.Json,
-    val qualityPreset: IdeogramQualityPreset = IdeogramQualityPreset.Default,
     val panels: IdeogramPanelState = IdeogramPanelState(),
     val isGeneratingJson: Boolean = false,
     val jsonStatus: String = "JSON ready.",
@@ -498,19 +485,6 @@ class GenerationViewModel(
 
     fun toggleIdeogramStructurePanel() = update {
         copy(ideogram = ideogram.copy(panels = ideogram.panels.copy(structureCollapsed = !ideogram.panels.structureCollapsed)))
-    }
-
-    fun toggleIdeogramOutputPanel() = update {
-        copy(ideogram = ideogram.copy(panels = ideogram.panels.copy(outputCollapsed = !ideogram.panels.outputCollapsed)))
-    }
-
-    fun applyIdeogramQualityPreset(preset: IdeogramQualityPreset) = update {
-        copy(
-            steps = preset.steps,
-            cfgScale = preset.cfgScale,
-            sampler = resolveSamplerOption(preset.sampler, samplerOptions) ?: preset.sampler,
-            ideogram = ideogram.copy(qualityPreset = preset),
-        )
     }
 
     fun formatIdeogramJsonPrompt() = update {

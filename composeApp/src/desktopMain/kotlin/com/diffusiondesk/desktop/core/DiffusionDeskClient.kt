@@ -186,13 +186,10 @@ class DiffusionDeskClient(
                 putIfNotBlank("llm", preset.llm)
                 put("clip_on_cpu", JsonPrimitive(preset.clipOnCpu))
                 put("vae_on_cpu", JsonPrimitive(preset.vaeOnCpu))
-                put("offload_to_cpu", JsonPrimitive(preset.offloadParamsToCpu))
+                put("offload_to_cpu", JsonPrimitive(preset.offloadParamsToCpu || preset.streamLayers))
                 put("flash_attn", JsonPrimitive(preset.flashAttention))
-                if (preset.maxVramGb > 0.0) {
-                    put("max_vram_gb", JsonPrimitive(preset.maxVramGb))
-                }
-                if (preset.offloadParamsToCpu || !preset.streamLayers) {
-                    put("stream_layers", JsonPrimitive(preset.streamLayers))
+                if (preset.streamLayers) {
+                    put("stream_layers", JsonPrimitive(true))
                 }
             }
 
