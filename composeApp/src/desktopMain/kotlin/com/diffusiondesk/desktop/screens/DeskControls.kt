@@ -95,14 +95,18 @@ internal fun DeskPanel(
 internal fun DeskTabHeader(
     tabs: List<DeskTabItem>,
     modifier: Modifier = Modifier,
+    horizontalPadding: Dp = DeskPanelPadding,
+    verticalPadding: Dp = DeskControlSpacing,
     actions: @Composable RowScope.() -> Unit = {},
 ) {
+    val shape = RoundedCornerShape(DeskPanelCornerRadius)
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(DeskPanelCornerRadius))
+            .clip(shape)
             .background(MaterialTheme.colorScheme.surface)
-            .padding(horizontal = DeskPanelPadding, vertical = DeskControlSpacing),
+            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, shape)
+            .padding(horizontal = horizontalPadding, vertical = verticalPadding),
         horizontalArrangement = Arrangement.spacedBy(DeskTabSpacing),
         verticalAlignment = Alignment.CenterVertically,
     ) {

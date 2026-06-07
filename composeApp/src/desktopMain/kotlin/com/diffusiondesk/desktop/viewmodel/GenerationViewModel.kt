@@ -103,14 +103,10 @@ private data class ProgressTiming(
 )
 
 enum class IdeogramStructureTab {
+    Text,
     Json,
     Preview,
 }
-
-data class IdeogramPanelState(
-    val parametersCollapsed: Boolean = false,
-    val structureCollapsed: Boolean = false,
-)
 
 data class IdeogramElementPreview(
     val type: String,
@@ -121,10 +117,8 @@ data class IdeogramElementPreview(
 )
 
 data class IdeogramUiState(
-    val rawPrompt: String = "Cinematic macro photography of a single ripe, juicy strawberry with glossy red skin and a handwritten-style caption in bold white letters at the bottom that reads EAT ME.",
     val jsonPrompt: String = defaultIdeogramJsonPrompt(),
-    val selectedTab: IdeogramStructureTab = IdeogramStructureTab.Json,
-    val panels: IdeogramPanelState = IdeogramPanelState(),
+    val selectedTab: IdeogramStructureTab = IdeogramStructureTab.Text,
     val isGeneratingJson: Boolean = false,
     val jsonStatus: String = "JSON ready.",
     val jsonError: String? = null,
@@ -460,10 +454,6 @@ class GenerationViewModel(
     fun updateLeftPanelWidth(value: Int) = update { copy(leftPanelWidthDp = value.coerceIn(MIN_LEFT_PANEL_WIDTH_DP, MAX_LEFT_PANEL_WIDTH_DP)) }
     fun toggleEndless() = update { copy(isEndless = !isEndless) }
 
-    fun updateIdeogramRawPrompt(value: String) = update {
-        copy(ideogram = ideogram.copy(rawPrompt = value))
-    }
-
     fun updateIdeogramJsonPrompt(value: String) = update {
         val validation = validateIdeogramJson(value)
         copy(
@@ -477,14 +467,6 @@ class GenerationViewModel(
 
     fun selectIdeogramTab(tab: IdeogramStructureTab) = update {
         copy(ideogram = ideogram.copy(selectedTab = tab))
-    }
-
-    fun toggleIdeogramParametersPanel() = update {
-        copy(ideogram = ideogram.copy(panels = ideogram.panels.copy(parametersCollapsed = !ideogram.panels.parametersCollapsed)))
-    }
-
-    fun toggleIdeogramStructurePanel() = update {
-        copy(ideogram = ideogram.copy(panels = ideogram.panels.copy(structureCollapsed = !ideogram.panels.structureCollapsed)))
     }
 
     fun formatIdeogramJsonPrompt() = update {
@@ -508,10 +490,18 @@ class GenerationViewModel(
     fun generateIdeogramJsonPrompt() {
         scope.launch {
             val current = _uiState.value
-            val rawPrompt = current.ideogram.rawPrompt.trim()
-            if (rawPrompt.isBlank()) {
-                update { copy(ideogram = ideogram.copy(jsonError = "Raw prompt is required before JSON generation.")) }
+            val prompt = current.prompt.trim()
+            if (prompt.isBlank()) {
+                update { copy(ideogram = ideogram.copy(jsonError = "Prompt is required before JSON generation.")) }
                 return@launch
+            }
+            val negativePrompt = current.negativePrompt.trim()
+            val jsonSourcePrompt = buildString {
+                append(prompt)
+                if (negativePrompt.isNotBlank()) {
+                    append("\n\nAvoid: ")
+                    append(negativePrompt)
+                }
             }
 
             val width = current.width.toIntOrNull() ?: 1024
@@ -529,7 +519,7 @@ class GenerationViewModel(
             val settings = settingsStore.load()
             val presets = llmPresetStore.load()
             val roles = llmPresetStore.loadRoles()
-            llmRoleService.generateIdeogramJsonPrompt(settings, presets, roles, rawPrompt, width, height)
+            llmRoleService.generateIdeogramJsonPrompt(settings, presets, roles, jsonSourcePrompt, width, height)
                 .onSuccess { response ->
                     val jsonText = extractJsonObject(response)
                     val formatted = jsonText?.let {
@@ -555,6 +545,7 @@ class GenerationViewModel(
                                     isGeneratingJson = false,
                                     jsonStatus = validation.first,
                                     jsonError = validation.second,
+                                    selectedTab = if (validation.second == null) IdeogramStructureTab.Preview else IdeogramStructureTab.Json,
                                 ),
                             )
                         }
@@ -784,54 +775,51 @@ class GenerationViewModel(
                 return@launch
             }
 
-            val params = runCatching { buildParams() }
-                .onFailure { error -> update { copy(error = error.message ?: "Invalid generation parameters.") } }
-                .getOrNull() ?: return@launch
+            val params = if (_uiState.value.ideogram.selectedTab == IdeogramStructureTab.Text) {
+                runCatching { buildParams() }
+                    .onFailure { error -> update { copy(error = error.message ?: "Invalid generation parameters.") } }
+                    .getOrNull()
+            } else {
+                buildStructuredParamsOrNull()
+            }
+            params ?: return@launch
 
             enqueueGeneration(params.copy(saveImage = saveImagesAutomatically))
         }
     }
 
-    fun generateIdeogram(saveImagesAutomatically: Boolean) {
-        scope.launch {
-            if (backendManager.state.value.status != BackendStatus.Ready) {
-                update { copy(error = "Image worker is not ready.") }
-                return@launch
+    private fun buildStructuredParamsOrNull(): GenerationParams? {
+        val jsonPrompt = _uiState.value.ideogram.jsonPrompt.trim()
+        val validation = validateIdeogramJson(jsonPrompt)
+        if (validation.second != null) {
+            update {
+                copy(
+                    ideogram = ideogram.copy(
+                        selectedTab = IdeogramStructureTab.Json,
+                        jsonStatus = validation.first,
+                        jsonError = validation.second,
+                    ),
+                    error = validation.second,
+                )
             }
-            if (!ensureSelectedPresetLoaded()) {
-                return@launch
-            }
-
-            val jsonPrompt = _uiState.value.ideogram.jsonPrompt.trim()
-            val validation = validateIdeogramJson(jsonPrompt)
-            if (validation.second != null) {
-                update {
-                    copy(
-                        ideogram = ideogram.copy(jsonStatus = validation.first, jsonError = validation.second),
-                        error = validation.second,
-                    )
-                }
-                return@launch
-            }
-
-            val prompt = runCatching {
-                ideogramJson.encodeToString(JsonElement.serializer(), ideogramJson.parseToJsonElement(jsonPrompt))
-            }.getOrElse {
-                update {
-                    copy(
-                        ideogram = ideogram.copy(jsonError = "JSON is invalid."),
-                        error = "JSON is invalid.",
-                    )
-                }
-                return@launch
-            }
-
-            val params = runCatching { buildParams(promptOverride = prompt, negativePromptOverride = "") }
-                .onFailure { error -> update { copy(error = error.message ?: "Invalid generation parameters.") } }
-                .getOrNull() ?: return@launch
-
-            enqueueGeneration(params.copy(saveImage = saveImagesAutomatically))
+            return null
         }
+
+        val prompt = runCatching {
+            ideogramJson.encodeToString(JsonElement.serializer(), ideogramJson.parseToJsonElement(jsonPrompt))
+        }.getOrElse {
+            update {
+                copy(
+                    ideogram = ideogram.copy(selectedTab = IdeogramStructureTab.Json, jsonError = "JSON is invalid."),
+                    error = "JSON is invalid.",
+                )
+            }
+            return null
+        }
+
+        return runCatching { buildParams(promptOverride = prompt, negativePromptOverride = "") }
+                .onFailure { error -> update { copy(error = error.message ?: "Invalid generation parameters.") } }
+                .getOrNull()
     }
 
     private suspend fun ensureSelectedPresetLoaded(): Boolean {

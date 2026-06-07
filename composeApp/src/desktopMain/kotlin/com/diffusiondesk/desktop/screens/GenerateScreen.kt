@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -30,6 +31,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Article
 import androidx.compose.material.icons.automirrored.filled.Redo
 import androidx.compose.material.icons.automirrored.filled.Undo
 import androidx.compose.material.icons.filled.ChevronLeft
@@ -37,6 +39,8 @@ import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Casino
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.AutoFixHigh
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.PlayArrow
@@ -68,6 +72,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.input.pointer.PointerIcon
 import androidx.compose.ui.input.pointer.pointerHoverIcon
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -86,6 +91,8 @@ import com.diffusiondesk.desktop.core.GeneratedImage
 import com.diffusiondesk.desktop.viewmodel.GenerationProgressStage
 import com.diffusiondesk.desktop.viewmodel.GenerationStatus
 import com.diffusiondesk.desktop.viewmodel.GenerationUiState
+import com.diffusiondesk.desktop.viewmodel.IdeogramStructureTab
+import com.diffusiondesk.desktop.viewmodel.ideogramElementPreviews
 import java.awt.Cursor
 import java.awt.Desktop
 import java.awt.FileDialog
@@ -115,6 +122,10 @@ fun GenerateScreen(
     onUndoPrompt: () -> Unit,
     onRedoPrompt: () -> Unit,
     onNegativePromptChange: (String) -> Unit,
+    onStructuredTabSelected: (IdeogramStructureTab) -> Unit,
+    onGenerateStructuredJson: () -> Unit,
+    onStructuredJsonPromptChange: (String) -> Unit,
+    onFormatStructuredJson: () -> Unit,
     onWidthChange: (String) -> Unit,
     onHeightChange: (String) -> Unit,
     onStepsChange: (String) -> Unit,
@@ -149,7 +160,7 @@ fun GenerateScreen(
                 state = state,
                 backendState = backendState,
                 isTop = true,
-                generateEnabled = backendState.status == BackendStatus.Ready && state.prompt.isNotBlank(),
+                generateEnabled = backendState.status == BackendStatus.Ready && generationPromptReady(state),
                 onGenerate = onGenerate,
                 onToggleEndless = onToggleEndless,
                 onPresetSelected = onPresetSelected,
@@ -192,6 +203,10 @@ fun GenerateScreen(
                     onUndoPrompt = onUndoPrompt,
                     onRedoPrompt = onRedoPrompt,
                     onNegativePromptChange = onNegativePromptChange,
+                    onStructuredTabSelected = onStructuredTabSelected,
+                    onGenerateStructuredJson = onGenerateStructuredJson,
+                    onStructuredJsonPromptChange = onStructuredJsonPromptChange,
+                    onFormatStructuredJson = onFormatStructuredJson,
                     onWidthChange = onWidthChange,
                     onHeightChange = onHeightChange,
                     onStepsChange = onStepsChange,
@@ -259,7 +274,7 @@ fun GenerateScreen(
                 state = state,
                 backendState = backendState,
                 isTop = false,
-                generateEnabled = backendState.status == BackendStatus.Ready && state.prompt.isNotBlank(),
+                generateEnabled = backendState.status == BackendStatus.Ready && generationPromptReady(state),
                 onGenerate = onGenerate,
                 onToggleEndless = onToggleEndless,
                 onPresetSelected = onPresetSelected,
@@ -299,6 +314,10 @@ private fun GenerationPanel(
     onUndoPrompt: () -> Unit,
     onRedoPrompt: () -> Unit,
     onNegativePromptChange: (String) -> Unit,
+    onStructuredTabSelected: (IdeogramStructureTab) -> Unit,
+    onGenerateStructuredJson: () -> Unit,
+    onStructuredJsonPromptChange: (String) -> Unit,
+    onFormatStructuredJson: () -> Unit,
     onWidthChange: (String) -> Unit,
     onHeightChange: (String) -> Unit,
     onStepsChange: (String) -> Unit,
@@ -317,97 +336,372 @@ private fun GenerationPanel(
 ) {
     val showNegativePrompt = (state.cfgScale.toDoubleOrNull() ?: 0.0) > 1.0
 
-    Card(
+    Column(
         modifier = modifier,
-        shape = RoundedCornerShape(DeskPanelCornerRadius),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        verticalArrangement = Arrangement.spacedBy(DeskLayoutGap),
     ) {
-        Column(
+        PromptTabsHeader(
+            state = state,
+            onStructuredTabSelected = onStructuredTabSelected,
+        )
+
+        Card(
             modifier = Modifier
-                .fillMaxSize()
-                .verticalScroll(rememberScrollState())
-                .padding(DeskPanelPadding),
-            verticalArrangement = Arrangement.spacedBy(DeskPanelSpacing),
+                .fillMaxWidth()
+                .weight(1f),
+            shape = RoundedCornerShape(DeskPanelCornerRadius),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .verticalScroll(rememberScrollState())
+                    .padding(DeskPanelPadding),
+                verticalArrangement = Arrangement.spacedBy(DeskPanelSpacing),
             ) {
-                Label("Prompt")
-                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                PromptTabContent(
+                    state = state,
+                    showNegativePrompt = showNegativePrompt,
+                    onPromptChange = onPromptChange,
+                    onPromptCommit = onPromptCommit,
+                    onUndoPrompt = onUndoPrompt,
+                    onRedoPrompt = onRedoPrompt,
+                    onNegativePromptChange = onNegativePromptChange,
+                    onGenerateStructuredJson = onGenerateStructuredJson,
+                    onStructuredJsonPromptChange = onStructuredJsonPromptChange,
+                    onFormatStructuredJson = onFormatStructuredJson,
+                    onEnhancePrompt = onEnhancePrompt,
+                )
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Label("Parameters")
                     SubtleTextButton(
-                        icon = Icons.Default.AutoFixHigh,
-                        text = if (state.isEnhancingPrompt) "Enhancing..." else "Enhance",
-                        onClick = onEnhancePrompt,
-                        enabled = state.prompt.isNotBlank() && !state.isEnhancingPrompt,
-                    )
-                    PromptHistoryButton(
-                        icon = Icons.AutoMirrored.Filled.Undo,
-                        contentDescription = "Previous prompt",
-                        onClick = onUndoPrompt,
-                        enabled = state.canUndoPrompt,
-                    )
-                    PromptHistoryButton(
-                        icon = Icons.AutoMirrored.Filled.Redo,
-                        contentDescription = "Next prompt",
-                        onClick = onRedoPrompt,
-                        enabled = state.canRedoPrompt,
+                        icon = Icons.Default.RestartAlt,
+                        text = "Reset to defaults",
+                        onClick = onResetToPresetDefaults,
                     )
                 }
-            }
-            PaddedTextArea(
-                value = state.prompt,
-                onValueChange = onPromptChange,
-                onFocusLost = onPromptCommit,
-                enabled = !state.isEnhancingPrompt,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(min = 142.dp),
-            )
-
-            if (showNegativePrompt) {
-                Label("Negative Prompt")
-                PaddedTextArea(
-                    value = state.negativePrompt,
-                    onValueChange = onNegativePromptChange,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(min = 74.dp),
+                GenerationParameterControls(
+                    state = state,
+                    samplerOptions = samplerOptions,
+                    onWidthChange = onWidthChange,
+                    onHeightChange = onHeightChange,
+                    onStepsChange = onStepsChange,
+                    onCfgScaleChange = onCfgScaleChange,
+                    onSeedChange = onSeedChange,
+                    onBatchCountChange = onBatchCountChange,
+                    onSamplerChange = onSamplerChange,
+                    onRandomizeSeed = onRandomizeSeed,
+                    onReuseLastSeed = onReuseLastSeed,
+                    onSwapDimensions = onSwapDimensions,
+                    onApplyAspectRatio = onApplyAspectRatio,
+                    onScaleResolution = onScaleResolution,
+                    showReset = false,
+                    onResetToPresetDefaults = onResetToPresetDefaults,
                 )
             }
+        }
+    }
+}
 
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Label("Parameters")
-                SubtleTextButton(
-                    icon = Icons.Default.RestartAlt,
-                    text = "Reset to defaults",
-                    onClick = onResetToPresetDefaults,
-                )
-            }
-            GenerationParameterControls(
-                state = state,
-                samplerOptions = samplerOptions,
-                onWidthChange = onWidthChange,
-                onHeightChange = onHeightChange,
-                onStepsChange = onStepsChange,
-                onCfgScaleChange = onCfgScaleChange,
-                onSeedChange = onSeedChange,
-                onBatchCountChange = onBatchCountChange,
-                onSamplerChange = onSamplerChange,
-                onRandomizeSeed = onRandomizeSeed,
-                onReuseLastSeed = onReuseLastSeed,
-                onSwapDimensions = onSwapDimensions,
-                onApplyAspectRatio = onApplyAspectRatio,
-                onScaleResolution = onScaleResolution,
-                showReset = false,
-                onResetToPresetDefaults = onResetToPresetDefaults,
+@Composable
+private fun PromptTabsHeader(
+    state: GenerationUiState,
+    onStructuredTabSelected: (IdeogramStructureTab) -> Unit,
+) {
+    DeskTabHeader(
+        tabs = listOf(
+            DeskTabItem(
+                selected = state.ideogram.selectedTab == IdeogramStructureTab.Text,
+                icon = Icons.AutoMirrored.Filled.Article,
+                label = "Text",
+                onClick = { onStructuredTabSelected(IdeogramStructureTab.Text) },
+            ),
+            DeskTabItem(
+                selected = state.ideogram.selectedTab == IdeogramStructureTab.Json,
+                icon = Icons.Default.Code,
+                label = "JSON",
+                onClick = { onStructuredTabSelected(IdeogramStructureTab.Json) },
+            ),
+            DeskTabItem(
+                selected = state.ideogram.selectedTab == IdeogramStructureTab.Preview,
+                icon = Icons.AutoMirrored.Filled.Article,
+                label = "Preview",
+                onClick = { onStructuredTabSelected(IdeogramStructureTab.Preview) },
+            ),
+        ),
+        modifier = Modifier.fillMaxWidth(),
+    )
+}
+
+@Composable
+private fun PromptTabContent(
+    state: GenerationUiState,
+    showNegativePrompt: Boolean,
+    onPromptChange: (String) -> Unit,
+    onPromptCommit: () -> Unit,
+    onUndoPrompt: () -> Unit,
+    onRedoPrompt: () -> Unit,
+    onNegativePromptChange: (String) -> Unit,
+    onGenerateStructuredJson: () -> Unit,
+    onStructuredJsonPromptChange: (String) -> Unit,
+    onFormatStructuredJson: () -> Unit,
+    onEnhancePrompt: () -> Unit,
+) {
+    when (state.ideogram.selectedTab) {
+        IdeogramStructureTab.Text -> TextPromptPanel(
+            state = state,
+            showNegativePrompt = showNegativePrompt,
+            onPromptChange = onPromptChange,
+            onPromptCommit = onPromptCommit,
+            onUndoPrompt = onUndoPrompt,
+            onRedoPrompt = onRedoPrompt,
+            onNegativePromptChange = onNegativePromptChange,
+            onEnhancePrompt = onEnhancePrompt,
+        )
+        IdeogramStructureTab.Json -> JsonPromptPanel(
+            state = state,
+            onGenerateStructuredJson = onGenerateStructuredJson,
+            onStructuredJsonPromptChange = onStructuredJsonPromptChange,
+            onFormatStructuredJson = onFormatStructuredJson,
+        )
+        IdeogramStructureTab.Preview -> {
+            StructuredJsonStatus(state)
+            IdeogramLayoutPreview(
+                jsonPrompt = state.ideogram.jsonPrompt,
+                width = state.width.toIntOrNull() ?: 1024,
+                height = state.height.toIntOrNull() ?: 1024,
+                modifier = Modifier.heightIn(min = 300.dp),
             )
         }
+    }
+}
+
+@Composable
+private fun TextPromptPanel(
+    state: GenerationUiState,
+    showNegativePrompt: Boolean,
+    onPromptChange: (String) -> Unit,
+    onPromptCommit: () -> Unit,
+    onUndoPrompt: () -> Unit,
+    onRedoPrompt: () -> Unit,
+    onNegativePromptChange: (String) -> Unit,
+    onEnhancePrompt: () -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(DeskPanelSpacing)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Label("Prompt")
+            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                SubtleTextButton(
+                    icon = Icons.Default.AutoFixHigh,
+                    text = if (state.isEnhancingPrompt) "Enhancing..." else "Enhance",
+                    onClick = onEnhancePrompt,
+                    enabled = state.prompt.isNotBlank() && !state.isEnhancingPrompt,
+                )
+                PromptHistoryButton(
+                    icon = Icons.AutoMirrored.Filled.Undo,
+                    contentDescription = "Previous prompt",
+                    onClick = onUndoPrompt,
+                    enabled = state.canUndoPrompt,
+                )
+                PromptHistoryButton(
+                    icon = Icons.AutoMirrored.Filled.Redo,
+                    contentDescription = "Next prompt",
+                    onClick = onRedoPrompt,
+                    enabled = state.canRedoPrompt,
+                )
+            }
+        }
+        PaddedTextArea(
+            value = state.prompt,
+            onValueChange = onPromptChange,
+            onFocusLost = onPromptCommit,
+            enabled = !state.isEnhancingPrompt,
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = 142.dp),
+        )
+
+        if (showNegativePrompt) {
+            Label("Negative Prompt")
+            PaddedTextArea(
+                value = state.negativePrompt,
+                onValueChange = onNegativePromptChange,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 74.dp),
+            )
+        }
+    }
+}
+
+@Composable
+private fun JsonPromptPanel(
+    state: GenerationUiState,
+    onGenerateStructuredJson: () -> Unit,
+    onStructuredJsonPromptChange: (String) -> Unit,
+    onFormatStructuredJson: () -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(DeskPanelSpacing)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(DeskControlSpacing),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Button(
+                onClick = onGenerateStructuredJson,
+                enabled = state.prompt.isNotBlank() && !state.ideogram.isGeneratingJson,
+                modifier = Modifier.weight(1f).height(40.dp),
+            ) {
+                ButtonContent(
+                    icon = Icons.Default.AutoFixHigh,
+                    text = if (state.ideogram.isGeneratingJson) "Generating JSON..." else "Generate JSON",
+                )
+            }
+            DeskIconButton(Icons.Default.CheckCircle, "Format JSON", onFormatStructuredJson, tooltip = "Format JSON")
+        }
+
+        StructuredJsonStatus(state)
+        PaddedTextArea(
+            value = state.ideogram.jsonPrompt,
+            onValueChange = onStructuredJsonPromptChange,
+            monospace = true,
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = 300.dp),
+        )
+    }
+}
+
+@Composable
+private fun StructuredJsonStatus(state: GenerationUiState) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(DeskControlSpacing),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            modifier = Modifier
+                .size(8.dp)
+                .background(if (state.ideogram.jsonError == null) Color(0xFF2EAD4A) else MaterialTheme.colorScheme.error, RoundedCornerShape(50)),
+        )
+        Text(
+            text = state.ideogram.jsonError ?: state.ideogram.jsonStatus,
+            style = MaterialTheme.typography.bodySmall,
+            color = if (state.ideogram.jsonError == null) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.error,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+}
+
+@Composable
+private fun IdeogramLayoutPreview(
+    jsonPrompt: String,
+    width: Int,
+    height: Int,
+    modifier: Modifier = Modifier,
+) {
+    val elements = ideogramElementPreviews(jsonPrompt)
+    Column(
+        modifier = modifier
+            .fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(DeskPanelSpacing),
+    ) {
+        BoxWithConstraints(
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = 220.dp, max = 340.dp)
+                .clip(RoundedCornerShape(DeskControlCornerRadius))
+                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = DeskSubtleSurfaceAlpha))
+                .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(DeskControlCornerRadius)),
+        ) {
+            val aspect = width.toFloat() / height.coerceAtLeast(1).toFloat()
+            val canvasWidth = maxWidth
+            val canvasHeight = (canvasWidth / aspect).coerceAtMost(maxHeight).coerceAtLeast(200.dp)
+            Box(
+                modifier = Modifier
+                    .width(canvasWidth)
+                    .height(canvasHeight)
+                    .align(Alignment.Center)
+                    .background(MaterialTheme.colorScheme.background.copy(alpha = 0.8f))
+                    .border(1.dp, MaterialTheme.colorScheme.outlineVariant),
+            ) {
+                elements.forEachIndexed { index, element ->
+                    if (element.bbox.size == 4) {
+                        val top = canvasHeight * (element.bbox[0] / 1000f)
+                        val left = canvasWidth * (element.bbox[1] / 1000f)
+                        val bottom = canvasHeight * (element.bbox[2] / 1000f)
+                        val right = canvasWidth * (element.bbox[3] / 1000f)
+                        val boxColor = if (element.type == "text") MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.primary
+                        Box(
+                            modifier = Modifier
+                                .offset(left, top)
+                                .width((right - left).coerceAtLeast(8.dp))
+                                .height((bottom - top).coerceAtLeast(8.dp))
+                                .border(2.dp, boxColor, RoundedCornerShape(2.dp))
+                                .background(boxColor.copy(alpha = 0.10f))
+                                .padding(4.dp),
+                        ) {
+                            Text(
+                                text = if (element.type == "text" && element.text.isNotBlank()) element.text else "${index + 1}",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = boxColor,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                    }
+                }
+            }
+        }
+        if (elements.isEmpty()) {
+            Text("No valid elements to preview.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        } else {
+            elements.forEachIndexed { index, element ->
+                ElementPreviewRow(index + 1, element.type, element.text, element.desc)
+            }
+        }
+    }
+}
+
+@Composable
+private fun ElementPreviewRow(index: Int, type: String, textValue: String, desc: String) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(DeskControlCornerRadius))
+            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = DeskSubtleSurfaceAlpha))
+            .padding(DeskControlSpacing),
+        verticalArrangement = Arrangement.spacedBy(2.dp),
+    ) {
+        Text(
+            text = if (type == "text" && textValue.isNotBlank()) "$index. text: $textValue" else "$index. $type",
+            style = MaterialTheme.typography.labelMedium,
+            fontWeight = FontWeight.SemiBold,
+            color = MaterialTheme.colorScheme.primary,
+        )
+        Text(
+            text = desc.ifBlank { "No description." },
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+private fun generationPromptReady(state: GenerationUiState): Boolean {
+    return when (state.ideogram.selectedTab) {
+        IdeogramStructureTab.Text -> state.prompt.isNotBlank()
+        IdeogramStructureTab.Json,
+        IdeogramStructureTab.Preview -> state.ideogram.jsonPrompt.isNotBlank() && state.ideogram.isJsonValid
     }
 }
 
@@ -1583,6 +1877,7 @@ private fun PaddedTextArea(
     modifier: Modifier = Modifier,
     onFocusLost: (() -> Unit)? = null,
     enabled: Boolean = true,
+    monospace: Boolean = false,
 ) {
     val shape = RoundedCornerShape(5.dp)
     var hadFocus by remember { mutableStateOf(false) }
@@ -1613,6 +1908,7 @@ private fun PaddedTextArea(
             } else {
                 MaterialTheme.colorScheme.onSurfaceVariant
             },
+            fontFamily = if (monospace) FontFamily.Monospace else FontFamily.Default,
         ),
         cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
     )

@@ -7,7 +7,6 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.DarkMode
-import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.Collections
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Inventory2
@@ -32,7 +31,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.diffusiondesk.desktop.screens.GalleryScreen
 import com.diffusiondesk.desktop.screens.GenerateScreen
-import com.diffusiondesk.desktop.screens.IdeogramScreen
 import com.diffusiondesk.desktop.screens.LibraryScreen
 import com.diffusiondesk.desktop.screens.DeskCompactControlSpacing
 import com.diffusiondesk.desktop.screens.NotificationStack
@@ -44,7 +42,6 @@ import org.jetbrains.jewel.ui.component.Text
 
 private enum class Screen(val label: String, val icon: ImageVector, val subtitle: String) {
     Generate("Generate", Icons.Default.Image, "Preset-driven image generation with the local SD worker."),
-    Structured("Structured", Icons.Default.Code, "Structured JSON prompting with review and preview."),
     Gallery("Gallery", Icons.Default.Collections, "Browse generated images and reuse embedded parameters."),
     Library("Library", Icons.Default.Inventory2, "Manage JSON-backed image generation presets."),
     System("System", Icons.Default.Memory, "Worker status, runtime controls, and diagnostics."),
@@ -93,6 +90,10 @@ fun App(
                             onUndoPrompt = controller.generationViewModel::undoPrompt,
                             onRedoPrompt = controller.generationViewModel::redoPrompt,
                             onNegativePromptChange = controller.generationViewModel::updateNegativePrompt,
+                            onStructuredTabSelected = controller.generationViewModel::selectIdeogramTab,
+                            onGenerateStructuredJson = controller.generationViewModel::generateIdeogramJsonPrompt,
+                            onStructuredJsonPromptChange = controller.generationViewModel::updateIdeogramJsonPrompt,
+                            onFormatStructuredJson = controller.generationViewModel::formatIdeogramJsonPrompt,
                             onWidthChange = controller.generationViewModel::updateWidth,
                             onHeightChange = controller.generationViewModel::updateHeight,
                             onStepsChange = controller.generationViewModel::updateSteps,
@@ -115,40 +116,6 @@ fun App(
                             onGoBack = controller.generationViewModel::goBack,
                             onGoForward = controller.generationViewModel::goForward,
                             onLeftPanelWidthChange = controller.generationViewModel::updateLeftPanelWidth,
-                            actionBarPosition = settingsState.actionBarPosition,
-                            outputDir = settingsState.outputDir,
-                        )
-                        Screen.Structured -> IdeogramScreen(
-                            state = generationState,
-                            backendState = backendState,
-                            samplerOptions = generationState.samplerOptions,
-                            onRawPromptChange = controller.generationViewModel::updateIdeogramRawPrompt,
-                            onGenerateJson = controller.generationViewModel::generateIdeogramJsonPrompt,
-                            onJsonPromptChange = controller.generationViewModel::updateIdeogramJsonPrompt,
-                            onFormatJson = controller.generationViewModel::formatIdeogramJsonPrompt,
-                            onTabSelected = controller.generationViewModel::selectIdeogramTab,
-                            onWidthChange = controller.generationViewModel::updateWidth,
-                            onHeightChange = controller.generationViewModel::updateHeight,
-                            onStepsChange = controller.generationViewModel::updateSteps,
-                            onCfgScaleChange = controller.generationViewModel::updateCfgScale,
-                            onSeedChange = controller.generationViewModel::updateSeed,
-                            onBatchCountChange = controller.generationViewModel::updateBatchCount,
-                            onSamplerChange = controller.generationViewModel::updateSampler,
-                            onRandomizeSeed = controller.generationViewModel::randomizeSeed,
-                            onReuseLastSeed = controller.generationViewModel::reuseLastSeed,
-                            onSwapDimensions = controller.generationViewModel::swapDimensions,
-                            onApplyAspectRatio = controller.generationViewModel::applyAspectRatio,
-                            onScaleResolution = controller.generationViewModel::scaleResolution,
-                            onResetToPresetDefaults = controller.generationViewModel::resetToPresetDefaults,
-                            onGenerate = {
-                                controller.generationViewModel.generateIdeogram(settingsState.saveImagesAutomatically)
-                            },
-                            onToggleEndless = controller.generationViewModel::toggleEndless,
-                            onPresetSelected = controller.generationViewModel::selectAndLoadPreset,
-                            onGoBack = controller.generationViewModel::goBack,
-                            onGoForward = controller.generationViewModel::goForward,
-                            onToggleParametersPanel = controller.generationViewModel::toggleIdeogramParametersPanel,
-                            onToggleStructurePanel = controller.generationViewModel::toggleIdeogramStructurePanel,
                             actionBarPosition = settingsState.actionBarPosition,
                             outputDir = settingsState.outputDir,
                         )
