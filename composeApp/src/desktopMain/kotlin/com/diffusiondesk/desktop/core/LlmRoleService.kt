@@ -72,6 +72,11 @@ class LlmRoleService(
                         content = "Canvas: ${width}x${height}\nRaw prompt: $prompt",
                     ),
                 ),
+                maxTokens = 2048,
+                temperature = 0.0,
+                jsonResponse = true,
+                reasoningFormat = "deepseek",
+                enableThinking = false,
             ).getOrThrow()
         }
     }
