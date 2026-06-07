@@ -653,6 +653,14 @@ private fun ImagePresetEditorPage(
                     placeholder = "stable-diffusion/model.gguf or D:\\models\\model.gguf",
                     modifier = Modifier.fillMaxWidth(),
                 )
+                ModelPathField(
+                    label = "Unconditional Diffusion Model (optional)",
+                    value = state.form.uncondDiffusionModel,
+                    options = mainModelOptions,
+                    onValueChange = { onFormChange(state.form.copy(uncondDiffusionModel = it)) },
+                    placeholder = "stable-diffusion/ideogram4_uncond-Q8_0.gguf",
+                    modifier = Modifier.fillMaxWidth(),
+                )
                 TwoColumnRow {
                     ModelPathField(
                         label = "VAE (optional)",
@@ -772,6 +780,19 @@ private fun ImagePresetEditorPage(
                     onCheckedChange = { onFormChange(state.form.copy(flashAttention = it)) },
                     title = "Flash attention",
                     subtitle = "Enable when supported by the selected model and backend build.",
+                )
+                LabeledField(
+                    label = "Max VRAM GiB",
+                    value = state.form.maxVramGb,
+                    onValueChange = { onFormChange(state.form.copy(maxVramGb = it)) },
+                    placeholder = "0 = uncapped",
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                ToggleLine(
+                    checked = state.form.streamLayers,
+                    onCheckedChange = { onFormChange(state.form.copy(streamLayers = it, offloadParamsToCpu = state.form.offloadParamsToCpu || it)) },
+                    title = "Stream diffusion layers",
+                    subtitle = "Load diffusion layers in segments to avoid crossing the VRAM cap.",
                 )
             }
         }

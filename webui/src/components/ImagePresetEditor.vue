@@ -39,6 +39,30 @@ const vaeTiling = computed({
     emit('update:modelValue', props.modelValue)
   }
 })
+
+const maxVramGb = computed({
+  get: () => {
+    return props.modelValue.preferred_params?.memory?.max_vram_gb || ''
+  },
+  set: (val: number | string) => {
+    if (!props.modelValue.preferred_params) props.modelValue.preferred_params = {}
+    if (!props.modelValue.preferred_params.memory) props.modelValue.preferred_params.memory = {}
+    props.modelValue.preferred_params.memory.max_vram_gb = val === '' ? 0 : Number(val)
+    emit('update:modelValue', props.modelValue)
+  }
+})
+
+const streamLayers = computed({
+  get: () => {
+    return props.modelValue.preferred_params?.memory?.stream_layers || false
+  },
+  set: (val: boolean) => {
+    if (!props.modelValue.preferred_params) props.modelValue.preferred_params = {}
+    if (!props.modelValue.preferred_params.memory) props.modelValue.preferred_params.memory = {}
+    props.modelValue.preferred_params.memory.stream_layers = val
+    emit('update:modelValue', props.modelValue)
+  }
+})
 </script>
 
 <template>
@@ -54,6 +78,14 @@ const vaeTiling = computed({
        <label class="form-label small text-uppercase fw-bold">UNet / Main Model (Required)</label>
        <select v-model="modelValue.unet_path" class="form-select">
           <option value="">Select Model...</option>
+          <option v-for="m in availableModels" :key="m.id" :value="m.id">{{ m.name }} ({{ m.type }})</option>
+       </select>
+     </div>
+
+     <div class="col-12">
+       <label class="form-label small text-uppercase fw-bold">Unconditional Diffusion Model (Optional)</label>
+       <select v-model="modelValue.uncond_path" class="form-select">
+          <option value="">None</option>
           <option v-for="m in availableModels" :key="m.id" :value="m.id">{{ m.name }} ({{ m.type }})</option>
        </select>
      </div>
@@ -145,10 +177,22 @@ const vaeTiling = computed({
                 <span class="text-muted d-block x-small">Process VAE in tiles to avoid OOM on large images or low VRAM.</span>
             </label>
         </div>
+        <div class="row g-2 align-items-end mt-1">
+            <div class="col-6">
+                <label class="form-label small text-muted">Max VRAM GiB</label>
+                <input type="number" class="form-control form-control-sm" v-model="maxVramGb" min="0" step="0.1" placeholder="0 = uncapped">
+            </div>
+            <div class="col-6">
+                <div class="form-check form-switch pb-1">
+                    <input class="form-check-input" type="checkbox" id="streamLayers" v-model="streamLayers">
+                    <label class="form-check-label small" for="streamLayers">Stream Layers</label>
+                </div>
+            </div>
+        </div>
      </div>
 
      <div class="col-12">
-         <div class="form-text x-small">Note: For Flux/SD3, ensure you select the correct CLIP/T5 combination if not using a GGUF that embeds them.</div>
+         <div class="form-text x-small">Note: Ideogram4 requires the matching unconditional diffusion model, Qwen3-VL text encoder, and FLUX.2 VAE.</div>
      </div>
   </div>
 </template>

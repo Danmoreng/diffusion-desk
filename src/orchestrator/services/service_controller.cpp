@@ -7,6 +7,35 @@
 
 namespace diffusion_desk {
 
+namespace {
+
+void apply_memory_preferences_to_config(const diffusion_desk::json& source, diffusion_desk::json& config) {
+    if (!source.contains("preferred_params") || !source["preferred_params"].contains("memory")) return;
+
+    const auto& mem = source["preferred_params"]["memory"];
+    if (mem.value("force_clip_cpu", false)) config["clip_on_cpu"] = true;
+    if (mem.value("force_vae_tiling", false)) config["vae_tiling"] = true;
+    if (mem.contains("max_vram_gb")) config["max_vram_gb"] = mem["max_vram_gb"];
+    if (mem.contains("max_vram")) config["max_vram"] = mem["max_vram"];
+    if (mem.contains("stream_layers")) config["stream_layers"] = mem["stream_layers"];
+    if (mem.value("stream_layers", false) && !config.contains("offload_to_cpu") && !config.contains("offload_params_to_cpu")) {
+        config["offload_params_to_cpu"] = true;
+    }
+}
+
+void apply_memory_preferences_to_generation(const diffusion_desk::json& source, diffusion_desk::json& request) {
+    if (!source.contains("preferred_params") || !source["preferred_params"].contains("memory")) return;
+
+    const auto& mem = source["preferred_params"]["memory"];
+    if (mem.value("force_clip_cpu", false)) request["clip_on_cpu"] = true;
+    if (mem.value("force_vae_tiling", false)) request["vae_tiling"] = true;
+    if (mem.contains("max_vram_gb")) request["max_vram_gb"] = mem["max_vram_gb"];
+    if (mem.contains("max_vram")) request["max_vram"] = mem["max_vram"];
+    if (mem.contains("stream_layers")) request["stream_layers"] = mem["stream_layers"];
+}
+
+}
+
 ServiceController::ServiceController(std::shared_ptr<Database> db,
                                      std::shared_ptr<ResourceManager> res_mgr,
                                      std::shared_ptr<WsManager> ws_mgr,
@@ -171,10 +200,18 @@ std::string compute_sd_signature(const diffusion_desk::json& j) {
     ss << j.value("clip_g", "") << "|";
     ss << j.value("t5xxl", "") << "|";
     ss << j.value("llm", "") << "|";
+    ss << j.value("uncond_diffusion_model", "") << "|";
+    ss << j.value("uncond_diffusion_model_path", "") << "|";
     ss << j.value("vae_tiling", false) << "|";
     ss << j.value("clip_on_cpu", false) << "|";
     ss << j.value("vae_on_cpu", false) << "|";
+    ss << j.value("offload_to_cpu", false) << "|";
+    ss << j.value("offload_params_to_cpu", false) << "|";
     ss << j.value("flash_attn", false) << "|";
+    ss << j.value("diffusion_flash_attn", false) << "|";
+    ss << j.contains("max_vram") << ":" << j.value("max_vram", 0.0f) << "|";
+    ss << j.contains("max_vram_gb") << ":" << j.value("max_vram_gb", 0.0f) << "|";
+    ss << j.contains("stream_layers") << ":" << j.value("stream_layers", false) << "|";
     return ss.str();
 }
 
@@ -391,12 +428,9 @@ void ServiceController::load_last_presets() {
                     config["clip_g"] = p["clip_g_path"];
                     config["t5xxl"] = p["t5xxl_path"];
                     config["llm"] = p["llm_path"];
+                    config["uncond_diffusion_model"] = p.value("uncond_path", "");
 
-                    if (p.contains("preferred_params") && p["preferred_params"].contains("memory")) {
-                        auto mem = p["preferred_params"]["memory"];
-                        if (mem.value("force_clip_cpu", false)) config["clip_on_cpu"] = true;
-                        if (mem.value("force_vae_tiling", false)) config["vae_tiling"] = true;
-                    }
+                    apply_memory_preferences_to_config(p, config);
                     
                     ensure_sd_model_loaded(config);
                     m_last_image_preset_id = id;
@@ -586,9 +620,9 @@ void ServiceController::register_routes(httplib::Server& svr) {
             if (j_req.contains("model_id")) {
                 requested_model_id = j_req["model_id"];
                 requested_config["model_id"] = requested_model_id;
-                // If user specifies model_id, they likely want a simple load unless they specified others
-                // But we don't have others in req.body usually.
-                // We'll treat this as "Load this model ID with defaults".
+                for (const char* key : {"vae", "clip_l", "clip_g", "t5xxl", "llm", "uncond_diffusion_model", "uncond_diffusion_model_path", "vae_tiling", "clip_on_cpu", "vae_on_cpu", "offload_to_cpu", "offload_params_to_cpu", "flash_attn", "diffusion_flash_attn", "max_vram", "max_vram_gb", "stream_layers"}) {
+                    if (j_req.contains(key)) requested_config[key] = j_req[key];
+                }
                 explicit_load_request = true;
             }
         } catch(...) {}
@@ -677,11 +711,7 @@ void ServiceController::register_routes(httplib::Server& svr) {
                     auto presets = m_db->get_image_presets();
                     for (const auto& p : presets) {
                         if (p.value("id", -1) == m_last_image_preset_id) {
-                            if (p.contains("preferred_params") && p["preferred_params"].contains("memory")) {
-                                auto mem = p["preferred_params"]["memory"];
-                                if (mem.value("force_clip_cpu", false)) j["clip_on_cpu"] = true;
-                                if (mem.value("force_vae_tiling", false)) j["vae_tiling"] = true;
-                            }
+                            apply_memory_preferences_to_generation(p, j);
                             break;
                         }
                     }
@@ -1211,6 +1241,7 @@ void ServiceController::register_routes(httplib::Server& svr) {
             p.clip_g_path = j.value("clip_g_path", "");
             p.t5xxl_path = j.value("t5xxl_path", "");
             p.llm_path = j.value("llm_path", "");
+            p.uncond_path = j.value("uncond_path", "");
             p.vram_weights_mb_estimate = j.value("vram_weights_mb_estimate", 0);
             p.default_params = j.value("default_params", diffusion_desk::json::object());
             p.preferred_params = j.value("preferred_params", diffusion_desk::json::object());
@@ -1220,6 +1251,8 @@ void ServiceController::register_routes(httplib::Server& svr) {
                 auto mem = p.preferred_params["memory"];
                 p.memory_settings.force_clip_cpu = mem.value("force_clip_cpu", false);
                 p.memory_settings.force_vae_tiling = mem.value("force_vae_tiling", false);
+                p.memory_settings.max_vram_gb = mem.value("max_vram_gb", mem.value("max_vram", 0.0f));
+                p.memory_settings.stream_layers = mem.value("stream_layers", false);
             }
 
             if (p.name.empty()) { res.status = 400; return; }
@@ -1236,6 +1269,8 @@ void ServiceController::register_routes(httplib::Server& svr) {
                 check_size(p.clip_l_path);
                 check_size(p.clip_g_path);
                 check_size(p.t5xxl_path);
+                check_size(p.llm_path);
+                check_size(p.uncond_path);
                 if (total_bytes > 0) p.vram_weights_mb_estimate = (int)((total_bytes * 1.05) / (1024 * 1024));
             }
             m_db->save_image_preset(p);
@@ -1333,12 +1368,9 @@ void ServiceController::register_routes(httplib::Server& svr) {
             config["clip_g"] = selected["clip_g_path"];
             config["t5xxl"] = selected["t5xxl_path"];
             config["llm"] = selected["llm_path"];
+            config["uncond_diffusion_model"] = selected.value("uncond_path", "");
 
-            if (selected.contains("preferred_params") && selected["preferred_params"].contains("memory")) {
-                auto mem = selected["preferred_params"]["memory"];
-                if (mem.value("force_clip_cpu", false)) config["clip_on_cpu"] = true;
-                if (mem.value("force_vae_tiling", false)) config["vae_tiling"] = true;
-            }
+            apply_memory_preferences_to_config(selected, config);
             
             if (ensure_sd_model_loaded(config)) {
                 m_last_image_preset_id = id;
