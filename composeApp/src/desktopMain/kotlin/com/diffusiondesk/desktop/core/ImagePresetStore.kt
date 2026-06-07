@@ -83,6 +83,16 @@ class ImagePresetStore {
         val components = root["components"]?.jsonObject ?: JsonObject(emptyMap())
         val placement = root["placement"]?.jsonObject ?: JsonObject(emptyMap())
         val defaults = root["defaults"]?.jsonObject ?: JsonObject(emptyMap())
+        val inferredPromptMode = if (listOf(
+                root.string("id"),
+                root.string("name"),
+                components.string("diffusion_model", root.string("diffusion_model")),
+            ).any { it.contains("ideogram", ignoreCase = true) }
+        ) {
+            ImagePromptMode.Json
+        } else {
+            ImagePromptMode.Text
+        }
 
         return ImagePreset(
             id = root.string("id"),
@@ -100,6 +110,7 @@ class ImagePresetStore {
             flashAttention = placement.boolean("flash_attn"),
             maxVramGb = placement.double("max_vram_gb", placement.double("max_vram", 0.0)),
             streamLayers = placement.boolean("stream_layers", false),
+            promptMode = ImagePromptMode.fromStorage(defaults.string("prompt_mode"), inferredPromptMode),
             defaultWidth = defaults.int("width", 1024),
             defaultHeight = defaults.int("height", 1024),
             defaultSteps = defaults.int("steps", 4),
@@ -132,6 +143,7 @@ class ImagePresetStore {
             put("stream_layers", JsonPrimitive(streamLayers))
         })
         put("defaults", buildJsonObject {
+            put("prompt_mode", JsonPrimitive(promptMode.storageValue))
             put("width", JsonPrimitive(defaultWidth))
             put("height", JsonPrimitive(defaultHeight))
             put("steps", JsonPrimitive(defaultSteps))
@@ -149,6 +161,7 @@ class ImagePresetStore {
         vae = "vae/ae.safetensors",
         vaeOnCpu = true,
         flashAttention = true,
+        promptMode = ImagePromptMode.Text,
         defaultWidth = 1024,
         defaultHeight = 1024,
         defaultSteps = 4,
@@ -168,6 +181,7 @@ class ImagePresetStore {
         flashAttention = true,
         maxVramGb = 0.0,
         streamLayers = true,
+        promptMode = ImagePromptMode.Json,
         defaultWidth = 1024,
         defaultHeight = 1024,
         defaultSteps = 20,

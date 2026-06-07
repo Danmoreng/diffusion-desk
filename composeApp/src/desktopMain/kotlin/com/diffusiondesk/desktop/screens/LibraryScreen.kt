@@ -25,6 +25,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Memory
@@ -47,6 +48,7 @@ import androidx.compose.ui.unit.dp
 import com.diffusiondesk.desktop.core.BackendStatus
 import com.diffusiondesk.desktop.core.BackendUiState
 import com.diffusiondesk.desktop.core.ImagePreset
+import com.diffusiondesk.desktop.core.ImagePromptMode
 import com.diffusiondesk.desktop.core.LlmPlacement
 import com.diffusiondesk.desktop.core.LlmPreset
 import com.diffusiondesk.desktop.core.ModelSummary
@@ -252,6 +254,10 @@ private fun ImagePresetCard(
                 overflow = TextOverflow.Ellipsis,
             )
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                PresetPathLine(
+                    icon = if (preset.promptMode == ImagePromptMode.Json) Icons.Default.Code else Icons.Default.TextFields,
+                    path = "Prompt: ${preset.promptMode.displayName}",
+                )
                 PresetPathLine(Icons.Default.Memory, preset.diffusionModel)
                 if (preset.vae.isNotBlank()) PresetPathLine(Icons.Default.Palette, preset.vae)
                 if (preset.t5xxl.isNotBlank()) PresetPathLine(Icons.Default.TextFields, preset.t5xxl)
@@ -708,6 +714,11 @@ private fun ImagePresetEditorPage(
             }
 
             EditorSection("Default Generation Parameters") {
+                PromptModeField(
+                    value = state.form.promptMode,
+                    onValueChange = { onFormChange(state.form.copy(promptMode = it)) },
+                    modifier = Modifier.fillMaxWidth(),
+                )
                 TwoColumnRow {
                     LabeledField(
                         label = "Width",
@@ -887,6 +898,23 @@ private fun SamplerField(
         value = value,
         options = options,
         onValueChange = onValueChange,
+        modifier = modifier,
+    )
+}
+
+@Composable
+private fun PromptModeField(
+    value: ImagePromptMode,
+    onValueChange: (ImagePromptMode) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    DeskDropdownField(
+        label = "Prompt Mode",
+        value = value.displayName,
+        options = ImagePromptMode.values().map { it.displayName },
+        onValueChange = { label ->
+            onValueChange(ImagePromptMode.values().firstOrNull { it.displayName == label } ?: ImagePromptMode.Text)
+        },
         modifier = modifier,
     )
 }

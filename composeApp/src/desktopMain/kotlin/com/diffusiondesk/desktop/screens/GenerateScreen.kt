@@ -41,6 +41,7 @@ import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.AutoFixHigh
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Code
+import androidx.compose.material.icons.filled.Dashboard
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.PlayArrow
@@ -88,6 +89,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import com.diffusiondesk.desktop.core.BackendStatus
 import com.diffusiondesk.desktop.core.BackendUiState
 import com.diffusiondesk.desktop.core.GeneratedImage
+import com.diffusiondesk.desktop.core.ImagePromptMode
 import com.diffusiondesk.desktop.viewmodel.GenerationProgressStage
 import com.diffusiondesk.desktop.viewmodel.GenerationStatus
 import com.diffusiondesk.desktop.viewmodel.GenerationUiState
@@ -373,36 +375,38 @@ private fun GenerationPanel(
                     onEnhancePrompt = onEnhancePrompt,
                 )
 
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Label("Parameters")
-                    SubtleTextButton(
-                        icon = Icons.Default.RestartAlt,
-                        text = "Reset to defaults",
-                        onClick = onResetToPresetDefaults,
+                if (state.ideogram.selectedTab == IdeogramStructureTab.Text) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Label("Parameters")
+                        SubtleTextButton(
+                            icon = Icons.Default.RestartAlt,
+                            text = "Reset to defaults",
+                            onClick = onResetToPresetDefaults,
+                        )
+                    }
+                    GenerationParameterControls(
+                        state = state,
+                        samplerOptions = samplerOptions,
+                        onWidthChange = onWidthChange,
+                        onHeightChange = onHeightChange,
+                        onStepsChange = onStepsChange,
+                        onCfgScaleChange = onCfgScaleChange,
+                        onSeedChange = onSeedChange,
+                        onBatchCountChange = onBatchCountChange,
+                        onSamplerChange = onSamplerChange,
+                        onRandomizeSeed = onRandomizeSeed,
+                        onReuseLastSeed = onReuseLastSeed,
+                        onSwapDimensions = onSwapDimensions,
+                        onApplyAspectRatio = onApplyAspectRatio,
+                        onScaleResolution = onScaleResolution,
+                        showReset = false,
+                        onResetToPresetDefaults = onResetToPresetDefaults,
                     )
                 }
-                GenerationParameterControls(
-                    state = state,
-                    samplerOptions = samplerOptions,
-                    onWidthChange = onWidthChange,
-                    onHeightChange = onHeightChange,
-                    onStepsChange = onStepsChange,
-                    onCfgScaleChange = onCfgScaleChange,
-                    onSeedChange = onSeedChange,
-                    onBatchCountChange = onBatchCountChange,
-                    onSamplerChange = onSamplerChange,
-                    onRandomizeSeed = onRandomizeSeed,
-                    onReuseLastSeed = onReuseLastSeed,
-                    onSwapDimensions = onSwapDimensions,
-                    onApplyAspectRatio = onApplyAspectRatio,
-                    onScaleResolution = onScaleResolution,
-                    showReset = false,
-                    onResetToPresetDefaults = onResetToPresetDefaults,
-                )
             }
         }
     }
@@ -429,8 +433,8 @@ private fun PromptTabsHeader(
             ),
             DeskTabItem(
                 selected = state.ideogram.selectedTab == IdeogramStructureTab.Preview,
-                icon = Icons.AutoMirrored.Filled.Article,
-                label = "Preview",
+                icon = Icons.Default.Dashboard,
+                label = "Composition",
                 onClick = { onStructuredTabSelected(IdeogramStructureTab.Preview) },
             ),
         ),
@@ -569,10 +573,13 @@ private fun JsonPromptPanel(
             DeskIconButton(Icons.Default.CheckCircle, "Format JSON", onFormatStructuredJson, tooltip = "Format JSON")
         }
 
-        StructuredJsonStatus(state)
+        if (!state.ideogram.isGeneratingJson || state.ideogram.jsonError != null) {
+            StructuredJsonStatus(state)
+        }
         PaddedTextArea(
             value = state.ideogram.jsonPrompt,
             onValueChange = onStructuredJsonPromptChange,
+            enabled = !state.ideogram.isGeneratingJson,
             monospace = true,
             modifier = Modifier
                 .fillMaxWidth()
@@ -698,10 +705,10 @@ private fun ElementPreviewRow(index: Int, type: String, textValue: String, desc:
 }
 
 private fun generationPromptReady(state: GenerationUiState): Boolean {
-    return when (state.ideogram.selectedTab) {
-        IdeogramStructureTab.Text -> state.prompt.isNotBlank()
-        IdeogramStructureTab.Json,
-        IdeogramStructureTab.Preview -> state.ideogram.jsonPrompt.isNotBlank() && state.ideogram.isJsonValid
+    val selectedPreset = state.presets.firstOrNull { it.id == state.selectedPresetId }
+    return when (selectedPreset?.promptMode ?: ImagePromptMode.Text) {
+        ImagePromptMode.Text -> state.prompt.isNotBlank()
+        ImagePromptMode.Json -> state.ideogram.jsonPrompt.isNotBlank() && state.ideogram.isJsonValid
     }
 }
 
@@ -1292,6 +1299,14 @@ private fun PresetActionControl(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
+                if (selectedPreset != null) {
+                    Text(
+                        text = selectedPreset.promptMode.displayName,
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.primary,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                }
                 Icon(
                     imageVector = Icons.Default.ArrowDropDown,
                     contentDescription = null,
