@@ -1,6 +1,8 @@
 #include "service_controller.hpp"
 #include "proxy.hpp"
 #include "sd/api_utils.hpp"
+#include <algorithm>
+#include <cctype>
 #include <fstream>
 #include <iostream>
 #include <regex>
@@ -32,6 +34,35 @@ void apply_memory_preferences_to_generation(const diffusion_desk::json& source, 
     if (mem.contains("max_vram_gb")) request["max_vram_gb"] = mem["max_vram_gb"];
     if (mem.contains("max_vram")) request["max_vram"] = mem["max_vram"];
     if (mem.contains("stream_layers")) request["stream_layers"] = mem["stream_layers"];
+}
+
+std::string lowercase_copy(std::string value) {
+    std::transform(value.begin(), value.end(), value.begin(), [](unsigned char c) {
+        return static_cast<char>(std::tolower(c));
+    });
+    return value;
+}
+
+bool mentions_ideogram4(const std::string& value) {
+    return lowercase_copy(value).find("ideogram4") != std::string::npos;
+}
+
+bool json_string_field_mentions_ideogram4(const diffusion_desk::json& source, const char* key) {
+    return source.contains(key) && source[key].is_string() && mentions_ideogram4(source[key].get<std::string>());
+}
+
+bool is_ideogram4_sd_request(const std::string& model_id, const diffusion_desk::json& config) {
+    if (mentions_ideogram4(model_id)) return true;
+    for (const char* key : {"model_id", "model", "diffusion_model", "diffusion_model_path", "unet_path"}) {
+        if (json_string_field_mentions_ideogram4(config, key)) return true;
+    }
+    if (config.contains("components") && config["components"].is_object()) {
+        const auto& components = config["components"];
+        for (const char* key : {"diffusion_model", "diffusion_model_path", "unet_path"}) {
+            if (json_string_field_mentions_ideogram4(components, key)) return true;
+        }
+    }
+    return false;
 }
 
 }
@@ -692,16 +723,25 @@ void ServiceController::register_routes(httplib::Server& svr) {
             return;
         }
 
+        const bool ideogram4_request = is_ideogram4_sd_request(requested_model_id, requested_config);
+
         // 3. Apply Mitigations and Proxy
         try {
             auto j = diffusion_desk::json::parse(modified_body);
-            j["clip_on_cpu"] = arb.request_clip_offload;
-            j["vae_tiling"] = arb.request_vae_tiling;
+            const bool request_had_clip_on_cpu = j.contains("clip_on_cpu");
+            const bool request_had_vae_tiling = j.contains("vae_tiling");
+            const bool ideogram_clip_on_cpu_before_preferences =
+                ideogram4_request && request_had_clip_on_cpu && j.value("clip_on_cpu", false);
+            const bool ideogram_vae_tiling_before_preferences =
+                ideogram4_request && request_had_vae_tiling && j.value("vae_tiling", false);
+
+            if (arb.request_clip_offload && !ideogram4_request) j["clip_on_cpu"] = true;
+            if (arb.request_vae_tiling && !ideogram4_request) j["vae_tiling"] = true;
 
             // Apply Preset Overrides
             if (m_db) {
                 auto meta = m_db->get_model_metadata(requested_model_id);
-                if (meta.contains("memory")) {
+                if (meta.contains("memory") && !ideogram4_request) {
                     auto mem = meta["memory"];
                     if (mem.value("force_clip_cpu", false)) j["clip_on_cpu"] = true;
                     if (mem.value("force_vae_tiling", false)) j["vae_tiling"] = true;
@@ -716,6 +756,11 @@ void ServiceController::register_routes(httplib::Server& svr) {
                         }
                     }
                 }
+            }
+
+            if (ideogram4_request) {
+                if (!ideogram_clip_on_cpu_before_preferences) j.erase("clip_on_cpu");
+                if (!ideogram_vae_tiling_before_preferences) j.erase("vae_tiling");
             }
             
             modified_body = j.dump();

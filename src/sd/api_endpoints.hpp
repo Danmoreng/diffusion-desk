@@ -22,6 +22,7 @@ struct ServerContext {
     std::string active_llm_model_path;
     bool active_llm_model_loaded = false;
     bool was_using_loras = false; // Workaround for stable-diffusion.cpp LoRA persistence bug
+    bool sd_ctx_vae_decode_only = true;
     
     // B2.5: Idle timeout tracking
     std::chrono::steady_clock::time_point last_access = std::chrono::steady_clock::now();
