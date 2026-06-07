@@ -90,8 +90,93 @@ bool generation_needs_vae_encode(const diffusion_desk::json& request, const SDGe
     return false;
 }
 
+bool context_is_ideogram4(const SDContextParams& params) {
+    for (const std::string& path : {
+        params.model_path,
+        params.diffusion_model_path,
+        params.uncond_diffusion_model_path,
+        params.llm_path,
+    }) {
+        if (lowercase_copy(path).find("ideogram4") != std::string::npos) {
+            return true;
+        }
+    }
+    return false;
+}
+
+void apply_ideogram_streaming_safety(SDContextParams& params) {
+    if (!context_is_ideogram4(params)) return;
+
+    if (params.stream_layers || params.max_vram != 0.0f) {
+        DD_LOG_WARN("Ideogram4 graph-cut streaming is currently unstable; disabling stream_layers and max_vram");
+        params.stream_layers = false;
+        params.max_vram = 0.0f;
+    }
+
+    if (params.diffusion_flash_attn) {
+        DD_LOG_WARN("Disabling diffusion flash attention for Ideogram4 placement stability");
+        params.diffusion_flash_attn = false;
+    }
+    if (params.offload_params_to_cpu && !params.vae_on_cpu) {
+        DD_LOG_WARN("Ideogram4 with CPU-offloaded params requires CPU VAE decode to avoid tensor layout crashes");
+        params.vae_on_cpu = true;
+    }
+}
+
+bool ideogram_streaming_safety_reload_needed(const SDContextParams& params) {
+    return context_is_ideogram4(params) &&
+           (params.stream_layers ||
+            params.max_vram != 0.0f ||
+            params.diffusion_flash_attn ||
+            (params.offload_params_to_cpu && !params.vae_on_cpu));
+}
+
 sd_ctx_params_t make_sd_ctx_params(SDContextParams& params, bool vae_decode_only) {
+    apply_ideogram_streaming_safety(params);
     return params.to_sd_ctx_params_t(vae_decode_only, false, false);
+}
+
+bool prompt_looks_like_json_object(const diffusion_desk::json& body) {
+    if (!body.contains("prompt") || !body["prompt"].is_string()) {
+        return false;
+    }
+
+    std::string prompt = body["prompt"].get<std::string>();
+    const auto first = prompt.find_first_not_of(" \t\r\n");
+    if (first == std::string::npos || prompt[first] != '{') {
+        return false;
+    }
+
+    try {
+        return diffusion_desk::json::parse(prompt).is_object();
+    } catch (...) {
+        return false;
+    }
+}
+
+void strip_generation_placement_fields(diffusion_desk::json& body) {
+    for (const char* key : {
+        "clip_on_cpu",
+        "vae_on_cpu",
+        "vae_tiling",
+        "offload_to_cpu",
+        "offload_params_to_cpu",
+        "stream_layers",
+        "max_vram",
+        "max_vram_gb",
+        "flash_attn",
+        "diffusion_flash_attn",
+    }) {
+        body.erase(key);
+    }
+}
+
+std::string sanitize_generation_job_body_for_context(const diffusion_desk::json& parsed_body, const ServerContext& ctx) {
+    diffusion_desk::json body = parsed_body;
+    if (context_is_ideogram4(ctx.ctx_params)) {
+        strip_generation_placement_fields(body);
+    }
+    return body.dump();
 }
 
 float infer_pid_upscale_factor(const std::string& model_path) {
@@ -269,7 +354,9 @@ void execute_generation_job(const std::shared_ptr<GenerationJob>& job, ServerCon
     httplib::Response generation_res;
 
     try {
+        DD_LOG_INFO("Executing generation job %s: body_bytes=%zu", job->id.c_str(), job->request_body.size());
         handle_generate_image(generation_req, generation_res, ctx);
+        DD_LOG_INFO("Generation job %s returned HTTP %d", job->id.c_str(), generation_res.status);
     } catch (const std::exception& e) {
         generation_res.status = 500;
         generation_res.set_content(make_error_json("server_error", e.what()), "application/json");
@@ -497,13 +584,21 @@ void handle_stream_progress(const httplib::Request& req, httplib::Response& res)
 }
 
 void handle_submit_generation_job(const httplib::Request& req, httplib::Response& res, ServerContext& ctx) {
+    diffusion_desk::json body;
     try {
-        diffusion_desk::json::parse(req.body);
+        body = diffusion_desk::json::parse(req.body);
     } catch (const std::exception& e) {
         res.status = 400;
         res.set_content(make_error_json("invalid_json", e.what()), "application/json");
         return;
     }
+
+    const bool ideogram4_context = context_is_ideogram4(ctx.ctx_params);
+    const bool structured_prompt = prompt_looks_like_json_object(body);
+    const size_t prompt_bytes = body.contains("prompt") && body["prompt"].is_string()
+        ? body["prompt"].get<std::string>().size()
+        : 0;
+    std::string request_body = sanitize_generation_job_body_for_context(body, ctx);
 
     std::shared_ptr<GenerationJob> job = std::make_shared<GenerationJob>();
     diffusion_desk::json out;
@@ -518,10 +613,15 @@ void handle_submit_generation_job(const httplib::Request& req, httplib::Response
 
         ensure_generation_job_worker_started(ctx);
         job->id = make_generation_job_id_locked();
-        job->request_body = req.body;
+        job->request_body = request_body;
         g_generation_jobs.jobs[job->id] = job;
         g_generation_jobs.queue.push_back(job->id);
         append_generation_job_event_locked(*job, "queued", make_generation_job_json_locked(*job));
+        DD_LOG_INFO("Queued generation job %s: ideogram4=%s, structured_json_prompt=%s, prompt_bytes=%zu",
+                    job->id.c_str(),
+                    ideogram4_context ? "true" : "false",
+                    structured_prompt ? "true" : "false",
+                    prompt_bytes);
 
         out["id"] = job->id;
         out["status"] = generation_job_status_name(job->status);
@@ -1217,6 +1317,17 @@ void handle_generate_image(const httplib::Request& req, httplib::Response& res, 
         }
 
         diffusion_desk::json j             = diffusion_desk::json::parse(req.body);
+        const bool ideogram4_context = context_is_ideogram4(ctx.ctx_params);
+        if (ideogram4_context) {
+            strip_generation_placement_fields(j);
+        }
+        DD_LOG_INFO("Generation context: ideogram4=%s, stream_layers=%s, max_vram=%.2f, offload_params_to_cpu=%s, vae_on_cpu=%s, diffusion_flash_attn=%s",
+                    ideogram4_context ? "true" : "false",
+                    ctx.ctx_params.stream_layers ? "true" : "false",
+                    ctx.ctx_params.max_vram,
+                    ctx.ctx_params.offload_params_to_cpu ? "true" : "false",
+                    ctx.ctx_params.vae_on_cpu ? "true" : "false",
+                    ctx.ctx_params.diffusion_flash_attn ? "true" : "false");
         std::string prompt        = j.value("prompt", "");
         int n                     = std::max(1, (int)j.value("n", 1));
         std::string size          = j.value("size", "");
@@ -1270,7 +1381,8 @@ void handle_generate_image(const httplib::Request& req, httplib::Response& res, 
         gen_params.height             = height;
         gen_params.batch_count        = n;
 
-        if (!gen_params.from_json_str(req.body)) {
+        const std::string sanitized_body = j.dump();
+        if (!gen_params.from_json_str(sanitized_body)) {
             res.status = 400;
             res.set_content(make_error_json("invalid_request", "invalid params"), "application/json");
             return;
@@ -1292,10 +1404,28 @@ void handle_generate_image(const httplib::Request& req, httplib::Response& res, 
             ctx.sd_ctx_vae_decode_only = request_vae_decode_only;
         }
 
+        const bool reload_ideogram4_context =
+            ideogram4_context &&
+            (ctx.ctx_params.offload_params_to_cpu || ideogram_streaming_safety_reload_needed(ctx.ctx_params));
+        if (ctx.sd_ctx && reload_ideogram4_context) {
+            DD_LOG_INFO("Reloading Ideogram4 context before generation to reset CPU-offloaded runtime backend state...");
+            std::lock_guard<std::mutex> lock(ctx.sd_ctx_mutex);
+            ctx.sd_ctx.reset();
+            sd_ctx_params_t sd_ctx_p = make_sd_ctx_params(ctx.ctx_params, ctx.sd_ctx_vae_decode_only);
+            ctx.sd_ctx.reset(new_sd_ctx(&sd_ctx_p));
+            if (!ctx.sd_ctx) {
+                res.status = 500;
+                res.set_content(make_error_json("model_reload_failed", "failed to reload Ideogram4 context before generation"), "application/json");
+                return;
+            }
+        }
+
         // B2.5: Dynamic Text Encoder Offloading
         // Omitted placement fields mean "keep the loaded context". The desktop app
         // loads presets separately, then sends lean generation payloads.
-        bool request_clip_on_cpu = j.value("clip_on_cpu", ctx.ctx_params.clip_on_cpu);
+        bool request_clip_on_cpu = ideogram4_context
+            ? ctx.ctx_params.clip_on_cpu
+            : j.value("clip_on_cpu", ctx.ctx_params.clip_on_cpu);
         if (request_clip_on_cpu != ctx.ctx_params.clip_on_cpu) {
             DD_LOG_INFO("Switching CLIP to %s for this generation...", request_clip_on_cpu ? "CPU" : "GPU");
             std::lock_guard<std::mutex> lock(ctx.sd_ctx_mutex);
@@ -1313,17 +1443,20 @@ void handle_generate_image(const httplib::Request& req, httplib::Response& res, 
         gen_params.clip_on_cpu = request_clip_on_cpu;
 
         // B2.6: Dynamic VAE Offloading (Force CPU/FP32 for high res to prevent NaNs)
-        bool request_vae_on_cpu = j.value("vae_on_cpu", ctx.ctx_params.vae_on_cpu);
+        bool request_vae_on_cpu = ideogram4_context
+            ? ctx.ctx_params.vae_on_cpu
+            : j.value("vae_on_cpu", ctx.ctx_params.vae_on_cpu);
         float mp_check = (float)(gen_params.width * gen_params.height) / (1024.0f * 1024.0f);
-        if (mp_check >= 3.0f && !request_vae_on_cpu) {
+        if (!ideogram4_context && mp_check >= 3.0f && !request_vae_on_cpu) {
              DD_LOG_INFO("High resolution detected (%.2f MP). Forcing VAE to CPU to avoid NaN/static artifacts.", mp_check);
              request_vae_on_cpu = true;
         }
 
         // B2.7: Dynamic Model Weight Offloading (Crucial for ultra-high res)
-        bool request_offload = j.value("offload_params_to_cpu",
-                               j.value("offload_to_cpu", ctx.ctx_params.offload_params_to_cpu));
-        if (mp_check >= 4.0f && !request_offload) {
+        bool request_offload = ideogram4_context
+            ? ctx.ctx_params.offload_params_to_cpu
+            : j.value("offload_params_to_cpu", j.value("offload_to_cpu", ctx.ctx_params.offload_params_to_cpu));
+        if (!ideogram4_context && mp_check >= 4.0f && !request_offload) {
              DD_LOG_INFO("Ultra-high resolution detected (%.2f MP). Enabling model weight offloading to prevent OOM.", mp_check);
              request_offload = true;
         }

@@ -9,6 +9,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import java.io.File
+import java.io.FileOutputStream
+import java.time.Instant
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -23,6 +25,7 @@ data class BackendUiState(
     val status: BackendStatus = BackendStatus.Stopped,
     val baseUrl: String = "http://127.0.0.1:1234",
     val executablePath: String = "",
+    val logPath: String = "",
     val message: String = "Image worker not started.",
     val lastLogLine: String = "",
 )
@@ -61,10 +64,12 @@ class BackendManager(
 
         val executable = resolveServerExecutable(settings.repoRoot)
             ?: return Result.failure(IllegalStateException("Could not find diffusion_desk_sd_worker under ${settings.repoRoot}\\build"))
+        val logFile = File(settings.repoRoot, "temp/compose-sd-worker.log")
 
         _state.value = _state.value.copy(
             status = BackendStatus.Starting,
             executablePath = executable.absolutePath,
+            logPath = logFile.absolutePath,
             baseUrl = baseUrl,
             message = "Starting image worker...",
         )
@@ -92,7 +97,7 @@ class BackendManager(
             }
 
             process = newProcess
-            watchLogs(newProcess)
+            watchLogs(newProcess, logFile)
 
             var ready = false
             repeat(60) { attempt ->
@@ -169,12 +174,22 @@ class BackendManager(
         }
     }
 
-    private fun watchLogs(process: Process) {
+    private fun watchLogs(process: Process, logFile: File) {
         logJob?.cancel()
         logJob = scope.launch(Dispatchers.IO) {
-            process.inputStream.bufferedReader().useLines { lines ->
-                lines.forEach { line ->
-                    _state.value = _state.value.copy(lastLogLine = line)
+            logFile.parentFile?.mkdirs()
+            FileOutputStream(logFile, true).bufferedWriter().use { writer ->
+                writer.newLine()
+                writer.write("=== image worker start ${Instant.now()} ===")
+                writer.newLine()
+                writer.flush()
+                process.inputStream.bufferedReader().useLines { lines ->
+                    lines.forEach { line ->
+                        writer.write(line)
+                        writer.newLine()
+                        writer.flush()
+                        _state.value = _state.value.copy(lastLogLine = line)
+                    }
                 }
             }
         }
