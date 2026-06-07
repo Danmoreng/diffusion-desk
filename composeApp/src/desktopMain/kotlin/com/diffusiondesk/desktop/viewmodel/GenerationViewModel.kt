@@ -25,6 +25,15 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.ExperimentalSerializationApi
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import java.util.UUID
 import kotlin.math.roundToInt
 
@@ -88,6 +97,210 @@ data class GenerationProgressStage(
     val isComplete: Boolean,
 )
 
+private data class ProgressTiming(
+    val elapsedSeconds: Double,
+    val etaSeconds: Int,
+)
+
+enum class IdeogramQualityPreset(
+    val label: String,
+    val steps: String,
+    val cfgScale: String,
+    val sampler: String,
+) {
+    Turbo("Turbo 12", "12", "7.0", "euler"),
+    Default("Default 20", "20", "7.0", "euler"),
+    Quality("Quality 48", "48", "7.0", "euler"),
+}
+
+enum class IdeogramStructureTab {
+    Json,
+    Preview,
+}
+
+data class IdeogramPanelState(
+    val parametersCollapsed: Boolean = false,
+    val structureCollapsed: Boolean = false,
+    val outputCollapsed: Boolean = false,
+)
+
+data class IdeogramElementPreview(
+    val type: String,
+    val text: String,
+    val desc: String,
+    val bbox: List<Int> = emptyList(),
+    val colors: List<String> = emptyList(),
+)
+
+data class IdeogramUiState(
+    val rawPrompt: String = "Cinematic macro photography of a single ripe, juicy strawberry with glossy red skin and a handwritten-style caption in bold white letters at the bottom that reads EAT ME.",
+    val jsonPrompt: String = defaultIdeogramJsonPrompt(),
+    val selectedTab: IdeogramStructureTab = IdeogramStructureTab.Json,
+    val qualityPreset: IdeogramQualityPreset = IdeogramQualityPreset.Default,
+    val panels: IdeogramPanelState = IdeogramPanelState(),
+    val isGeneratingJson: Boolean = false,
+    val jsonStatus: String = "JSON ready.",
+    val jsonError: String? = null,
+) {
+    val isJsonValid: Boolean get() = jsonError == null
+}
+
+private val ideogramJson = Json {
+    ignoreUnknownKeys = true
+    isLenient = false
+}
+
+@OptIn(ExperimentalSerializationApi::class)
+private val ideogramJsonPretty = Json {
+    prettyPrint = true
+    prettyPrintIndent = "  "
+}
+
+private fun defaultIdeogramJsonPrompt(): String = """
+{
+  "high_level_description": "A cinematic macro photograph of a single ripe strawberry with glossy red skin and a clear handwritten-style caption that reads EAT ME.",
+  "style_description": {
+    "aesthetics": "warm, appetizing, premium editorial food photography",
+    "lighting": "soft golden-hour light, gentle highlights, shallow shadows",
+    "photo": "macro photography, shallow depth of field, crisp subject detail",
+    "medium": "photograph",
+    "color_palette": ["#B91C1C", "#F43F5E", "#F8FAFC", "#FBBF24", "#1F2937"]
+  },
+  "compositional_deconstruction": {
+    "background": "A soft-focus warm kitchen or studio background with subtle bokeh and no distracting details.",
+    "elements": [
+      {
+        "type": "obj",
+        "bbox": [140, 210, 810, 800],
+        "desc": "A single ripe strawberry centered in the frame, glossy red skin, fresh green leaves, appealing macro detail."
+      },
+      {
+        "type": "text",
+        "bbox": [790, 240, 930, 760],
+        "text": "EAT ME",
+        "desc": "Bold white handwritten-style caption along the bottom, horizontal and clearly readable."
+      }
+    ]
+  }
+}
+""".trimIndent()
+
+private fun validateIdeogramJson(value: String): Pair<String, String?> {
+    val root = runCatching { ideogramJson.parseToJsonElement(value).jsonObject }
+        .getOrElse { return "Invalid JSON." to (it.message ?: "Invalid JSON.") }
+
+    val composition = root["compositional_deconstruction"]?.jsonObjectOrNull()
+        ?: return "Missing composition." to "compositional_deconstruction is required."
+    composition["background"]?.jsonPrimitiveOrNull()?.content?.takeIf { it.isNotBlank() }
+        ?: return "Missing background." to "compositional_deconstruction.background is required."
+    val elements = composition["elements"]?.jsonArrayOrNull()
+        ?: return "Missing elements." to "compositional_deconstruction.elements is required."
+    if (elements.isEmpty()) {
+        return "No elements." to "Add at least one obj or text element."
+    }
+
+    root["style_description"]?.jsonObjectOrNull()?.let { style ->
+        val hasPhoto = style.containsKey("photo")
+        val hasArtStyle = style.containsKey("art_style")
+        if (hasPhoto == hasArtStyle) {
+            return "Style mode issue." to "style_description must contain exactly one of photo or art_style."
+        }
+        val required = listOf("aesthetics", "lighting", "medium")
+        required.forEach { key ->
+            if (style[key]?.jsonPrimitiveOrNull()?.content?.isNotBlank() != true) {
+                return "Missing style field." to "style_description.$key is required."
+            }
+        }
+        style["color_palette"]?.let { palette ->
+            val error = validatePalette(palette, maxColors = 16, label = "style_description.color_palette")
+            if (error != null) return "Palette issue." to error
+        }
+    }
+
+    elements.forEachIndexed { index, element ->
+        val obj = element.jsonObjectOrNull()
+            ?: return "Element issue." to "Element ${index + 1} must be an object."
+        val type = obj["type"]?.jsonPrimitiveOrNull()?.content
+            ?: return "Element issue." to "Element ${index + 1} is missing type."
+        if (type !in setOf("obj", "text")) {
+            return "Element issue." to "Element ${index + 1} type must be obj or text."
+        }
+        if (type == "text" && obj["text"]?.jsonPrimitiveOrNull()?.content?.isNotBlank() != true) {
+            return "Text issue." to "Text element ${index + 1} must include literal text."
+        }
+        if (obj["desc"]?.jsonPrimitiveOrNull()?.content?.isNotBlank() != true) {
+            return "Element issue." to "Element ${index + 1} is missing desc."
+        }
+        obj["bbox"]?.let { bbox ->
+            val arr = bbox.jsonArrayOrNull()
+                ?: return "Bbox issue." to "Element ${index + 1} bbox must be an array."
+            if (arr.size != 4) {
+                return "Bbox issue." to "Element ${index + 1} bbox must have four values."
+            }
+            val values = arr.mapNotNull { it.jsonPrimitiveOrNull()?.content?.toIntOrNull() }
+            if (values.size != 4 || values.any { it !in 0..1000 }) {
+                return "Bbox issue." to "Element ${index + 1} bbox values must be integers from 0 to 1000."
+            }
+            if (values[0] >= values[2] || values[1] >= values[3]) {
+                return "Bbox issue." to "Element ${index + 1} bbox must be [y_min, x_min, y_max, x_max]."
+            }
+        }
+        obj["color_palette"]?.let { palette ->
+            val error = validatePalette(palette, maxColors = 5, label = "element ${index + 1} color_palette")
+            if (error != null) return "Palette issue." to error
+        }
+    }
+
+    return "Valid Ideogram JSON (${elements.size} element${if (elements.size == 1) "" else "s"})." to null
+}
+
+internal fun ideogramElementPreviews(value: String): List<IdeogramElementPreview> {
+    val root = runCatching { ideogramJson.parseToJsonElement(value).jsonObject }.getOrNull() ?: return emptyList()
+    val elements = root["compositional_deconstruction"]
+        ?.jsonObjectOrNull()
+        ?.get("elements")
+        ?.jsonArrayOrNull()
+        ?: return emptyList()
+    return elements.mapNotNull { element ->
+        val obj = element.jsonObjectOrNull() ?: return@mapNotNull null
+        IdeogramElementPreview(
+            type = obj["type"]?.jsonPrimitiveOrNull()?.content.orEmpty(),
+            text = obj["text"]?.jsonPrimitiveOrNull()?.content.orEmpty(),
+            desc = obj["desc"]?.jsonPrimitiveOrNull()?.content.orEmpty(),
+            bbox = obj["bbox"]?.jsonArrayOrNull()?.mapNotNull { it.jsonPrimitiveOrNull()?.content?.toIntOrNull() } ?: emptyList(),
+            colors = obj["color_palette"]?.jsonArrayOrNull()?.mapNotNull { it.jsonPrimitiveOrNull()?.content } ?: emptyList(),
+        )
+    }
+}
+
+private fun validatePalette(element: JsonElement, maxColors: Int, label: String): String? {
+    val values = element.jsonArrayOrNull()
+        ?: return "$label must be an array."
+    if (values.size > maxColors) {
+        return "$label can contain at most $maxColors colors."
+    }
+    val hex = Regex("^#[0-9A-F]{6}$")
+    values.forEach { color ->
+        val text = color.jsonPrimitiveOrNull()?.content ?: return "$label must contain only strings."
+        if (!hex.matches(text)) return "$label color $text must use uppercase #RRGGBB."
+    }
+    return null
+}
+
+private fun extractJsonObject(value: String): String? {
+    val trimmed = value.trim()
+    if (trimmed.startsWith("{") && trimmed.endsWith("}")) return trimmed
+    val fenced = Regex("```(?:json)?\\s*(\\{[\\s\\S]*?})\\s*```").find(trimmed)?.groupValues?.getOrNull(1)
+    if (fenced != null) return fenced
+    val start = trimmed.indexOf('{')
+    val end = trimmed.lastIndexOf('}')
+    return if (start >= 0 && end > start) trimmed.substring(start, end + 1) else null
+}
+
+private fun JsonElement.jsonObjectOrNull(): JsonObject? = this as? JsonObject
+private fun JsonElement.jsonArrayOrNull(): JsonArray? = this as? JsonArray
+private fun JsonElement.jsonPrimitiveOrNull(): JsonPrimitive? = this as? JsonPrimitive
+
 data class GenerationUiState(
     val selectedPresetId: String = "",
     val loadedPresetId: String = "",
@@ -123,6 +336,7 @@ data class GenerationUiState(
     val historyIndex: Int = -1,
     val isEndless: Boolean = false,
     val isEnhancingPrompt: Boolean = false,
+    val ideogram: IdeogramUiState = IdeogramUiState(),
     val message: String = "",
     val error: String? = null,
 ) {
@@ -155,6 +369,7 @@ class GenerationViewModel(
     private var lastProgressPhase = ""
     private var lastProgressStageKey = ""
     private var currentStageStartStep = 0
+    private var currentEtaPhaseStartStep = 0
     private var autoTaggingJob: Job? = null
     private var pendingAutoTagImageCount = 0
     private val recentStepTimes = ArrayDeque<Double>()
@@ -257,6 +472,132 @@ class GenerationViewModel(
     fun updateSampler(value: String) = update { copy(sampler = value) }
     fun updateLeftPanelWidth(value: Int) = update { copy(leftPanelWidthDp = value.coerceIn(MIN_LEFT_PANEL_WIDTH_DP, MAX_LEFT_PANEL_WIDTH_DP)) }
     fun toggleEndless() = update { copy(isEndless = !isEndless) }
+
+    fun updateIdeogramRawPrompt(value: String) = update {
+        copy(ideogram = ideogram.copy(rawPrompt = value))
+    }
+
+    fun updateIdeogramJsonPrompt(value: String) = update {
+        val validation = validateIdeogramJson(value)
+        copy(
+            ideogram = ideogram.copy(
+                jsonPrompt = value,
+                jsonStatus = validation.first,
+                jsonError = validation.second,
+            ),
+        )
+    }
+
+    fun selectIdeogramTab(tab: IdeogramStructureTab) = update {
+        copy(ideogram = ideogram.copy(selectedTab = tab))
+    }
+
+    fun toggleIdeogramParametersPanel() = update {
+        copy(ideogram = ideogram.copy(panels = ideogram.panels.copy(parametersCollapsed = !ideogram.panels.parametersCollapsed)))
+    }
+
+    fun toggleIdeogramStructurePanel() = update {
+        copy(ideogram = ideogram.copy(panels = ideogram.panels.copy(structureCollapsed = !ideogram.panels.structureCollapsed)))
+    }
+
+    fun toggleIdeogramOutputPanel() = update {
+        copy(ideogram = ideogram.copy(panels = ideogram.panels.copy(outputCollapsed = !ideogram.panels.outputCollapsed)))
+    }
+
+    fun applyIdeogramQualityPreset(preset: IdeogramQualityPreset) = update {
+        copy(
+            steps = preset.steps,
+            cfgScale = preset.cfgScale,
+            sampler = resolveSamplerOption(preset.sampler, samplerOptions) ?: preset.sampler,
+            ideogram = ideogram.copy(qualityPreset = preset),
+        )
+    }
+
+    fun formatIdeogramJsonPrompt() = update {
+        val formatted = runCatching {
+            ideogramJsonPretty.encodeToString(JsonElement.serializer(), ideogramJson.parseToJsonElement(ideogram.jsonPrompt))
+        }.getOrNull()
+        if (formatted == null) {
+            copy(ideogram = ideogram.copy(jsonError = "JSON is invalid and cannot be formatted."))
+        } else {
+            val validation = validateIdeogramJson(formatted)
+            copy(
+                ideogram = ideogram.copy(
+                    jsonPrompt = formatted,
+                    jsonStatus = validation.first,
+                    jsonError = validation.second,
+                ),
+            )
+        }
+    }
+
+    fun generateIdeogramJsonPrompt() {
+        scope.launch {
+            val current = _uiState.value
+            val rawPrompt = current.ideogram.rawPrompt.trim()
+            if (rawPrompt.isBlank()) {
+                update { copy(ideogram = ideogram.copy(jsonError = "Raw prompt is required before JSON generation.")) }
+                return@launch
+            }
+
+            val width = current.width.toIntOrNull() ?: 1024
+            val height = current.height.toIntOrNull() ?: 1024
+            update {
+                copy(
+                    ideogram = ideogram.copy(
+                        isGeneratingJson = true,
+                        jsonStatus = "Generating JSON prompt...",
+                        jsonError = null,
+                    ),
+                )
+            }
+
+            val settings = settingsStore.load()
+            val presets = llmPresetStore.load()
+            val roles = llmPresetStore.loadRoles()
+            llmRoleService.generateIdeogramJsonPrompt(settings, presets, roles, rawPrompt, width, height)
+                .onSuccess { response ->
+                    val jsonText = extractJsonObject(response)
+                    val formatted = jsonText?.let {
+                        runCatching {
+                            ideogramJsonPretty.encodeToString(JsonElement.serializer(), ideogramJson.parseToJsonElement(it))
+                        }.getOrNull()
+                    }
+                    if (formatted == null) {
+                        update {
+                            copy(
+                                ideogram = ideogram.copy(
+                                    isGeneratingJson = false,
+                                    jsonError = "LLM response did not contain a valid JSON object.",
+                                ),
+                            )
+                        }
+                    } else {
+                        val validation = validateIdeogramJson(formatted)
+                        update {
+                            copy(
+                                ideogram = ideogram.copy(
+                                    jsonPrompt = formatted,
+                                    isGeneratingJson = false,
+                                    jsonStatus = validation.first,
+                                    jsonError = validation.second,
+                                ),
+                            )
+                        }
+                    }
+                }
+                .onFailure { error ->
+                    update {
+                        copy(
+                            ideogram = ideogram.copy(
+                                isGeneratingJson = false,
+                                jsonError = error.message ?: "Ideogram JSON generation failed.",
+                            ),
+                        )
+                    }
+                }
+        }
+    }
 
     fun randomizeSeed() = update { copy(seed = "-1") }
 
@@ -402,7 +743,12 @@ class GenerationViewModel(
                             error = null,
                         )
                     }
-                    selected?.let { updatePresetId(it.id) }
+                    selected?.let {
+                        updatePresetId(it.id)
+                        if (backendManager.state.value.status == BackendStatus.Ready && _uiState.value.loadedPresetId != it.id) {
+                            loadSelectedPreset()
+                        }
+                    }
                 }
                 .onFailure { error ->
                     update {
@@ -448,56 +794,7 @@ class GenerationViewModel(
 
     fun loadSelectedPreset() {
         scope.launch {
-            if (backendManager.state.value.status != BackendStatus.Ready) {
-                update {
-                    copy(
-                        presetLoadFailed = true,
-                        error = "Image worker is not ready.",
-                    )
-                }
-                return@launch
-            }
-
-            val preset = selectedPresetOrNull()
-            if (preset == null) {
-                update {
-                    copy(
-                        presetLoadFailed = true,
-                        error = "Select an image preset first.",
-                    )
-                }
-                return@launch
-            }
-
-            update {
-                copy(
-                    isLoadingPreset = true,
-                    presetLoadFailed = false,
-                    message = "Loading ${preset.name}...",
-                    error = null,
-                )
-            }
-
-            val result = client.loadPreset(backendManager.state.value.baseUrl, preset)
-            result.onSuccess {
-                update {
-                    copy(
-                        loadedPresetId = preset.id,
-                        isLoadingPreset = false,
-                        presetLoadFailed = false,
-                        message = "Loaded ${preset.name}.",
-                        error = null,
-                    )
-                }
-            }.onFailure { error ->
-                update {
-                    copy(
-                        isLoadingPreset = false,
-                        presetLoadFailed = true,
-                        error = error.message ?: "Failed to load preset.",
-                    )
-                }
-            }
+            ensureSelectedPresetLoaded()
         }
     }
 
@@ -509,34 +806,141 @@ class GenerationViewModel(
                 update { copy(error = "Image worker is not ready.") }
                 return@launch
             }
+            if (!ensureSelectedPresetLoaded()) {
+                return@launch
+            }
 
             val params = runCatching { buildParams() }
                 .onFailure { error -> update { copy(error = error.message ?: "Invalid generation parameters.") } }
                 .getOrNull() ?: return@launch
 
-            val item = GenerationHistoryItem(
-                id = UUID.randomUUID().toString(),
-                status = GenerationStatus.Pending,
-                params = params.copy(saveImage = saveImagesAutomatically),
-            )
+            enqueueGeneration(params.copy(saveImage = saveImagesAutomatically))
+        }
+    }
 
-            var shouldSelectNewItem = false
+    fun generateIdeogram(saveImagesAutomatically: Boolean) {
+        scope.launch {
+            if (backendManager.state.value.status != BackendStatus.Ready) {
+                update { copy(error = "Image worker is not ready.") }
+                return@launch
+            }
+            if (!ensureSelectedPresetLoaded()) {
+                return@launch
+            }
+
+            val jsonPrompt = _uiState.value.ideogram.jsonPrompt.trim()
+            val validation = validateIdeogramJson(jsonPrompt)
+            if (validation.second != null) {
+                update {
+                    copy(
+                        ideogram = ideogram.copy(jsonStatus = validation.first, jsonError = validation.second),
+                        error = validation.second,
+                    )
+                }
+                return@launch
+            }
+
+            val prompt = runCatching {
+                ideogramJson.encodeToString(JsonElement.serializer(), ideogramJson.parseToJsonElement(jsonPrompt))
+            }.getOrElse {
+                update {
+                    copy(
+                        ideogram = ideogram.copy(jsonError = "JSON is invalid."),
+                        error = "JSON is invalid.",
+                    )
+                }
+                return@launch
+            }
+
+            val params = runCatching { buildParams(promptOverride = prompt, negativePromptOverride = "") }
+                .onFailure { error -> update { copy(error = error.message ?: "Invalid generation parameters.") } }
+                .getOrNull() ?: return@launch
+
+            enqueueGeneration(params.copy(saveImage = saveImagesAutomatically))
+        }
+    }
+
+    private suspend fun ensureSelectedPresetLoaded(): Boolean {
+        if (backendManager.state.value.status != BackendStatus.Ready) {
             update {
-                shouldSelectNewItem = historyIndex == -1 || historyIndex == history.lastIndex
-                val nextHistory = history + item
                 copy(
-                    history = nextHistory,
-                    historyIndex = if (shouldSelectNewItem) nextHistory.lastIndex else historyIndex,
-                    message = if (isGenerating) "Queued generation." else "Queued generation.",
+                    presetLoadFailed = true,
+                    error = "Image worker is not ready.",
+                )
+            }
+            return false
+        }
+
+        val preset = selectedPresetOrNull()
+        if (preset == null) {
+            update {
+                copy(
+                    presetLoadFailed = true,
+                    error = "Select an image preset first.",
+                )
+            }
+            return false
+        }
+
+        if (_uiState.value.loadedPresetId == preset.id && !_uiState.value.presetLoadFailed) {
+            return true
+        }
+
+        update {
+            copy(
+                isLoadingPreset = true,
+                presetLoadFailed = false,
+                message = "Loading ${preset.name}...",
+                error = null,
+            )
+        }
+
+        val result = client.loadPreset(backendManager.state.value.baseUrl, preset)
+        result.onSuccess {
+            update {
+                copy(
+                    loadedPresetId = preset.id,
+                    isLoadingPreset = false,
+                    presetLoadFailed = false,
+                    message = "Loaded ${preset.name}.",
                     error = null,
                 )
             }
-            if (shouldSelectNewItem) {
-                seekHistory(_uiState.value.history.lastIndex)
+        }.onFailure { error ->
+            update {
+                copy(
+                    isLoadingPreset = false,
+                    presetLoadFailed = true,
+                    error = error.message ?: "Failed to load preset.",
+                )
             }
-
-            processQueue()
         }
+        return result.isSuccess
+    }
+
+    private fun enqueueGeneration(params: GenerationParams) {
+        val item = GenerationHistoryItem(
+            id = UUID.randomUUID().toString(),
+            status = GenerationStatus.Pending,
+            params = params,
+        )
+
+        var shouldSelectNewItem = false
+        update {
+            shouldSelectNewItem = historyIndex == -1 || historyIndex == history.lastIndex
+            val nextHistory = history + item
+            copy(
+                history = nextHistory,
+                historyIndex = if (shouldSelectNewItem) nextHistory.lastIndex else historyIndex,
+                message = "Queued generation.",
+                error = null,
+            )
+        }
+        if (shouldSelectNewItem) {
+            seekHistory(_uiState.value.history.lastIndex)
+        }
+
+        processQueue()
     }
 
     fun goBack() {
@@ -694,12 +1098,13 @@ class GenerationViewModel(
         }
     }
 
-    private fun buildParams(): GenerationParams {
+    private fun buildParams(promptOverride: String? = null, negativePromptOverride: String? = null): GenerationParams {
         val state = _uiState.value
-        require(state.prompt.isNotBlank()) { "Prompt is required." }
+        val promptValue = promptOverride ?: state.prompt
+        require(promptValue.isNotBlank()) { "Prompt is required." }
         return GenerationParams(
-            prompt = state.prompt,
-            negativePrompt = state.negativePrompt,
+            prompt = promptValue,
+            negativePrompt = negativePromptOverride ?: state.negativePrompt,
             width = state.width.toIntOrNull() ?: error("Width must be numeric."),
             height = state.height.toIntOrNull() ?: error("Height must be numeric."),
             steps = state.steps.toIntOrNull() ?: error("Steps must be numeric."),
@@ -778,12 +1183,12 @@ class GenerationViewModel(
         update {
             val nextPhase = displayProgressPhase(event.phase, progressPhase)
             val nextStages = updateProgressStages(progressStages, nextPhase, event)
-            val eta = estimateProgressEta(event, nextPhase)
+            val timing = estimateProgressTiming(event, nextPhase)
             copy(
                 progressStep = event.step,
                 progressSteps = event.steps,
-                progressTime = event.time,
-                progressEtaSeconds = eta,
+                progressTime = timing.elapsedSeconds,
+                progressEtaSeconds = timing.etaSeconds,
                 progressPhase = nextPhase,
                 progressMessage = displayProgressMessage(event.message),
                 progressStages = nextStages,
@@ -910,15 +1315,25 @@ class GenerationViewModel(
         }
     }
 
-    private fun estimateProgressEta(event: GenerationJobEvent.Progress, phase: String): Int {
+    private fun estimateProgressTiming(event: GenerationJobEvent.Progress, phase: String): ProgressTiming {
         val phaseChanged = phase != lastProgressPhase
         if (phaseChanged) {
             recentStepTimes.clear()
             lastProgressPhase = phase
+            currentEtaPhaseStartStep = (event.step - 1).coerceAtLeast(0)
+            lastProgressStep = currentEtaPhaseStartStep
+            lastProgressTime = 0.0
+        }
+
+        val phaseStep = (event.step - currentEtaPhaseStartStep).coerceAtLeast(0)
+        val cumulativePhaseTime = if (event.time > 0.0 && phaseStep > 0) {
+            event.time * phaseStep
+        } else {
+            lastProgressTime
         }
 
         if (event.step > lastProgressStep) {
-            val deltaTime = event.time - lastProgressTime
+            val deltaTime = cumulativePhaseTime - lastProgressTime
             val deltaSteps = event.step - lastProgressStep
             val secondsPerStep = deltaTime / deltaSteps
             if (secondsPerStep > 0.0 && secondsPerStep.isFinite()) {
@@ -927,25 +1342,32 @@ class GenerationViewModel(
                     recentStepTimes.removeFirst()
                 }
             }
-            lastProgressTime = event.time
+            lastProgressTime = cumulativePhaseTime
             lastProgressStep = event.step
-        } else if (event.step < lastProgressStep || event.time < lastProgressTime) {
+        } else if (event.step < lastProgressStep || cumulativePhaseTime < lastProgressTime) {
             recentStepTimes.clear()
-            lastProgressTime = event.time
+            currentEtaPhaseStartStep = (event.step - 1).coerceAtLeast(0)
+            lastProgressTime = 0.0
             lastProgressStep = event.step
         }
 
         if (event.steps <= 0 || event.step <= 0) {
-            return 0
+            return ProgressTiming(elapsedSeconds = cumulativePhaseTime.coerceAtLeast(0.0), etaSeconds = 0)
         }
 
         val secondsPerStep = if (recentStepTimes.isNotEmpty()) {
             recentStepTimes.average()
+        } else if (event.time > 0.0) {
+            event.time
         } else {
-            event.time / event.step
+            cumulativePhaseTime / phaseStep.coerceAtLeast(1)
         }
         val remainingSteps = (event.steps - event.step).coerceAtLeast(0)
-        return (secondsPerStep * remainingSteps).roundToInt().coerceAtLeast(0)
+        val etaSeconds = (secondsPerStep * remainingSteps).roundToInt().coerceAtLeast(0)
+        return ProgressTiming(
+            elapsedSeconds = cumulativePhaseTime.coerceAtLeast(0.0),
+            etaSeconds = etaSeconds,
+        )
     }
 
     private fun resetProgressEstimator() {
@@ -954,6 +1376,7 @@ class GenerationViewModel(
         lastProgressPhase = ""
         lastProgressStageKey = ""
         currentStageStartStep = 0
+        currentEtaPhaseStartStep = 0
         recentStepTimes.clear()
     }
 

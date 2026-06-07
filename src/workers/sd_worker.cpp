@@ -21,7 +21,7 @@ int run_sd_worker(SDSvrParams& svr_params, SDContextParams& ctx_params, SDGenera
     //     load_model_config(ctx_params, ctx_params.diffusion_model_path, svr_params.model_dir);
     // }
 
-    sd_ctx_params_t sd_ctx_params_raw = ctx_params.to_sd_ctx_params_t(false, false, false);
+    sd_ctx_params_t sd_ctx_params_raw = ctx_params.to_sd_ctx_params_t(true, false, false);
     SdCtxPtr sd_ctx;
     UpscalerCtxPtr upscaler_ctx;
     std::string current_upscale_model_path;

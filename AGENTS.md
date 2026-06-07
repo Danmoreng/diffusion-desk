@@ -5,8 +5,8 @@ This file applies to the repository root at `C:\StableDiffusion\diffusion-desk`.
 More specific `AGENTS.md` files inside subdirectories take precedence for their subtree.
 
 ## Architecture
-- `composeApp/`: Kotlin Multiplatform Compose desktop shell.
-- `webui/`: Vue 3 + TypeScript frontend built with Vite.
+- `composeApp/`: Kotlin Multiplatform Compose desktop app. This is the current primary UI path for new frontend work.
+- `webui/`: Legacy/deprecated Vue 3 + TypeScript frontend built with Vite. Do not add new product UI here unless the user explicitly asks for web UI changes.
 - `src/`: Native C++ backend and workers.
 - `libs/`: Git submodules and vendored upstream dependencies.
 - `scripts/`: Primary build, run, and verification scripts.
@@ -15,6 +15,7 @@ More specific `AGENTS.md` files inside subdirectories take precedence for their 
 - Check git state before editing. This repo may have user-owned submodule worktrees with detached `HEAD`s.
 - Do not edit files under `libs/` unless the task explicitly requires changing vendored/upstream code.
 - Treat `config.json`, `*.db`, `*.log`, and generated build outputs as local/runtime artifacts unless the task is specifically about them.
+- For UI work, default to the Kotlin Compose Desktop app in `composeApp/`. Treat `webui/` as legacy/deprecated.
 - Prefer targeted changes over broad refactors. This repository mixes Kotlin, TypeScript, PowerShell, shell scripts, CMake, and C++.
 
 ## Build And Run
@@ -27,8 +28,8 @@ More specific `AGENTS.md` files inside subdirectories take precedence for their 
 ## Validation
 - Prefer the smallest relevant validation for the change.
 - Existing verification scripts live under `scripts/tests/`.
-- For frontend-only work, validate from `webui/`.
-- For desktop-shell work, validate with Gradle tasks scoped to `composeApp`.
+- For Compose desktop UI and shell work, validate with Gradle tasks scoped to `composeApp`.
+- For legacy web UI work, validate from `webui/` only when web UI changes were explicitly requested.
 - For backend/native changes on Windows, use `.\scripts\build.ps1` unless the user explicitly asks for a different build path.
 
 ## Git Notes

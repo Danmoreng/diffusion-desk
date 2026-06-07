@@ -15,7 +15,7 @@ data class ImagePreset(
     val offloadParamsToCpu: Boolean = false,
     val flashAttention: Boolean = false,
     val maxVramGb: Double = 0.0,
-    val streamLayers: Boolean = true,
+    val streamLayers: Boolean = false,
     val defaultWidth: Int = 1024,
     val defaultHeight: Int = 1024,
     val defaultSteps: Int = 4,

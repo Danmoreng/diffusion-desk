@@ -149,6 +149,7 @@ fun GenerateScreen(
                 state = state,
                 backendState = backendState,
                 isTop = true,
+                generateEnabled = backendState.status == BackendStatus.Ready && state.prompt.isNotBlank(),
                 onGenerate = onGenerate,
                 onToggleEndless = onToggleEndless,
                 onPresetSelected = onPresetSelected,
@@ -258,6 +259,7 @@ fun GenerateScreen(
                 state = state,
                 backendState = backendState,
                 isTop = false,
+                generateEnabled = backendState.status == BackendStatus.Ready && state.prompt.isNotBlank(),
                 onGenerate = onGenerate,
                 onToggleEndless = onToggleEndless,
                 onPresetSelected = onPresetSelected,
@@ -436,7 +438,7 @@ private fun GenerationPanel(
 }
 
 @Composable
-private fun PreviewPanel(
+internal fun PreviewPanel(
     state: GenerationUiState,
     outputDir: String,
     modifier: Modifier = Modifier,
@@ -762,10 +764,11 @@ private fun ProgressStageRow(stage: GenerationProgressStage) {
 }
 
 @Composable
-private fun ActionBar(
+internal fun ActionBar(
     state: GenerationUiState,
     backendState: BackendUiState,
     isTop: Boolean,
+    generateEnabled: Boolean,
     onGenerate: () -> Unit,
     onToggleEndless: () -> Unit,
     onPresetSelected: (String) -> Unit,
@@ -799,7 +802,7 @@ private fun ActionBar(
             ) {
                 Button(
                     onClick = onGenerate,
-                    enabled = backendState.status == BackendStatus.Ready && state.prompt.isNotBlank(),
+                    enabled = generateEnabled,
                     modifier = Modifier
                         .height(52.dp)
                         .width(if (compact) 200.dp else 240.dp),

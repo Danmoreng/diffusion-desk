@@ -56,11 +56,47 @@ std::string resolve_model_path(const std::string& path, const std::string& model
     return (fs::path(model_dir) / fp).string();
 }
 
-float infer_pid_upscale_factor(const std::string& model_path) {
-    std::string name = fs::path(model_path).filename().string();
-    std::transform(name.begin(), name.end(), name.begin(), [](unsigned char c) {
+std::string lowercase_copy(std::string value) {
+    std::transform(value.begin(), value.end(), value.begin(), [](unsigned char c) {
         return (char)std::tolower(c);
     });
+    return value;
+}
+
+void sanitize_context_params_for_backend(SDContextParams& params) {
+    if (params.stream_layers && params.max_vram == 0.0f) {
+        DD_LOG_WARN("stream_layers requested without max_vram; disabling stream_layers");
+        params.stream_layers = false;
+    }
+    if (params.stream_layers && !params.offload_params_to_cpu) {
+        DD_LOG_WARN("stream_layers requested without CPU parameter offload; disabling stream_layers");
+        params.stream_layers = false;
+    }
+}
+
+bool generation_needs_vae_encode(const diffusion_desk::json& request, const SDGenerationParams& params) {
+    if (!params.init_image_path.empty() ||
+        !params.end_image_path.empty() ||
+        !params.ref_image_paths.empty() ||
+        !params.control_video_path.empty() ||
+        params.video_frames > 1) {
+        return true;
+    }
+
+    for (const char* key : {"init_image", "image", "end_image", "ref_images"}) {
+        if (request.contains(key) && !request[key].is_null()) return true;
+    }
+
+    return false;
+}
+
+sd_ctx_params_t make_sd_ctx_params(SDContextParams& params, bool vae_decode_only) {
+    return params.to_sd_ctx_params_t(vae_decode_only, false, false);
+}
+
+float infer_pid_upscale_factor(const std::string& model_path) {
+    std::string name = fs::path(model_path).filename().string();
+    name = lowercase_copy(name);
 
     std::regex size_re(R"((\d+)_to_(\d+))");
     std::smatch match;
@@ -845,10 +881,7 @@ void handle_load_model(const httplib::Request& req, httplib::Response& res, Serv
                     } else {
                         ctx.ctx_params.stream_layers = ctx.ctx_params.offload_params_to_cpu && ctx.ctx_params.max_vram != 0.0f;
                     }
-                    if (ctx.ctx_params.stream_layers && ctx.ctx_params.max_vram == 0.0f) {
-                        DD_LOG_WARN("stream_layers requested without max_vram; disabling stream_layers");
-                        ctx.ctx_params.stream_layers = false;
-                    }
+                    sanitize_context_params_for_backend(ctx.ctx_params);
 
                     auto validate_component_path = [&](const char* field_name, const std::string& path) {
                         if (path.empty() || fs::exists(path)) return true;
@@ -865,8 +898,9 @@ void handle_load_model(const httplib::Request& req, httplib::Response& res, Serv
                     if (!validate_component_path("uncond_diffusion_model", ctx.ctx_params.uncond_diffusion_model_path)) return;
             }
 
-            sd_ctx_params_t sd_ctx_p = ctx.ctx_params.to_sd_ctx_params_t(false, false, false);
+            sd_ctx_params_t sd_ctx_p = make_sd_ctx_params(ctx.ctx_params, true);
             ctx.sd_ctx.reset(new_sd_ctx(&sd_ctx_p));
+            ctx.sd_ctx_vae_decode_only = true;
 
             if (!ctx.sd_ctx) {
                 throw std::runtime_error("failed to create new context with selected model");
@@ -923,13 +957,14 @@ void handle_offload_model(httplib::Response& res, ServerContext& ctx) {
         // We reload the current model with offload_params_to_cpu = true
         auto params = ctx.ctx_params;
         params.offload_params_to_cpu = true;
-        
+        sanitize_context_params_for_backend(params);
+
         DD_LOG_INFO("Re-initializing SD context with CPU offloading...");
-        auto sd_params = params.to_sd_ctx_params_t(false, false, false);
+        auto sd_params = make_sd_ctx_params(params, ctx.sd_ctx_vae_decode_only);
         ctx.sd_ctx.reset(new_sd_ctx(&sd_params));
-        
+
         if (ctx.sd_ctx) {
-            ctx.ctx_params.offload_params_to_cpu = true;
+            ctx.ctx_params = params;
             res.set_content(R"({\"status\":\"success\",\"message\":\"Model offloaded to CPU\"})", "application/json");
         } else {
             res.status = 500;
@@ -1241,39 +1276,71 @@ void handle_generate_image(const httplib::Request& req, httplib::Response& res, 
             return;
         }
 
-        // B2.5: Dynamic Text Encoder Offloading
-        if (gen_params.clip_on_cpu != ctx.ctx_params.clip_on_cpu) {
-            DD_LOG_INFO("Switching CLIP to %s for this generation...", gen_params.clip_on_cpu ? "CPU" : "GPU");
+        const bool request_vae_decode_only = !generation_needs_vae_encode(j, gen_params);
+        if (ctx.sd_ctx && request_vae_decode_only != ctx.sd_ctx_vae_decode_only) {
+            DD_LOG_INFO("Switching VAE load mode to %s for this generation...",
+                        request_vae_decode_only ? "decode-only" : "full encode/decode");
             std::lock_guard<std::mutex> lock(ctx.sd_ctx_mutex);
             ctx.sd_ctx.reset();
-            ctx.ctx_params.clip_on_cpu = gen_params.clip_on_cpu;
-            sd_ctx_params_t sd_ctx_p = ctx.ctx_params.to_sd_ctx_params_t(false, false, false);
+            sd_ctx_params_t sd_ctx_p = make_sd_ctx_params(ctx.ctx_params, request_vae_decode_only);
             ctx.sd_ctx.reset(new_sd_ctx(&sd_ctx_p));
+            if (!ctx.sd_ctx) {
+                res.status = 500;
+                res.set_content(make_error_json("model_reload_failed", "failed to reload model after VAE load-mode change"), "application/json");
+                return;
+            }
+            ctx.sd_ctx_vae_decode_only = request_vae_decode_only;
         }
 
+        // B2.5: Dynamic Text Encoder Offloading
+        // Omitted placement fields mean "keep the loaded context". The desktop app
+        // loads presets separately, then sends lean generation payloads.
+        bool request_clip_on_cpu = j.value("clip_on_cpu", ctx.ctx_params.clip_on_cpu);
+        if (request_clip_on_cpu != ctx.ctx_params.clip_on_cpu) {
+            DD_LOG_INFO("Switching CLIP to %s for this generation...", request_clip_on_cpu ? "CPU" : "GPU");
+            std::lock_guard<std::mutex> lock(ctx.sd_ctx_mutex);
+            ctx.sd_ctx.reset();
+            ctx.ctx_params.clip_on_cpu = request_clip_on_cpu;
+            sanitize_context_params_for_backend(ctx.ctx_params);
+            sd_ctx_params_t sd_ctx_p = make_sd_ctx_params(ctx.ctx_params, ctx.sd_ctx_vae_decode_only);
+            ctx.sd_ctx.reset(new_sd_ctx(&sd_ctx_p));
+            if (!ctx.sd_ctx) {
+                res.status = 500;
+                res.set_content(make_error_json("model_reload_failed", "failed to reload model after CLIP placement change"), "application/json");
+                return;
+            }
+        }
+        gen_params.clip_on_cpu = request_clip_on_cpu;
+
         // B2.6: Dynamic VAE Offloading (Force CPU/FP32 for high res to prevent NaNs)
-        bool request_vae_on_cpu = j.value("vae_on_cpu", false);
-        float mp_check = (float)(width * height) / (1024.0f * 1024.0f);
+        bool request_vae_on_cpu = j.value("vae_on_cpu", ctx.ctx_params.vae_on_cpu);
+        float mp_check = (float)(gen_params.width * gen_params.height) / (1024.0f * 1024.0f);
         if (mp_check >= 3.0f && !request_vae_on_cpu) {
              DD_LOG_INFO("High resolution detected (%.2f MP). Forcing VAE to CPU to avoid NaN/static artifacts.", mp_check);
              request_vae_on_cpu = true;
         }
 
         // B2.7: Dynamic Model Weight Offloading (Crucial for ultra-high res)
-        bool request_offload = j.value("offload_to_cpu", false);
+        bool request_offload = j.value("offload_params_to_cpu",
+                               j.value("offload_to_cpu", ctx.ctx_params.offload_params_to_cpu));
         if (mp_check >= 4.0f && !request_offload) {
              DD_LOG_INFO("Ultra-high resolution detected (%.2f MP). Enabling model weight offloading to prevent OOM.", mp_check);
              request_offload = true;
         }
-
         if (request_vae_on_cpu != ctx.ctx_params.vae_on_cpu || request_offload != ctx.ctx_params.offload_params_to_cpu) {
             DD_LOG_INFO("Context update required: VAE on CPU: %s, Offload: %s", request_vae_on_cpu ? "Yes" : "No", request_offload ? "Yes" : "No");
             std::lock_guard<std::mutex> lock(ctx.sd_ctx_mutex);
             ctx.sd_ctx.reset();
             ctx.ctx_params.vae_on_cpu = request_vae_on_cpu;
             ctx.ctx_params.offload_params_to_cpu = request_offload;
-            sd_ctx_params_t sd_ctx_p = ctx.ctx_params.to_sd_ctx_params_t(false, false, false);
+            sanitize_context_params_for_backend(ctx.ctx_params);
+            sd_ctx_params_t sd_ctx_p = make_sd_ctx_params(ctx.ctx_params, ctx.sd_ctx_vae_decode_only);
             ctx.sd_ctx.reset(new_sd_ctx(&sd_ctx_p));
+            if (!ctx.sd_ctx) {
+                res.status = 500;
+                res.set_content(make_error_json("model_reload_failed", "failed to reload model after placement change"), "application/json");
+                return;
+            }
         }
 
         bool save_image = j.value("save_image", false);
@@ -1547,6 +1614,7 @@ void handle_generate_image(const httplib::Request& req, httplib::Response& res, 
                 set_progress_phase("Highres PiD Upscale...");
 
                 SDContextParams base_ctx_params = ctx.ctx_params;
+                const bool base_vae_decode_only = ctx.sd_ctx_vae_decode_only;
                 SDContextParams pid_ctx_params = ctx.ctx_params;
                 pid_ctx_params.model_path = "";
                 pid_ctx_params.diffusion_model_path = gen_params.highres_pid_model;
@@ -1575,8 +1643,9 @@ void handle_generate_image(const httplib::Request& req, httplib::Response& res, 
                 SdCtxPtr pid_ctx(new_sd_ctx(&pid_ctx_raw));
                 if (!pid_ctx) {
                     DD_LOG_ERROR("Failed to create PiD context.");
-                    sd_ctx_params_t base_ctx_raw = base_ctx_params.to_sd_ctx_params_t(false, false, false);
+                    sd_ctx_params_t base_ctx_raw = make_sd_ctx_params(base_ctx_params, base_vae_decode_only);
                     ctx.sd_ctx.reset(new_sd_ctx(&base_ctx_raw));
+                    ctx.sd_ctx_vae_decode_only = base_vae_decode_only;
                     res.status = 500;
                     res.set_content(make_error_json("generation_failed", "Failed to load NVIDIA PiD upscale context."), "application/json");
                     free_sd_images(results, num_results);
@@ -1641,8 +1710,9 @@ void handle_generate_image(const httplib::Request& req, httplib::Response& res, 
                 }
 
                 pid_ctx.reset();
-                sd_ctx_params_t base_ctx_raw = base_ctx_params.to_sd_ctx_params_t(false, false, false);
+                sd_ctx_params_t base_ctx_raw = make_sd_ctx_params(base_ctx_params, base_vae_decode_only);
                 ctx.sd_ctx.reset(new_sd_ctx(&base_ctx_raw));
+                ctx.sd_ctx_vae_decode_only = base_vae_decode_only;
                 if (!ctx.sd_ctx) {
                     DD_LOG_WARN("Failed to restore base SD context after PiD stage. The next request may need to reload the preset.");
                 }
