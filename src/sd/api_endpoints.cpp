@@ -132,7 +132,7 @@ bool ideogram_streaming_safety_reload_needed(const SDContextParams& params) {
 }
 
 sd_ctx_params_t make_sd_ctx_params(SDContextParams& params, bool vae_decode_only) {
-    apply_ideogram_streaming_safety(params);
+    // apply_ideogram_streaming_safety(params);
     return params.to_sd_ctx_params_t(vae_decode_only, false, false);
 }
 
