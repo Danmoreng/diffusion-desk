@@ -104,25 +104,6 @@ bool context_is_ideogram4(const SDContextParams& params) {
     return false;
 }
 
-void apply_ideogram_streaming_safety(SDContextParams& params) {
-    if (!context_is_ideogram4(params)) return;
-
-    if (params.stream_layers || params.max_vram != 0.0f) {
-        DD_LOG_WARN("Ideogram4 graph-cut streaming is currently unstable; disabling stream_layers and max_vram");
-        params.stream_layers = false;
-        params.max_vram = 0.0f;
-    }
-
-    if (params.diffusion_flash_attn) {
-        DD_LOG_WARN("Disabling diffusion flash attention for Ideogram4 placement stability");
-        params.diffusion_flash_attn = false;
-    }
-    if (params.offload_params_to_cpu && !params.vae_on_cpu) {
-        DD_LOG_WARN("Ideogram4 with CPU-offloaded params requires CPU VAE decode to avoid tensor layout crashes");
-        params.vae_on_cpu = true;
-    }
-}
-
 bool ideogram_streaming_safety_reload_needed(const SDContextParams& params) {
     return context_is_ideogram4(params) &&
            (params.stream_layers ||
@@ -132,8 +113,11 @@ bool ideogram_streaming_safety_reload_needed(const SDContextParams& params) {
 }
 
 sd_ctx_params_t make_sd_ctx_params(SDContextParams& params, bool vae_decode_only) {
-    // apply_ideogram_streaming_safety(params);
-    return params.to_sd_ctx_params_t(vae_decode_only, false, false);
+    // Match sd-cli's parameter lifetime for graph-cut streaming. Keeping the
+    // loader-owned parameter buffers alive makes segmented offload retain a
+    // second set of tensor bindings, which can diverge from the cut graph.
+    const bool free_params_immediately = params.stream_layers;
+    return params.to_sd_ctx_params_t(vae_decode_only, free_params_immediately, false);
 }
 
 bool prompt_looks_like_json_object(const diffusion_desk::json& body) {

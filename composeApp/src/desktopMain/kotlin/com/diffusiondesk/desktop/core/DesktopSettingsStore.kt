@@ -17,6 +17,8 @@ class DesktopSettingsStore {
             themeMode = "system",
             actionBarPosition = "bottom",
             saveImagesAutomatically = true,
+            vramBudgetMode = "auto",
+            manualVramBudgetGb = 12.0,
             autostartLlmWorkers = false,
             galleryPreviewWidthDp = 420,
         )
@@ -47,6 +49,12 @@ class DesktopSettingsStore {
                     ?: defaults.actionBarPosition,
                 saveImagesAutomatically = props.getProperty("saveImagesAutomatically", defaults.saveImagesAutomatically.toString()).toBooleanStrictOrNull()
                     ?: defaults.saveImagesAutomatically,
+                vramBudgetMode = props.getProperty("vramBudgetMode", defaults.vramBudgetMode)
+                    .takeIf { it in setOf("auto", "manual") }
+                    ?: defaults.vramBudgetMode,
+                manualVramBudgetGb = props.getProperty("manualVramBudgetGb", defaults.manualVramBudgetGb.toString()).toDoubleOrNull()
+                    ?.coerceIn(1.0, 128.0)
+                    ?: defaults.manualVramBudgetGb,
                 autostartLlmWorkers = props.getProperty("autostartLlmWorkers", defaults.autostartLlmWorkers.toString()).toBooleanStrictOrNull()
                     ?: defaults.autostartLlmWorkers,
                 galleryPreviewWidthDp = props.getProperty("galleryPreviewWidthDp", defaults.galleryPreviewWidthDp.toString()).toIntOrNull()
@@ -70,6 +78,8 @@ class DesktopSettingsStore {
         props.setProperty("themeMode", settings.themeMode)
         props.setProperty("actionBarPosition", settings.actionBarPosition)
         props.setProperty("saveImagesAutomatically", settings.saveImagesAutomatically.toString())
+        props.setProperty("vramBudgetMode", settings.vramBudgetMode)
+        props.setProperty("manualVramBudgetGb", settings.manualVramBudgetGb.toString())
         props.setProperty("autostartLlmWorkers", settings.autostartLlmWorkers.toString())
         props.setProperty("galleryPreviewWidthDp", settings.galleryPreviewWidthDp.toString())
 

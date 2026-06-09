@@ -777,24 +777,6 @@ private fun ImagePresetEditorPage(
 
             EditorSection("Performance & Memory") {
                 ToggleLine(
-                    checked = state.form.clipOnCpu,
-                    onCheckedChange = { onFormChange(state.form.copy(clipOnCpu = it)) },
-                    title = "CLIP on CPU",
-                    subtitle = "Keep text encoders on CPU to reserve GPU memory for the diffusion model.",
-                )
-                ToggleLine(
-                    checked = state.form.vaeOnCpu,
-                    onCheckedChange = { onFormChange(state.form.copy(vaeOnCpu = it)) },
-                    title = "VAE on CPU",
-                    subtitle = "Decode on CPU if VRAM pressure is high.",
-                )
-                ToggleLine(
-                    checked = state.form.offloadParamsToCpu,
-                    onCheckedChange = { onFormChange(state.form.copy(offloadParamsToCpu = it)) },
-                    title = "Offload parameters to CPU",
-                    subtitle = "Let the preset decide CPU/GPU placement instead of global VRAM logic.",
-                )
-                ToggleLine(
                     checked = state.form.flashAttention,
                     onCheckedChange = { onFormChange(state.form.copy(flashAttention = it)) },
                     title = "Flash attention",
@@ -804,8 +786,53 @@ private fun ImagePresetEditorPage(
                     checked = state.form.streamLayers,
                     onCheckedChange = { onFormChange(state.form.copy(streamLayers = it, offloadParamsToCpu = state.form.offloadParamsToCpu || it)) },
                     title = "Stream diffusion layers",
-                    subtitle = "Stream offloaded diffusion layers using the backend's automatic memory budget.",
+                    subtitle = "Stream diffusion layers through CPU memory. Parameter offload is enabled automatically.",
                 )
+                if (state.form.streamLayers) {
+                    DeskDropdownField(
+                        label = "VRAM Budget",
+                        value = if (state.form.useGlobalVramBudget) "Global setting" else "Preset override",
+                        options = listOf("Global setting", "Preset override"),
+                        onValueChange = { selected ->
+                            onFormChange(state.form.copy(useGlobalVramBudget = selected == "Global setting"))
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    if (!state.form.useGlobalVramBudget) {
+                        LabeledField(
+                            label = "Preset VRAM Budget (GiB)",
+                            value = state.form.maxVramGb,
+                            onValueChange = { onFormChange(state.form.copy(maxVramGb = it)) },
+                            placeholder = "12.0",
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
+                }
+                Text(
+                    text = "Advanced CPU fallbacks",
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                ToggleLine(
+                    checked = state.form.clipOnCpu,
+                    onCheckedChange = { onFormChange(state.form.copy(clipOnCpu = it)) },
+                    title = "CLIP on CPU",
+                    subtitle = "Reserve GPU memory when the text encoder does not fit alongside the diffusion model.",
+                )
+                ToggleLine(
+                    checked = state.form.vaeOnCpu,
+                    onCheckedChange = { onFormChange(state.form.copy(vaeOnCpu = it)) },
+                    title = "VAE on CPU",
+                    subtitle = "Fallback for high-resolution VAE decoding or VAE out-of-memory errors.",
+                )
+                if (!state.form.streamLayers) {
+                    ToggleLine(
+                        checked = state.form.offloadParamsToCpu,
+                        onCheckedChange = { onFormChange(state.form.copy(offloadParamsToCpu = it)) },
+                        title = "Offload parameters to CPU",
+                        subtitle = "Keep model parameters in system memory when layer streaming is disabled.",
+                    )
+                }
             }
         }
 

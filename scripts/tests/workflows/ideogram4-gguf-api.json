@@ -1,0 +1,34 @@
+{
+  "1": { "inputs": { "unet_name": "ideogram4-Q4_0.gguf" }, "class_type": "UnetLoaderGGUF", "_meta": { "title": "Conditional Ideogram 4 GGUF" } },
+  "2": { "inputs": { "unet_name": "ideogram4_uncond-Q4_0.gguf" }, "class_type": "UnetLoaderGGUF", "_meta": { "title": "Unconditional Ideogram 4 GGUF" } },
+  "3": { "inputs": { "clip_name": "Qwen3-VL-8B-Instruct-Q4_K_M.gguf", "type": "ideogram4" }, "class_type": "CLIPLoaderGGUF", "_meta": { "title": "Qwen3-VL GGUF" } },
+  "4": { "inputs": { "text": "Ideogram 4 benchmark prompt", "clip": ["3", 0] }, "class_type": "CLIPTextEncode" },
+  "5": { "inputs": { "conditioning": ["4", 0] }, "class_type": "ConditioningZeroOut" },
+  "6": { "inputs": { "width": 864, "height": 1152, "batch_size": 1 }, "class_type": "EmptyFlux2LatentImage" },
+  "7": { "inputs": { "noise_seed": 23805 }, "class_type": "RandomNoise" },
+  "8": { "inputs": { "sampler_name": "euler" }, "class_type": "KSamplerSelect" },
+  "9": { "inputs": { "steps": 20, "width": 864, "height": 1152, "mu": 0.5, "std": 1.75 }, "class_type": "Ideogram4Scheduler" },
+  "10": {
+    "inputs": {
+      "model": ["1", 0],
+      "positive": ["4", 0],
+      "cfg": 7.0,
+      "model_negative": ["2", 0],
+      "negative": ["5", 0]
+    },
+    "class_type": "DualModelGuider"
+  },
+  "11": {
+    "inputs": {
+      "noise": ["7", 0],
+      "guider": ["10", 0],
+      "sampler": ["8", 0],
+      "sigmas": ["9", 0],
+      "latent_image": ["6", 0]
+    },
+    "class_type": "SamplerCustomAdvanced"
+  },
+  "12": { "inputs": { "vae_name": "flux2dev_ae.safetensors" }, "class_type": "VAELoader" },
+  "13": { "inputs": { "samples": ["11", 0], "vae": ["12", 0] }, "class_type": "VAEDecode" },
+  "14": { "inputs": { "images": ["13", 0], "filename_prefix": "ideogram4-benchmark/manual" }, "class_type": "SaveImage" }
+}
