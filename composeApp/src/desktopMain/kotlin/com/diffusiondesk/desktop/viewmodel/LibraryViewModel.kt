@@ -38,6 +38,8 @@ data class ImagePresetForm(
     val vaeOnCpu: Boolean = false,
     val offloadParamsToCpu: Boolean = false,
     val flashAttention: Boolean = false,
+    val useGlobalVramBudget: Boolean = true,
+    val maxVramGb: String = "12.0",
     val streamLayers: Boolean = false,
     val promptMode: ImagePromptMode = ImagePromptMode.Text,
     val defaultWidth: String = "1024",
@@ -315,6 +317,8 @@ class LibraryViewModel(
         vaeOnCpu = vaeOnCpu,
         offloadParamsToCpu = offloadParamsToCpu,
         flashAttention = flashAttention,
+        useGlobalVramBudget = maxVramGb <= 0.0,
+        maxVramGb = maxVramGb.takeIf { it > 0.0 }?.toString() ?: "12.0",
         streamLayers = streamLayers,
         promptMode = promptMode,
         defaultWidth = defaultWidth.toString(),
@@ -353,9 +357,14 @@ class LibraryViewModel(
             llm = llm.trim(),
             clipOnCpu = clipOnCpu,
             vaeOnCpu = vaeOnCpu,
-            offloadParamsToCpu = offloadParamsToCpu,
+            offloadParamsToCpu = offloadParamsToCpu || streamLayers,
             flashAttention = flashAttention,
-            maxVramGb = 0.0,
+            maxVramGb = if (useGlobalVramBudget) {
+                0.0
+            } else {
+                maxVramGb.toDoubleOrNull()?.takeIf { it in 1.0..128.0 }
+                    ?: error("VRAM budget must be between 1 and 128 GiB.")
+            },
             streamLayers = streamLayers,
             promptMode = promptMode,
             defaultWidth = defaultWidth.toIntOrNull()?.coerceIn(64, 4096) ?: error("Width must be numeric."),

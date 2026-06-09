@@ -16,12 +16,16 @@ set(LLAMA_BUILD_TOOLS ON CACHE BOOL "" FORCE)
 set(LLAMA_BUILD_COMMON ON CACHE BOOL "" FORCE)
 set(LLAMA_CURL OFF CACHE BOOL "" FORCE)
 set(GGML_CUDA ON CACHE BOOL "" FORCE)
+# CUDA graph capture assumes a stable compute graph. Stable-diffusion.cpp's
+# segmented layer streaming changes graph cuts as weights move between CPU and
+# GPU, so the shared ggml backend must match the standalone sd-cli build.
+set(GGML_CUDA_GRAPHS OFF CACHE BOOL "" FORCE)
 
 # Stable Diffusion.cpp options
 set(SD_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 set(SD_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 set(SD_BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
-set(SD_BUILD_EXTERNAL_GGML ON CACHE BOOL "" FORCE) # Use llama.cpp's ggml to avoid target collision
+set(SD_BUILD_EXTERNAL_GGML ON CACHE BOOL "" FORCE) # Main build shares llama.cpp's ggml
 set(SD_CUDA ON CACHE BOOL "" FORCE)
 
 # IXWebSocket options
@@ -122,7 +126,7 @@ add_custom_command(TARGET diffusion_desk_server POST_BUILD
 )
 
 # --- SD Worker (diffusion_desk_sd_worker) ---
-add_executable(diffusion_desk_sd_worker
+add_executable(diffusion_desk_sd_worker EXCLUDE_FROM_ALL
     src/main_sd.cpp
     src/workers/sd_worker.cpp
     src/sd/api_endpoints.cpp
@@ -148,7 +152,6 @@ target_include_directories(diffusion_desk_sd_worker PRIVATE
 target_link_libraries(diffusion_desk_sd_worker PRIVATE
     stable-diffusion
     cpp-httplib
-    llama-common # llama.cpp common
 )
 
 if(WIN32)

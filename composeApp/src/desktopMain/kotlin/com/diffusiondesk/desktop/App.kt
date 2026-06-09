@@ -212,6 +212,8 @@ fun App(
                             onThemeModeChange = controller.settingsViewModel::updateThemeMode,
                             onActionBarPositionChange = controller.settingsViewModel::updateActionBarPosition,
                             onSaveImagesAutomaticallyChange = controller.settingsViewModel::updateSaveImagesAutomatically,
+                            onVramBudgetModeChange = controller.settingsViewModel::updateVramBudgetMode,
+                            onManualVramBudgetGbChange = controller.settingsViewModel::updateManualVramBudgetGb,
                             onUseCurrentRepo = controller.settingsViewModel::useCurrentRepo,
                             onSaveLocal = controller.settingsViewModel::saveLocalSettings,
                             onApplyToBackend = controller.settingsViewModel::applySettingsToBackend,

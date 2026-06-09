@@ -23,10 +23,16 @@ Import-VSEnv
 $PSScriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Definition
 $ProjectRoot = Split-Path -Parent $PSScriptRoot
 $BuildDir = Join-Path $ProjectRoot "build"
+$SdWorkerBuildDir = Join-Path $ProjectRoot "build-sd-worker"
+$SdWorkerSourceDir = Join-Path $ProjectRoot "cmake/sd-worker"
 
 if ($Clean -and (Test-Path $BuildDir)) {
     Write-Host "Cleaning build directory..."
     Remove-Item -Path $BuildDir -Recurse -Force
+}
+if ($Clean -and (Test-Path $SdWorkerBuildDir)) {
+    Write-Host "Cleaning standalone SD worker build directory..."
+    Remove-Item -Path $SdWorkerBuildDir -Recurse -Force
 }
 
 # Check for Ninja
@@ -71,6 +77,7 @@ Write-Host "Configuring CMake..."
 cmake $ProjectRoot $Generator `
     -DSD_CUDA=ON `
     -DGGML_CUDA=ON `
+    -DGGML_CUDA_GRAPHS=OFF `
     -DCMAKE_CXX_STANDARD=17 `
     -DCMAKE_BUILD_TYPE=Release `
     -DSD_BUILD_EXTERNAL_GGML=ON
@@ -99,8 +106,18 @@ if ($LASTEXITCODE -ne 0) {
     exit 1
 }
 
-Write-Host "Building SD Worker..."
-cmake --build . --config Release --target diffusion_desk_sd_worker --parallel > build_sd_worker.log 2>&1
+Write-Host "Building standalone SD Worker with stable-diffusion.cpp GGML..."
+cmake -S $SdWorkerSourceDir -B $SdWorkerBuildDir $Generator `
+    -DSD_CUDA=ON `
+    -DGGML_CUDA=ON `
+    -DGGML_CUDA_GRAPHS=OFF `
+    -DCMAKE_CXX_STANDARD=17 `
+    -DCMAKE_BUILD_TYPE=Release
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "SD Worker configure failed!" -ForegroundColor Red
+    exit 1
+}
+cmake --build $SdWorkerBuildDir --config Release --target diffusion_desk_sd_worker --parallel > build_sd_worker.log 2>&1
 if ($LASTEXITCODE -ne 0) {
     Write-Host "SD Worker build failed!" -ForegroundColor Red
     Get-Content build_sd_worker.log -Tail 20

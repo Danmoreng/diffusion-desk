@@ -2,6 +2,7 @@ package com.diffusiondesk.desktop.viewmodel
 
 import com.diffusiondesk.desktop.core.BackendManager
 import com.diffusiondesk.desktop.core.BackendStatus
+import com.diffusiondesk.desktop.core.DesktopSettings
 import com.diffusiondesk.desktop.core.DesktopSettingsStore
 import com.diffusiondesk.desktop.core.DiffusionDeskClient
 import com.diffusiondesk.desktop.core.GalleryRepository
@@ -427,6 +428,7 @@ private fun JsonElement.jsonPrimitiveOrNull(): JsonPrimitive? = this as? JsonPri
 data class GenerationUiState(
     val selectedPresetId: String = "",
     val loadedPresetId: String = "",
+    val loadedPresetConfigKey: String = "",
     val prompt: String = "A cinematic, melancholic photograph of a solitary hooded figure walking through a sprawling, rain-slicked metropolis at night.",
     val promptHistory: List<String> = listOf(prompt),
     val promptHistoryIndex: Int = 0,
@@ -514,6 +516,7 @@ class GenerationViewModel(
                     update {
                         copy(
                             loadedPresetId = "",
+                            loadedPresetConfigKey = "",
                             presetLoadFailed = false,
                             progressStep = 0,
                             progressSteps = 0,
@@ -889,7 +892,7 @@ class GenerationViewModel(
                     }
                     selected?.let {
                         updatePresetId(it.id)
-                        if (backendManager.state.value.status == BackendStatus.Ready && _uiState.value.loadedPresetId != it.id) {
+                        if (backendManager.state.value.status == BackendStatus.Ready) {
                             loadSelectedPreset()
                         }
                     }
@@ -1026,7 +1029,12 @@ class GenerationViewModel(
             return false
         }
 
-        if (_uiState.value.loadedPresetId == preset.id && !_uiState.value.presetLoadFailed) {
+        val settings = settingsStore.load()
+        val presetConfigKey = presetLoadConfigKey(preset, settings)
+        if (_uiState.value.loadedPresetId == preset.id &&
+            _uiState.value.loadedPresetConfigKey == presetConfigKey &&
+            !_uiState.value.presetLoadFailed
+        ) {
             return true
         }
 
@@ -1039,11 +1047,12 @@ class GenerationViewModel(
             )
         }
 
-        val result = client.loadPreset(backendManager.state.value.baseUrl, preset)
+        val result = client.loadPreset(backendManager.state.value.baseUrl, preset, settings)
         result.onSuccess {
             update {
                 copy(
                     loadedPresetId = preset.id,
+                    loadedPresetConfigKey = presetConfigKey,
                     isLoadingPreset = false,
                     presetLoadFailed = false,
                     message = "Loaded ${preset.name}.",
@@ -1060,6 +1069,27 @@ class GenerationViewModel(
             }
         }
         return result.isSuccess
+    }
+
+    private fun presetLoadConfigKey(preset: ImagePreset, settings: DesktopSettings): String {
+        val effectiveVramBudget = preset.maxVramGb.takeIf { it > 0.0 }
+            ?: if (settings.vramBudgetMode == "manual") settings.manualVramBudgetGb else -2.0
+        return listOf(
+            preset.id,
+            preset.diffusionModel,
+            preset.uncondDiffusionModel,
+            preset.vae,
+            preset.clipL,
+            preset.clipG,
+            preset.t5xxl,
+            preset.llm,
+            preset.clipOnCpu,
+            preset.vaeOnCpu,
+            preset.offloadParamsToCpu || preset.streamLayers,
+            preset.flashAttention,
+            preset.streamLayers,
+            effectiveVramBudget,
+        ).joinToString("\u001f")
     }
 
     private fun enqueueGeneration(params: GenerationParams, promptMode: ImagePromptMode) {

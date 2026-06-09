@@ -174,7 +174,7 @@ class DiffusionDeskClient(
         }
     }
 
-    suspend fun loadPreset(baseUrl: String, preset: ImagePreset): Result<Unit> = withContext(Dispatchers.IO) {
+    suspend fun loadPreset(baseUrl: String, preset: ImagePreset, settings: DesktopSettings): Result<Unit> = withContext(Dispatchers.IO) {
         runCatching {
             val payload = buildJsonObject {
                 put("model_id", JsonPrimitive(preset.diffusionModel))
@@ -190,6 +190,9 @@ class DiffusionDeskClient(
                 put("flash_attn", JsonPrimitive(preset.flashAttention))
                 if (preset.streamLayers) {
                     put("stream_layers", JsonPrimitive(true))
+                    val maxVramGb = preset.maxVramGb.takeIf { it > 0.0 }
+                        ?: if (settings.vramBudgetMode == "manual") settings.manualVramBudgetGb else -2.0
+                    put("max_vram_gb", JsonPrimitive(maxVramGb))
                 }
             }
 

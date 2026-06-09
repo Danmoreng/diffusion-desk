@@ -14,6 +14,8 @@ data class DesktopSettings(
     val themeMode: String,
     val actionBarPosition: String,
     val saveImagesAutomatically: Boolean,
+    val vramBudgetMode: String,
+    val manualVramBudgetGb: Double,
     val autostartLlmWorkers: Boolean,
     val galleryPreviewWidthDp: Int,
 )

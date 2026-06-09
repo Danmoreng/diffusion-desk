@@ -17,6 +17,8 @@ void apply_memory_preferences_to_config(const diffusion_desk::json& source, diff
     const auto& mem = source["preferred_params"]["memory"];
     if (mem.value("force_clip_cpu", false)) config["clip_on_cpu"] = true;
     if (mem.value("force_vae_tiling", false)) config["vae_tiling"] = true;
+    if (mem.contains("max_vram_gb")) config["max_vram_gb"] = mem["max_vram_gb"];
+    else if (mem.contains("max_vram")) config["max_vram"] = mem["max_vram"];
     if (mem.contains("stream_layers")) config["stream_layers"] = mem["stream_layers"];
     if (mem.value("stream_layers", false) && !config.contains("offload_to_cpu") && !config.contains("offload_params_to_cpu")) {
         config["offload_params_to_cpu"] = true;

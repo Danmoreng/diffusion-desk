@@ -34,6 +34,8 @@ fun SettingsScreen(
     onThemeModeChange: (String) -> Unit,
     onActionBarPositionChange: (String) -> Unit,
     onSaveImagesAutomaticallyChange: (Boolean) -> Unit,
+    onVramBudgetModeChange: (String) -> Unit,
+    onManualVramBudgetGbChange: (String) -> Unit,
     onUseCurrentRepo: () -> Unit,
     onSaveLocal: () -> Unit,
     onApplyToBackend: () -> Unit,
@@ -60,6 +62,8 @@ fun SettingsScreen(
                         onThemeModeChange = onThemeModeChange,
                         onActionBarPositionChange = onActionBarPositionChange,
                         onSaveImagesAutomaticallyChange = onSaveImagesAutomaticallyChange,
+                        onVramBudgetModeChange = onVramBudgetModeChange,
+                        onManualVramBudgetGbChange = onManualVramBudgetGbChange,
                         onOutputDirChange = onOutputDirChange,
                         onModelDirChange = onModelDirChange,
                         onSaveLocal = onSaveLocal,
@@ -93,6 +97,8 @@ fun SettingsScreen(
                     onThemeModeChange = onThemeModeChange,
                     onActionBarPositionChange = onActionBarPositionChange,
                     onSaveImagesAutomaticallyChange = onSaveImagesAutomaticallyChange,
+                    onVramBudgetModeChange = onVramBudgetModeChange,
+                    onManualVramBudgetGbChange = onManualVramBudgetGbChange,
                     onOutputDirChange = onOutputDirChange,
                     onModelDirChange = onModelDirChange,
                     onSaveLocal = onSaveLocal,
@@ -119,6 +125,8 @@ private fun GeneralSettingsSection(
     onThemeModeChange: (String) -> Unit,
     onActionBarPositionChange: (String) -> Unit,
     onSaveImagesAutomaticallyChange: (Boolean) -> Unit,
+    onVramBudgetModeChange: (String) -> Unit,
+    onManualVramBudgetGbChange: (String) -> Unit,
     onOutputDirChange: (String) -> Unit,
     onModelDirChange: (String) -> Unit,
     onSaveLocal: () -> Unit,
@@ -149,6 +157,26 @@ private fun GeneralSettingsSection(
                 onCheckedChange = onSaveImagesAutomaticallyChange,
             )
             Text("Save Images Automatically")
+        }
+        SettingsDropdownRow(
+            label = "Streaming VRAM Budget",
+            value = if (state.vramBudgetMode == "manual") "Manual" else "Auto",
+            options = listOf("Auto", "Manual"),
+            onValueChange = { onVramBudgetModeChange(it.lowercase()) },
+        )
+        if (state.vramBudgetMode == "manual") {
+            DeskTextField(
+                label = "VRAM Budget (GiB)",
+                value = state.manualVramBudgetGb,
+                onValueChange = onManualVramBudgetGbChange,
+                modifier = Modifier.widthIn(min = 160.dp, max = 220.dp),
+            )
+        } else {
+            Text(
+                text = "Auto reserves 2 GiB of currently free GPU memory for the desktop and other applications.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
         PathSettingRow(
             label = "Output Directory",

@@ -1,0 +1,34 @@
+diff --git a/loader.py b/loader.py
+--- a/loader.py
++++ b/loader.py
+@@
+-IMG_ARCH_LIST = {"flux", "sd1", "sdxl", "sd3", "aura", "hidream", "cosmos", "ltxv", "hyvid", "wan", "lumina2", "qwen_image"}
++IMG_ARCH_LIST = {"flux", "sd1", "sdxl", "sd3", "aura", "hidream", "cosmos", "ltxv", "hyvid", "wan", "lumina2", "qwen_image", "ideogram4"}
+@@
+-        # 1D tensors shouldn't be quantized, this is a fix for BF16
+-        if len(shape) <= 1 and tensor.tensor_type == gguf.GGMLQuantizationType.BF16:
+-            state_dict[sd_key] = dequantize_tensor(state_dict[sd_key], dtype=torch.float32)
++        # Native BF16 avoids exposing the GGUF byte storage dtype to model code.
++        if tensor.tensor_type == gguf.GGMLQuantizationType.BF16:
++            dtype = torch.float32 if len(shape) <= 1 else torch.bfloat16
++            state_dict[sd_key] = dequantize_tensor(state_dict[sd_key], dtype=dtype)
+diff --git a/tools/convert.py b/tools/convert.py
+--- a/tools/convert.py
++++ b/tools/convert.py
+@@
+ class ModelLumina2(ModelTemplate):
+@@
+     keys_detect = [
+         ("cap_embedder.1.weight", "context_refiner.0.attention.qkv.weight")
+     ]
++
++class ModelIdeogram4(ModelTemplate):
++    arch = "ideogram4"
++    keys_detect = [
++        ("embed_image_indicator.weight", "input_proj.weight", "layers.0.attention.qkv.weight")
++    ]
+ 
+ arch_list = [ModelFlux, ModelSD3, ModelAura, ModelHiDream, CosmosPredict2, 
+-             ModelLTXV, ModelHyVid, ModelWan, ModelSDXL, ModelSD1, ModelLumina2]
++             ModelLTXV, ModelHyVid, ModelWan, ModelSDXL, ModelSD1, ModelLumina2,
++             ModelIdeogram4]

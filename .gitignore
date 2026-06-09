@@ -1,7 +1,9 @@
 # Build directories
 build/
+build-sd-worker/
 bin/
 out/
+temp/
 
 # IDE files
 .vscode/

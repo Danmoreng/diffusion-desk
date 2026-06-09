@@ -32,6 +32,8 @@ data class SettingsUiState(
     val themeMode: String,
     val actionBarPosition: String,
     val saveImagesAutomatically: Boolean,
+    val vramBudgetMode: String,
+    val manualVramBudgetGb: String,
     val autostartLlmWorkers: Boolean,
     val galleryPreviewWidthDp: Int,
     val llmPresets: List<LlmPreset> = emptyList(),
@@ -79,6 +81,8 @@ class SettingsViewModel(
     fun updateThemeMode(value: String) = updateAndSave { copy(themeMode = value) }
     fun updateActionBarPosition(value: String) = updateAndSave { copy(actionBarPosition = value) }
     fun updateSaveImagesAutomatically(value: Boolean) = updateAndSave { copy(saveImagesAutomatically = value) }
+    fun updateVramBudgetMode(value: String) = updateAndSave { copy(vramBudgetMode = value) }
+    fun updateManualVramBudgetGb(value: String) = update { copy(manualVramBudgetGb = value) }
     fun updateAutostartLlmWorkers(value: Boolean) = updateAndSave { copy(autostartLlmWorkers = value) }
     fun updateGalleryPreviewWidth(value: Int) = updateAndSave { copy(galleryPreviewWidthDp = value.coerceIn(320, 760)) }
     fun updateTaggingPresetId(value: String) = updateRoles { copy(taggingPresetId = value) }
@@ -432,6 +436,14 @@ class SettingsViewModel(
         require(state.repoRoot.isNotBlank()) { "Repo root is required." }
         require(state.modelDir.isNotBlank()) { "Model directory is required." }
         require(state.outputDir.isNotBlank()) { "Output directory is required." }
+        require(state.vramBudgetMode in setOf("auto", "manual")) { "VRAM budget mode is invalid." }
+        val parsedManualVramBudgetGb = state.manualVramBudgetGb.toDoubleOrNull()
+        if (state.vramBudgetMode == "manual") {
+            require(parsedManualVramBudgetGb != null && parsedManualVramBudgetGb in 1.0..128.0) {
+                "Manual VRAM budget must be between 1 and 128 GiB."
+            }
+        }
+        val manualVramBudgetGb = parsedManualVramBudgetGb?.coerceIn(1.0, 128.0) ?: 12.0
         return DesktopSettings(
             repoRoot = state.repoRoot.trim(),
             listenPort = port,
@@ -441,6 +453,8 @@ class SettingsViewModel(
             themeMode = state.themeMode,
             actionBarPosition = state.actionBarPosition,
             saveImagesAutomatically = state.saveImagesAutomatically,
+            vramBudgetMode = state.vramBudgetMode,
+            manualVramBudgetGb = manualVramBudgetGb,
             autostartLlmWorkers = state.autostartLlmWorkers,
             galleryPreviewWidthDp = state.galleryPreviewWidthDp.coerceIn(320, 760),
         )
@@ -482,6 +496,8 @@ class SettingsViewModel(
         themeMode = themeMode,
         actionBarPosition = actionBarPosition,
         saveImagesAutomatically = saveImagesAutomatically,
+        vramBudgetMode = vramBudgetMode,
+        manualVramBudgetGb = manualVramBudgetGb.toString(),
         autostartLlmWorkers = autostartLlmWorkers,
         galleryPreviewWidthDp = galleryPreviewWidthDp,
     )
