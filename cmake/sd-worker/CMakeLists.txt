@@ -7,6 +7,13 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 get_filename_component(DIFFUSION_DESK_ROOT "${CMAKE_CURRENT_LIST_DIR}/../.." ABSOLUTE)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${DIFFUSION_DESK_ROOT}/build/bin")
 
+include("${DIFFUSION_DESK_ROOT}/cmake/PrepareStableDiffusion.cmake")
+prepare_patched_stable_diffusion(
+    "${DIFFUSION_DESK_ROOT}/libs/stable-diffusion.cpp"
+    "${DIFFUSION_DESK_ROOT}/scripts/patches/stable-diffusion-cancel.patch"
+    STABLE_DIFFUSION_SOURCE_DIR
+)
+
 set(SD_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 set(SD_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 set(SD_BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
@@ -15,7 +22,7 @@ set(SD_CUDA ON CACHE BOOL "" FORCE)
 set(GGML_CUDA ON CACHE BOOL "" FORCE)
 set(GGML_CUDA_GRAPHS OFF CACHE BOOL "" FORCE)
 
-add_subdirectory("${DIFFUSION_DESK_ROOT}/libs/stable-diffusion.cpp" stable-diffusion)
+add_subdirectory("${STABLE_DIFFUSION_SOURCE_DIR}" stable-diffusion)
 
 add_executable(diffusion_desk_sd_worker
     "${DIFFUSION_DESK_ROOT}/src/main_sd.cpp"
@@ -34,8 +41,8 @@ target_include_directories(diffusion_desk_sd_worker PRIVATE
     "${DIFFUSION_DESK_ROOT}/src/sd"
     "${DIFFUSION_DESK_ROOT}/src/utils"
     "${DIFFUSION_DESK_ROOT}/src/workers"
-    "${DIFFUSION_DESK_ROOT}/libs/stable-diffusion.cpp"
-    "${DIFFUSION_DESK_ROOT}/libs/stable-diffusion.cpp/thirdparty"
+    "${STABLE_DIFFUSION_SOURCE_DIR}"
+    "${STABLE_DIFFUSION_SOURCE_DIR}/thirdparty"
     "${DIFFUSION_DESK_ROOT}/libs/llama.cpp/vendor/nlohmann"
     "${DIFFUSION_DESK_ROOT}/libs/llama.cpp/vendor/cpp-httplib"
 )

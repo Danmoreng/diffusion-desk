@@ -612,6 +612,20 @@ class DiffusionDeskClient(
         }
     }
 
+    suspend fun cancelGenerationJob(baseUrl: String, jobId: String): Result<Unit> = withContext(Dispatchers.IO) {
+        runCatching {
+            val request = requestBuilder("$baseUrl/v1/generation-jobs/$jobId/cancel")
+                .POST(HttpRequest.BodyPublishers.noBody())
+                .timeout(Duration.ofSeconds(30))
+                .build()
+
+            val response = httpClient.send(request, HttpResponse.BodyHandlers.ofString())
+            check(response.statusCode() in 200..299) {
+                response.body().ifBlank { "Job cancellation failed with ${response.statusCode()}" }
+            }
+        }
+    }
+
     suspend fun streamGenerationJobEvents(
         baseUrl: String,
         jobId: String,

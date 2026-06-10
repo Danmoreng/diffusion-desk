@@ -197,6 +197,7 @@ struct GenerationJob {
     std::string error_message;
     std::vector<GenerationJobEvent> events;
     uint64_t next_event_id = 1;
+    std::atomic<bool> cancel_requested{false};
 };
 
 struct GenerationJobManager {
@@ -212,6 +213,11 @@ struct GenerationJobManager {
 };
 
 GenerationJobManager g_generation_jobs;
+
+bool generation_cancel_requested(void* data) {
+    const auto* requested = static_cast<const std::atomic<bool>*>(data);
+    return requested != nullptr && requested->load(std::memory_order_relaxed);
+}
 
 size_t count_pending_generation_jobs_locked() {
     size_t count = 0;
@@ -339,12 +345,16 @@ void execute_generation_job(const std::shared_ptr<GenerationJob>& job, ServerCon
 
     try {
         DD_LOG_INFO("Executing generation job %s: body_bytes=%zu", job->id.c_str(), job->request_body.size());
+        sd_set_cancel_callback(generation_cancel_requested, &job->cancel_requested);
         handle_generate_image(generation_req, generation_res, ctx);
+        sd_set_cancel_callback(nullptr, nullptr);
         DD_LOG_INFO("Generation job %s returned HTTP %d", job->id.c_str(), generation_res.status);
     } catch (const std::exception& e) {
+        sd_set_cancel_callback(nullptr, nullptr);
         generation_res.status = 500;
         generation_res.set_content(make_error_json("server_error", e.what()), "application/json");
     } catch (...) {
+        sd_set_cancel_callback(nullptr, nullptr);
         generation_res.status = 500;
         generation_res.set_content(make_error_json("server_error", "generation job failed"), "application/json");
     }
@@ -357,7 +367,12 @@ void execute_generation_job(const std::shared_ptr<GenerationJob>& job, ServerCon
 
     std::lock_guard<std::mutex> lock(g_generation_jobs.mutex);
     job->completed_at = unix_ms_now();
-    if (generation_res.status >= 200 && generation_res.status < 300) {
+    if (job->cancel_requested.load(std::memory_order_relaxed)) {
+        job->status = GenerationJobStatus::Cancelled;
+        job->error_code = "cancelled";
+        job->error_message = "generation job cancelled by client";
+        append_generation_job_event_locked(*job, "cancelled", make_generation_job_json_locked(*job));
+    } else if (generation_res.status >= 200 && generation_res.status < 300) {
         try {
             job->result = diffusion_desk::json::parse(generation_res.body);
             job->status = GenerationJobStatus::Completed;
@@ -740,8 +755,9 @@ void handle_cancel_generation_job(const httplib::Request& req, httplib::Response
     }
 
     if (job.status == GenerationJobStatus::Processing) {
-        res.status = 409;
-        res.set_content(make_error_json("already_processing", "generation job is already processing and cannot be interrupted"), "application/json");
+        job.cancel_requested.store(true, std::memory_order_relaxed);
+        res.status = 202;
+        res.set_content(make_generation_job_json_locked(job).dump(), "application/json");
         return;
     }
 
@@ -763,6 +779,11 @@ void shutdown_generation_jobs() {
                 it->second->error_code = "cancelled";
                 it->second->error_message = "generation job cancelled by worker shutdown";
                 append_generation_job_event_locked(*it->second, "cancelled", make_generation_job_json_locked(*it->second));
+            }
+        }
+        for (auto& entry : g_generation_jobs.jobs) {
+            if (entry.second->status == GenerationJobStatus::Processing) {
+                entry.second->cancel_requested.store(true, std::memory_order_relaxed);
             }
         }
         g_generation_jobs.cv.notify_all();

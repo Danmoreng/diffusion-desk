@@ -45,6 +45,7 @@ enum class GenerationStatus {
     Processing,
     Completed,
     Failed,
+    Cancelled,
 }
 
 private val DEFAULT_SAMPLERS = listOf(
@@ -105,6 +106,8 @@ private data class ProgressTiming(
     val elapsedSeconds: Double,
     val etaSeconds: Int,
 )
+
+private class GenerationCancelledException(message: String) : IllegalStateException(message)
 
 enum class IdeogramStructureTab {
     Text,
@@ -456,6 +459,7 @@ data class GenerationUiState(
     val progressMessage: String = "",
     val progressStages: List<GenerationProgressStage> = emptyList(),
     val isGenerating: Boolean = false,
+    val isCancelling: Boolean = false,
     val resultUrls: List<String> = emptyList(),
     val usedSeed: String = "",
     val images: List<GeneratedImage> = emptyList(),
@@ -499,6 +503,8 @@ class GenerationViewModel(
     private var currentStageStartStep = 0
     private var currentEtaPhaseStartStep = 0
     private var autoTaggingJob: Job? = null
+    private var activeGenerationJobId: String? = null
+    private var generationCancelRequested = false
     private var pendingAutoTagImageCount = 0
     private val recentStepTimes = ArrayDeque<Double>()
 
@@ -1009,6 +1015,35 @@ class GenerationViewModel(
         }
     }
 
+    fun cancelGeneration() {
+        if (!_uiState.value.isGenerating || _uiState.value.isCancelling) return
+
+        generationCancelRequested = true
+        update {
+            copy(
+                isCancelling = true,
+                isEndless = false,
+                progressEtaSeconds = 0,
+                message = "Cancelling generation...",
+                error = null,
+            )
+        }
+
+        val jobId = activeGenerationJobId ?: return
+        scope.launch {
+            client.cancelGenerationJob(backendManager.state.value.baseUrl, jobId)
+                .onFailure { error ->
+                    generationCancelRequested = false
+                    update {
+                        copy(
+                            isCancelling = false,
+                            error = error.message ?: "Failed to cancel generation.",
+                        )
+                    }
+                }
+        }
+    }
+
     private fun buildStructuredParamsOrNull(): GenerationParams? {
         val jsonPrompt = _uiState.value.ideogram.jsonPrompt.trim()
         val validation = validateIdeogramJson(jsonPrompt)
@@ -1201,6 +1236,7 @@ class GenerationViewModel(
                     GenerationStatus.Processing -> "Generating..."
                     GenerationStatus.Completed -> "Image generated successfully."
                     GenerationStatus.Failed -> "Generation failed."
+                    GenerationStatus.Cancelled -> "Generation cancelled."
                 },
             )
         }
@@ -1219,12 +1255,15 @@ class GenerationViewModel(
         scope.launch {
             val item = _uiState.value.history.getOrNull(nextIndex) ?: return@launch
             val startedAt = System.currentTimeMillis()
+            activeGenerationJobId = null
+            generationCancelRequested = false
             resetProgressEstimator()
 
             updateHistoryItem(nextIndex) { it.copy(status = GenerationStatus.Processing, error = null) }
             update {
                 copy(
                     isGenerating = true,
+                    isCancelling = false,
                     progressStep = 0,
                     progressSteps = 0,
                     progressTime = 0.0,
@@ -1261,14 +1300,29 @@ class GenerationViewModel(
                             message = "Generation failed.",
                         )
                     }
+                    activeGenerationJobId = null
+                    generationCancelRequested = false
                     processQueue()
                     return@launch
                 }
 
+            if (generationCancelRequested) {
+                finishCancelledGeneration(nextIndex)
+                activeGenerationJobId = null
+                generationCancelRequested = false
+                update { copy(isGenerating = false, isCancelling = false) }
+                processQueue()
+                return@launch
+            }
+
             val jobSubmission = client.submitGenerationJob(baseUrl, item.params.toRequest())
 
             val generationResult = jobSubmission.mapCatching { submission ->
+                activeGenerationJobId = submission.id
                 update { copy(message = "Queued worker job ${submission.id}.") }
+                if (generationCancelRequested) {
+                    client.cancelGenerationJob(baseUrl, submission.id).getOrThrow()
+                }
                 client.streamGenerationJobEvents(baseUrl, submission.id) { event ->
                     when (event) {
                         is GenerationJobEvent.Queued -> update {
@@ -1280,7 +1334,7 @@ class GenerationViewModel(
                         is GenerationJobEvent.Progress -> handleProgressEvent(event)
                         is GenerationJobEvent.Completed -> Unit
                         is GenerationJobEvent.Failed -> error(event.message)
-                        is GenerationJobEvent.Cancelled -> error(event.message)
+                        is GenerationJobEvent.Cancelled -> throw GenerationCancelledException(event.message)
                     }
                 }.getOrThrow()
             }
@@ -1329,13 +1383,19 @@ class GenerationViewModel(
             }.onFailure { error ->
                 resetProgressEstimator()
                 val message = error.message ?: "Generation failed."
-                updateHistoryItem(nextIndex) { it.copy(status = GenerationStatus.Failed, error = message) }
-                if (_uiState.value.historyIndex == nextIndex) {
-                    update { copy(images = emptyList(), progressEtaSeconds = 0, error = message) }
+                if (generationCancelRequested || error is GenerationCancelledException) {
+                    finishCancelledGeneration(nextIndex)
+                } else {
+                    updateHistoryItem(nextIndex) { it.copy(status = GenerationStatus.Failed, error = message) }
+                    if (_uiState.value.historyIndex == nextIndex) {
+                        update { copy(images = emptyList(), progressEtaSeconds = 0, error = message) }
+                    }
                 }
             }
 
-            update { copy(isGenerating = false) }
+            activeGenerationJobId = null
+            generationCancelRequested = false
+            update { copy(isGenerating = false, isCancelling = false) }
 
             if (_uiState.value.isEndless) {
                 generate(item.params.saveImage)
@@ -1388,6 +1448,23 @@ class GenerationViewModel(
                 runAutoTaggingAfterGeneration(batchSize)
             }
             autoTaggingJob = null
+        }
+    }
+
+    private fun finishCancelledGeneration(index: Int) {
+        resetProgressEstimator()
+        updateHistoryItem(index) { it.copy(status = GenerationStatus.Cancelled, error = null) }
+        if (_uiState.value.historyIndex == index) {
+            update {
+                copy(
+                    images = emptyList(),
+                    progressEtaSeconds = 0,
+                    progressPhase = "Cancelled",
+                    progressMessage = "",
+                    message = "Generation cancelled.",
+                    error = null,
+                )
+            }
         }
     }
 

@@ -6,6 +6,13 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 
+include(cmake/PrepareStableDiffusion.cmake)
+prepare_patched_stable_diffusion(
+    "${CMAKE_SOURCE_DIR}/libs/stable-diffusion.cpp"
+    "${CMAKE_SOURCE_DIR}/scripts/patches/stable-diffusion-cancel.patch"
+    STABLE_DIFFUSION_SOURCE_DIR
+)
+
 # --- Dependencies ---
 
 # Llama.cpp options (MUST come first to define ggml for others)
@@ -39,7 +46,7 @@ set(SQLITECPP_INTERNAL_SQLITE ON CACHE BOOL "" FORCE)
 
 # Add subdirectories
 add_subdirectory(libs/llama.cpp)
-add_subdirectory(libs/stable-diffusion.cpp)
+add_subdirectory("${STABLE_DIFFUSION_SOURCE_DIR}" stable-diffusion.cpp)
 add_subdirectory(libs/ixwebsocket)
 add_subdirectory(libs/SQLiteCpp)
 
@@ -102,8 +109,8 @@ target_include_directories(diffusion_desk_server PRIVATE
     src/utils
     src/orchestrator
     src/orchestrator/services
-    libs/stable-diffusion.cpp # For types in common.hpp
-    libs/stable-diffusion.cpp/thirdparty # For stb_image.h
+    "${STABLE_DIFFUSION_SOURCE_DIR}" # For types in common.hpp
+    "${STABLE_DIFFUSION_SOURCE_DIR}/thirdparty" # For stb_image.h
     libs/llama.cpp/vendor/nlohmann
     libs/llama.cpp/vendor/cpp-httplib
     libs/ixwebsocket
@@ -142,8 +149,8 @@ target_include_directories(diffusion_desk_sd_worker PRIVATE
     src/sd
     src/utils
     src/workers
-    libs/stable-diffusion.cpp
-    libs/stable-diffusion.cpp/thirdparty # For stb_image.h
+    "${STABLE_DIFFUSION_SOURCE_DIR}"
+    "${STABLE_DIFFUSION_SOURCE_DIR}/thirdparty" # For stb_image.h
     libs/llama.cpp/vendor/nlohmann
     libs/llama.cpp/vendor/cpp-httplib
     libs/llama.cpp/ggml/include
@@ -178,8 +185,8 @@ target_include_directories(diffusion_desk_llm_worker PRIVATE
     libs/llama.cpp/tools/mtmd
     libs/llama.cpp/vendor/cpp-httplib
     libs/llama.cpp/vendor/nlohmann
-    libs/stable-diffusion.cpp
-    libs/stable-diffusion.cpp/thirdparty # For stb_image.h
+    "${STABLE_DIFFUSION_SOURCE_DIR}"
+    "${STABLE_DIFFUSION_SOURCE_DIR}/thirdparty" # For stb_image.h
     ${CMAKE_BINARY_DIR}/libs/llama.cpp/tools/server
 )
 
