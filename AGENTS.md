@@ -13,6 +13,7 @@ More specific `AGENTS.md` files inside subdirectories take precedence for their 
 
 ## Working Rules
 - Check git state before editing. This repo may have user-owned submodule worktrees with detached `HEAD`s.
+- Write repository-facing documentation, code comments, identifiers, and user-visible product text in English unless a task explicitly requires another language. Conversation with the user may use their preferred language.
 - Do not edit files under `libs/` unless the task explicitly requires changing vendored/upstream code.
 - Treat `config.json`, `*.db`, `*.log`, and generated build outputs as local/runtime artifacts unless the task is specifically about them.
 - For UI work, default to the Kotlin Compose Desktop app in `composeApp/`. Treat `webui/` as legacy/deprecated.
