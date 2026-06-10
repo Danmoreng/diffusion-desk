@@ -36,12 +36,17 @@ import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.ImageSearch
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.RestartAlt
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.Button as MaterialButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -102,10 +107,13 @@ fun GalleryScreen(
     onAddKeyword: () -> Unit,
     onRemoveKeyword: (Long, String) -> Unit,
     onTagSelectedImage: () -> Unit,
+    onDeleteImage: () -> Unit,
     previewPanelWidthDp: Int,
     onPreviewPanelWidthChange: (Int) -> Unit,
     onReuseImage: (GalleryImage) -> Unit,
 ) {
+    var imagePendingDeletion by remember { mutableStateOf<GalleryImage?>(null) }
+
     LaunchedEffect(outputDir) {
         onRefresh()
     }
@@ -197,16 +205,29 @@ fun GalleryScreen(
                 image = state.selectedImage,
                 keywordDraft = state.keywordDraft,
                 isTaggingSelectedImage = state.isTaggingSelectedImage,
+                isDeletingImage = state.isDeletingImage,
                 onKeywordDraftChange = onKeywordDraftChange,
                 onAddKeyword = onAddKeyword,
                 onRemoveKeyword = onRemoveKeyword,
                 onTagSelectedImage = onTagSelectedImage,
+                onDeleteImage = { imagePendingDeletion = it },
                 onReuseImage = onReuseImage,
                 modifier = Modifier
                     .width(previewWidth)
                     .fillMaxHeight(),
             )
         }
+    }
+
+    imagePendingDeletion?.let { image ->
+        DeleteImageDialog(
+            image = image,
+            onDismiss = { imagePendingDeletion = null },
+            onConfirm = {
+                imagePendingDeletion = null
+                onDeleteImage()
+            },
+        )
     }
 }
 
@@ -519,10 +540,12 @@ private fun GalleryDetails(
     image: GalleryImage?,
     keywordDraft: String,
     isTaggingSelectedImage: Boolean,
+    isDeletingImage: Boolean,
     onKeywordDraftChange: (String) -> Unit,
     onAddKeyword: () -> Unit,
     onRemoveKeyword: (Long, String) -> Unit,
     onTagSelectedImage: () -> Unit,
+    onDeleteImage: (GalleryImage) -> Unit,
     onReuseImage: (GalleryImage) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -577,6 +600,16 @@ private fun GalleryDetails(
                     loading = isTaggingSelectedImage,
                     tooltip = "Generate tags",
                 )
+                if (image.file.isFile) {
+                    DeskIconButton(
+                        icon = Icons.Default.Delete,
+                        contentDescription = "Delete image from disk and gallery",
+                        onClick = { onDeleteImage(image) },
+                        enabled = !isDeletingImage,
+                        tooltip = "Delete from disk and database",
+                        destructive = true,
+                    )
+                }
             }
 
             DetailBlock("Prompt", image.prompt)
@@ -806,6 +839,47 @@ private fun File.withImageExtension(extension: String): File {
 private fun activeFrame(): Frame? {
     return Frame.getFrames().firstOrNull { it.isActive }
         ?: Frame.getFrames().firstOrNull { it.isVisible }
+}
+
+@Composable
+private fun DeleteImageDialog(
+    image: GalleryImage,
+    onDismiss: () -> Unit,
+    onConfirm: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        icon = {
+            Icon(
+                imageVector = Icons.Default.Delete,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.error,
+            )
+        },
+        title = { Text("Delete image?") },
+        text = {
+            Text(
+                "${image.displayName} will be permanently deleted together with its thumbnail and text file. " +
+                    "The gallery database entry will also be removed.",
+            )
+        },
+        confirmButton = {
+            MaterialButton(
+                onClick = onConfirm,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.error,
+                    contentColor = MaterialTheme.colorScheme.onError,
+                ),
+            ) {
+                Text("Delete")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        },
+    )
 }
 
 private class GalleryImageTransferable(

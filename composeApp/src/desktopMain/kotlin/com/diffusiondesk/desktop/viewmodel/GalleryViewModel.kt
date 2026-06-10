@@ -23,6 +23,7 @@ data class GalleryUiState(
     val keywordDraft: String = "",
     val isIndexing: Boolean = false,
     val isTaggingSelectedImage: Boolean = false,
+    val isDeletingImage: Boolean = false,
     val message: String = "",
     val error: String? = null,
 ) {
@@ -120,6 +121,32 @@ class GalleryViewModel(
                 reloadList()
             }.onFailure { error ->
                 update { copy(error = error.message ?: "Failed to remove tag.") }
+            }
+        }
+    }
+
+    fun deleteSelectedImage() {
+        val image = _uiState.value.selectedImage ?: return
+        scope.launch {
+            update { copy(isDeletingImage = true, error = null) }
+            runCatching {
+                withContext(Dispatchers.IO) { repository.deleteImage(image) }
+            }.onSuccess {
+                loadCachedList()
+                update {
+                    copy(
+                        isDeletingImage = false,
+                        message = "Deleted ${image.displayName} and its related files.",
+                        error = null,
+                    )
+                }
+            }.onFailure { error ->
+                update {
+                    copy(
+                        isDeletingImage = false,
+                        error = error.message ?: "Failed to delete image.",
+                    )
+                }
             }
         }
     }

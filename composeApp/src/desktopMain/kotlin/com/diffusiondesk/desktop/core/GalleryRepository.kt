@@ -3,6 +3,7 @@ package com.diffusiondesk.desktop.core
 import java.awt.RenderingHints
 import java.awt.image.BufferedImage
 import java.io.File
+import java.nio.file.Files
 import java.security.MessageDigest
 import java.sql.Connection
 import java.sql.ResultSet
@@ -26,6 +27,7 @@ class GalleryRepository(
         database.connection().use { conn ->
             conn.autoCommit = false
             try {
+                removeMissingImages(conn)
                 root.walkTopDown()
                     .onEnter { dir ->
                         val name = dir.name.lowercase(Locale.US)
@@ -48,6 +50,27 @@ class GalleryRepository(
             }
         }
         return indexed
+    }
+
+    fun deleteImage(image: GalleryImage) {
+        val sourceFile = image.file.absoluteFile
+        val sidecarFile = sourceFile.resolveSibling("${sourceFile.nameWithoutExtension}.txt")
+        val previewFile = image.previewPath
+            .takeIf { it.isNotBlank() }
+            ?.let(::File)
+            ?.absoluteFile
+
+        buildList {
+            add(sourceFile)
+            add(sidecarFile)
+            previewFile?.let(::add)
+        }
+            .distinctBy { it.toPath().normalize() }
+            .forEach { Files.deleteIfExists(it.toPath()) }
+
+        database.connection().use { conn ->
+            deleteImageRow(conn, image.id)
+        }
     }
 
     fun listImages(query: String = "", keyword: String = ""): List<GalleryImage> {
@@ -254,6 +277,28 @@ class GalleryRepository(
                 statement.setString(2, keyword.trim().lowercase(Locale.US))
                 statement.executeUpdate()
             }
+        }
+    }
+
+    private fun removeMissingImages(conn: Connection): Int {
+        val missingIds = mutableListOf<Long>()
+        conn.prepareStatement("SELECT id, file_path FROM images").use { statement ->
+            statement.executeQuery().use { rs ->
+                while (rs.next()) {
+                    if (!File(rs.getString("file_path").orEmpty()).isFile) {
+                        missingIds += rs.getLong("id")
+                    }
+                }
+            }
+        }
+        missingIds.forEach { deleteImageRow(conn, it) }
+        return missingIds.size
+    }
+
+    private fun deleteImageRow(conn: Connection, imageId: Long) {
+        conn.prepareStatement("DELETE FROM images WHERE id = ?").use { statement ->
+            statement.setLong(1, imageId)
+            statement.executeUpdate()
         }
     }
 
