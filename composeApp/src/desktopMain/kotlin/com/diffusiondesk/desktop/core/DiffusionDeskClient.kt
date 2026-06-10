@@ -59,7 +59,6 @@ data class GenerationRequest(
     val steps: Int,
     val cfgScale: Double,
     val seed: Int,
-    val batchCount: Int,
     val sampler: String,
     val saveImage: Boolean,
 )
@@ -560,7 +559,7 @@ class DiffusionDeskClient(
                 put("sample_steps", JsonPrimitive(requestData.steps))
                 put("cfg_scale", JsonPrimitive(requestData.cfgScale))
                 put("strength", JsonPrimitive(0.75))
-                put("n", JsonPrimitive(requestData.batchCount))
+                put("n", JsonPrimitive(1))
                 put("sampling_method", JsonPrimitive(requestData.sampler))
                 put("seed", JsonPrimitive(requestData.seed))
                 put("width", JsonPrimitive(requestData.width))
@@ -745,7 +744,7 @@ class DiffusionDeskClient(
         put("sample_steps", JsonPrimitive(requestData.steps))
         put("cfg_scale", JsonPrimitive(requestData.cfgScale))
         put("strength", JsonPrimitive(0.75))
-        put("n", JsonPrimitive(requestData.batchCount))
+        put("n", JsonPrimitive(1))
         put("sampling_method", JsonPrimitive(requestData.sampler))
         put("seed", JsonPrimitive(requestData.seed))
         put("width", JsonPrimitive(requestData.width))

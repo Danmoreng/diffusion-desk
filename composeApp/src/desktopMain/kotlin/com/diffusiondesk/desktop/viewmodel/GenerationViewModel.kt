@@ -77,7 +77,6 @@ data class GenerationParams(
     val steps: Int,
     val cfgScale: Double,
     val seed: Int,
-    val batchCount: Int,
     val sampler: String,
     val saveImage: Boolean = true,
 )
@@ -443,7 +442,6 @@ data class GenerationUiState(
     val steps: String = "4",
     val cfgScale: String = "1.0",
     val seed: String = "-1",
-    val batchCount: String = "1",
     val sampler: String = "euler_a",
     val samplerOptions: List<String> = DEFAULT_SAMPLERS,
     val leftPanelWidthDp: Int = 560,
@@ -604,7 +602,6 @@ class GenerationViewModel(
     fun updateSteps(value: String) = update { copy(steps = value) }
     fun updateCfgScale(value: String) = update { copy(cfgScale = value) }
     fun updateSeed(value: String) = update { copy(seed = value) }
-    fun updateBatchCount(value: String) = update { copy(batchCount = value) }
     fun updateSampler(value: String) = update { copy(sampler = value) }
     fun updateLeftPanelWidth(value: Int) = update { copy(leftPanelWidthDp = value.coerceIn(MIN_LEFT_PANEL_WIDTH_DP, MAX_LEFT_PANEL_WIDTH_DP)) }
     fun toggleEndless() = update { copy(isEndless = !isEndless) }
@@ -1225,7 +1222,6 @@ class GenerationViewModel(
                 steps = item.params.steps.toString(),
                 cfgScale = item.params.cfgScale.toString(),
                 seed = item.params.seed.toString(),
-                batchCount = item.params.batchCount.toString(),
                 sampler = item.params.sampler,
                 resultUrls = item.imageUrls,
                 usedSeed = item.usedSeed?.toString().orEmpty(),
@@ -1416,7 +1412,6 @@ class GenerationViewModel(
             steps = state.steps.toIntOrNull() ?: error("Steps must be numeric."),
             cfgScale = state.cfgScale.toDoubleOrNull() ?: error("CFG scale must be numeric."),
             seed = state.seed.toIntOrNull() ?: error("Seed must be numeric."),
-            batchCount = state.batchCount.toIntOrNull()?.coerceIn(MIN_BATCH_COUNT, MAX_BATCH_COUNT) ?: error("Batch must be numeric."),
             sampler = state.sampler.trim(),
         )
     }
@@ -1430,7 +1425,6 @@ class GenerationViewModel(
         steps = steps,
         cfgScale = cfgScale,
         seed = seed,
-        batchCount = batchCount,
         sampler = sampler,
         saveImage = saveImage,
     )
@@ -1742,7 +1736,6 @@ class GenerationViewModel(
         steps = steps,
         cfgScale = cfgScale,
         seed = seed,
-        batchCount = batchCount,
         sampler = sampler,
         leftPanelWidthDp = leftPanelWidthDp,
     )
@@ -1755,7 +1748,6 @@ class GenerationViewModel(
         steps = steps,
         cfgScale = cfgScale,
         seed = seed,
-        batchCount = batchCount,
         sampler = sampler,
         leftPanelWidthDp = leftPanelWidthDp,
     )
@@ -1766,8 +1758,6 @@ class GenerationViewModel(
         const val MIN_RESOLUTION = 64
         const val MAX_RESOLUTION = 4096
         const val RESOLUTION_STEP = 16
-        const val MIN_BATCH_COUNT = 1
-        const val MAX_BATCH_COUNT = 8
         const val MIN_LEFT_PANEL_WIDTH_DP = 480
         const val MAX_LEFT_PANEL_WIDTH_DP = 900
         private const val RECENT_STEP_TIME_WINDOW = 5
