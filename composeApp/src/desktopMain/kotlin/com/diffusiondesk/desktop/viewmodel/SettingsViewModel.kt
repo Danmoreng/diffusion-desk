@@ -32,6 +32,7 @@ data class SettingsUiState(
     val themeMode: String,
     val actionBarPosition: String,
     val saveImagesAutomatically: Boolean,
+    val showCompositionOverlay: Boolean,
     val vramBudgetMode: String,
     val manualVramBudgetGb: String,
     val autostartLlmWorkers: Boolean,
@@ -81,6 +82,7 @@ class SettingsViewModel(
     fun updateThemeMode(value: String) = updateAndSave { copy(themeMode = value) }
     fun updateActionBarPosition(value: String) = updateAndSave { copy(actionBarPosition = value) }
     fun updateSaveImagesAutomatically(value: Boolean) = updateAndSave { copy(saveImagesAutomatically = value) }
+    fun updateShowCompositionOverlay(value: Boolean) = updateAndSave { copy(showCompositionOverlay = value) }
     fun updateVramBudgetMode(value: String) = updateAndSave { copy(vramBudgetMode = value) }
     fun updateManualVramBudgetGb(value: String) = update { copy(manualVramBudgetGb = value) }
     fun updateAutostartLlmWorkers(value: Boolean) = updateAndSave { copy(autostartLlmWorkers = value) }
@@ -453,6 +455,7 @@ class SettingsViewModel(
             themeMode = state.themeMode,
             actionBarPosition = state.actionBarPosition,
             saveImagesAutomatically = state.saveImagesAutomatically,
+            showCompositionOverlay = state.showCompositionOverlay,
             vramBudgetMode = state.vramBudgetMode,
             manualVramBudgetGb = manualVramBudgetGb,
             autostartLlmWorkers = state.autostartLlmWorkers,
@@ -496,6 +499,7 @@ class SettingsViewModel(
         themeMode = themeMode,
         actionBarPosition = actionBarPosition,
         saveImagesAutomatically = saveImagesAutomatically,
+        showCompositionOverlay = showCompositionOverlay,
         vramBudgetMode = vramBudgetMode,
         manualVramBudgetGb = manualVramBudgetGb.toString(),
         autostartLlmWorkers = autostartLlmWorkers,

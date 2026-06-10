@@ -466,6 +466,7 @@ data class GenerationUiState(
     val isEndless: Boolean = false,
     val isEnhancingPrompt: Boolean = false,
     val ideogram: IdeogramUiState = IdeogramUiState(),
+    val selectedCompositionElementIndex: Int = 0,
     val message: String = "",
     val error: String? = null,
 ) {
@@ -603,6 +604,10 @@ class GenerationViewModel(
     fun updateCfgScale(value: String) = update { copy(cfgScale = value) }
     fun updateSeed(value: String) = update { copy(seed = value) }
     fun updateSampler(value: String) = update { copy(sampler = value) }
+    fun selectCompositionElement(index: Int) = update {
+        val lastIndex = ideogramElementPreviews(ideogram.jsonPrompt).lastIndex
+        copy(selectedCompositionElementIndex = index.coerceIn(0, lastIndex.coerceAtLeast(0)))
+    }
     fun updateLeftPanelWidth(value: Int) = update { copy(leftPanelWidthDp = value.coerceIn(MIN_LEFT_PANEL_WIDTH_DP, MAX_LEFT_PANEL_WIDTH_DP)) }
     fun toggleEndless() = update { copy(isEndless = !isEndless) }
 

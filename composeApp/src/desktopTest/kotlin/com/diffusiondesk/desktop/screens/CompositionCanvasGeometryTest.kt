@@ -27,6 +27,13 @@ class CompositionCanvasGeometryTest {
     }
 
     @Test
+    fun doesNotUpscaleBeyondNativePixelSize() {
+        val rect = fitCanvasRect(2000f, 1600f, 512, 512)
+
+        assertRectEquals(CanvasRect(744f, 544f, 1256f, 1056f), rect)
+    }
+
+    @Test
     fun mapsNormalizedBoundingBoxToCanvasCoordinates() {
         val rect = ideogramBboxToCanvasRect(
             values = listOf(100, 200, 700, 800),

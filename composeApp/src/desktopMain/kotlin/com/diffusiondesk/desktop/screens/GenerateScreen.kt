@@ -96,6 +96,7 @@ import com.diffusiondesk.desktop.core.ImagePromptMode
 import com.diffusiondesk.desktop.viewmodel.GenerationProgressStage
 import com.diffusiondesk.desktop.viewmodel.GenerationStatus
 import com.diffusiondesk.desktop.viewmodel.GenerationUiState
+import com.diffusiondesk.desktop.viewmodel.IdeogramElementPreview
 import com.diffusiondesk.desktop.viewmodel.IdeogramStructureTab
 import com.diffusiondesk.desktop.viewmodel.ideogramElementPreviews
 import java.awt.Cursor
@@ -112,6 +113,7 @@ import java.nio.charset.StandardCharsets
 import java.util.Locale
 import kotlin.math.roundToInt
 import org.jetbrains.jewel.ui.component.DefaultButton as Button
+import org.jetbrains.jewel.ui.component.Checkbox
 import org.jetbrains.jewel.ui.component.IconButton
 import org.jetbrains.jewel.ui.component.Slider
 import org.jetbrains.jewel.ui.component.Text
@@ -134,6 +136,9 @@ fun GenerateScreen(
     onCompositionDescriptionChange: (Int, String) -> Unit,
     onCompositionTextChange: (Int, String) -> Unit,
     onCompositionPaletteChange: (Int, List<String>) -> Unit,
+    onCompositionElementSelected: (Int) -> Unit,
+    showCompositionOverlay: Boolean,
+    onShowCompositionOverlayChange: (Boolean) -> Unit,
     onWidthChange: (String) -> Unit,
     onHeightChange: (String) -> Unit,
     onStepsChange: (String) -> Unit,
@@ -216,10 +221,10 @@ fun GenerateScreen(
                     onGenerateStructuredJson = onGenerateStructuredJson,
                     onStructuredJsonPromptChange = onStructuredJsonPromptChange,
                     onFormatStructuredJson = onFormatStructuredJson,
-                    onCompositionBboxChange = onCompositionBboxChange,
                     onCompositionDescriptionChange = onCompositionDescriptionChange,
                     onCompositionTextChange = onCompositionTextChange,
                     onCompositionPaletteChange = onCompositionPaletteChange,
+                    onCompositionElementSelected = onCompositionElementSelected,
                     onWidthChange = onWidthChange,
                     onHeightChange = onHeightChange,
                     onStepsChange = onStepsChange,
@@ -274,6 +279,10 @@ fun GenerateScreen(
                 PreviewPanel(
                     state = state,
                     outputDir = outputDir,
+                    showCompositionOverlay = showCompositionOverlay,
+                    onShowCompositionOverlayChange = onShowCompositionOverlayChange,
+                    onCompositionElementSelected = onCompositionElementSelected,
+                    onCompositionBboxChange = onCompositionBboxChange,
                     modifier = Modifier
                         .weight(1f)
                         .fillMaxHeight(),
@@ -331,10 +340,10 @@ private fun GenerationPanel(
     onGenerateStructuredJson: () -> Unit,
     onStructuredJsonPromptChange: (String) -> Unit,
     onFormatStructuredJson: () -> Unit,
-    onCompositionBboxChange: (Int, List<Int>) -> Unit,
     onCompositionDescriptionChange: (Int, String) -> Unit,
     onCompositionTextChange: (Int, String) -> Unit,
     onCompositionPaletteChange: (Int, List<String>) -> Unit,
+    onCompositionElementSelected: (Int) -> Unit,
     onWidthChange: (String) -> Unit,
     onHeightChange: (String) -> Unit,
     onStepsChange: (String) -> Unit,
@@ -386,10 +395,10 @@ private fun GenerationPanel(
                     onGenerateStructuredJson = onGenerateStructuredJson,
                     onStructuredJsonPromptChange = onStructuredJsonPromptChange,
                     onFormatStructuredJson = onFormatStructuredJson,
-                    onCompositionBboxChange = onCompositionBboxChange,
                     onCompositionDescriptionChange = onCompositionDescriptionChange,
                     onCompositionTextChange = onCompositionTextChange,
                     onCompositionPaletteChange = onCompositionPaletteChange,
+                    onCompositionElementSelected = onCompositionElementSelected,
                     onEnhancePrompt = onEnhancePrompt,
                 )
 
@@ -471,10 +480,10 @@ private fun PromptTabContent(
     onGenerateStructuredJson: () -> Unit,
     onStructuredJsonPromptChange: (String) -> Unit,
     onFormatStructuredJson: () -> Unit,
-    onCompositionBboxChange: (Int, List<Int>) -> Unit,
     onCompositionDescriptionChange: (Int, String) -> Unit,
     onCompositionTextChange: (Int, String) -> Unit,
     onCompositionPaletteChange: (Int, List<String>) -> Unit,
+    onCompositionElementSelected: (Int) -> Unit,
     onEnhancePrompt: () -> Unit,
 ) {
     when (state.ideogram.selectedTab) {
@@ -496,15 +505,13 @@ private fun PromptTabContent(
         )
         IdeogramStructureTab.Preview -> {
             StructuredJsonStatus(state)
-            IdeogramLayoutPreview(
-                jsonPrompt = state.ideogram.jsonPrompt,
-                width = state.width.toIntOrNull() ?: 1024,
-                height = state.height.toIntOrNull() ?: 1024,
-                onElementBboxChange = onCompositionBboxChange,
+            IdeogramElementEditor(
+                elements = ideogramElementPreviews(state.ideogram.jsonPrompt),
+                selectedIndex = state.selectedCompositionElementIndex,
+                onElementSelected = onCompositionElementSelected,
                 onElementDescriptionChange = onCompositionDescriptionChange,
                 onElementTextChange = onCompositionTextChange,
                 onElementPaletteChange = onCompositionPaletteChange,
-                modifier = Modifier.heightIn(min = 300.dp),
             )
         }
     }
@@ -636,55 +643,111 @@ private fun StructuredJsonStatus(state: GenerationUiState) {
 }
 
 @Composable
-private fun IdeogramLayoutPreview(
-    jsonPrompt: String,
-    width: Int,
-    height: Int,
-    onElementBboxChange: (Int, List<Int>) -> Unit,
+private fun IdeogramElementEditor(
+    elements: List<IdeogramElementPreview>,
+    selectedIndex: Int,
+    onElementSelected: (Int) -> Unit,
     onElementDescriptionChange: (Int, String) -> Unit,
     onElementTextChange: (Int, String) -> Unit,
     onElementPaletteChange: (Int, List<String>) -> Unit,
+) {
+    LaunchedEffect(elements.size, selectedIndex) {
+        if (elements.isNotEmpty() && selectedIndex !in elements.indices) {
+            onElementSelected(elements.lastIndex)
+        }
+    }
+    if (elements.isEmpty()) {
+        Text("No valid elements to edit.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        return
+    }
+
+    elements.forEachIndexed { index, element ->
+        ElementPreviewRow(
+            index = index + 1,
+            type = element.type,
+            textValue = element.text,
+            desc = element.desc,
+            bbox = element.bbox,
+            colors = element.colors,
+            selected = index == selectedIndex,
+            onClick = { onElementSelected(index) },
+            onDescriptionChange = { onElementDescriptionChange(index, it) },
+            onTextChange = { onElementTextChange(index, it) },
+            onPaletteChange = { onElementPaletteChange(index, it) },
+        )
+    }
+}
+
+@Composable
+private fun IdeogramCompositionCanvas(
+    elements: List<IdeogramElementPreview>,
+    width: Int,
+    height: Int,
+    selectedIndex: Int,
+    image: GeneratedImage?,
+    showOverlay: Boolean,
+    outputDir: String,
+    onElementSelected: (Int) -> Unit,
+    onElementBboxChange: (Int, List<Int>) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val elements = ideogramElementPreviews(jsonPrompt)
     val density = LocalDensity.current
     val latestElements by rememberUpdatedState(elements)
     val latestOnElementBboxChange by rememberUpdatedState(onElementBboxChange)
-    var selectedIndex by remember { mutableStateOf(0) }
-    LaunchedEffect(elements.size) {
-        if (elements.isEmpty()) {
-            selectedIndex = 0
-        } else if (selectedIndex !in elements.indices) {
-            selectedIndex = elements.lastIndex
-        }
+    val latestOnElementSelected by rememberUpdatedState(onElementSelected)
+    val localFile = remember(image?.sourceUrl, outputDir) {
+        image?.resolveOutputFile(outputDir)
     }
-    Column(
-        modifier = modifier
-            .fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(DeskPanelSpacing),
+
+    BoxWithConstraints(
+        modifier = modifier,
+        contentAlignment = Alignment.Center,
     ) {
-        BoxWithConstraints(
-            modifier = Modifier
-                .fillMaxWidth()
-                .heightIn(min = 220.dp, max = 340.dp)
-                .clip(RoundedCornerShape(DeskControlCornerRadius))
-                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = DeskSubtleSurfaceAlpha))
-                .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(DeskControlCornerRadius)),
+        val contentWidth = image?.bitmap?.width ?: width
+        val contentHeight = image?.bitmap?.height ?: height
+        val fittedCanvas = fitCanvasRect(
+            containerWidth = with(density) { maxWidth.toPx() },
+            containerHeight = with(density) { maxHeight.toPx() },
+            contentWidth = contentWidth,
+            contentHeight = contentHeight,
+        )
+        val canvasWidthPx = fittedCanvas.width.coerceAtLeast(1f)
+        val canvasHeightPx = fittedCanvas.height.coerceAtLeast(1f)
+        val canvasWidth = with(density) { canvasWidthPx.toDp() }
+        val canvasHeight = with(density) { canvasHeightPx.toDp() }
+
+        ContextMenuArea(
+            items = {
+                buildList {
+                    if (image != null) {
+                        add(ContextMenuItem("Copy Image") { image.copyToClipboard() })
+                        add(ContextMenuItem("Save Image As...") { image.saveAs(0) })
+                        if (localFile != null && localFile.exists()) {
+                            add(ContextMenuItem("Open Image") { openFile(localFile) })
+                            add(ContextMenuItem("Show in Explorer") { showInExplorer(localFile) })
+                        }
+                    }
+                }
+            },
         ) {
-            val fittedCanvas = fitCanvasRect(maxWidth.value, maxHeight.value, width, height)
-            val canvasWidth = fittedCanvas.width.dp
-            val canvasHeight = fittedCanvas.height.dp
-            val canvasWidthPx = with(density) { canvasWidth.toPx() }.coerceAtLeast(1f)
-            val canvasHeightPx = with(density) { canvasHeight.toPx() }.coerceAtLeast(1f)
             Box(
                 modifier = Modifier
                     .width(canvasWidth)
                     .height(canvasHeight)
-                    .align(Alignment.Center)
+                    .clip(RoundedCornerShape(8.dp))
                     .background(MaterialTheme.colorScheme.background.copy(alpha = 0.8f))
                     .border(1.dp, MaterialTheme.colorScheme.outlineVariant),
             ) {
-                elements.forEachIndexed { index, element ->
+                if (image != null) {
+                    Image(
+                        bitmap = image.bitmap,
+                        contentDescription = "Generated image",
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Fit,
+                    )
+                }
+
+                if (image == null || showOverlay) elements.forEachIndexed { index, element ->
                     val elementRect = ideogramBboxToCanvasRect(element.bbox, canvasWidth.value, canvasHeight.value)
                     if (elementRect != null) {
                         val top = elementRect.top.dp
@@ -700,13 +763,14 @@ private fun IdeogramLayoutPreview(
                                 .height((bottom - top).coerceAtLeast(8.dp))
                                 .border(if (isSelected) 3.dp else 2.dp, boxColor, RoundedCornerShape(2.dp))
                                 .background(boxColor.copy(alpha = 0.10f))
+                                .clickable { latestOnElementSelected(index) }
                                 .pointerInput(index, canvasWidthPx, canvasHeightPx) {
                                     var startBbox = emptyList<Int>()
                                     var dragX = 0f
                                     var dragY = 0f
                                     detectDragGestures(
                                         onDragStart = {
-                                            selectedIndex = index
+                                            latestOnElementSelected(index)
                                             startBbox = latestElements.getOrNull(index)?.bbox.orEmpty()
                                             dragX = 0f
                                             dragY = 0f
@@ -737,7 +801,7 @@ private fun IdeogramLayoutPreview(
                                         handle = handle,
                                         color = boxColor,
                                         startBbox = { latestElements.getOrNull(index)?.bbox.orEmpty() },
-                                        onDragStart = { selectedIndex = index },
+                                        onDragStart = { latestOnElementSelected(index) },
                                         onDrag = { startBbox, deltaX, deltaY ->
                                             val deltaNormX = canvasDeltaToIdeogram(deltaX, canvasWidthPx)
                                             val deltaNormY = canvasDeltaToIdeogram(deltaY, canvasHeightPx)
@@ -751,25 +815,6 @@ private fun IdeogramLayoutPreview(
                         }
                     }
                 }
-            }
-        }
-        if (elements.isEmpty()) {
-            Text("No valid elements to preview.", color = MaterialTheme.colorScheme.onSurfaceVariant)
-        } else {
-            elements.forEachIndexed { index, element ->
-                ElementPreviewRow(
-                    index = index + 1,
-                    type = element.type,
-                    textValue = element.text,
-                    desc = element.desc,
-                    bbox = element.bbox,
-                    colors = element.colors,
-                    selected = index == selectedIndex,
-                    onClick = { selectedIndex = index },
-                    onDescriptionChange = { onElementDescriptionChange(index, it) },
-                    onTextChange = { onElementTextChange(index, it) },
-                    onPaletteChange = { onElementPaletteChange(index, it) },
-                )
             }
         }
     }
@@ -1119,6 +1164,10 @@ internal fun GenerationParameterControls(
 internal fun PreviewPanel(
     state: GenerationUiState,
     outputDir: String,
+    showCompositionOverlay: Boolean,
+    onShowCompositionOverlayChange: (Boolean) -> Unit,
+    onCompositionElementSelected: (Int) -> Unit,
+    onCompositionBboxChange: (Int, List<Int>) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Box(
@@ -1126,11 +1175,18 @@ internal fun PreviewPanel(
         contentAlignment = Alignment.Center,
     ) {
         when {
+            state.images.isNotEmpty() || ideogramElementPreviews(state.ideogram.jsonPrompt).isNotEmpty() -> {
+                CompositionPreviewHost(
+                    state = state,
+                    outputDir = outputDir,
+                    showCompositionOverlay = showCompositionOverlay,
+                    onShowCompositionOverlayChange = onShowCompositionOverlayChange,
+                    onCompositionElementSelected = onCompositionElementSelected,
+                    onCompositionBboxChange = onCompositionBboxChange,
+                )
+            }
             state.isGenerating && state.currentHistoryItem?.status == GenerationStatus.Processing -> {
                 ProgressCard(state)
-            }
-            state.images.isNotEmpty() -> {
-                GeneratedImageGrid(state, outputDir)
             }
             state.currentHistoryItem?.status == GenerationStatus.Pending -> {
                 Text("Queued", color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -1480,6 +1536,55 @@ private fun ProgressStageRow(stage: GenerationProgressStage) {
                 .fillMaxWidth()
                 .height(8.dp),
         )
+    }
+}
+
+@Composable
+private fun CompositionPreviewHost(
+    state: GenerationUiState,
+    outputDir: String,
+    showCompositionOverlay: Boolean,
+    onShowCompositionOverlayChange: (Boolean) -> Unit,
+    onCompositionElementSelected: (Int) -> Unit,
+    onCompositionBboxChange: (Int, List<Int>) -> Unit,
+) {
+    val image = state.images.firstOrNull()
+    val elements = ideogramElementPreviews(state.ideogram.jsonPrompt)
+
+    Box(
+        modifier = Modifier.fillMaxSize(),
+        contentAlignment = Alignment.Center,
+    ) {
+        if (elements.isEmpty() && image == null) {
+            Text("No valid composition to preview.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        } else {
+            IdeogramCompositionCanvas(
+                elements = elements,
+                width = state.width.toIntOrNull() ?: 1024,
+                height = state.height.toIntOrNull() ?: 1024,
+                selectedIndex = state.selectedCompositionElementIndex,
+                image = image,
+                showOverlay = showCompositionOverlay,
+                outputDir = outputDir,
+                onElementSelected = onCompositionElementSelected,
+                onElementBboxChange = onCompositionBboxChange,
+                modifier = Modifier.fillMaxSize(),
+            )
+        }
+
+        if (image != null) {
+            Row(
+                modifier = Modifier.align(Alignment.TopEnd),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Checkbox(
+                    checked = showCompositionOverlay,
+                    onCheckedChange = onShowCompositionOverlayChange,
+                )
+                Text("Show composition")
+            }
+        }
     }
 }
 

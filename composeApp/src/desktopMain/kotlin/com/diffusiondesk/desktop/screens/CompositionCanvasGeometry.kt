@@ -30,17 +30,21 @@ internal fun fitCanvasRect(
 ): CanvasRect {
     val safeContainerWidth = containerWidth.coerceAtLeast(0f)
     val safeContainerHeight = containerHeight.coerceAtLeast(0f)
-    val aspectRatio = contentWidth.coerceAtLeast(1).toFloat() / contentHeight.coerceAtLeast(1).toFloat()
-    val widthAtFullHeight = safeContainerHeight * aspectRatio
+    val safeContentWidth = contentWidth.coerceAtLeast(1).toFloat()
+    val safeContentHeight = contentHeight.coerceAtLeast(1).toFloat()
+    val availableWidth = minOf(safeContainerWidth, safeContentWidth)
+    val availableHeight = minOf(safeContainerHeight, safeContentHeight)
+    val aspectRatio = safeContentWidth / safeContentHeight
+    val widthAtFullHeight = availableHeight * aspectRatio
     val fittedWidth: Float
     val fittedHeight: Float
 
-    if (widthAtFullHeight <= safeContainerWidth) {
+    if (widthAtFullHeight <= availableWidth) {
         fittedWidth = widthAtFullHeight
-        fittedHeight = safeContainerHeight
+        fittedHeight = availableHeight
     } else {
-        fittedWidth = safeContainerWidth
-        fittedHeight = safeContainerWidth / aspectRatio
+        fittedWidth = availableWidth
+        fittedHeight = availableWidth / aspectRatio
     }
 
     val left = (safeContainerWidth - fittedWidth) / 2f
