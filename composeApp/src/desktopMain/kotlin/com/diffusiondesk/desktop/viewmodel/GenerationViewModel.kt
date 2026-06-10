@@ -116,11 +116,6 @@ enum class IdeogramStructureTab {
 
 internal const val IDEOGRAM_BBOX_GRID = 10
 
-private fun ImagePromptMode.toIdeogramTab(): IdeogramStructureTab = when (this) {
-    ImagePromptMode.Text -> IdeogramStructureTab.Text
-    ImagePromptMode.Json -> IdeogramStructureTab.Json
-}
-
 data class IdeogramElementPreview(
     val type: String,
     val text: String,
@@ -549,7 +544,6 @@ class GenerationViewModel(
                     selectedPresetId = value,
                     message = "Selected ${preset.name}.",
                     presetLoadFailed = false,
-                    ideogram = ideogram.copy(selectedTab = preset.promptMode.toIdeogramTab()),
                     error = null,
                 )
             }
@@ -771,7 +765,6 @@ class GenerationViewModel(
                                     isGeneratingJson = false,
                                     jsonStatus = validation.first,
                                     jsonError = validation.second,
-                                    selectedTab = IdeogramStructureTab.Json,
                                 ),
                             )
                         }
@@ -1053,7 +1046,6 @@ class GenerationViewModel(
             update {
                 copy(
                     ideogram = ideogram.copy(
-                        selectedTab = IdeogramStructureTab.Json,
                         jsonStatus = validation.first,
                         jsonError = validation.second,
                     ),
@@ -1068,7 +1060,7 @@ class GenerationViewModel(
         }.getOrElse {
             update {
                 copy(
-                    ideogram = ideogram.copy(selectedTab = IdeogramStructureTab.Json, jsonError = "JSON is invalid."),
+                    ideogram = ideogram.copy(jsonError = "JSON is invalid."),
                     error = "JSON is invalid.",
                 )
             }
@@ -1185,7 +1177,7 @@ class GenerationViewModel(
             )
         }
         if (shouldSelectNewItem) {
-            seekHistory(_uiState.value.history.lastIndex, preserveSelectedTab = true)
+            seekHistory(_uiState.value.history.lastIndex)
         }
 
         processQueue()
@@ -1203,18 +1195,15 @@ class GenerationViewModel(
         }
     }
 
-    fun seekHistory(index: Int, preserveSelectedTab: Boolean = false) {
+    fun seekHistory(index: Int) {
         val item = _uiState.value.history.getOrNull(index) ?: return
         val validation = if (item.promptMode == ImagePromptMode.Text) null else validateIdeogramJson(item.params.prompt)
         update {
             val nextIdeogram = if (item.promptMode == ImagePromptMode.Text) {
-                ideogram.copy(
-                    selectedTab = if (preserveSelectedTab) ideogram.selectedTab else IdeogramStructureTab.Text,
-                )
+                ideogram
             } else {
                 ideogram.copy(
                     jsonPrompt = item.params.prompt,
-                    selectedTab = if (preserveSelectedTab) ideogram.selectedTab else IdeogramStructureTab.Json,
                     jsonStatus = validation?.first ?: ideogram.jsonStatus,
                     jsonError = validation?.second,
                 )
