@@ -130,8 +130,13 @@ data class IdeogramUiState(
     val isGeneratingJson: Boolean = false,
     val jsonStatus: String = "JSON ready.",
     val jsonError: String? = null,
+    val history: List<String> = listOf(jsonPrompt),
+    val historyIndex: Int = 0,
 ) {
     val isJsonValid: Boolean get() = jsonError == null
+    val document: IdeogramCompositionDocument? get() = parseIdeogramCompositionDocument(jsonPrompt).getOrNull()
+    val canUndo: Boolean get() = historyIndex > 0
+    val canRedo: Boolean get() = historyIndex < history.lastIndex
 }
 
 private val ideogramJson = Json {
@@ -616,72 +621,105 @@ class GenerationViewModel(
         )
     }
 
-    fun updateIdeogramElementBbox(index: Int, bbox: List<Int>) = update {
+    fun commitIdeogramJsonPrompt() = update {
+        if (ideogram.history.getOrNull(ideogram.historyIndex) == ideogram.jsonPrompt) {
+            this
+        } else {
+            val retainedHistory = ideogram.history.take(ideogram.historyIndex + 1)
+            val nextHistory = retainedHistory + ideogram.jsonPrompt
+            copy(ideogram = ideogram.copy(history = nextHistory, historyIndex = nextHistory.lastIndex))
+        }
+    }
+
+    fun undoComposition() = update {
+        if (!ideogram.canUndo) this else restoreCompositionHistory(ideogram.historyIndex - 1)
+    }
+
+    fun redoComposition() = update {
+        if (!ideogram.canRedo) this else restoreCompositionHistory(ideogram.historyIndex + 1)
+    }
+
+    fun updateIdeogramHighLevelDescription(value: String) = applyCompositionMutation(
+        CompositionMutation.UpdateHighLevelDescription(value),
+    )
+
+    fun updateIdeogramStyleField(field: IdeogramStyleField, value: String) = applyCompositionMutation(
+        CompositionMutation.UpdateStyleField(field, value),
+    )
+
+    fun updateIdeogramGlobalPalette(colors: List<String>) = applyCompositionMutation(
+        CompositionMutation.UpdateGlobalPalette(normalizePalette(colors, 16)),
+    )
+
+    fun updateIdeogramBackground(value: String) = applyCompositionMutation(
+        CompositionMutation.UpdateBackground(value),
+    )
+
+    fun updateIdeogramElementType(index: Int, value: String) = applyCompositionMutation(
+        CompositionMutation.UpdateElementType(index, value),
+    )
+
+    fun updateIdeogramElementBbox(index: Int, bbox: List<Int>) {
         val sanitized = sanitizeIdeogramBbox(bbox)
-            ?: return@update copy(ideogram = ideogram.copy(jsonError = "Bbox must have four values."))
-        updateIdeogramElement(index) { element ->
-            element["bbox"] = JsonArray(sanitized.map { JsonPrimitive(it) })
+        if (sanitized == null) {
+            update { copy(ideogram = ideogram.copy(jsonError = "Bbox must have four values.")) }
+            return
         }
+        applyCompositionMutation(CompositionMutation.UpdateElementBbox(index, sanitized))
     }
 
-    fun updateIdeogramElementDescription(index: Int, description: String) = update {
-        updateIdeogramElement(index) { element ->
-            element["desc"] = JsonPrimitive(description)
+    fun updateIdeogramElementDescription(index: Int, description: String) =
+        applyCompositionMutation(CompositionMutation.UpdateElementDescription(index, description))
+
+    fun updateIdeogramElementText(index: Int, text: String) =
+        applyCompositionMutation(CompositionMutation.UpdateElementText(index, text))
+
+    fun updateIdeogramElementPalette(index: Int, colors: List<String>) =
+        applyCompositionMutation(CompositionMutation.UpdateElementPalette(index, normalizePalette(colors, 5)))
+
+    fun applyCompositionMutation(mutation: CompositionMutation) = update {
+        val document = ideogram.document
+            ?: return@update copy(ideogram = ideogram.copy(jsonError = "JSON is invalid."))
+        val changed = document.applyMutation(mutation).getOrElse { error ->
+            return@update copy(ideogram = ideogram.copy(jsonError = error.message ?: "Composition update failed."))
         }
+        commitCompositionJson(changed.serialize())
     }
 
-    fun updateIdeogramElementText(index: Int, text: String) = update {
-        updateIdeogramElement(index) { element ->
-            element["text"] = JsonPrimitive(text)
-        }
-    }
-
-    fun updateIdeogramElementPalette(index: Int, colors: List<String>) = update {
-        val normalizedColors = colors
-            .take(5)
-            .map { it.trim().uppercase() }
-        updateIdeogramElement(index) { element ->
-            if (normalizedColors.isEmpty()) {
-                element.remove("color_palette")
-            } else {
-                element["color_palette"] = JsonArray(normalizedColors.map { JsonPrimitive(it) })
-            }
-        }
-    }
-
-    private fun GenerationUiState.updateIdeogramElement(
-        index: Int,
-        transform: (MutableMap<String, JsonElement>) -> Unit,
-    ): GenerationUiState {
-        val root = runCatching { ideogramJson.parseToJsonElement(ideogram.jsonPrompt).jsonObject }.getOrElse {
-            return copy(ideogram = ideogram.copy(jsonError = it.message ?: "JSON is invalid."))
-        }
-        val composition = root["compositional_deconstruction"]?.jsonObjectOrNull()
-            ?: return copy(ideogram = ideogram.copy(jsonError = "compositional_deconstruction is required."))
-        val elements = composition["elements"]?.jsonArrayOrNull()?.toMutableList()
-            ?: return copy(ideogram = ideogram.copy(jsonError = "compositional_deconstruction.elements is required."))
-        val element = elements.getOrNull(index)?.jsonObjectOrNull()?.toMutableMap()
-            ?: return copy(ideogram = ideogram.copy(jsonError = "Element ${index + 1} is missing."))
-
-        transform(element)
-        elements[index] = JsonObject(element)
-
-        val compositionMap = composition.toMutableMap()
-        compositionMap["elements"] = JsonArray(elements)
-
-        val rootMap = root.toMutableMap()
-        rootMap["compositional_deconstruction"] = JsonObject(compositionMap)
-
-        val formatted = ideogramJsonPretty.encodeToString(JsonElement.serializer(), JsonObject(rootMap))
-        val validation = validateIdeogramJson(formatted)
+    private fun GenerationUiState.commitCompositionJson(value: String): GenerationUiState {
+        val validation = validateIdeogramJson(value)
+        val retainedHistory = ideogram.history.take(ideogram.historyIndex + 1)
+        val nextHistory = if (retainedHistory.lastOrNull() == value) retainedHistory else retainedHistory + value
         return copy(
             ideogram = ideogram.copy(
-                jsonPrompt = formatted,
+                jsonPrompt = value,
                 jsonStatus = validation.first,
                 jsonError = validation.second,
+                history = nextHistory,
+                historyIndex = nextHistory.lastIndex,
             ),
         )
     }
+
+    private fun GenerationUiState.restoreCompositionHistory(index: Int): GenerationUiState {
+        val value = ideogram.history.getOrNull(index) ?: return this
+        val validation = validateIdeogramJson(value)
+        return copy(
+            ideogram = ideogram.copy(
+                jsonPrompt = value,
+                jsonStatus = validation.first,
+                jsonError = validation.second,
+                historyIndex = index,
+            ),
+            selectedCompositionElementIndex = selectedCompositionElementIndex.coerceIn(
+                0,
+                ideogramElementPreviews(value).lastIndex.coerceAtLeast(0),
+            ),
+        )
+    }
+
+    private fun normalizePalette(colors: List<String>, maxColors: Int): List<String> =
+        colors.take(maxColors).map { it.trim().uppercase() }.filter { it.isNotEmpty() }
 
     fun selectIdeogramTab(tab: IdeogramStructureTab) = update {
         copy(ideogram = ideogram.copy(selectedTab = tab))

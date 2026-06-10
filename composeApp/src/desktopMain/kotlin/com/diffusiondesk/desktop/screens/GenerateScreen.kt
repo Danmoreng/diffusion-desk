@@ -97,7 +97,9 @@ import com.diffusiondesk.desktop.core.GeneratedImage
 import com.diffusiondesk.desktop.core.ImagePromptMode
 import com.diffusiondesk.desktop.viewmodel.GenerationStatus
 import com.diffusiondesk.desktop.viewmodel.GenerationUiState
+import com.diffusiondesk.desktop.viewmodel.CompositionMutation
 import com.diffusiondesk.desktop.viewmodel.IdeogramElementPreview
+import com.diffusiondesk.desktop.viewmodel.IdeogramStyleField
 import com.diffusiondesk.desktop.viewmodel.IdeogramStructureTab
 import com.diffusiondesk.desktop.viewmodel.ideogramElementPreviews
 import java.awt.Cursor
@@ -131,7 +133,11 @@ fun GenerateScreen(
     onStructuredTabSelected: (IdeogramStructureTab) -> Unit,
     onGenerateStructuredJson: () -> Unit,
     onStructuredJsonPromptChange: (String) -> Unit,
+    onStructuredJsonPromptCommit: () -> Unit,
     onFormatStructuredJson: () -> Unit,
+    onCompositionMutation: (CompositionMutation) -> Unit,
+    onUndoComposition: () -> Unit,
+    onRedoComposition: () -> Unit,
     onCompositionBboxChange: (Int, List<Int>) -> Unit,
     onCompositionDescriptionChange: (Int, String) -> Unit,
     onCompositionTextChange: (Int, String) -> Unit,
@@ -220,7 +226,11 @@ fun GenerateScreen(
                     onStructuredTabSelected = onStructuredTabSelected,
                     onGenerateStructuredJson = onGenerateStructuredJson,
                     onStructuredJsonPromptChange = onStructuredJsonPromptChange,
+                    onStructuredJsonPromptCommit = onStructuredJsonPromptCommit,
                     onFormatStructuredJson = onFormatStructuredJson,
+                    onCompositionMutation = onCompositionMutation,
+                    onUndoComposition = onUndoComposition,
+                    onRedoComposition = onRedoComposition,
                     onCompositionDescriptionChange = onCompositionDescriptionChange,
                     onCompositionTextChange = onCompositionTextChange,
                     onCompositionPaletteChange = onCompositionPaletteChange,
@@ -339,7 +349,11 @@ private fun GenerationPanel(
     onStructuredTabSelected: (IdeogramStructureTab) -> Unit,
     onGenerateStructuredJson: () -> Unit,
     onStructuredJsonPromptChange: (String) -> Unit,
+    onStructuredJsonPromptCommit: () -> Unit,
     onFormatStructuredJson: () -> Unit,
+    onCompositionMutation: (CompositionMutation) -> Unit,
+    onUndoComposition: () -> Unit,
+    onRedoComposition: () -> Unit,
     onCompositionDescriptionChange: (Int, String) -> Unit,
     onCompositionTextChange: (Int, String) -> Unit,
     onCompositionPaletteChange: (Int, List<String>) -> Unit,
@@ -394,7 +408,11 @@ private fun GenerationPanel(
                     onNegativePromptChange = onNegativePromptChange,
                     onGenerateStructuredJson = onGenerateStructuredJson,
                     onStructuredJsonPromptChange = onStructuredJsonPromptChange,
+                    onStructuredJsonPromptCommit = onStructuredJsonPromptCommit,
                     onFormatStructuredJson = onFormatStructuredJson,
+                    onCompositionMutation = onCompositionMutation,
+                    onUndoComposition = onUndoComposition,
+                    onRedoComposition = onRedoComposition,
                     onCompositionDescriptionChange = onCompositionDescriptionChange,
                     onCompositionTextChange = onCompositionTextChange,
                     onCompositionPaletteChange = onCompositionPaletteChange,
@@ -479,7 +497,11 @@ private fun PromptTabContent(
     onNegativePromptChange: (String) -> Unit,
     onGenerateStructuredJson: () -> Unit,
     onStructuredJsonPromptChange: (String) -> Unit,
+    onStructuredJsonPromptCommit: () -> Unit,
     onFormatStructuredJson: () -> Unit,
+    onCompositionMutation: (CompositionMutation) -> Unit,
+    onUndoComposition: () -> Unit,
+    onRedoComposition: () -> Unit,
     onCompositionDescriptionChange: (Int, String) -> Unit,
     onCompositionTextChange: (Int, String) -> Unit,
     onCompositionPaletteChange: (Int, List<String>) -> Unit,
@@ -501,14 +523,22 @@ private fun PromptTabContent(
             state = state,
             onGenerateStructuredJson = onGenerateStructuredJson,
             onStructuredJsonPromptChange = onStructuredJsonPromptChange,
+            onStructuredJsonPromptCommit = onStructuredJsonPromptCommit,
             onFormatStructuredJson = onFormatStructuredJson,
         )
         IdeogramStructureTab.Preview -> {
             StructuredJsonStatus(state)
+            CompositionDocumentEditor(
+                state = state,
+                onMutation = onCompositionMutation,
+                onUndo = onUndoComposition,
+                onRedo = onRedoComposition,
+            )
             IdeogramElementEditor(
                 elements = ideogramElementPreviews(state.ideogram.jsonPrompt),
                 selectedIndex = state.selectedCompositionElementIndex,
                 onElementSelected = onCompositionElementSelected,
+                onMutation = onCompositionMutation,
                 onElementDescriptionChange = onCompositionDescriptionChange,
                 onElementTextChange = onCompositionTextChange,
                 onElementPaletteChange = onCompositionPaletteChange,
@@ -584,6 +614,7 @@ private fun JsonPromptPanel(
     state: GenerationUiState,
     onGenerateStructuredJson: () -> Unit,
     onStructuredJsonPromptChange: (String) -> Unit,
+    onStructuredJsonPromptCommit: () -> Unit,
     onFormatStructuredJson: () -> Unit,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(DeskPanelSpacing)) {
@@ -611,6 +642,7 @@ private fun JsonPromptPanel(
         PaddedTextArea(
             value = state.ideogram.jsonPrompt,
             onValueChange = onStructuredJsonPromptChange,
+            onFocusLost = onStructuredJsonPromptCommit,
             enabled = !state.ideogram.isGeneratingJson,
             monospace = true,
             modifier = Modifier
@@ -643,10 +675,170 @@ private fun StructuredJsonStatus(state: GenerationUiState) {
 }
 
 @Composable
+private fun CompositionDocumentEditor(
+    state: GenerationUiState,
+    onMutation: (CompositionMutation) -> Unit,
+    onUndo: () -> Unit,
+    onRedo: () -> Unit,
+) {
+    val document = state.ideogram.document ?: return
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(DeskPanelSpacing),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Label("Overview")
+            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                PromptHistoryButton(
+                    icon = Icons.AutoMirrored.Filled.Undo,
+                    contentDescription = "Undo composition change",
+                    onClick = onUndo,
+                    enabled = state.ideogram.canUndo,
+                )
+                PromptHistoryButton(
+                    icon = Icons.AutoMirrored.Filled.Redo,
+                    contentDescription = "Redo composition change",
+                    onClick = onRedo,
+                    enabled = state.ideogram.canRedo,
+                )
+            }
+        }
+        CompositionEditField(
+            label = "High-level description",
+            value = document.highLevelDescription,
+            onCommit = { onMutation(CompositionMutation.UpdateHighLevelDescription(it)) },
+            minHeight = 82.dp,
+        )
+
+        Label("Style")
+        CompositionEditField("Aesthetics", document.style.aesthetics, {
+            onMutation(CompositionMutation.UpdateStyleField(IdeogramStyleField.Aesthetics, it))
+        })
+        CompositionEditField("Lighting", document.style.lighting, {
+            onMutation(CompositionMutation.UpdateStyleField(IdeogramStyleField.Lighting, it))
+        })
+        CompositionEditField("Medium", document.style.medium, {
+            onMutation(CompositionMutation.UpdateStyleField(IdeogramStyleField.Medium, it))
+        })
+        val usesPhoto = document.style.photo != null
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(DeskControlSpacing),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = if (usesPhoto) "Photo" else "Art style",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            SubtleTextButton(
+                icon = Icons.Default.SwapHoriz,
+                text = if (usesPhoto) "Use art style" else "Use photo",
+                onClick = {
+                    onMutation(
+                        CompositionMutation.UpdateStyleField(
+                            if (usesPhoto) IdeogramStyleField.ArtStyle else IdeogramStyleField.Photo,
+                            if (usesPhoto) "illustration" else "photograph",
+                        ),
+                    )
+                },
+            )
+        }
+        CompositionEditField(
+            label = if (usesPhoto) "Photo description" else "Art-style description",
+            value = document.style.photo ?: document.style.artStyle.orEmpty(),
+            onCommit = {
+                onMutation(
+                    CompositionMutation.UpdateStyleField(
+                        if (usesPhoto) IdeogramStyleField.Photo else IdeogramStyleField.ArtStyle,
+                        it,
+                    ),
+                )
+            },
+        )
+        CompositionEditField(
+            label = "Global palette",
+            value = document.style.colorPalette.joinToString(", "),
+            onCommit = { value ->
+                onMutation(CompositionMutation.UpdateGlobalPalette(value.split(',').map(String::trim).filter(String::isNotEmpty)))
+            },
+            singleLine = true,
+        )
+
+        Label("Composition")
+        CompositionEditField(
+            label = "Background",
+            value = document.background,
+            onCommit = { onMutation(CompositionMutation.UpdateBackground(it)) },
+            minHeight = 70.dp,
+        )
+        if (document.additionalFields.isNotEmpty()) {
+            Label("Additional fields")
+            document.additionalFields.forEach { field ->
+                CompositionEditField(
+                    label = field.path,
+                    value = field.jsonValue,
+                    onCommit = { onMutation(CompositionMutation.UpdateAdditionalField(field.path, it)) },
+                    minHeight = 42.dp,
+                    singleLine = true,
+                )
+            }
+        }
+        Label("Elements")
+    }
+}
+
+@Composable
+private fun CompositionEditField(
+    label: String,
+    value: String,
+    onCommit: (String) -> Unit,
+    minHeight: Dp = 42.dp,
+    singleLine: Boolean = false,
+) {
+    var draft by remember(value) { mutableStateOf(value) }
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(5.dp),
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        val shape = RoundedCornerShape(5.dp)
+        var hadFocus by remember { mutableStateOf(false) }
+        BasicTextField(
+            value = draft,
+            onValueChange = { draft = it },
+            singleLine = singleLine,
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = minHeight)
+                .onFocusChanged { focusState ->
+                    if (hadFocus && !focusState.isFocused && draft != value) onCommit(draft)
+                    hadFocus = focusState.isFocused
+                }
+                .clip(shape)
+                .background(MaterialTheme.colorScheme.surface)
+                .border(1.dp, MaterialTheme.colorScheme.outlineVariant, shape)
+                .padding(horizontal = 9.dp, vertical = 7.dp),
+            textStyle = MaterialTheme.typography.bodyMedium.copy(color = MaterialTheme.colorScheme.onSurface),
+            cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+        )
+    }
+}
+
+@Composable
 private fun IdeogramElementEditor(
     elements: List<IdeogramElementPreview>,
     selectedIndex: Int,
     onElementSelected: (Int) -> Unit,
+    onMutation: (CompositionMutation) -> Unit,
     onElementDescriptionChange: (Int, String) -> Unit,
     onElementTextChange: (Int, String) -> Unit,
     onElementPaletteChange: (Int, List<String>) -> Unit,
@@ -671,6 +863,8 @@ private fun IdeogramElementEditor(
             colors = element.colors,
             selected = index == selectedIndex,
             onClick = { onElementSelected(index) },
+            onTypeChange = { onMutation(CompositionMutation.UpdateElementType(index, it)) },
+            onBboxChange = { onMutation(CompositionMutation.UpdateElementBbox(index, it)) },
             onDescriptionChange = { onElementDescriptionChange(index, it) },
             onTextChange = { onElementTextChange(index, it) },
             onPaletteChange = { onElementPaletteChange(index, it) },
@@ -873,6 +1067,8 @@ private fun ElementPreviewRow(
     colors: List<String>,
     selected: Boolean,
     onClick: () -> Unit,
+    onTypeChange: (String) -> Unit,
+    onBboxChange: (List<Int>) -> Unit,
     onDescriptionChange: (String) -> Unit,
     onTextChange: (String) -> Unit,
     onPaletteChange: (List<String>) -> Unit,
@@ -903,12 +1099,23 @@ private fun ElementPreviewRow(
                 fontWeight = FontWeight.SemiBold,
                 color = MaterialTheme.colorScheme.primary,
             )
-            Text(
-                text = compositionBboxLabel(bbox),
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            SubtleTextButton(
+                icon = Icons.Default.SwapHoriz,
+                text = if (type == "text") "Use object" else "Use text",
+                onClick = { onTypeChange(if (type == "text") "obj" else "text") },
             )
         }
+        InlineCompositionField(
+            value = bbox.joinToString(", "),
+            onValueChange = { raw ->
+                val values = raw.split(',').mapNotNull { it.trim().toIntOrNull() }
+                if (values.size == 4) onBboxChange(values)
+            },
+            placeholder = "y_min, x_min, y_max, x_max",
+            modifier = Modifier.fillMaxWidth(),
+            textStyle = MaterialTheme.typography.labelSmall.copy(color = MaterialTheme.colorScheme.onSurfaceVariant),
+            singleLine = true,
+        )
         if (type == "text") {
             InlineCompositionField(
                 value = textValue,
@@ -950,6 +1157,16 @@ private fun ElementPreviewRow(
                 }
             }
         }
+        InlineCompositionField(
+            value = colors.joinToString(", "),
+            onValueChange = { raw ->
+                onPaletteChange(raw.split(',').map(String::trim).filter(String::isNotEmpty))
+            },
+            placeholder = "#RRGGBB, #RRGGBB",
+            modifier = Modifier.fillMaxWidth(),
+            textStyle = MaterialTheme.typography.labelSmall.copy(color = MaterialTheme.colorScheme.onSurfaceVariant),
+            singleLine = true,
+        )
     }
 }
 
@@ -963,10 +1180,16 @@ private fun InlineCompositionField(
     singleLine: Boolean = false,
 ) {
     val shape = RoundedCornerShape(5.dp)
+    var draft by remember(value) { mutableStateOf(value) }
+    var hadFocus by remember { mutableStateOf(false) }
     BasicTextField(
-        value = value,
-        onValueChange = onValueChange,
+        value = draft,
+        onValueChange = { draft = it },
         modifier = modifier
+            .onFocusChanged { focusState ->
+                if (hadFocus && !focusState.isFocused && draft != value) onValueChange(draft)
+                hadFocus = focusState.isFocused
+            }
             .clip(shape)
             .background(MaterialTheme.colorScheme.surface)
             .border(1.dp, MaterialTheme.colorScheme.outlineVariant, shape)
@@ -976,7 +1199,7 @@ private fun InlineCompositionField(
         cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
         decorationBox = { innerTextField ->
             Box {
-                if (value.isEmpty()) {
+                if (draft.isEmpty()) {
                     Text(
                         text = placeholder,
                         style = textStyle,
