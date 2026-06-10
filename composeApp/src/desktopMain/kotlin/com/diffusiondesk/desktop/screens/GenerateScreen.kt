@@ -95,7 +95,6 @@ import com.diffusiondesk.desktop.core.BackendStatus
 import com.diffusiondesk.desktop.core.BackendUiState
 import com.diffusiondesk.desktop.core.GeneratedImage
 import com.diffusiondesk.desktop.core.ImagePromptMode
-import com.diffusiondesk.desktop.viewmodel.GenerationProgressStage
 import com.diffusiondesk.desktop.viewmodel.GenerationStatus
 import com.diffusiondesk.desktop.viewmodel.GenerationUiState
 import com.diffusiondesk.desktop.viewmodel.IdeogramElementPreview
@@ -1175,24 +1174,14 @@ internal fun PreviewPanel(
         modifier = modifier,
         contentAlignment = Alignment.Center,
     ) {
-        when {
-            state.images.isNotEmpty() || ideogramElementPreviews(state.ideogram.jsonPrompt).isNotEmpty() -> {
-                CompositionPreviewHost(
-                    state = state,
-                    outputDir = outputDir,
-                    showCompositionOverlay = showCompositionOverlay,
-                    onShowCompositionOverlayChange = onShowCompositionOverlayChange,
-                    onCompositionElementSelected = onCompositionElementSelected,
-                    onCompositionBboxChange = onCompositionBboxChange,
-                )
-            }
-            state.isGenerating && state.currentHistoryItem?.status == GenerationStatus.Processing -> {
-                ProgressCard(state)
-            }
-            state.currentHistoryItem?.status == GenerationStatus.Pending -> {
-                Text("Queued", color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-        }
+        CompositionPreviewHost(
+            state = state,
+            outputDir = outputDir,
+            showCompositionOverlay = showCompositionOverlay,
+            onShowCompositionOverlayChange = onShowCompositionOverlayChange,
+            onCompositionElementSelected = onCompositionElementSelected,
+            onCompositionBboxChange = onCompositionBboxChange,
+        )
     }
 }
 
@@ -1390,13 +1379,15 @@ private class ImageTransferable(
 }
 
 @Composable
-private fun ProgressCard(state: GenerationUiState) {
+private fun CompactGenerationProgress(
+    state: GenerationUiState,
+    modifier: Modifier = Modifier,
+) {
     val overallProgress = generationOverallProgress(state)
     val progressPercent = (overallProgress * 100f).roundToInt().coerceIn(0, 99)
     Column(
-        modifier = Modifier.widthIn(max = 520.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(DeskLayoutGap),
+        modifier = modifier,
+        verticalArrangement = Arrangement.spacedBy(5.dp),
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -1405,14 +1396,15 @@ private fun ProgressCard(state: GenerationUiState) {
         ) {
             Text(
                 text = state.progressPhase.ifBlank { "Generating..." },
-                style = MaterialTheme.typography.headlineSmall,
-                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.weight(1f),
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.SemiBold,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
             Text(
                 text = "$progressPercent%",
-                style = MaterialTheme.typography.titleMedium,
+                style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.primary,
                 fontWeight = FontWeight.Bold,
             )
@@ -1421,35 +1413,35 @@ private fun ProgressCard(state: GenerationUiState) {
             progress = overallProgress,
             modifier = Modifier
                 .fillMaxWidth()
-                .height(12.dp),
+                .height(5.dp),
         )
-        ProgressStageList(state.progressStages)
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
         ) {
             Text(
-                text = "Step ${state.progressStep} / ${state.progressSteps}",
-                style = MaterialTheme.typography.labelMedium,
-                fontWeight = FontWeight.Bold,
+                text = if (state.progressSteps > 0) {
+                    "Step ${state.progressStep} / ${state.progressSteps}"
+                } else {
+                    state.progressMessage.ifBlank { "Starting..." }
+                },
+                modifier = Modifier.weight(1f),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
             )
             Text(
                 text = buildString {
                     append(formatProgressDuration(state.progressTime))
                     if (state.progressEtaSeconds > 0) {
-                        append("   Remaining: ~")
+                        append("  /  ~")
                         append(formatProgressDuration(state.progressEtaSeconds.toDouble()))
+                        append(" left")
                     }
                 },
-                style = MaterialTheme.typography.labelMedium,
-                fontWeight = FontWeight.Bold,
-            )
-        }
-        if (state.progressMessage.isNotBlank()) {
-            Text(
-                text = state.progressMessage,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.labelSmall,
+                fontWeight = FontWeight.SemiBold,
             )
         }
     }
@@ -1476,68 +1468,6 @@ private fun generationOverallProgress(state: GenerationUiState): Float {
     }.maxOrNull() ?: 0f
 
     return weightedProgress.coerceIn(0.02f, 0.99f)
-}
-
-@Composable
-private fun ProgressStageList(stages: List<GenerationProgressStage>) {
-    val visibleStages = stages.ifEmpty {
-        listOf(GenerationProgressStage("starting", "Prepare", 0.25f, isActive = true, isComplete = false))
-    }
-
-    Column(
-        modifier = Modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        visibleStages.forEach { stage ->
-            ProgressStageRow(stage)
-        }
-    }
-}
-
-@Composable
-private fun ProgressStageRow(stage: GenerationProgressStage) {
-    val labelColor = when {
-        stage.isComplete -> MaterialTheme.colorScheme.primary
-        stage.isActive -> MaterialTheme.colorScheme.onSurface
-        else -> MaterialTheme.colorScheme.onSurfaceVariant
-    }
-    val statusText = when {
-        stage.isComplete -> "Done"
-        stage.isActive -> "Running"
-        else -> "Waiting"
-    }
-
-    Column(
-        modifier = Modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(4.dp),
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                text = stage.label,
-                style = MaterialTheme.typography.labelMedium,
-                fontWeight = if (stage.isActive) FontWeight.Bold else FontWeight.SemiBold,
-                color = labelColor,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Text(
-                text = statusText,
-                style = MaterialTheme.typography.labelSmall,
-                color = labelColor,
-                maxLines = 1,
-            )
-        }
-        GenerationProgressTrack(
-            progress = stage.progress.coerceIn(0f, 1f),
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(8.dp),
-        )
-    }
 }
 
 @Composable
@@ -1754,12 +1684,19 @@ internal fun ActionBar(
                         .background(MaterialTheme.colorScheme.outlineVariant),
                 )
 
-                PresetActionControl(
-                    state = state,
-                    backendState = backendState,
-                    onPresetSelected = onPresetSelected,
-                    modifier = Modifier.width(if (compact) 220.dp else 300.dp),
-                )
+                if (state.isGenerating) {
+                    CompactGenerationProgress(
+                        state = state,
+                        modifier = Modifier.width(if (compact) 220.dp else 300.dp),
+                    )
+                } else {
+                    PresetActionControl(
+                        state = state,
+                        backendState = backendState,
+                        onPresetSelected = onPresetSelected,
+                        modifier = Modifier.width(if (compact) 220.dp else 300.dp),
+                    )
+                }
 
                 Spacer(Modifier.weight(1f))
 

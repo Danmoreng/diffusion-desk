@@ -1185,7 +1185,7 @@ class GenerationViewModel(
             )
         }
         if (shouldSelectNewItem) {
-            seekHistory(_uiState.value.history.lastIndex)
+            seekHistory(_uiState.value.history.lastIndex, preserveSelectedTab = true)
         }
 
         processQueue()
@@ -1203,16 +1203,18 @@ class GenerationViewModel(
         }
     }
 
-    fun seekHistory(index: Int) {
+    fun seekHistory(index: Int, preserveSelectedTab: Boolean = false) {
         val item = _uiState.value.history.getOrNull(index) ?: return
         val validation = if (item.promptMode == ImagePromptMode.Text) null else validateIdeogramJson(item.params.prompt)
         update {
             val nextIdeogram = if (item.promptMode == ImagePromptMode.Text) {
-                ideogram.copy(selectedTab = IdeogramStructureTab.Text)
+                ideogram.copy(
+                    selectedTab = if (preserveSelectedTab) ideogram.selectedTab else IdeogramStructureTab.Text,
+                )
             } else {
                 ideogram.copy(
                     jsonPrompt = item.params.prompt,
-                    selectedTab = IdeogramStructureTab.Json,
+                    selectedTab = if (preserveSelectedTab) ideogram.selectedTab else IdeogramStructureTab.Json,
                     jsonStatus = validation?.first ?: ideogram.jsonStatus,
                     jsonError = validation?.second,
                 )
