@@ -164,13 +164,15 @@ private fun defaultIdeogramJsonPrompt(): String = """
       {
         "type": "obj",
         "bbox": [140, 210, 810, 800],
-        "desc": "A single ripe strawberry centered in the frame, glossy red skin, fresh green leaves, appealing macro detail."
+        "desc": "A single ripe strawberry centered in the frame, glossy red skin, fresh green leaves, appealing macro detail.",
+        "color_palette": ["#B91C1C", "#F43F5E", "#166534"]
       },
       {
         "type": "text",
         "bbox": [790, 240, 930, 760],
         "text": "EAT ME",
-        "desc": "Bold white handwritten-style caption along the bottom, horizontal and clearly readable."
+        "desc": "Bold white handwritten-style caption along the bottom, horizontal and clearly readable.",
+        "color_palette": ["#F8FAFC", "#FBBF24"]
       }
     ]
   }
@@ -615,17 +617,51 @@ class GenerationViewModel(
     fun updateIdeogramElementBbox(index: Int, bbox: List<Int>) = update {
         val sanitized = sanitizeIdeogramBbox(bbox)
             ?: return@update copy(ideogram = ideogram.copy(jsonError = "Bbox must have four values."))
+        updateIdeogramElement(index) { element ->
+            element["bbox"] = JsonArray(sanitized.map { JsonPrimitive(it) })
+        }
+    }
+
+    fun updateIdeogramElementDescription(index: Int, description: String) = update {
+        updateIdeogramElement(index) { element ->
+            element["desc"] = JsonPrimitive(description)
+        }
+    }
+
+    fun updateIdeogramElementText(index: Int, text: String) = update {
+        updateIdeogramElement(index) { element ->
+            element["text"] = JsonPrimitive(text)
+        }
+    }
+
+    fun updateIdeogramElementPalette(index: Int, colors: List<String>) = update {
+        val normalizedColors = colors
+            .take(5)
+            .map { it.trim().uppercase() }
+        updateIdeogramElement(index) { element ->
+            if (normalizedColors.isEmpty()) {
+                element.remove("color_palette")
+            } else {
+                element["color_palette"] = JsonArray(normalizedColors.map { JsonPrimitive(it) })
+            }
+        }
+    }
+
+    private fun GenerationUiState.updateIdeogramElement(
+        index: Int,
+        transform: (MutableMap<String, JsonElement>) -> Unit,
+    ): GenerationUiState {
         val root = runCatching { ideogramJson.parseToJsonElement(ideogram.jsonPrompt).jsonObject }.getOrElse {
-            return@update copy(ideogram = ideogram.copy(jsonError = it.message ?: "JSON is invalid."))
+            return copy(ideogram = ideogram.copy(jsonError = it.message ?: "JSON is invalid."))
         }
         val composition = root["compositional_deconstruction"]?.jsonObjectOrNull()
-            ?: return@update copy(ideogram = ideogram.copy(jsonError = "compositional_deconstruction is required."))
+            ?: return copy(ideogram = ideogram.copy(jsonError = "compositional_deconstruction is required."))
         val elements = composition["elements"]?.jsonArrayOrNull()?.toMutableList()
-            ?: return@update copy(ideogram = ideogram.copy(jsonError = "compositional_deconstruction.elements is required."))
+            ?: return copy(ideogram = ideogram.copy(jsonError = "compositional_deconstruction.elements is required."))
         val element = elements.getOrNull(index)?.jsonObjectOrNull()?.toMutableMap()
-            ?: return@update copy(ideogram = ideogram.copy(jsonError = "Element ${index + 1} is missing."))
+            ?: return copy(ideogram = ideogram.copy(jsonError = "Element ${index + 1} is missing."))
 
-        element["bbox"] = JsonArray(sanitized.map { JsonPrimitive(it) })
+        transform(element)
         elements[index] = JsonObject(element)
 
         val compositionMap = composition.toMutableMap()
@@ -636,7 +672,7 @@ class GenerationViewModel(
 
         val formatted = ideogramJsonPretty.encodeToString(JsonElement.serializer(), JsonObject(rootMap))
         val validation = validateIdeogramJson(formatted)
-        copy(
+        return copy(
             ideogram = ideogram.copy(
                 jsonPrompt = formatted,
                 jsonStatus = validation.first,

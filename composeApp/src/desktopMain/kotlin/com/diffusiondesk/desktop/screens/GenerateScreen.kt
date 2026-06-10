@@ -131,6 +131,9 @@ fun GenerateScreen(
     onStructuredJsonPromptChange: (String) -> Unit,
     onFormatStructuredJson: () -> Unit,
     onCompositionBboxChange: (Int, List<Int>) -> Unit,
+    onCompositionDescriptionChange: (Int, String) -> Unit,
+    onCompositionTextChange: (Int, String) -> Unit,
+    onCompositionPaletteChange: (Int, List<String>) -> Unit,
     onWidthChange: (String) -> Unit,
     onHeightChange: (String) -> Unit,
     onStepsChange: (String) -> Unit,
@@ -213,6 +216,9 @@ fun GenerateScreen(
                     onStructuredJsonPromptChange = onStructuredJsonPromptChange,
                     onFormatStructuredJson = onFormatStructuredJson,
                     onCompositionBboxChange = onCompositionBboxChange,
+                    onCompositionDescriptionChange = onCompositionDescriptionChange,
+                    onCompositionTextChange = onCompositionTextChange,
+                    onCompositionPaletteChange = onCompositionPaletteChange,
                     onWidthChange = onWidthChange,
                     onHeightChange = onHeightChange,
                     onStepsChange = onStepsChange,
@@ -325,6 +331,9 @@ private fun GenerationPanel(
     onStructuredJsonPromptChange: (String) -> Unit,
     onFormatStructuredJson: () -> Unit,
     onCompositionBboxChange: (Int, List<Int>) -> Unit,
+    onCompositionDescriptionChange: (Int, String) -> Unit,
+    onCompositionTextChange: (Int, String) -> Unit,
+    onCompositionPaletteChange: (Int, List<String>) -> Unit,
     onWidthChange: (String) -> Unit,
     onHeightChange: (String) -> Unit,
     onStepsChange: (String) -> Unit,
@@ -378,6 +387,9 @@ private fun GenerationPanel(
                     onStructuredJsonPromptChange = onStructuredJsonPromptChange,
                     onFormatStructuredJson = onFormatStructuredJson,
                     onCompositionBboxChange = onCompositionBboxChange,
+                    onCompositionDescriptionChange = onCompositionDescriptionChange,
+                    onCompositionTextChange = onCompositionTextChange,
+                    onCompositionPaletteChange = onCompositionPaletteChange,
                     onEnhancePrompt = onEnhancePrompt,
                 )
 
@@ -461,6 +473,9 @@ private fun PromptTabContent(
     onStructuredJsonPromptChange: (String) -> Unit,
     onFormatStructuredJson: () -> Unit,
     onCompositionBboxChange: (Int, List<Int>) -> Unit,
+    onCompositionDescriptionChange: (Int, String) -> Unit,
+    onCompositionTextChange: (Int, String) -> Unit,
+    onCompositionPaletteChange: (Int, List<String>) -> Unit,
     onEnhancePrompt: () -> Unit,
 ) {
     when (state.ideogram.selectedTab) {
@@ -487,6 +502,9 @@ private fun PromptTabContent(
                 width = state.width.toIntOrNull() ?: 1024,
                 height = state.height.toIntOrNull() ?: 1024,
                 onElementBboxChange = onCompositionBboxChange,
+                onElementDescriptionChange = onCompositionDescriptionChange,
+                onElementTextChange = onCompositionTextChange,
+                onElementPaletteChange = onCompositionPaletteChange,
                 modifier = Modifier.heightIn(min = 300.dp),
             )
         }
@@ -624,6 +642,9 @@ private fun IdeogramLayoutPreview(
     width: Int,
     height: Int,
     onElementBboxChange: (Int, List<Int>) -> Unit,
+    onElementDescriptionChange: (Int, String) -> Unit,
+    onElementTextChange: (Int, String) -> Unit,
+    onElementPaletteChange: (Int, List<String>) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val elements = ideogramElementPreviews(jsonPrompt)
@@ -750,8 +771,13 @@ private fun IdeogramLayoutPreview(
                     type = element.type,
                     textValue = element.text,
                     desc = element.desc,
+                    bbox = element.bbox,
+                    colors = element.colors,
                     selected = index == selectedIndex,
                     onClick = { selectedIndex = index },
+                    onDescriptionChange = { onElementDescriptionChange(index, it) },
+                    onTextChange = { onElementTextChange(index, it) },
+                    onPaletteChange = { onElementPaletteChange(index, it) },
                 )
             }
         }
@@ -862,14 +888,20 @@ private fun resizeCompositionBbox(values: List<Int>, deltaX: Int, deltaY: Int, h
 private fun snapCompositionCoord(value: Int): Int =
     ((value.toFloat() / IDEOGRAM_BBOX_GRID).roundToInt() * IDEOGRAM_BBOX_GRID).coerceIn(0, 1000)
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun ElementPreviewRow(
     index: Int,
     type: String,
     textValue: String,
     desc: String,
+    bbox: List<Int>,
+    colors: List<String>,
     selected: Boolean,
     onClick: () -> Unit,
+    onDescriptionChange: (String) -> Unit,
+    onTextChange: (String) -> Unit,
+    onPaletteChange: (List<String>) -> Unit,
 ) {
     val shape = RoundedCornerShape(DeskControlCornerRadius)
     Column(
@@ -886,18 +918,187 @@ private fun ElementPreviewRow(
             .padding(DeskControlSpacing),
         verticalArrangement = Arrangement.spacedBy(2.dp),
     ) {
-        Text(
-            text = if (type == "text" && textValue.isNotBlank()) "$index. text: $textValue" else "$index. $type",
-            style = MaterialTheme.typography.labelMedium,
-            fontWeight = FontWeight.SemiBold,
-            color = MaterialTheme.colorScheme.primary,
-        )
-        Text(
-            text = desc.ifBlank { "No description." },
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = "$index / $type",
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.primary,
+            )
+            Text(
+                text = compositionBboxLabel(bbox),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        if (type == "text") {
+            InlineCompositionField(
+                value = textValue,
+                onValueChange = onTextChange,
+                placeholder = "Text",
+                modifier = Modifier.fillMaxWidth(),
+                textStyle = MaterialTheme.typography.bodyMedium.copy(
+                    color = MaterialTheme.colorScheme.onSurface,
+                    fontWeight = FontWeight.Medium,
+                ),
+                singleLine = true,
+            )
+        }
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            InlineCompositionField(
+                value = desc,
+                onValueChange = onDescriptionChange,
+                placeholder = "Description",
+                modifier = Modifier.weight(1f),
+                textStyle = MaterialTheme.typography.bodySmall.copy(color = MaterialTheme.colorScheme.onSurfaceVariant),
+            )
+            if (colors.isNotEmpty()) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(5.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    colors.forEachIndexed { colorIndex, color ->
+                        EditablePaletteSwatch(
+                            color = color,
+                            onColorChange = { nextColor ->
+                                onPaletteChange(colors.toMutableList().also { it[colorIndex] = nextColor })
+                            },
+                        )
+                    }
+                }
+            }
+        }
     }
+}
+
+@Composable
+private fun InlineCompositionField(
+    value: String,
+    onValueChange: (String) -> Unit,
+    placeholder: String,
+    modifier: Modifier,
+    textStyle: androidx.compose.ui.text.TextStyle,
+    singleLine: Boolean = false,
+) {
+    val shape = RoundedCornerShape(5.dp)
+    BasicTextField(
+        value = value,
+        onValueChange = onValueChange,
+        modifier = modifier
+            .clip(shape)
+            .background(MaterialTheme.colorScheme.surface)
+            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, shape)
+            .padding(horizontal = 8.dp, vertical = 6.dp),
+        singleLine = singleLine,
+        textStyle = textStyle,
+        cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+        decorationBox = { innerTextField ->
+            Box {
+                if (value.isEmpty()) {
+                    Text(
+                        text = placeholder,
+                        style = textStyle,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.55f),
+                    )
+                }
+                innerTextField()
+            }
+        },
+    )
+}
+
+@Composable
+private fun EditablePaletteSwatch(
+    color: String,
+    onColorChange: (String) -> Unit,
+) {
+    var expanded by remember { mutableStateOf(false) }
+    var draft by remember(color, expanded) { mutableStateOf(color.uppercase()) }
+    val isValid = IDEOGRAM_HEX_COLOR.matches(draft)
+    val density = LocalDensity.current
+
+    Box {
+        Box(
+            modifier = Modifier
+                .size(22.dp)
+                .clip(CircleShape)
+                .background(ideogramComposeColor(color) ?: MaterialTheme.colorScheme.surface)
+                .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.7f), CircleShape)
+                .clickable { expanded = true },
+        )
+        if (expanded) {
+            Popup(
+                popupPositionProvider = DropdownPositionProvider(with(density) { 4.dp.roundToPx() }),
+                onDismissRequest = { expanded = false },
+                properties = PopupProperties(focusable = true),
+            ) {
+                Surface(
+                    modifier = Modifier.width(132.dp),
+                    shape = RoundedCornerShape(6.dp),
+                    color = MaterialTheme.colorScheme.surface,
+                    shadowElevation = 8.dp,
+                ) {
+                    BasicTextField(
+                        value = draft,
+                        onValueChange = { value ->
+                            draft = normalizeHexDraft(value)
+                            if (IDEOGRAM_HEX_COLOR.matches(draft)) {
+                                onColorChange(draft)
+                            }
+                        },
+                        modifier = Modifier
+                            .border(
+                                1.dp,
+                                if (isValid) MaterialTheme.colorScheme.outline else MaterialTheme.colorScheme.error,
+                                RoundedCornerShape(5.dp),
+                            )
+                            .padding(horizontal = 10.dp, vertical = 8.dp),
+                        singleLine = true,
+                        textStyle = MaterialTheme.typography.bodyMedium.copy(
+                            color = MaterialTheme.colorScheme.onSurface,
+                            fontFamily = FontFamily.Monospace,
+                        ),
+                        cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                    )
+                }
+            }
+        }
+    }
+}
+
+private val IDEOGRAM_HEX_COLOR = Regex("^#[0-9A-F]{6}$")
+
+private fun ideogramComposeColor(value: String): Color? {
+    if (!IDEOGRAM_HEX_COLOR.matches(value.uppercase())) return null
+    val rgb = value.removePrefix("#").toIntOrNull(16) ?: return null
+    return Color(
+        red = ((rgb shr 16) and 0xFF) / 255f,
+        green = ((rgb shr 8) and 0xFF) / 255f,
+        blue = (rgb and 0xFF) / 255f,
+    )
+}
+
+private fun normalizeHexDraft(value: String): String {
+    val digits = value
+        .trim()
+        .removePrefix("#")
+        .filter { it.isDigit() || it.uppercaseChar() in 'A'..'F' }
+        .uppercase()
+        .take(6)
+    return "#$digits"
+}
+
+private fun compositionBboxLabel(values: List<Int>): String {
+    val bbox = normalizeCompositionBbox(values) ?: return "No bounding box"
+    return "x ${bbox[1]}, y ${bbox[0]} | w ${bbox[3] - bbox[1]}, h ${bbox[2] - bbox[0]}"
 }
 
 private fun generationPromptReady(state: GenerationUiState): Boolean {
