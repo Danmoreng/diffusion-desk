@@ -57,6 +57,7 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -69,6 +70,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onGloballyPositioned
@@ -113,7 +115,6 @@ import java.nio.charset.StandardCharsets
 import java.util.Locale
 import kotlin.math.roundToInt
 import org.jetbrains.jewel.ui.component.DefaultButton as Button
-import org.jetbrains.jewel.ui.component.Checkbox
 import org.jetbrains.jewel.ui.component.IconButton
 import org.jetbrains.jewel.ui.component.Slider
 import org.jetbrains.jewel.ui.component.Text
@@ -1574,15 +1575,30 @@ private fun CompositionPreviewHost(
 
         if (image != null) {
             Row(
-                modifier = Modifier.align(Alignment.TopEnd),
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .height(28.dp)
+                    .clip(RoundedCornerShape(DeskControlCornerRadius))
+                    .clickable { onShowCompositionOverlayChange(!showCompositionOverlay) }
+                    .padding(start = 8.dp, end = 2.dp),
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                Checkbox(
-                    checked = showCompositionOverlay,
-                    onCheckedChange = onShowCompositionOverlayChange,
+                Text(
+                    text = "Composition",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-                Text("Show composition")
+                Switch(
+                    checked = showCompositionOverlay,
+                    onCheckedChange = null,
+                    modifier = Modifier
+                        .size(width = 36.dp, height = 24.dp)
+                        .graphicsLayer {
+                            scaleX = 0.7f
+                            scaleY = 0.7f
+                        },
+                )
             }
         }
     }
