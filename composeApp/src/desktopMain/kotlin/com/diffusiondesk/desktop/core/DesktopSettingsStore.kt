@@ -3,8 +3,9 @@ package com.diffusiondesk.desktop.core
 import java.io.File
 import java.util.Properties
 
-class DesktopSettingsStore {
-    private val settingsFile = File(AppPaths.appDir, "settings.properties")
+class DesktopSettingsStore(
+    private val settingsFile: File = File(AppPaths.appDir, "settings.properties"),
+) {
 
     fun load(): DesktopSettings {
         val repoRoot = detectDefaultRepoRoot()
@@ -17,6 +18,7 @@ class DesktopSettingsStore {
             themeMode = "system",
             actionBarPosition = "bottom",
             saveImagesAutomatically = true,
+            showCompositionOverlay = true,
             vramBudgetMode = "auto",
             manualVramBudgetGb = 12.0,
             autostartLlmWorkers = false,
@@ -49,6 +51,8 @@ class DesktopSettingsStore {
                     ?: defaults.actionBarPosition,
                 saveImagesAutomatically = props.getProperty("saveImagesAutomatically", defaults.saveImagesAutomatically.toString()).toBooleanStrictOrNull()
                     ?: defaults.saveImagesAutomatically,
+                showCompositionOverlay = props.getProperty("showCompositionOverlay", defaults.showCompositionOverlay.toString()).toBooleanStrictOrNull()
+                    ?: defaults.showCompositionOverlay,
                 vramBudgetMode = props.getProperty("vramBudgetMode", defaults.vramBudgetMode)
                     .takeIf { it in setOf("auto", "manual") }
                     ?: defaults.vramBudgetMode,
@@ -78,6 +82,7 @@ class DesktopSettingsStore {
         props.setProperty("themeMode", settings.themeMode)
         props.setProperty("actionBarPosition", settings.actionBarPosition)
         props.setProperty("saveImagesAutomatically", settings.saveImagesAutomatically.toString())
+        props.setProperty("showCompositionOverlay", settings.showCompositionOverlay.toString())
         props.setProperty("vramBudgetMode", settings.vramBudgetMode)
         props.setProperty("manualVramBudgetGb", settings.manualVramBudgetGb.toString())
         props.setProperty("autostartLlmWorkers", settings.autostartLlmWorkers.toString())
