@@ -96,7 +96,6 @@ import com.diffusiondesk.desktop.core.ImagePromptMode
 import com.diffusiondesk.desktop.viewmodel.GenerationProgressStage
 import com.diffusiondesk.desktop.viewmodel.GenerationStatus
 import com.diffusiondesk.desktop.viewmodel.GenerationUiState
-import com.diffusiondesk.desktop.viewmodel.IDEOGRAM_BBOX_GRID
 import com.diffusiondesk.desktop.viewmodel.IdeogramStructureTab
 import com.diffusiondesk.desktop.viewmodel.ideogramElementPreviews
 import java.awt.Cursor
@@ -676,17 +675,9 @@ private fun IdeogramLayoutPreview(
                 .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = DeskSubtleSurfaceAlpha))
                 .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(DeskControlCornerRadius)),
         ) {
-            val aspect = width.coerceAtLeast(1).toFloat() / height.coerceAtLeast(1).toFloat()
-            val heightAtFullWidth = maxWidth / aspect
-            val canvasWidth: Dp
-            val canvasHeight: Dp
-            if (heightAtFullWidth <= maxHeight) {
-                canvasWidth = maxWidth
-                canvasHeight = heightAtFullWidth
-            } else {
-                canvasHeight = maxHeight
-                canvasWidth = (canvasHeight * aspect).coerceAtMost(maxWidth)
-            }
+            val fittedCanvas = fitCanvasRect(maxWidth.value, maxHeight.value, width, height)
+            val canvasWidth = fittedCanvas.width.dp
+            val canvasHeight = fittedCanvas.height.dp
             val canvasWidthPx = with(density) { canvasWidth.toPx() }.coerceAtLeast(1f)
             val canvasHeightPx = with(density) { canvasHeight.toPx() }.coerceAtLeast(1f)
             Box(
@@ -698,12 +689,12 @@ private fun IdeogramLayoutPreview(
                     .border(1.dp, MaterialTheme.colorScheme.outlineVariant),
             ) {
                 elements.forEachIndexed { index, element ->
-                    val bbox = normalizeCompositionBbox(element.bbox)
-                    if (bbox != null) {
-                        val top = canvasHeight * (bbox[0] / 1000f)
-                        val left = canvasWidth * (bbox[1] / 1000f)
-                        val bottom = canvasHeight * (bbox[2] / 1000f)
-                        val right = canvasWidth * (bbox[3] / 1000f)
+                    val elementRect = ideogramBboxToCanvasRect(element.bbox, canvasWidth.value, canvasHeight.value)
+                    if (elementRect != null) {
+                        val top = elementRect.top.dp
+                        val left = elementRect.left.dp
+                        val bottom = elementRect.bottom.dp
+                        val right = elementRect.right.dp
                         val boxColor = if (element.type == "text") MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.primary
                         val isSelected = index == selectedIndex
                         Box(
@@ -727,8 +718,8 @@ private fun IdeogramLayoutPreview(
                                         onDrag = { _, dragAmount ->
                                             dragX += dragAmount.x
                                             dragY += dragAmount.y
-                                            val deltaX = ((dragX / canvasWidthPx) * 1000f).roundToInt()
-                                            val deltaY = ((dragY / canvasHeightPx) * 1000f).roundToInt()
+                                            val deltaX = canvasDeltaToIdeogram(dragX, canvasWidthPx)
+                                            val deltaY = canvasDeltaToIdeogram(dragY, canvasHeightPx)
                                             moveCompositionBbox(startBbox, deltaX, deltaY)?.let { nextBbox ->
                                                 latestOnElementBboxChange(index, nextBbox)
                                             }
@@ -752,8 +743,8 @@ private fun IdeogramLayoutPreview(
                                         startBbox = { latestElements.getOrNull(index)?.bbox.orEmpty() },
                                         onDragStart = { selectedIndex = index },
                                         onDrag = { startBbox, deltaX, deltaY ->
-                                            val deltaNormX = ((deltaX / canvasWidthPx) * 1000f).roundToInt()
-                                            val deltaNormY = ((deltaY / canvasHeightPx) * 1000f).roundToInt()
+                                            val deltaNormX = canvasDeltaToIdeogram(deltaX, canvasWidthPx)
+                                            val deltaNormY = canvasDeltaToIdeogram(deltaY, canvasHeightPx)
                                             resizeCompositionBbox(startBbox, deltaNormX, deltaNormY, handle)?.let { nextBbox ->
                                                 latestOnElementBboxChange(index, nextBbox)
                                             }
@@ -786,13 +777,6 @@ private fun IdeogramLayoutPreview(
             }
         }
     }
-}
-
-private enum class CompositionResizeHandle {
-    TopLeft,
-    TopRight,
-    BottomLeft,
-    BottomRight,
 }
 
 @Composable
@@ -836,61 +820,6 @@ private fun BoxScope.CompositionResizeHandleBox(
             },
     )
 }
-
-private fun normalizeCompositionBbox(values: List<Int>): List<Int>? {
-    if (values.size != 4) return null
-    val yMin = snapCompositionCoord(values[0])
-    val xMin = snapCompositionCoord(values[1])
-    val yMax = snapCompositionCoord(values[2])
-    val xMax = snapCompositionCoord(values[3])
-    val minSize = IDEOGRAM_BBOX_GRID
-    return listOf(
-        yMin.coerceIn(0, (yMax - minSize).coerceAtLeast(0)),
-        xMin.coerceIn(0, (xMax - minSize).coerceAtLeast(0)),
-        yMax.coerceIn((yMin + minSize).coerceAtMost(1000), 1000),
-        xMax.coerceIn((xMin + minSize).coerceAtMost(1000), 1000),
-    )
-}
-
-private fun moveCompositionBbox(values: List<Int>, deltaX: Int, deltaY: Int): List<Int>? {
-    val bbox = normalizeCompositionBbox(values) ?: return null
-    val boxHeight = (bbox[2] - bbox[0]).coerceAtLeast(IDEOGRAM_BBOX_GRID)
-    val boxWidth = (bbox[3] - bbox[1]).coerceAtLeast(IDEOGRAM_BBOX_GRID)
-    val nextYMin = snapCompositionCoord(bbox[0] + deltaY).coerceIn(0, 1000 - boxHeight)
-    val nextXMin = snapCompositionCoord(bbox[1] + deltaX).coerceIn(0, 1000 - boxWidth)
-    return listOf(nextYMin, nextXMin, nextYMin + boxHeight, nextXMin + boxWidth)
-}
-
-private fun resizeCompositionBbox(values: List<Int>, deltaX: Int, deltaY: Int, handle: CompositionResizeHandle): List<Int>? {
-    val bbox = normalizeCompositionBbox(values) ?: return null
-    val minSize = IDEOGRAM_BBOX_GRID
-    var yMin = bbox[0]
-    var xMin = bbox[1]
-    var yMax = bbox[2]
-    var xMax = bbox[3]
-    when (handle) {
-        CompositionResizeHandle.TopLeft -> {
-            yMin = snapCompositionCoord(bbox[0] + deltaY).coerceIn(0, yMax - minSize)
-            xMin = snapCompositionCoord(bbox[1] + deltaX).coerceIn(0, xMax - minSize)
-        }
-        CompositionResizeHandle.TopRight -> {
-            yMin = snapCompositionCoord(bbox[0] + deltaY).coerceIn(0, yMax - minSize)
-            xMax = snapCompositionCoord(bbox[3] + deltaX).coerceIn(xMin + minSize, 1000)
-        }
-        CompositionResizeHandle.BottomLeft -> {
-            yMax = snapCompositionCoord(bbox[2] + deltaY).coerceIn(yMin + minSize, 1000)
-            xMin = snapCompositionCoord(bbox[1] + deltaX).coerceIn(0, xMax - minSize)
-        }
-        CompositionResizeHandle.BottomRight -> {
-            yMax = snapCompositionCoord(bbox[2] + deltaY).coerceIn(yMin + minSize, 1000)
-            xMax = snapCompositionCoord(bbox[3] + deltaX).coerceIn(xMin + minSize, 1000)
-        }
-    }
-    return listOf(yMin, xMin, yMax, xMax)
-}
-
-private fun snapCompositionCoord(value: Int): Int =
-    ((value.toFloat() / IDEOGRAM_BBOX_GRID).roundToInt() * IDEOGRAM_BBOX_GRID).coerceIn(0, 1000)
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
