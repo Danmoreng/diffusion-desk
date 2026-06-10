@@ -11,7 +11,6 @@ data class SavedGenerationSettings(
     val steps: String = "4",
     val cfgScale: String = "1.0",
     val seed: String = "-1",
-    val batchCount: String = "1",
     val sampler: String = "euler_a",
     val leftPanelWidthDp: Int = 560,
 )
@@ -34,7 +33,6 @@ class GenerationSettingsStore {
                 steps = props.getProperty("steps", SavedGenerationSettings().steps),
                 cfgScale = props.getProperty("cfgScale", SavedGenerationSettings().cfgScale),
                 seed = props.getProperty("seed", SavedGenerationSettings().seed),
-                batchCount = props.getProperty("batchCount", SavedGenerationSettings().batchCount),
                 sampler = props.getProperty("sampler", SavedGenerationSettings().sampler),
                 leftPanelWidthDp = props.getProperty("leftPanelWidthDp", SavedGenerationSettings().leftPanelWidthDp.toString()).toIntOrNull()
                     ?: SavedGenerationSettings().leftPanelWidthDp,
@@ -54,7 +52,6 @@ class GenerationSettingsStore {
         props.setProperty("steps", settings.steps)
         props.setProperty("cfgScale", settings.cfgScale)
         props.setProperty("seed", settings.seed)
-        props.setProperty("batchCount", settings.batchCount)
         props.setProperty("sampler", settings.sampler)
         props.setProperty("leftPanelWidthDp", settings.leftPanelWidthDp.toString())
         settingsFile.outputStream().use { props.store(it, "Diffusion Desk Generation Settings") }

@@ -139,7 +139,6 @@ fun GenerateScreen(
     onStepsChange: (String) -> Unit,
     onCfgScaleChange: (String) -> Unit,
     onSeedChange: (String) -> Unit,
-    onBatchCountChange: (String) -> Unit,
     onSamplerChange: (String) -> Unit,
     onRandomizeSeed: () -> Unit,
     onReuseLastSeed: () -> Unit,
@@ -226,7 +225,6 @@ fun GenerateScreen(
                     onStepsChange = onStepsChange,
                     onCfgScaleChange = onCfgScaleChange,
                     onSeedChange = onSeedChange,
-                    onBatchCountChange = onBatchCountChange,
                     onSamplerChange = onSamplerChange,
                     onRandomizeSeed = onRandomizeSeed,
                     onReuseLastSeed = onReuseLastSeed,
@@ -342,7 +340,6 @@ private fun GenerationPanel(
     onStepsChange: (String) -> Unit,
     onCfgScaleChange: (String) -> Unit,
     onSeedChange: (String) -> Unit,
-    onBatchCountChange: (String) -> Unit,
     onSamplerChange: (String) -> Unit,
     onRandomizeSeed: () -> Unit,
     onReuseLastSeed: () -> Unit,
@@ -417,7 +414,6 @@ private fun GenerationPanel(
                         onStepsChange = onStepsChange,
                         onCfgScaleChange = onCfgScaleChange,
                         onSeedChange = onSeedChange,
-                        onBatchCountChange = onBatchCountChange,
                         onSamplerChange = onSamplerChange,
                         onRandomizeSeed = onRandomizeSeed,
                         onReuseLastSeed = onReuseLastSeed,
@@ -1051,7 +1047,6 @@ internal fun GenerationParameterControls(
     onStepsChange: (String) -> Unit,
     onCfgScaleChange: (String) -> Unit,
     onSeedChange: (String) -> Unit,
-    onBatchCountChange: (String) -> Unit,
     onSamplerChange: (String) -> Unit,
     onRandomizeSeed: () -> Unit,
     onReuseLastSeed: () -> Unit,
@@ -1077,7 +1072,6 @@ internal fun GenerationParameterControls(
     }
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         CompactNumberField("Steps", state.steps, onStepsChange, Modifier.weight(0.8f).widthIn(min = 104.dp), step = 1.0, minValue = 1.0)
-        CompactNumberField("Batch", state.batchCount, onBatchCountChange, Modifier.weight(0.8f).widthIn(min = 104.dp), step = 1.0, minValue = 1.0)
         CompactNumberField("Seed", state.seed, onSeedChange, Modifier.weight(1.1f).widthIn(min = 126.dp), step = 1.0)
         CompactIconButton(
             icon = Icons.Default.Casino,

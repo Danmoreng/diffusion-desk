@@ -103,7 +103,6 @@ fun App(
                             onStepsChange = controller.generationViewModel::updateSteps,
                             onCfgScaleChange = controller.generationViewModel::updateCfgScale,
                             onSeedChange = controller.generationViewModel::updateSeed,
-                            onBatchCountChange = controller.generationViewModel::updateBatchCount,
                             onSamplerChange = controller.generationViewModel::updateSampler,
                             onRandomizeSeed = controller.generationViewModel::randomizeSeed,
                             onReuseLastSeed = controller.generationViewModel::reuseLastSeed,
