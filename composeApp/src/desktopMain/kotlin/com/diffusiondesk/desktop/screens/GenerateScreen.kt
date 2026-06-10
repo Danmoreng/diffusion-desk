@@ -50,6 +50,7 @@ import androidx.compose.material.icons.filled.Recycling
 import androidx.compose.material.icons.filled.Repeat
 import androidx.compose.material.icons.filled.RestartAlt
 import androidx.compose.material.icons.filled.SwapHoriz
+import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -149,6 +150,7 @@ fun GenerateScreen(
     onResetToPresetDefaults: () -> Unit,
     onEnhancePrompt: () -> Unit,
     onGenerate: () -> Unit,
+    onCancelGeneration: () -> Unit,
     onToggleEndless: () -> Unit,
     onPresetSelected: (String) -> Unit,
     onGoBack: () -> Unit,
@@ -170,6 +172,7 @@ fun GenerateScreen(
                 isTop = true,
                 generateEnabled = backendState.status == BackendStatus.Ready && generationPromptReady(state),
                 onGenerate = onGenerate,
+                onCancelGeneration = onCancelGeneration,
                 onToggleEndless = onToggleEndless,
                 onPresetSelected = onPresetSelected,
                 onGoBack = onGoBack,
@@ -288,6 +291,7 @@ fun GenerateScreen(
                 isTop = false,
                 generateEnabled = backendState.status == BackendStatus.Ready && generationPromptReady(state),
                 onGenerate = onGenerate,
+                onCancelGeneration = onCancelGeneration,
                 onToggleEndless = onToggleEndless,
                 onPresetSelected = onPresetSelected,
                 onGoBack = onGoBack,
@@ -1588,6 +1592,7 @@ internal fun ActionBar(
     isTop: Boolean,
     generateEnabled: Boolean,
     onGenerate: () -> Unit,
+    onCancelGeneration: () -> Unit,
     onToggleEndless: () -> Unit,
     onPresetSelected: (String) -> Unit,
     onGoBack: () -> Unit,
@@ -1634,6 +1639,18 @@ internal fun ActionBar(
                         },
                         suffix = if (state.queueCount > 0) "(${state.queueCount})" else null,
                     )
+                }
+                if (state.isGenerating) {
+                    Button(
+                        onClick = onCancelGeneration,
+                        enabled = !state.isCancelling,
+                        modifier = Modifier.height(52.dp).width(if (compact) 132.dp else 148.dp),
+                    ) {
+                        ButtonContent(
+                            icon = Icons.Default.Stop,
+                            text = if (state.isCancelling) "Cancelling..." else "Stop",
+                        )
+                    }
                 }
 
                 Row(
@@ -1836,11 +1853,13 @@ private fun ActionStatus(
         GenerationStatus.Processing -> "Generating"
         GenerationStatus.Completed -> "Completed"
         GenerationStatus.Failed -> "Failed"
+        GenerationStatus.Cancelled -> "Cancelled"
         null -> "No generation selected"
     }
     val statusColor = when (generationStatus) {
         GenerationStatus.Completed -> MaterialTheme.colorScheme.primary
         GenerationStatus.Failed -> MaterialTheme.colorScheme.error
+        GenerationStatus.Cancelled -> MaterialTheme.colorScheme.onSurfaceVariant
         GenerationStatus.Pending,
         GenerationStatus.Processing,
         null -> MaterialTheme.colorScheme.onSurfaceVariant

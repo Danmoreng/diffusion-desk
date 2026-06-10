@@ -115,6 +115,7 @@ fun App(
                             onGenerate = {
                                 controller.generationViewModel.generate(settingsState.saveImagesAutomatically)
                             },
+                            onCancelGeneration = controller.generationViewModel::cancelGeneration,
                             onToggleEndless = controller.generationViewModel::toggleEndless,
                             onPresetSelected = controller.generationViewModel::selectAndLoadPreset,
                             onGoBack = controller.generationViewModel::goBack,

@@ -1,0 +1,113 @@
+diff --git a/include/stable-diffusion.h b/include/stable-diffusion.h
+--- a/include/stable-diffusion.h
++++ b/include/stable-diffusion.h
+@@ -404,10 +404,12 @@ typedef struct sd_ctx_t sd_ctx_t;
+ typedef void (*sd_log_cb_t)(enum sd_log_level_t level, const char* text, void* data);
+ typedef void (*sd_progress_cb_t)(int step, int steps, float time, void* data);
+ typedef void (*sd_preview_cb_t)(int step, int frame_count, sd_image_t* frames, bool is_noisy, void* data);
++typedef bool (*sd_cancel_cb_t)(void* data);
+ 
+ SD_API void sd_set_log_callback(sd_log_cb_t sd_log_cb, void* data);
+ SD_API void sd_set_progress_callback(sd_progress_cb_t cb, void* data);
+ SD_API void sd_set_preview_callback(sd_preview_cb_t cb, enum preview_t mode, int interval, bool denoised, bool noisy, void* data);
++SD_API void sd_set_cancel_callback(sd_cancel_cb_t cb, void* data);
+ SD_API int32_t sd_get_num_physical_cores();
+ SD_API const char* sd_get_system_info();
+ SD_API bool sd_ctx_supports_image_generation(const sd_ctx_t* sd_ctx);
+diff --git a/src/core/util.cpp b/src/core/util.cpp
+--- a/src/core/util.cpp
++++ b/src/core/util.cpp
+@@ -338,6 +338,8 @@ int32_t sd_get_num_physical_cores() {
+ 
+ static sd_progress_cb_t sd_progress_cb = nullptr;
+ void* sd_progress_cb_data              = nullptr;
++static sd_cancel_cb_t sd_cancel_cb      = nullptr;
++void* sd_cancel_cb_data                = nullptr;
+ 
+ static sd_preview_cb_t sd_preview_cb = nullptr;
+ static void* sd_preview_cb_data      = nullptr;
+@@ -611,6 +613,10 @@ void sd_set_progress_callback(sd_progress_cb_t cb, void* data) {
+     sd_progress_cb      = cb;
+     sd_progress_cb_data = data;
+ }
++void sd_set_cancel_callback(sd_cancel_cb_t cb, void* data) {
++    sd_cancel_cb      = cb;
++    sd_cancel_cb_data = data;
++}
+ void sd_set_preview_callback(sd_preview_cb_t cb, preview_t mode, int interval, bool denoised, bool noisy, void* data) {
+     sd_preview_cb       = cb;
+     sd_preview_cb_data  = data;
+@@ -647,6 +653,10 @@ void* sd_get_progress_callback_data() {
+     return sd_progress_cb_data;
+ }
+ 
++bool sd_should_cancel() {
++    return sd_cancel_cb != nullptr && sd_cancel_cb(sd_cancel_cb_data);
++}
++
+ sd_image_t tensor_to_sd_image(const sd::Tensor<float>& tensor, int frame_index) {
+     const auto& shape = tensor.shape();
+     GGML_ASSERT(shape.size() == 4 || shape.size() == 5);
+diff --git a/src/core/util.h b/src/core/util.h
+--- a/src/core/util.h
++++ b/src/core/util.h
+@@ -88,6 +88,7 @@ std::vector<std::pair<std::string, float>> split_quotation_attention(
+ 
+ sd_progress_cb_t sd_get_progress_callback();
+ void* sd_get_progress_callback_data();
++bool sd_should_cancel();
+ 
+ sd_preview_cb_t sd_get_preview_callback();
+ void* sd_get_preview_callback_data();
+diff --git a/src/stable-diffusion.cpp b/src/stable-diffusion.cpp
+--- a/src/stable-diffusion.cpp
++++ b/src/stable-diffusion.cpp
+@@ -2052,6 +2052,10 @@ public:
+         SamplePreviewContext preview = prepare_sample_preview_context();
+ 
+         auto denoise = [&](const sd::Tensor<float>& x, float sigma, int step) -> sd::guidance::GuiderOutput {
++            if (sd_should_cancel()) {
++                LOG_INFO("sampling cancelled before step %d", std::abs(step));
++                return {};
++            }
+             if (step == 1 || step == -1) {
+                 pretty_progress(0, (int)steps, 0);
+             }
+@@ -4495,6 +4499,9 @@ SD_API sd_image_t* generate_image(sd_ctx_t* sd_ctx, const sd_img_gen_params_t* s
+     if (sd_ctx == nullptr || sd_img_gen_params == nullptr) {
+         return nullptr;
+     }
++    if (sd_should_cancel()) {
++        return nullptr;
++    }
+ 
+     int64_t t0                    = ggml_time_ms();
+     sd_ctx->sd->vae_tiling_params = sd_img_gen_params->vae_tiling_params;
+@@ -4513,7 +4520,7 @@ SD_API sd_image_t* generate_image(sd_ctx_t* sd_ctx, const sd_img_gen_params_t* s
+                                                         sd_img_gen_params,
+                                                         &request,
+                                                         &plan);
+-    if (!latents_opt.has_value()) {
++    if (!latents_opt.has_value() || sd_should_cancel()) {
+         return nullptr;
+     }
+     ImageGenerationLatents latents = std::move(*latents_opt);
+@@ -4523,7 +4530,7 @@ SD_API sd_image_t* generate_image(sd_ctx_t* sd_ctx, const sd_img_gen_params_t* s
+                                                       &request,
+                                                       &plan,
+                                                       &latents);
+-    if (!embeds_opt.has_value()) {
++    if (!embeds_opt.has_value() || sd_should_cancel()) {
+         return nullptr;
+     }
+     ImageGenerationEmbeds embeds = std::move(*embeds_opt);
+@@ -4566,6 +4573,9 @@ SD_API sd_image_t* generate_image(sd_ctx_t* sd_ctx, const sd_img_gen_params_t* s
+                                                    static_cast<float>(request.fps),
+                                                    request.cache_params);
+         int64_t sampling_end  = ggml_time_ms();
++        if (sd_should_cancel()) {
++            return nullptr;
++        }
+         if (!x_0.empty()) {
+             LOG_INFO("sampling completed, taking %.2fs", (sampling_end - sampling_start) * 1.0f / 1000);
+             final_latents.push_back(std::move(x_0));
