@@ -19,6 +19,8 @@ import com.diffusiondesk.desktop.core.LlmPresetStore
 import com.diffusiondesk.desktop.core.LlmRoleService
 import com.diffusiondesk.desktop.core.LlmWorkerPool
 import com.diffusiondesk.desktop.core.SavedGenerationSettings
+import com.diffusiondesk.desktop.composition.CompositionAction
+import com.diffusiondesk.desktop.composition.CompositionActionExecutor
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -135,16 +137,6 @@ sealed interface CompositionImproveTarget {
     data class ElementDescription(val index: Int) : CompositionImproveTarget {
         override val actionId = "compositional_deconstruction.elements[$index].desc"
     }
-}
-
-internal fun compositionMutationForImprovedValue(
-    target: CompositionImproveTarget,
-    value: String,
-): CompositionMutation = when (target) {
-    CompositionImproveTarget.HighLevelDescription -> CompositionMutation.UpdateHighLevelDescription(value)
-    is CompositionImproveTarget.StyleField -> CompositionMutation.UpdateStyleField(target.field, value)
-    CompositionImproveTarget.Background -> CompositionMutation.UpdateBackground(value)
-    is CompositionImproveTarget.ElementDescription -> CompositionMutation.UpdateElementDescription(target.index, value)
 }
 
 internal const val IDEOGRAM_BBOX_GRID = 10
@@ -554,6 +546,7 @@ class GenerationViewModel(
     private val imageTaggingService: ImageTaggingService,
     private val llmRoleService: LlmRoleService,
     private val llmWorkerPool: LlmWorkerPool,
+    private val compositionActionExecutor: CompositionActionExecutor,
 ) {
     private val _uiState = MutableStateFlow(generationSettingsStore.load().toUiState())
     val uiState: StateFlow<GenerationUiState> = _uiState.asStateFlow()
@@ -761,55 +754,39 @@ class GenerationViewModel(
 
     fun applyCompositionMutation(mutation: CompositionMutation) = applyCompositionMutation(mutation, recordHistory = true)
 
-    fun improveCompositionField(target: CompositionImproveTarget) {
+    fun runCompositionAction(action: CompositionAction) {
         scope.launch {
             val state = _uiState.value
             val document = state.ideogram.document ?: run {
                 update { copy(error = "Composition JSON is invalid.") }
                 return@launch
             }
-            val currentValue = when (target) {
-                CompositionImproveTarget.HighLevelDescription -> document.highLevelDescription
-                is CompositionImproveTarget.StyleField -> when (target.field) {
-                    IdeogramStyleField.Aesthetics -> document.style.aesthetics
-                    IdeogramStyleField.Lighting -> document.style.lighting
-                    IdeogramStyleField.Medium -> document.style.medium
-                    IdeogramStyleField.Photo -> document.style.photo.orEmpty()
-                    IdeogramStyleField.ArtStyle -> document.style.artStyle.orEmpty()
-                }
-                CompositionImproveTarget.Background -> document.background
-                is CompositionImproveTarget.ElementDescription -> document.elements.getOrNull(target.index)?.description.orEmpty()
-            }
-            if (currentValue.isBlank()) {
-                update { copy(error = "The selected composition field is empty.") }
-                return@launch
-            }
 
             update {
                 copy(
-                    activeCompositionImproveAction = target.actionId,
-                    message = "Improving ${target.actionId}...",
+                    activeCompositionImproveAction = action.actionId,
+                    message = "Running ${action.actionId}...",
                     error = null,
                 )
             }
             val settings = settingsStore.load()
             val presets = llmPresetStore.load()
             val roles = llmPresetStore.loadRoles()
-            llmRoleService.improveIdeogramField(
+            compositionActionExecutor.execute(
                 settings = settings,
                 presets = presets,
                 roles = roles,
-                targetPath = target.actionId,
-                currentValue = currentValue,
-                documentJson = document.serializeForBackend(),
+                action = action,
+                document = document,
                 width = state.width.toIntOrNull() ?: 1024,
                 height = state.height.toIntOrNull() ?: 1024,
-            ).onSuccess { improvedValue ->
-                applyCompositionMutation(compositionMutationForImprovedValue(target, improvedValue))
+                image = state.images.firstOrNull().takeUnless { state.isCurrentDraftResolutionModified },
+            ).onSuccess { mutation ->
+                applyCompositionMutation(mutation)
                 update {
                     copy(
                         activeCompositionImproveAction = null,
-                        message = "Improved ${target.actionId}.",
+                        message = "Completed ${action.actionId}.",
                         error = null,
                     )
                 }
@@ -817,7 +794,7 @@ class GenerationViewModel(
                 update {
                     copy(
                         activeCompositionImproveAction = null,
-                        error = error.message ?: "Composition field improvement failed.",
+                        error = error.message ?: "Composition action failed.",
                     )
                 }
             }

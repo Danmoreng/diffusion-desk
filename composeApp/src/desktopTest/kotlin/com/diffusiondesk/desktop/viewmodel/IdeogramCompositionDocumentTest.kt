@@ -1,5 +1,6 @@
 package com.diffusiondesk.desktop.viewmodel
 
+import com.diffusiondesk.desktop.composition.mutationForImprovedValue
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
 import kotlin.test.Test
@@ -150,7 +151,7 @@ class IdeogramCompositionDocumentTest {
     @Test
     fun improvedFieldMutationChangesOnlyItsTarget() {
         val document = parseIdeogramCompositionDocument(source).getOrThrow()
-        val mutation = compositionMutationForImprovedValue(
+        val mutation = mutationForImprovedValue(
             CompositionImproveTarget.ElementDescription(0),
             "More detailed subject",
         )

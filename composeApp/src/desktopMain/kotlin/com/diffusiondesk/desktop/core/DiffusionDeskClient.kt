@@ -508,6 +508,87 @@ class DiffusionDeskClient(
         }
     }
 
+    suspend fun compositionChatCompletion(
+        baseUrl: String,
+        model: String,
+        systemPrompt: String,
+        userPrompt: String,
+        imageDataUri: String? = null,
+        maxTokens: Int = 1024,
+        timeout: Duration = Duration.ofMinutes(5),
+    ): Result<String> = withContext(Dispatchers.IO) {
+        runCatching {
+            val userContent: JsonElement = if (imageDataUri == null) {
+                JsonPrimitive(userPrompt)
+            } else {
+                JsonArray(
+                    listOf(
+                        buildJsonObject {
+                            put("type", JsonPrimitive("text"))
+                            put("text", JsonPrimitive(userPrompt))
+                        },
+                        buildJsonObject {
+                            put("type", JsonPrimitive("image_url"))
+                            put(
+                                "image_url",
+                                buildJsonObject {
+                                    put("url", JsonPrimitive(imageDataUri))
+                                },
+                            )
+                        },
+                    ),
+                )
+            }
+            val payload = buildJsonObject {
+                put("model", JsonPrimitive(model))
+                put(
+                    "messages",
+                    JsonArray(
+                        listOf(
+                            buildJsonObject {
+                                put("role", JsonPrimitive("system"))
+                                put("content", JsonPrimitive(systemPrompt))
+                            },
+                            buildJsonObject {
+                                put("role", JsonPrimitive("user"))
+                                put("content", userContent)
+                            },
+                        ),
+                    ),
+                )
+                put("max_tokens", JsonPrimitive(maxTokens))
+                put("temperature", JsonPrimitive(0.2))
+                put(
+                    "response_format",
+                    buildJsonObject {
+                        put("type", JsonPrimitive("json_object"))
+                    },
+                )
+                put("stream", JsonPrimitive(false))
+                put(
+                    "chat_template_kwargs",
+                    buildJsonObject {
+                        put("enable_thinking", JsonPrimitive(false))
+                    },
+                )
+            }
+
+            val request = requestBuilder("$baseUrl/v1/chat/completions")
+                .header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString(payload.toString()))
+                .timeout(timeout)
+                .build()
+
+            val response = httpClient.send(request, HttpResponse.BodyHandlers.ofString())
+            check(response.statusCode() in 200..299) {
+                response.body().ifBlank { "Composition completion failed with ${response.statusCode()}" }
+            }
+            parseChatContent(json.parseToJsonElement(response.body()).jsonObject).ifBlank {
+                error("Composition completion returned empty content.")
+            }
+        }
+    }
+
     private fun imageTagsResponseFormat() = buildJsonObject {
         put("type", JsonPrimitive("json_schema"))
         put(

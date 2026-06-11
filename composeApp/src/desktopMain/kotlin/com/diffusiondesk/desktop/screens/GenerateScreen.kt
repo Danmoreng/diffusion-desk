@@ -97,6 +97,8 @@ import com.diffusiondesk.desktop.core.BackendStatus
 import com.diffusiondesk.desktop.core.BackendUiState
 import com.diffusiondesk.desktop.core.GeneratedImage
 import com.diffusiondesk.desktop.core.ImagePromptMode
+import com.diffusiondesk.desktop.composition.CompositionAction
+import com.diffusiondesk.desktop.composition.PaletteTarget
 import com.diffusiondesk.desktop.viewmodel.GenerationStatus
 import com.diffusiondesk.desktop.viewmodel.GenerationUiState
 import com.diffusiondesk.desktop.viewmodel.CompositionMutation
@@ -139,7 +141,7 @@ fun GenerateScreen(
     onStructuredJsonPromptCommit: () -> Unit,
     onFormatStructuredJson: () -> Unit,
     onCompositionMutation: (CompositionMutation) -> Unit,
-    onImproveCompositionField: (CompositionImproveTarget) -> Unit,
+    onRunCompositionAction: (CompositionAction) -> Unit,
     onUndoComposition: () -> Unit,
     onRedoComposition: () -> Unit,
     onCompositionBboxEditStart: () -> Unit,
@@ -236,7 +238,7 @@ fun GenerateScreen(
                     onStructuredJsonPromptCommit = onStructuredJsonPromptCommit,
                     onFormatStructuredJson = onFormatStructuredJson,
                     onCompositionMutation = onCompositionMutation,
-                    onImproveCompositionField = onImproveCompositionField,
+                    onRunCompositionAction = onRunCompositionAction,
                     onUndoComposition = onUndoComposition,
                     onRedoComposition = onRedoComposition,
                     onCompositionDescriptionChange = onCompositionDescriptionChange,
@@ -363,7 +365,7 @@ private fun GenerationPanel(
     onStructuredJsonPromptCommit: () -> Unit,
     onFormatStructuredJson: () -> Unit,
     onCompositionMutation: (CompositionMutation) -> Unit,
-    onImproveCompositionField: (CompositionImproveTarget) -> Unit,
+    onRunCompositionAction: (CompositionAction) -> Unit,
     onUndoComposition: () -> Unit,
     onRedoComposition: () -> Unit,
     onCompositionDescriptionChange: (Int, String) -> Unit,
@@ -423,7 +425,7 @@ private fun GenerationPanel(
                     onStructuredJsonPromptCommit = onStructuredJsonPromptCommit,
                     onFormatStructuredJson = onFormatStructuredJson,
                     onCompositionMutation = onCompositionMutation,
-                    onImproveCompositionField = onImproveCompositionField,
+                    onRunCompositionAction = onRunCompositionAction,
                     onUndoComposition = onUndoComposition,
                     onRedoComposition = onRedoComposition,
                     onCompositionDescriptionChange = onCompositionDescriptionChange,
@@ -513,7 +515,7 @@ private fun PromptTabContent(
     onStructuredJsonPromptCommit: () -> Unit,
     onFormatStructuredJson: () -> Unit,
     onCompositionMutation: (CompositionMutation) -> Unit,
-    onImproveCompositionField: (CompositionImproveTarget) -> Unit,
+    onRunCompositionAction: (CompositionAction) -> Unit,
     onUndoComposition: () -> Unit,
     onRedoComposition: () -> Unit,
     onCompositionDescriptionChange: (Int, String) -> Unit,
@@ -551,7 +553,7 @@ private fun PromptTabContent(
             CompositionDocumentEditor(
                 state = state,
                 onMutation = onCompositionMutation,
-                onImprove = onImproveCompositionField,
+                onRunAction = onRunCompositionAction,
                 onUndo = onUndoComposition,
                 onRedo = onRedoComposition,
             )
@@ -561,7 +563,7 @@ private fun PromptTabContent(
                 activeImproveAction = state.activeCompositionImproveAction,
                 onElementSelected = onCompositionElementSelected,
                 onMutation = onCompositionMutation,
-                onImprove = onImproveCompositionField,
+                onRunAction = onRunCompositionAction,
                 onElementDescriptionChange = onCompositionDescriptionChange,
                 onElementTextChange = onCompositionTextChange,
                 onElementPaletteChange = onCompositionPaletteChange,
@@ -701,7 +703,7 @@ private fun StructuredJsonStatus(state: GenerationUiState) {
 private fun CompositionDocumentEditor(
     state: GenerationUiState,
     onMutation: (CompositionMutation) -> Unit,
-    onImprove: (CompositionImproveTarget) -> Unit,
+    onRunAction: (CompositionAction) -> Unit,
     onUndo: () -> Unit,
     onRedo: () -> Unit,
 ) {
@@ -735,8 +737,8 @@ private fun CompositionDocumentEditor(
             label = "High-level description",
             value = document.highLevelDescription,
             onCommit = { onMutation(CompositionMutation.UpdateHighLevelDescription(it)) },
-            onImprove = { onImprove(CompositionImproveTarget.HighLevelDescription) },
-            isImproving = state.activeCompositionImproveAction == CompositionImproveTarget.HighLevelDescription.actionId,
+            onImprove = { onRunAction(CompositionAction.ImproveField(CompositionImproveTarget.HighLevelDescription)) },
+            isImproving = state.activeCompositionImproveAction == CompositionAction.ImproveField(CompositionImproveTarget.HighLevelDescription).actionId,
             improveEnabled = state.activeCompositionImproveAction == null,
             minHeight = 82.dp,
         )
@@ -744,18 +746,18 @@ private fun CompositionDocumentEditor(
         Label("Style")
         CompositionEditField("Aesthetics", document.style.aesthetics, {
             onMutation(CompositionMutation.UpdateStyleField(IdeogramStyleField.Aesthetics, it))
-        }, onImprove = { onImprove(CompositionImproveTarget.StyleField(IdeogramStyleField.Aesthetics)) },
-            isImproving = state.activeCompositionImproveAction == "style_description.aesthetics",
+        }, onImprove = { onRunAction(CompositionAction.ImproveField(CompositionImproveTarget.StyleField(IdeogramStyleField.Aesthetics))) },
+            isImproving = state.activeCompositionImproveAction == CompositionAction.ImproveField(CompositionImproveTarget.StyleField(IdeogramStyleField.Aesthetics)).actionId,
             improveEnabled = state.activeCompositionImproveAction == null)
         CompositionEditField("Lighting", document.style.lighting, {
             onMutation(CompositionMutation.UpdateStyleField(IdeogramStyleField.Lighting, it))
-        }, onImprove = { onImprove(CompositionImproveTarget.StyleField(IdeogramStyleField.Lighting)) },
-            isImproving = state.activeCompositionImproveAction == "style_description.lighting",
+        }, onImprove = { onRunAction(CompositionAction.ImproveField(CompositionImproveTarget.StyleField(IdeogramStyleField.Lighting))) },
+            isImproving = state.activeCompositionImproveAction == CompositionAction.ImproveField(CompositionImproveTarget.StyleField(IdeogramStyleField.Lighting)).actionId,
             improveEnabled = state.activeCompositionImproveAction == null)
         CompositionEditField("Medium", document.style.medium, {
             onMutation(CompositionMutation.UpdateStyleField(IdeogramStyleField.Medium, it))
-        }, onImprove = { onImprove(CompositionImproveTarget.StyleField(IdeogramStyleField.Medium)) },
-            isImproving = state.activeCompositionImproveAction == "style_description.medium",
+        }, onImprove = { onRunAction(CompositionAction.ImproveField(CompositionImproveTarget.StyleField(IdeogramStyleField.Medium))) },
+            isImproving = state.activeCompositionImproveAction == CompositionAction.ImproveField(CompositionImproveTarget.StyleField(IdeogramStyleField.Medium)).actionId,
             improveEnabled = state.activeCompositionImproveAction == null)
         val usesPhoto = document.style.photo != null
         Row(
@@ -793,9 +795,11 @@ private fun CompositionDocumentEditor(
                 )
             },
             onImprove = {
-                onImprove(CompositionImproveTarget.StyleField(if (usesPhoto) IdeogramStyleField.Photo else IdeogramStyleField.ArtStyle))
+                onRunAction(CompositionAction.ImproveField(CompositionImproveTarget.StyleField(if (usesPhoto) IdeogramStyleField.Photo else IdeogramStyleField.ArtStyle)))
             },
-            isImproving = state.activeCompositionImproveAction == if (usesPhoto) "style_description.photo" else "style_description.art_style",
+            isImproving = state.activeCompositionImproveAction == CompositionAction.ImproveField(
+                CompositionImproveTarget.StyleField(if (usesPhoto) IdeogramStyleField.Photo else IdeogramStyleField.ArtStyle),
+            ).actionId,
             improveEnabled = state.activeCompositionImproveAction == null,
         )
         PaletteEditor(
@@ -803,6 +807,9 @@ private fun CompositionDocumentEditor(
             colors = document.style.colorPalette,
             maxColors = 16,
             onColorsChange = { onMutation(CompositionMutation.UpdateGlobalPalette(it)) },
+            onSuggest = { onRunAction(CompositionAction.SuggestPalette(PaletteTarget.Global)) },
+            isSuggesting = state.activeCompositionImproveAction == CompositionAction.SuggestPalette(PaletteTarget.Global).actionId,
+            suggestEnabled = state.activeCompositionImproveAction == null,
         )
 
         Label("Composition")
@@ -810,8 +817,8 @@ private fun CompositionDocumentEditor(
             label = "Background",
             value = document.background,
             onCommit = { onMutation(CompositionMutation.UpdateBackground(it)) },
-            onImprove = { onImprove(CompositionImproveTarget.Background) },
-            isImproving = state.activeCompositionImproveAction == CompositionImproveTarget.Background.actionId,
+            onImprove = { onRunAction(CompositionAction.ImproveField(CompositionImproveTarget.Background)) },
+            isImproving = state.activeCompositionImproveAction == CompositionAction.ImproveField(CompositionImproveTarget.Background).actionId,
             improveEnabled = state.activeCompositionImproveAction == null,
             minHeight = 70.dp,
         )
@@ -986,7 +993,7 @@ private fun IdeogramElementEditor(
     activeImproveAction: String?,
     onElementSelected: (Int) -> Unit,
     onMutation: (CompositionMutation) -> Unit,
-    onImprove: (CompositionImproveTarget) -> Unit,
+    onRunAction: (CompositionAction) -> Unit,
     onElementDescriptionChange: (Int, String) -> Unit,
     onElementTextChange: (Int, String) -> Unit,
     onElementPaletteChange: (Int, List<String>) -> Unit,
@@ -1015,11 +1022,14 @@ private fun IdeogramElementEditor(
             onDelete = { onMutation(CompositionMutation.RemoveElement(index)) },
             onBboxChange = { onMutation(CompositionMutation.UpdateElementBbox(index, it)) },
             onDescriptionChange = { onElementDescriptionChange(index, it) },
-            onImproveDescription = { onImprove(CompositionImproveTarget.ElementDescription(index)) },
-            isImprovingDescription = activeImproveAction == CompositionImproveTarget.ElementDescription(index).actionId,
+            onImproveDescription = { onRunAction(CompositionAction.ImproveField(CompositionImproveTarget.ElementDescription(index))) },
+            isImprovingDescription = activeImproveAction == CompositionAction.ImproveField(CompositionImproveTarget.ElementDescription(index)).actionId,
             improveDescriptionEnabled = activeImproveAction == null,
             onTextChange = { onElementTextChange(index, it) },
             onPaletteChange = { onElementPaletteChange(index, it) },
+            onSuggestPalette = { onRunAction(CompositionAction.SuggestPalette(PaletteTarget.Element(index))) },
+            isSuggestingPalette = activeImproveAction == CompositionAction.SuggestPalette(PaletteTarget.Element(index)).actionId,
+            suggestPaletteEnabled = activeImproveAction == null,
         )
     }
 }
@@ -1243,6 +1253,9 @@ private fun ElementPreviewRow(
     improveDescriptionEnabled: Boolean,
     onTextChange: (String) -> Unit,
     onPaletteChange: (List<String>) -> Unit,
+    onSuggestPalette: () -> Unit,
+    isSuggestingPalette: Boolean,
+    suggestPaletteEnabled: Boolean,
 ) {
     val shape = RoundedCornerShape(DeskControlCornerRadius)
     Column(
@@ -1337,6 +1350,9 @@ private fun ElementPreviewRow(
             colors = colors,
             maxColors = 5,
             onColorsChange = onPaletteChange,
+            onSuggest = onSuggestPalette,
+            isSuggesting = isSuggestingPalette,
+            suggestEnabled = suggestPaletteEnabled,
         )
     }
 }
@@ -1390,16 +1406,33 @@ private fun PaletteEditor(
     colors: List<String>,
     maxColors: Int,
     onColorsChange: (List<String>) -> Unit,
+    onSuggest: (() -> Unit)? = null,
+    isSuggesting: Boolean = false,
+    suggestEnabled: Boolean = true,
 ) {
     Column(
         modifier = Modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(5.dp),
     ) {
-        Text(
-            text = label,
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            if (onSuggest != null) {
+                SubtleTextButton(
+                    icon = Icons.Default.AutoFixHigh,
+                    text = if (isSuggesting) "Suggesting..." else "Suggest",
+                    onClick = onSuggest,
+                    enabled = suggestEnabled,
+                )
+            }
+        }
         FlowRow(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(6.dp),
