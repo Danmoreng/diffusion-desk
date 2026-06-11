@@ -58,7 +58,11 @@ sealed interface CompositionMutation {
     data class UpdateElementDescription(val index: Int, val value: String) : CompositionMutation
     data class UpdateElementText(val index: Int, val value: String) : CompositionMutation
     data class UpdateElementPalette(val index: Int, val colors: List<String>) : CompositionMutation
+    data class AddElement(val type: String) : CompositionMutation
+    data class RemoveElement(val index: Int) : CompositionMutation
     data class UpdateAdditionalField(val path: String, val jsonValue: String) : CompositionMutation
+    data class AddAdditionalField(val path: String, val jsonValue: String) : CompositionMutation
+    data class RemoveAdditionalField(val path: String) : CompositionMutation
 }
 
 private val compositionJson = Json { ignoreUnknownKeys = true }
@@ -138,9 +142,41 @@ internal fun IdeogramCompositionDocument.applyMutation(mutation: CompositionMuta
         is CompositionMutation.UpdateElementPalette -> updateElement(root, mutation.index) { element ->
             setPalette(element, mutation.colors)
         }
+        is CompositionMutation.AddElement -> {
+            require(mutation.type in setOf("obj", "text")) { "Element type must be obj or text." }
+            val composition = requiredObject(root, "compositional_deconstruction").toMutableMap()
+            val elements = composition["elements"]?.asArray()?.toMutableList() ?: mutableListOf()
+            elements += JsonObject(linkedMapOf<String, JsonElement>().apply {
+                put("type", JsonPrimitive(mutation.type))
+                if (mutation.type == "text") put("text", JsonPrimitive("New text"))
+                put("desc", JsonPrimitive(if (mutation.type == "text") "New text element." else "New object."))
+            })
+            composition["elements"] = JsonArray(elements)
+            root["compositional_deconstruction"] = JsonObject(composition)
+        }
+        is CompositionMutation.RemoveElement -> {
+            val composition = requiredObject(root, "compositional_deconstruction").toMutableMap()
+            val elements = composition["elements"]?.asArray()?.toMutableList()
+                ?: error("compositional_deconstruction.elements is required.")
+            require(mutation.index in elements.indices) { "Element ${mutation.index + 1} is missing." }
+            elements.removeAt(mutation.index)
+            composition["elements"] = JsonArray(elements)
+            root["compositional_deconstruction"] = JsonObject(composition)
+        }
         is CompositionMutation.UpdateAdditionalField -> {
             val value = compositionJson.parseToJsonElement(mutation.jsonValue)
             val updated = updateJsonPath(JsonObject(root), parseJsonPath(mutation.path), value)
+            root.clear()
+            root.putAll(updated.asObject() ?: error("The root composition must remain an object."))
+        }
+        is CompositionMutation.AddAdditionalField -> {
+            val value = compositionJson.parseToJsonElement(mutation.jsonValue)
+            val updated = setJsonPath(JsonObject(root), parseJsonPath(mutation.path), value)
+            root.clear()
+            root.putAll(updated.asObject() ?: error("The root composition must remain an object."))
+        }
+        is CompositionMutation.RemoveAdditionalField -> {
+            val updated = removeJsonPath(JsonObject(root), parseJsonPath(mutation.path))
             root.clear()
             root.putAll(updated.asObject() ?: error("The root composition must remain an object."))
         }
@@ -288,5 +324,42 @@ private fun updateJsonPath(current: JsonElement, path: List<JsonPathToken>, valu
             array[token.value] = updateJsonPath(child, path.drop(1), value)
             JsonArray(array)
         }
+    }
+}
+
+private fun setJsonPath(current: JsonElement, path: List<JsonPathToken>, value: JsonElement): JsonElement {
+    if (path.isEmpty()) return value
+    return when (val token = path.first()) {
+        is JsonPathToken.Key -> {
+            val obj = current.asObject()?.toMutableMap() ?: error("${token.value} is not inside an object.")
+            if (path.size == 1) obj[token.value] = value
+            else {
+                val child = obj[token.value] ?: error("${token.value} does not exist.")
+                obj[token.value] = setJsonPath(child, path.drop(1), value)
+            }
+            JsonObject(obj)
+        }
+        is JsonPathToken.Index -> {
+            val array = current.asArray()?.toMutableList() ?: error("[${token.value}] is not inside an array.")
+            val child = array.getOrNull(token.value) ?: error("Array index ${token.value} does not exist.")
+            array[token.value] = setJsonPath(child, path.drop(1), value)
+            JsonArray(array)
+        }
+    }
+}
+
+private fun removeJsonPath(current: JsonElement, path: List<JsonPathToken>): JsonElement {
+    require(path.isNotEmpty()) { "JSON path is empty." }
+    return when (val token = path.first()) {
+        is JsonPathToken.Key -> {
+            val obj = current.asObject()?.toMutableMap() ?: error("${token.value} is not inside an object.")
+            if (path.size == 1) require(obj.remove(token.value) != null) { "${token.value} does not exist." }
+            else {
+                val child = obj[token.value] ?: error("${token.value} does not exist.")
+                obj[token.value] = removeJsonPath(child, path.drop(1))
+            }
+            JsonObject(obj)
+        }
+        is JsonPathToken.Index -> error("Removing array items through Additional Fields is not supported.")
     }
 }

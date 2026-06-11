@@ -140,7 +140,10 @@ fun GenerateScreen(
     onCompositionMutation: (CompositionMutation) -> Unit,
     onUndoComposition: () -> Unit,
     onRedoComposition: () -> Unit,
+    onCompositionBboxEditStart: () -> Unit,
     onCompositionBboxChange: (Int, List<Int>) -> Unit,
+    onCompositionBboxEditEnd: () -> Unit,
+    onCompositionBboxEditCancel: () -> Unit,
     onCompositionDescriptionChange: (Int, String) -> Unit,
     onCompositionTextChange: (Int, String) -> Unit,
     onCompositionPaletteChange: (Int, List<String>) -> Unit,
@@ -294,7 +297,10 @@ fun GenerateScreen(
                     showCompositionOverlay = showCompositionOverlay,
                     onShowCompositionOverlayChange = onShowCompositionOverlayChange,
                     onCompositionElementSelected = onCompositionElementSelected,
+                    onCompositionBboxEditStart = onCompositionBboxEditStart,
                     onCompositionBboxChange = onCompositionBboxChange,
+                    onCompositionBboxEditEnd = onCompositionBboxEditEnd,
+                    onCompositionBboxEditCancel = onCompositionBboxEditCancel,
                     modifier = Modifier
                         .weight(1f)
                         .fillMaxHeight(),
@@ -785,16 +791,106 @@ private fun CompositionDocumentEditor(
         if (document.additionalFields.isNotEmpty()) {
             Label("Additional fields")
             document.additionalFields.forEach { field ->
-                CompositionEditField(
-                    label = field.path,
-                    value = field.jsonValue,
-                    onCommit = { onMutation(CompositionMutation.UpdateAdditionalField(field.path, it)) },
-                    minHeight = 42.dp,
-                    singleLine = true,
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalAlignment = Alignment.Bottom,
+                ) {
+                    Box(Modifier.weight(1f)) {
+                        CompositionEditField(
+                            label = field.path,
+                            value = field.jsonValue,
+                            onCommit = { onMutation(CompositionMutation.UpdateAdditionalField(field.path, it)) },
+                            minHeight = 42.dp,
+                            singleLine = true,
+                        )
+                    }
+                    DeskIconButton(
+                        icon = Icons.Default.Delete,
+                        contentDescription = "Remove ${field.path}",
+                        onClick = { onMutation(CompositionMutation.RemoveAdditionalField(field.path)) },
+                        tooltip = "Remove field",
+                    )
+                }
+            }
+        }
+        var newFieldPath by remember { mutableStateOf("") }
+        var newFieldValue by remember { mutableStateOf("\"value\"") }
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalAlignment = Alignment.Bottom,
+        ) {
+            CompactCompositionInput(
+                label = "New field path",
+                value = newFieldPath,
+                onValueChange = { newFieldPath = it },
+                modifier = Modifier.weight(1f),
+            )
+            CompactCompositionInput(
+                label = "JSON value",
+                value = newFieldValue,
+                onValueChange = { newFieldValue = it },
+                modifier = Modifier.weight(1f),
+            )
+            DeskIconButton(
+                icon = Icons.Default.Add,
+                contentDescription = "Add additional field",
+                onClick = {
+                    if (newFieldPath.isNotBlank() && newFieldValue.isNotBlank()) {
+                        onMutation(CompositionMutation.AddAdditionalField(newFieldPath.trim(), newFieldValue.trim()))
+                        newFieldPath = ""
+                        newFieldValue = "\"value\""
+                    }
+                },
+                tooltip = "Add field",
+            )
+        }
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Label("Elements")
+            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                SubtleTextButton(
+                    icon = Icons.Default.Add,
+                    text = "Add object",
+                    onClick = { onMutation(CompositionMutation.AddElement("obj")) },
+                )
+                SubtleTextButton(
+                    icon = Icons.Default.Add,
+                    text = "Add text",
+                    onClick = { onMutation(CompositionMutation.AddElement("text")) },
                 )
             }
         }
-        Label("Elements")
+    }
+}
+
+@Composable
+private fun CompactCompositionInput(
+    label: String,
+    value: String,
+    onValueChange: (String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Column(modifier, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        val shape = RoundedCornerShape(5.dp)
+        BasicTextField(
+            value = value,
+            onValueChange = onValueChange,
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(shape)
+                .background(MaterialTheme.colorScheme.surface)
+                .border(1.dp, MaterialTheme.colorScheme.outlineVariant, shape)
+                .padding(horizontal = 8.dp, vertical = 6.dp),
+            singleLine = true,
+            textStyle = MaterialTheme.typography.bodySmall.copy(color = MaterialTheme.colorScheme.onSurface),
+            cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+        )
     }
 }
 
@@ -870,6 +966,7 @@ private fun IdeogramElementEditor(
             selected = index == selectedIndex,
             onClick = { onElementSelected(index) },
             onTypeChange = { onMutation(CompositionMutation.UpdateElementType(index, it)) },
+            onDelete = { onMutation(CompositionMutation.RemoveElement(index)) },
             onBboxChange = { onMutation(CompositionMutation.UpdateElementBbox(index, it)) },
             onDescriptionChange = { onElementDescriptionChange(index, it) },
             onTextChange = { onElementTextChange(index, it) },
@@ -888,7 +985,10 @@ private fun IdeogramCompositionCanvas(
     showOverlay: Boolean,
     outputDir: String,
     onElementSelected: (Int) -> Unit,
+    onBboxEditStart: () -> Unit,
     onElementBboxChange: (Int, List<Int>) -> Unit,
+    onBboxEditEnd: () -> Unit,
+    onBboxEditCancel: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val density = LocalDensity.current
@@ -970,6 +1070,7 @@ private fun IdeogramCompositionCanvas(
                                     var dragY = 0f
                                     detectDragGestures(
                                         onDragStart = {
+                                            onBboxEditStart()
                                             latestOnElementSelected(index)
                                             startBbox = latestElements.getOrNull(index)?.bbox.orEmpty()
                                             dragX = 0f
@@ -984,6 +1085,8 @@ private fun IdeogramCompositionCanvas(
                                                 latestOnElementBboxChange(index, nextBbox)
                                             }
                                         },
+                                        onDragEnd = onBboxEditEnd,
+                                        onDragCancel = onBboxEditCancel,
                                     )
                                 }
                                 .padding(4.dp),
@@ -1001,6 +1104,7 @@ private fun IdeogramCompositionCanvas(
                                         handle = handle,
                                         color = boxColor,
                                         startBbox = { latestElements.getOrNull(index)?.bbox.orEmpty() },
+                                        onEditStart = onBboxEditStart,
                                         onDragStart = { latestOnElementSelected(index) },
                                         onDrag = { startBbox, deltaX, deltaY ->
                                             val deltaNormX = canvasDeltaToIdeogram(deltaX, canvasWidthPx)
@@ -1009,6 +1113,8 @@ private fun IdeogramCompositionCanvas(
                                                 latestOnElementBboxChange(index, nextBbox)
                                             }
                                         },
+                                        onDragEnd = onBboxEditEnd,
+                                        onDragCancel = onBboxEditCancel,
                                     )
                                 }
                             }
@@ -1025,8 +1131,11 @@ private fun BoxScope.CompositionResizeHandleBox(
     handle: CompositionResizeHandle,
     color: Color,
     startBbox: () -> List<Int>,
+    onEditStart: () -> Unit,
     onDragStart: () -> Unit,
     onDrag: (List<Int>, Float, Float) -> Unit,
+    onDragEnd: () -> Unit,
+    onDragCancel: () -> Unit,
 ) {
     val alignment = when (handle) {
         CompositionResizeHandle.TopLeft -> Alignment.TopStart
@@ -1047,6 +1156,7 @@ private fun BoxScope.CompositionResizeHandleBox(
                 var dragY = 0f
                 detectDragGestures(
                     onDragStart = {
+                        onEditStart()
                         onDragStart()
                         capturedBbox = startBbox()
                         dragX = 0f
@@ -1057,6 +1167,8 @@ private fun BoxScope.CompositionResizeHandleBox(
                         dragY += dragAmount.y
                         onDrag(capturedBbox, dragX, dragY)
                     },
+                    onDragEnd = onDragEnd,
+                    onDragCancel = onDragCancel,
                 )
             },
     )
@@ -1074,6 +1186,7 @@ private fun ElementPreviewRow(
     selected: Boolean,
     onClick: () -> Unit,
     onTypeChange: (String) -> Unit,
+    onDelete: () -> Unit,
     onBboxChange: (List<Int>?) -> Unit,
     onDescriptionChange: (String) -> Unit,
     onTextChange: (String) -> Unit,
@@ -1105,11 +1218,19 @@ private fun ElementPreviewRow(
                 fontWeight = FontWeight.SemiBold,
                 color = MaterialTheme.colorScheme.primary,
             )
-            SubtleTextButton(
-                icon = Icons.Default.SwapHoriz,
-                text = if (type == "text") "Use object" else "Use text",
-                onClick = { onTypeChange(if (type == "text") "obj" else "text") },
-            )
+            Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                SubtleTextButton(
+                    icon = Icons.Default.SwapHoriz,
+                    text = if (type == "text") "Use object" else "Use text",
+                    onClick = { onTypeChange(if (type == "text") "obj" else "text") },
+                )
+                DeskIconButton(
+                    icon = Icons.Default.Delete,
+                    contentDescription = "Delete element $index",
+                    onClick = onDelete,
+                    tooltip = "Delete element",
+                )
+            }
         }
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -1449,7 +1570,10 @@ internal fun PreviewPanel(
     showCompositionOverlay: Boolean,
     onShowCompositionOverlayChange: (Boolean) -> Unit,
     onCompositionElementSelected: (Int) -> Unit,
+    onCompositionBboxEditStart: () -> Unit,
     onCompositionBboxChange: (Int, List<Int>) -> Unit,
+    onCompositionBboxEditEnd: () -> Unit,
+    onCompositionBboxEditCancel: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Box(
@@ -1462,7 +1586,10 @@ internal fun PreviewPanel(
             showCompositionOverlay = showCompositionOverlay,
             onShowCompositionOverlayChange = onShowCompositionOverlayChange,
             onCompositionElementSelected = onCompositionElementSelected,
+            onCompositionBboxEditStart = onCompositionBboxEditStart,
             onCompositionBboxChange = onCompositionBboxChange,
+            onCompositionBboxEditEnd = onCompositionBboxEditEnd,
+            onCompositionBboxEditCancel = onCompositionBboxEditCancel,
         )
     }
 }
@@ -1759,7 +1886,10 @@ private fun CompositionPreviewHost(
     showCompositionOverlay: Boolean,
     onShowCompositionOverlayChange: (Boolean) -> Unit,
     onCompositionElementSelected: (Int) -> Unit,
+    onCompositionBboxEditStart: () -> Unit,
     onCompositionBboxChange: (Int, List<Int>) -> Unit,
+    onCompositionBboxEditEnd: () -> Unit,
+    onCompositionBboxEditCancel: () -> Unit,
 ) {
     val image = state.images.firstOrNull()
     val elements = ideogramElementPreviews(state.ideogram.jsonPrompt)
@@ -1780,7 +1910,10 @@ private fun CompositionPreviewHost(
                 showOverlay = showCompositionOverlay,
                 outputDir = outputDir,
                 onElementSelected = onCompositionElementSelected,
+                onBboxEditStart = onCompositionBboxEditStart,
                 onElementBboxChange = onCompositionBboxChange,
+                onBboxEditEnd = onCompositionBboxEditEnd,
+                onBboxEditCancel = onCompositionBboxEditCancel,
                 modifier = Modifier.fillMaxSize(),
             )
         }
