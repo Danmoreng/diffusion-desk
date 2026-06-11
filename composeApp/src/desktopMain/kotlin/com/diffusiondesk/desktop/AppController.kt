@@ -12,6 +12,7 @@ import com.diffusiondesk.desktop.core.LlmPresetStore
 import com.diffusiondesk.desktop.core.LlmRoleService
 import com.diffusiondesk.desktop.core.LlmWorkerPool
 import com.diffusiondesk.desktop.core.NotificationCenter
+import com.diffusiondesk.desktop.composition.CompositionActionExecutor
 import com.diffusiondesk.desktop.viewmodel.GalleryViewModel
 import com.diffusiondesk.desktop.viewmodel.GenerationViewModel
 import com.diffusiondesk.desktop.viewmodel.LibraryViewModel
@@ -36,6 +37,7 @@ class AppController {
     private val backendManager = BackendManager(scope, client, internalToken)
     private val llmWorkerPool = LlmWorkerPool(scope, client, internalToken)
     private val llmRoleService = LlmRoleService(llmWorkerPool, client)
+    private val compositionActionExecutor = CompositionActionExecutor(llmRoleService)
     private val imageTaggingService = ImageTaggingService(galleryRepository, llmWorkerPool, client)
     val notificationCenter = NotificationCenter(scope)
 
@@ -52,6 +54,7 @@ class AppController {
         imageTaggingService,
         llmRoleService,
         llmWorkerPool,
+        compositionActionExecutor,
     )
     val libraryViewModel = LibraryViewModel(scope, presetStore, llmPresetStore, backendManager, client)
     val galleryViewModel = GalleryViewModel(scope, galleryRepository, settingsStore, llmPresetStore, imageTaggingService)
