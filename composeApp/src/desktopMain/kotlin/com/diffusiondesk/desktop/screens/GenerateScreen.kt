@@ -1891,7 +1891,7 @@ private fun CompositionPreviewHost(
     onCompositionBboxEditEnd: () -> Unit,
     onCompositionBboxEditCancel: () -> Unit,
 ) {
-    val image = state.images.firstOrNull()
+    val image = state.images.firstOrNull().takeUnless { state.isCurrentDraftModified }
     val elements = ideogramElementPreviews(state.ideogram.jsonPrompt)
 
     Box(

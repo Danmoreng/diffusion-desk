@@ -487,7 +487,31 @@ data class GenerationUiState(
     val currentHistoryItem: GenerationHistoryItem? get() = history.getOrNull(historyIndex)
     val canUndoPrompt: Boolean get() = promptHistoryIndex > 0
     val canRedoPrompt: Boolean get() = promptHistoryIndex < promptHistory.lastIndex
+    val isCurrentDraftModified: Boolean get() {
+        val item = currentHistoryItem ?: return false
+        val widthValue = width.toIntOrNull() ?: return true
+        val heightValue = height.toIntOrNull() ?: return true
+        val stepsValue = steps.toIntOrNull() ?: return true
+        val cfgValue = cfgScale.toDoubleOrNull() ?: return true
+        val seedValue = seed.toIntOrNull() ?: return true
+        if (
+            widthValue != item.params.width ||
+            heightValue != item.params.height ||
+            stepsValue != item.params.steps ||
+            cfgValue != item.params.cfgScale ||
+            seedValue != item.params.seed ||
+            sampler != item.params.sampler
+        ) return true
+
+        return when (item.promptMode) {
+            ImagePromptMode.Text -> prompt != item.params.prompt || negativePrompt != item.params.negativePrompt
+            ImagePromptMode.Json -> canonicalIdeogramPromptOrNull(ideogram.jsonPrompt) != canonicalIdeogramPromptOrNull(item.params.prompt)
+        }
+    }
 }
+
+private fun canonicalIdeogramPromptOrNull(value: String): String? =
+    parseIdeogramCompositionDocument(value).getOrNull()?.serializeForBackend()
 
 class GenerationViewModel(
     private val scope: CoroutineScope,
