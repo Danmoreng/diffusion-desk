@@ -125,6 +125,28 @@ enum class IdeogramStructureTab {
     Preview,
 }
 
+sealed interface CompositionImproveTarget {
+    val actionId: String
+    data object HighLevelDescription : CompositionImproveTarget { override val actionId = "high_level_description" }
+    data class StyleField(val field: IdeogramStyleField) : CompositionImproveTarget {
+        override val actionId = "style_description.${field.jsonKey}"
+    }
+    data object Background : CompositionImproveTarget { override val actionId = "compositional_deconstruction.background" }
+    data class ElementDescription(val index: Int) : CompositionImproveTarget {
+        override val actionId = "compositional_deconstruction.elements[$index].desc"
+    }
+}
+
+internal fun compositionMutationForImprovedValue(
+    target: CompositionImproveTarget,
+    value: String,
+): CompositionMutation = when (target) {
+    CompositionImproveTarget.HighLevelDescription -> CompositionMutation.UpdateHighLevelDescription(value)
+    is CompositionImproveTarget.StyleField -> CompositionMutation.UpdateStyleField(target.field, value)
+    CompositionImproveTarget.Background -> CompositionMutation.UpdateBackground(value)
+    is CompositionImproveTarget.ElementDescription -> CompositionMutation.UpdateElementDescription(target.index, value)
+}
+
 internal const val IDEOGRAM_BBOX_GRID = 10
 
 data class IdeogramElementPreview(
@@ -476,6 +498,7 @@ data class GenerationUiState(
     val historyIndex: Int = -1,
     val isEndless: Boolean = false,
     val isEnhancingPrompt: Boolean = false,
+    val activeCompositionImproveAction: String? = null,
     val ideogram: IdeogramUiState = IdeogramUiState(),
     val selectedCompositionElementIndex: Int = 0,
     val message: String = "",
@@ -487,6 +510,12 @@ data class GenerationUiState(
     val currentHistoryItem: GenerationHistoryItem? get() = history.getOrNull(historyIndex)
     val canUndoPrompt: Boolean get() = promptHistoryIndex > 0
     val canRedoPrompt: Boolean get() = promptHistoryIndex < promptHistory.lastIndex
+    val isCurrentDraftResolutionModified: Boolean get() {
+        val item = currentHistoryItem ?: return false
+        val widthValue = width.toIntOrNull() ?: return true
+        val heightValue = height.toIntOrNull() ?: return true
+        return widthValue != item.params.width || heightValue != item.params.height
+    }
     val isCurrentDraftModified: Boolean get() {
         val item = currentHistoryItem ?: return false
         val widthValue = width.toIntOrNull() ?: return true
@@ -731,6 +760,69 @@ class GenerationViewModel(
         applyCompositionMutation(CompositionMutation.UpdateElementPalette(index, normalizePalette(colors, 5)))
 
     fun applyCompositionMutation(mutation: CompositionMutation) = applyCompositionMutation(mutation, recordHistory = true)
+
+    fun improveCompositionField(target: CompositionImproveTarget) {
+        scope.launch {
+            val state = _uiState.value
+            val document = state.ideogram.document ?: run {
+                update { copy(error = "Composition JSON is invalid.") }
+                return@launch
+            }
+            val currentValue = when (target) {
+                CompositionImproveTarget.HighLevelDescription -> document.highLevelDescription
+                is CompositionImproveTarget.StyleField -> when (target.field) {
+                    IdeogramStyleField.Aesthetics -> document.style.aesthetics
+                    IdeogramStyleField.Lighting -> document.style.lighting
+                    IdeogramStyleField.Medium -> document.style.medium
+                    IdeogramStyleField.Photo -> document.style.photo.orEmpty()
+                    IdeogramStyleField.ArtStyle -> document.style.artStyle.orEmpty()
+                }
+                CompositionImproveTarget.Background -> document.background
+                is CompositionImproveTarget.ElementDescription -> document.elements.getOrNull(target.index)?.description.orEmpty()
+            }
+            if (currentValue.isBlank()) {
+                update { copy(error = "The selected composition field is empty.") }
+                return@launch
+            }
+
+            update {
+                copy(
+                    activeCompositionImproveAction = target.actionId,
+                    message = "Improving ${target.actionId}...",
+                    error = null,
+                )
+            }
+            val settings = settingsStore.load()
+            val presets = llmPresetStore.load()
+            val roles = llmPresetStore.loadRoles()
+            llmRoleService.improveIdeogramField(
+                settings = settings,
+                presets = presets,
+                roles = roles,
+                targetPath = target.actionId,
+                currentValue = currentValue,
+                documentJson = document.serializeForBackend(),
+                width = state.width.toIntOrNull() ?: 1024,
+                height = state.height.toIntOrNull() ?: 1024,
+            ).onSuccess { improvedValue ->
+                applyCompositionMutation(compositionMutationForImprovedValue(target, improvedValue))
+                update {
+                    copy(
+                        activeCompositionImproveAction = null,
+                        message = "Improved ${target.actionId}.",
+                        error = null,
+                    )
+                }
+            }.onFailure { error ->
+                update {
+                    copy(
+                        activeCompositionImproveAction = null,
+                        error = error.message ?: "Composition field improvement failed.",
+                    )
+                }
+            }
+        }
+    }
 
     private fun applyCompositionMutation(mutation: CompositionMutation, recordHistory: Boolean) = update {
         val document = ideogram.document

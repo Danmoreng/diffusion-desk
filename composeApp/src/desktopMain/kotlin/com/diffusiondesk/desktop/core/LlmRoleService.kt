@@ -3,6 +3,9 @@ package com.diffusiondesk.desktop.core
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.time.Duration
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 
 class LlmRoleService(
     private val llmWorkerPool: LlmWorkerPool,
@@ -87,6 +90,43 @@ class LlmRoleService(
         }
     }
 
+    suspend fun improveIdeogramField(
+        settings: DesktopSettings,
+        presets: List<LlmPreset>,
+        roles: LlmRoleSettings,
+        targetPath: String,
+        currentValue: String,
+        documentJson: String,
+        width: Int,
+        height: Int,
+    ): Result<String> = withContext(Dispatchers.IO) {
+        runCatching {
+            val presetId = roles.promptEnhancerPresetId.ifBlank { roles.assistantPresetId }
+            val preset = presets.firstOrNull { it.id == presetId }
+                ?: error("Select a prompt enhancer or assistant LLM preset first.")
+            val worker = llmWorkerPool.ensureWorkerForPreset(settings, preset).getOrThrow()
+            val response = client.chatCompletion(
+                baseUrl = worker.baseUrl,
+                model = preset.modelPath,
+                messages = listOf(
+                    LlmChatMessage(role = "system", content = IDEOGRAM_FIELD_IMPROVEMENT_SYSTEM_PROMPT),
+                    LlmChatMessage(
+                        role = "user",
+                        content = "Target path: $targetPath\nCanvas: ${width}x${height}\nCurrent value: $currentValue\nFull composition context: $documentJson",
+                    ),
+                ),
+                maxTokens = 1024,
+                temperature = 0.2,
+                jsonResponse = true,
+                enableThinking = false,
+                timeout = Duration.ofMinutes(5),
+            ).getOrThrow()
+            val value = parseIdeogramFieldImprovement(response)
+            require(value.isNotBlank()) { "The LLM returned an empty field value." }
+            value
+        }
+    }
+
     private companion object {
         private const val IDEOGRAM_JSON_SYSTEM_PROMPT = """
 You convert raw image prompts into Ideogram 4 structured JSON captions. Think briefly, decide the visual layout once, then return only valid JSON. Do not write markdown or commentary.
@@ -103,5 +143,16 @@ Create one obj for each coherent subject rather than splitting a subject into an
 
 Descriptions must be concrete, visual, and specific. Avoid analysis, alternatives, hedging, shadows, and repeated scene context inside element descriptions. Use uppercase #RRGGBB colors, at most 16 global colors and at most 5 per element. Return compact JSON only.
 """
+        private const val IDEOGRAM_FIELD_IMPROVEMENT_SYSTEM_PROMPT = """
+You improve exactly one field in an Ideogram 4 structured caption. Return only a JSON object with one string property: {"value":"..."}.
+
+Use the full composition only as context. Do not return a full caption, patches, explanations, markdown, or additional keys. Preserve the field's purpose and improve visual specificity, clarity, consistency, and useful detail. Do not introduce alternatives or hedging. Keep literal in-image text unchanged because text content is edited separately.
+"""
     }
+}
+
+internal fun parseIdeogramFieldImprovement(response: String): String {
+    val root = Json.parseToJsonElement(response).jsonObject
+    require(root.keys == setOf("value")) { "The LLM field patch must contain only the value property." }
+    return root["value"]?.jsonPrimitive?.content?.trim().orEmpty()
 }

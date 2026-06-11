@@ -146,4 +146,18 @@ class IdeogramCompositionDocumentTest {
         assertEquals(listOf("one", "two"), committed.entries)
         assertEquals(1, committed.index)
     }
+
+    @Test
+    fun improvedFieldMutationChangesOnlyItsTarget() {
+        val document = parseIdeogramCompositionDocument(source).getOrThrow()
+        val mutation = compositionMutationForImprovedValue(
+            CompositionImproveTarget.ElementDescription(0),
+            "More detailed subject",
+        )
+        val changed = document.applyMutation(mutation).getOrThrow()
+
+        assertEquals("More detailed subject", changed.elements.first().description)
+        assertEquals(document.background, changed.background)
+        assertEquals(document.style, changed.style)
+    }
 }
