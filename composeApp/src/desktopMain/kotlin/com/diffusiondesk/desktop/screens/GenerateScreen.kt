@@ -45,6 +45,8 @@ import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.Dashboard
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Recycling
 import androidx.compose.material.icons.filled.Repeat
@@ -527,7 +529,13 @@ private fun PromptTabContent(
             onFormatStructuredJson = onFormatStructuredJson,
         )
         IdeogramStructureTab.Preview -> {
-            StructuredJsonStatus(state)
+            state.ideogram.jsonError?.let { error ->
+                Text(
+                    text = error,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                )
+            }
             CompositionDocumentEditor(
                 state = state,
                 onMutation = onCompositionMutation,
@@ -760,13 +768,11 @@ private fun CompositionDocumentEditor(
                 )
             },
         )
-        CompositionEditField(
+        PaletteEditor(
             label = "Global palette",
-            value = document.style.colorPalette.joinToString(", "),
-            onCommit = { value ->
-                onMutation(CompositionMutation.UpdateGlobalPalette(value.split(',').map(String::trim).filter(String::isNotEmpty)))
-            },
-            singleLine = true,
+            colors = document.style.colorPalette,
+            maxColors = 16,
+            onColorsChange = { onMutation(CompositionMutation.UpdateGlobalPalette(it)) },
         )
 
         Label("Composition")
@@ -1068,7 +1074,7 @@ private fun ElementPreviewRow(
     selected: Boolean,
     onClick: () -> Unit,
     onTypeChange: (String) -> Unit,
-    onBboxChange: (List<Int>) -> Unit,
+    onBboxChange: (List<Int>?) -> Unit,
     onDescriptionChange: (String) -> Unit,
     onTextChange: (String) -> Unit,
     onPaletteChange: (List<String>) -> Unit,
@@ -1105,17 +1111,22 @@ private fun ElementPreviewRow(
                 onClick = { onTypeChange(if (type == "text") "obj" else "text") },
             )
         }
-        InlineCompositionField(
-            value = bbox.joinToString(", "),
-            onValueChange = { raw ->
-                val values = raw.split(',').mapNotNull { it.trim().toIntOrNull() }
-                if (values.size == 4) onBboxChange(values)
-            },
-            placeholder = "y_min, x_min, y_max, x_max",
+        Row(
             modifier = Modifier.fillMaxWidth(),
-            textStyle = MaterialTheme.typography.labelSmall.copy(color = MaterialTheme.colorScheme.onSurfaceVariant),
-            singleLine = true,
-        )
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = compositionBboxLabel(bbox),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            SubtleTextButton(
+                icon = if (bbox.size == 4) Icons.Default.Delete else Icons.Default.Add,
+                text = if (bbox.size == 4) "Remove bounds" else "Place",
+                onClick = { onBboxChange(if (bbox.size == 4) null else listOf(250, 250, 750, 750)) },
+            )
+        }
         if (type == "text") {
             InlineCompositionField(
                 value = textValue,
@@ -1141,31 +1152,12 @@ private fun ElementPreviewRow(
                 modifier = Modifier.weight(1f),
                 textStyle = MaterialTheme.typography.bodySmall.copy(color = MaterialTheme.colorScheme.onSurfaceVariant),
             )
-            if (colors.isNotEmpty()) {
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(5.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    colors.forEachIndexed { colorIndex, color ->
-                        EditablePaletteSwatch(
-                            color = color,
-                            onColorChange = { nextColor ->
-                                onPaletteChange(colors.toMutableList().also { it[colorIndex] = nextColor })
-                            },
-                        )
-                    }
-                }
-            }
         }
-        InlineCompositionField(
-            value = colors.joinToString(", "),
-            onValueChange = { raw ->
-                onPaletteChange(raw.split(',').map(String::trim).filter(String::isNotEmpty))
-            },
-            placeholder = "#RRGGBB, #RRGGBB",
-            modifier = Modifier.fillMaxWidth(),
-            textStyle = MaterialTheme.typography.labelSmall.copy(color = MaterialTheme.colorScheme.onSurfaceVariant),
-            singleLine = true,
+        PaletteEditor(
+            label = "Palette",
+            colors = colors,
+            maxColors = 5,
+            onColorsChange = onPaletteChange,
         )
     }
 }
@@ -1212,10 +1204,63 @@ private fun InlineCompositionField(
     )
 }
 
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun PaletteEditor(
+    label: String,
+    colors: List<String>,
+    maxColors: Int,
+    onColorsChange: (List<String>) -> Unit,
+) {
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(5.dp),
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        FlowRow(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            colors.forEachIndexed { index, color ->
+                EditablePaletteSwatch(
+                    color = color,
+                    onColorChange = { nextColor ->
+                        onColorsChange(colors.toMutableList().also { it[index] = nextColor })
+                    },
+                    onDelete = { onColorsChange(colors.filterIndexed { colorIndex, _ -> colorIndex != index }) },
+                )
+            }
+            if (colors.size < maxColors) {
+                Box(
+                    modifier = Modifier
+                        .size(22.dp)
+                        .clip(CircleShape)
+                        .border(1.dp, MaterialTheme.colorScheme.outline, CircleShape)
+                        .clickable { onColorsChange(colors + "#808080") },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Add,
+                        contentDescription = "Add color",
+                        modifier = Modifier.size(14.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+        }
+    }
+}
+
 @Composable
 private fun EditablePaletteSwatch(
     color: String,
     onColorChange: (String) -> Unit,
+    onDelete: () -> Unit,
 ) {
     var expanded by remember { mutableStateOf(false) }
     var draft by remember(color, expanded) { mutableStateOf(color.uppercase()) }
@@ -1234,37 +1279,51 @@ private fun EditablePaletteSwatch(
         if (expanded) {
             Popup(
                 popupPositionProvider = DropdownPositionProvider(with(density) { 4.dp.roundToPx() }),
-                onDismissRequest = { expanded = false },
+                onDismissRequest = {
+                    if (isValid && draft != color.uppercase()) onColorChange(draft)
+                    expanded = false
+                },
                 properties = PopupProperties(focusable = true),
             ) {
                 Surface(
-                    modifier = Modifier.width(132.dp),
+                    modifier = Modifier.width(160.dp),
                     shape = RoundedCornerShape(6.dp),
                     color = MaterialTheme.colorScheme.surface,
                     shadowElevation = 8.dp,
                 ) {
-                    BasicTextField(
-                        value = draft,
-                        onValueChange = { value ->
-                            draft = normalizeHexDraft(value)
-                            if (IDEOGRAM_HEX_COLOR.matches(draft)) {
-                                onColorChange(draft)
-                            }
-                        },
-                        modifier = Modifier
-                            .border(
-                                1.dp,
-                                if (isValid) MaterialTheme.colorScheme.outline else MaterialTheme.colorScheme.error,
-                                RoundedCornerShape(5.dp),
-                            )
-                            .padding(horizontal = 10.dp, vertical = 8.dp),
-                        singleLine = true,
-                        textStyle = MaterialTheme.typography.bodyMedium.copy(
-                            color = MaterialTheme.colorScheme.onSurface,
-                            fontFamily = FontFamily.Monospace,
-                        ),
-                        cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
-                    )
+                    Column(
+                        modifier = Modifier.padding(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        BasicTextField(
+                            value = draft,
+                            onValueChange = { value ->
+                                draft = normalizeHexDraft(value)
+                            },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .border(
+                                    1.dp,
+                                    if (isValid) MaterialTheme.colorScheme.outline else MaterialTheme.colorScheme.error,
+                                    RoundedCornerShape(5.dp),
+                                )
+                                .padding(horizontal = 10.dp, vertical = 8.dp),
+                            singleLine = true,
+                            textStyle = MaterialTheme.typography.bodyMedium.copy(
+                                color = MaterialTheme.colorScheme.onSurface,
+                                fontFamily = FontFamily.Monospace,
+                            ),
+                            cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                        )
+                        SubtleTextButton(
+                            icon = Icons.Default.Delete,
+                            text = "Remove color",
+                            onClick = {
+                                expanded = false
+                                onDelete()
+                            },
+                        )
+                    }
                 }
             }
         }
