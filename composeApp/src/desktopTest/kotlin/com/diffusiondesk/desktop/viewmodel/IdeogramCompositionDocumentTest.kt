@@ -96,4 +96,54 @@ class IdeogramCompositionDocumentTest {
         assertFalse(serialized.contains("\\u"))
         assertFalse(serialized.contains("\n"))
     }
+
+    @Test
+    fun elementsCanBeAddedAndRemoved() {
+        val document = parseIdeogramCompositionDocument(source).getOrThrow()
+        val added = document.applyMutation(CompositionMutation.AddElement("text")).getOrThrow()
+
+        assertEquals(2, added.elements.size)
+        assertEquals("text", added.elements.last().type)
+        assertEquals(emptyList(), added.elements.last().bbox)
+
+        val removed = added.applyMutation(CompositionMutation.RemoveElement(0)).getOrThrow()
+        assertEquals(1, removed.elements.size)
+        assertEquals("text", removed.elements.first().type)
+    }
+
+    @Test
+    fun additionalFieldsCanBeAddedUpdatedAndRemoved() {
+        val document = parseIdeogramCompositionDocument(source).getOrThrow()
+        val added = document.applyMutation(
+            CompositionMutation.AddAdditionalField("style_description.custom_note", "\"first\""),
+        ).getOrThrow()
+        assertTrue(added.additionalFields.any { it.path == "style_description.custom_note" && it.jsonValue == "\"first\"" })
+
+        val updated = added.applyMutation(
+            CompositionMutation.UpdateAdditionalField("style_description.custom_note", "\"second\""),
+        ).getOrThrow()
+        assertTrue(updated.additionalFields.any { it.path == "style_description.custom_note" && it.jsonValue == "\"second\"" })
+
+        val removed = updated.applyMutation(
+            CompositionMutation.RemoveAdditionalField("style_description.custom_note"),
+        ).getOrThrow()
+        assertFalse(removed.additionalFields.any { it.path == "style_description.custom_note" })
+    }
+
+    @Test
+    fun newHistoryEntryDropsRedoBranch() {
+        val history = listOf("one", "two", "three")
+        val committed = commitCompositionHistory(history, index = 1, value = "replacement")
+
+        assertEquals(listOf("one", "two", "replacement"), committed.entries)
+        assertEquals(2, committed.index)
+    }
+
+    @Test
+    fun committingSameHistoryValueDoesNotDuplicateIt() {
+        val committed = commitCompositionHistory(listOf("one", "two"), index = 1, value = "two")
+
+        assertEquals(listOf("one", "two"), committed.entries)
+        assertEquals(1, committed.index)
+    }
 }
