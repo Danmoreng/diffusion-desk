@@ -34,6 +34,17 @@ list. This includes `high_level_description`, every `style_description` field,
 `compositional_deconstruction.background`, and every object or text element
 field.
 
+Palette and geometry controls stay visual rather than exposing duplicate raw
+representations. Global and per-element palettes use the same reusable swatch
+editor. A swatch opens color editing, each color can be removed, and an Add
+control appends a color up to the schema limit. Do not render an additional
+comma-separated palette text field beside the swatches.
+
+Bounding boxes are edited primarily on the right canvas. The element editor
+shows a compact read-only geometry summary using `X`, `Y`, `W`, and `H`, derived
+from Ideogram's `[y_min, x_min, y_max, x_max]` coordinates. It must not expose
+the raw four-value array as a normal text input.
+
 `compositional_deconstruction` is not a text value in the current Ideogram
 schema. It is the structural container for `background` and `elements`.
 Therefore, the UI represents it as a section with actions for the complete
@@ -106,6 +117,18 @@ edit certain values. Users can add or remove known optional fields. Switching
 between `photo` and `art_style` is one atomic mutation that removes the other
 field and preserves the Ideogram rule that exactly one must be present.
 
+Use one shared `PaletteEditor` for `style_description.color_palette` and each
+element's `color_palette`. It accepts a maximum count, normalizes values to
+uppercase `#RRGGBB`, supports edit/add/remove, and emits one atomic palette
+mutation per completed interaction. The global limit is 16 colors; the element
+limit is 5.
+
+Treat `bbox` as optional. Elements without a box remain valid and render in the
+editor with an `Unplaced` state plus an action to create a sensible default box.
+Removing a box is also a supported mutation. Geometry labels convert the
+serialized format as follows: `X = x_min`, `Y = y_min`, `W = x_max - x_min`,
+and `H = y_max - y_min`.
+
 ### 2. Use One Fit Calculation
 
 Do not independently reproduce `ContentScale.Fit` calculations for the image
@@ -131,6 +154,7 @@ sealed interface CompositionMutation {
     data class UpdateGlobalPalette(val colors: List<String>) : CompositionMutation
     data class AddElement(val element: IdeogramElement) : CompositionMutation
     data class UpdateElement(val index: Int, val patch: ElementPatch) : CompositionMutation
+    data class SetElementBounds(val index: Int, val bounds: IdeogramBounds?) : CompositionMutation
     data class RemoveElement(val index: Int) : CompositionMutation
     data class UpdateBackground(val description: String) : CompositionMutation
     data class UpdateStyle(val patch: StylePatch) : CompositionMutation
@@ -159,6 +183,61 @@ Every semantic field and structured section receives an LLM `Improve` action:
 Each action receives enough document context for consistency, but asks the LLM
 for the smallest possible patch for its target. Validate and apply the result
 immediately, then store it as exactly one undo/redo version.
+
+### 3a. Caption Profiles and Canonical Serialization
+
+The files in `reference/` describe two related but different contracts and must
+not be merged implicitly:
+
+- `reference/prompting.md` documents the Ideogram 4 training caption schema.
+  This is the canonical document and backend serialization profile.
+- `reference/v1.txt` is a focused Magic Prompt system prompt. It emits
+  `aspect_ratio`, `high_level_description`, and
+  `compositional_deconstruction`, intentionally omitting `style_description`.
+  Use its content-planning rules as prompt guidance, or support it through an
+  explicit adapter profile; do not treat its output contract as the canonical
+  Ideogram document schema.
+
+The canonical serializer must produce deterministic schema order because the
+Ideogram verifier and training distribution are order-sensitive:
+
+1. Top level: `high_level_description`, `style_description`,
+   `compositional_deconstruction`.
+2. Photo style: `aesthetics`, `lighting`, `photo`, `medium`, then optional
+   `color_palette`.
+3. Art style: `aesthetics`, `lighting`, `medium`, `art_style`, then optional
+   `color_palette`.
+4. Composition: `background`, then `elements`.
+5. Object element: `type`, optional `bbox`, `desc`, optional `color_palette`.
+6. Text element: `type`, optional `bbox`, `text`, `desc`, optional
+   `color_palette`.
+
+The backend payload uses compact JSON with literal Unicode characters. Pretty
+JSON remains a UI concern for the expert editor. Parsing may preserve unknown
+fields for lossless manual editing, but validation must surface that unknown
+fields are outside the documented training schema. Canonical backend
+serialization needs a deliberate extension policy rather than relying on
+arbitrary `JsonObject` insertion order.
+
+`high_level_description` and `style_description` are optional according to the
+official schema, although the high-level description is strongly recommended.
+`compositional_deconstruction`, `background`, and `elements` are required.
+Validation should match that distinction instead of making every recommended
+field structurally mandatory.
+
+The LLM layer exposes explicit caption-generation profiles:
+
+- **Canonical Ideogram caption**: generates the full official schema and is the
+  default for the structured editor.
+- **Slim Magic Prompt adapter**: accepts the `v1.txt` output, removes or consumes
+  `aspect_ratio` as generation metadata, and maps the result into the canonical
+  document without silently deleting an existing style section.
+
+The semantic rules from `v1.txt` should inform future role prompts: background
+is the scene shell, individually placeable subjects are elements, ground and
+atmospheric context stay in the background, one coherent subject is one object,
+literal text is represented by text elements, bounding boxes are optional and
+aspect-ratio-aware, and descriptions commit to concrete choices.
 
 ### 4. Maintain Complete Composition History
 
@@ -269,6 +348,12 @@ for other models.
 - Every Ideogram JSON value is individually editable outside the raw JSON tab.
   Known fields have dedicated controls; unknown fields use the Additional
   Fields editor.
+- Global and element palettes use the same swatch editor with edit, add, and
+  remove actions and no duplicate text list.
+- Bounding boxes are optional, displayed as `X/Y/W/H`, and primarily edited on
+  the right canvas rather than through raw coordinate text.
+- JSON sent to Ideogram follows canonical schema key order and compact Unicode-
+  preserving serialization.
 - Every field, section, and element can be improved through the LLM without
   regenerating unrelated document areas.
 - Progress works with both top and bottom Action Bar placement.
@@ -284,8 +369,15 @@ for other models.
   state.
 - Add controls for `high_level_description`, every known style field, global
   palette, background, and all element fields.
+- Replace duplicate palette representations with the shared swatch editor,
+  including add/remove behavior and schema-specific limits.
+- Remove raw bbox text editing from the structured editor. Show `X/Y/W/H`, edit
+  on the canvas, and support optional add/remove-box mutations.
 - Route all field editors and the Additional Fields editor through
   `CompositionMutation`.
+- Add a canonical order-aware serializer and a separate compact backend
+  serializer with literal Unicode output.
+- Add explicit canonical and slim Magic Prompt caption profiles/adapters.
 - Centralize validation for bounding boxes, element types, text fields, and
   palettes.
 - Add one undo/redo history for all manual, LLM, and assistant mutations.
@@ -429,9 +521,17 @@ Keep this extension compatible with simple text completion calls.
 - Mapping between normalized `0..1000` bounding boxes and pixel rectangles.
 - Move/resize behavior, including grid snapping and boundary constraints.
 - JSON parsing, round trips, and preservation of unknown fields.
+- Canonical key order for photo, art-style, object, and text captions.
+- Compact backend serialization preserves literal non-ASCII text.
+- Slim Magic Prompt output adapts into the canonical document without confusing
+  `aspect_ratio` with an Ideogram caption field.
 - Editing every known top-level, style, background, and element field.
 - Adding/removing optional fields and switching between `photo` and `art_style`
   while maintaining a valid schema.
+- Adding, editing, and removing global and element palette colors at their
+  respective limits.
+- Adding and removing optional bounding boxes and converting
+  `[y_min, x_min, y_max, x_max]` to `X/Y/W/H` correctly.
 - Generic editing of unknown Additional Fields by JSON path.
 - Every `CompositionMutation`, including invalid indexes and patches.
 - History behavior for manual, LLM, and assistant mutations, including dropping

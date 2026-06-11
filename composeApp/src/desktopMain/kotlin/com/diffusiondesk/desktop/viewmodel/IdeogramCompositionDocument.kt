@@ -54,7 +54,7 @@ sealed interface CompositionMutation {
     data class UpdateGlobalPalette(val colors: List<String>) : CompositionMutation
     data class UpdateBackground(val value: String) : CompositionMutation
     data class UpdateElementType(val index: Int, val value: String) : CompositionMutation
-    data class UpdateElementBbox(val index: Int, val value: List<Int>) : CompositionMutation
+    data class UpdateElementBbox(val index: Int, val value: List<Int>?) : CompositionMutation
     data class UpdateElementDescription(val index: Int, val value: String) : CompositionMutation
     data class UpdateElementText(val index: Int, val value: String) : CompositionMutation
     data class UpdateElementPalette(val index: Int, val colors: List<String>) : CompositionMutation
@@ -71,8 +71,7 @@ private val compositionJsonPretty = Json {
 
 internal fun parseIdeogramCompositionDocument(value: String): Result<IdeogramCompositionDocument> = runCatching {
     val root = compositionJson.parseToJsonElement(value).jsonObject
-    val style = root["style_description"]?.asObject()
-        ?: error("style_description is required.")
+    val style = root["style_description"]?.asObject() ?: JsonObject(emptyMap())
     val composition = root["compositional_deconstruction"]?.asObject()
         ?: error("compositional_deconstruction is required.")
     val elements = composition["elements"]?.asArray()
@@ -109,7 +108,7 @@ internal fun IdeogramCompositionDocument.applyMutation(mutation: CompositionMuta
     when (mutation) {
         is CompositionMutation.UpdateHighLevelDescription -> root["high_level_description"] = JsonPrimitive(mutation.value)
         is CompositionMutation.UpdateStyleField -> {
-            val style = requiredObject(root, "style_description").toMutableMap()
+            val style = root["style_description"]?.asObject()?.toMutableMap() ?: mutableMapOf()
             if (mutation.field == IdeogramStyleField.Photo) style.remove("art_style")
             if (mutation.field == IdeogramStyleField.ArtStyle) style.remove("photo")
             style[mutation.field.jsonKey] = JsonPrimitive(mutation.value)
@@ -127,7 +126,8 @@ internal fun IdeogramCompositionDocument.applyMutation(mutation: CompositionMuta
             if (mutation.value == "obj") element.remove("text") else element.putIfAbsent("text", JsonPrimitive("Text"))
         }
         is CompositionMutation.UpdateElementBbox -> updateElement(root, mutation.index) { element ->
-            element["bbox"] = JsonArray(mutation.value.map(::JsonPrimitive))
+            if (mutation.value == null) element.remove("bbox")
+            else element["bbox"] = JsonArray(mutation.value.map(::JsonPrimitive))
         }
         is CompositionMutation.UpdateElementDescription -> updateElement(root, mutation.index) { element ->
             element["desc"] = JsonPrimitive(mutation.value)
@@ -150,11 +150,54 @@ internal fun IdeogramCompositionDocument.applyMutation(mutation: CompositionMuta
 
 internal fun IdeogramCompositionDocument.serialize(): String = serializeIdeogramCompositionDocument(source)
 
+internal fun IdeogramCompositionDocument.serializeForBackend(): String =
+    compositionJson.encodeToString(JsonElement.serializer(), canonicalizeIdeogramRoot(source))
+
 private fun serializeIdeogramCompositionDocument(root: JsonObject): String =
-    compositionJsonPretty.encodeToString(JsonElement.serializer(), root)
+    compositionJsonPretty.encodeToString(JsonElement.serializer(), canonicalizeIdeogramRoot(root))
+
+private fun canonicalizeIdeogramRoot(root: JsonObject): JsonObject = JsonObject(linkedMapOf<String, JsonElement>().apply {
+    root["high_level_description"]?.let { put("high_level_description", it) }
+    root["style_description"]?.asObject()?.let { put("style_description", canonicalizeStyle(it)) }
+    root["compositional_deconstruction"]?.asObject()?.let { put("compositional_deconstruction", canonicalizeComposition(it)) }
+    root.filterKeys { it !in knownRootFields }.forEach { (key, value) -> put(key, value) }
+})
+
+private fun canonicalizeStyle(style: JsonObject): JsonObject = JsonObject(linkedMapOf<String, JsonElement>().apply {
+    style["aesthetics"]?.let { put("aesthetics", it) }
+    style["lighting"]?.let { put("lighting", it) }
+    if (style.containsKey("photo")) {
+        style["photo"]?.let { put("photo", it) }
+        style["medium"]?.let { put("medium", it) }
+    } else {
+        style["medium"]?.let { put("medium", it) }
+        style["art_style"]?.let { put("art_style", it) }
+    }
+    style.filterKeys { it !in knownStyleFields }.forEach { (key, value) -> put(key, value) }
+    style["color_palette"]?.let { put("color_palette", it) }
+})
+
+private fun canonicalizeComposition(composition: JsonObject): JsonObject = JsonObject(linkedMapOf<String, JsonElement>().apply {
+    composition["background"]?.let { put("background", it) }
+    composition.filterKeys { it !in knownCompositionFields }.forEach { (key, value) -> put(key, value) }
+    composition["elements"]?.asArray()?.let { elements ->
+        put("elements", JsonArray(elements.map { element ->
+            element.asObject()?.let(::canonicalizeElement) ?: element
+        }))
+    }
+})
+
+private fun canonicalizeElement(element: JsonObject): JsonObject = JsonObject(linkedMapOf<String, JsonElement>().apply {
+    element["type"]?.let { put("type", it) }
+    element["bbox"]?.let { put("bbox", it) }
+    if (element.optionalString("type") == "text") element["text"]?.let { put("text", it) }
+    element["desc"]?.let { put("desc", it) }
+    element.filterKeys { it !in knownElementFields }.forEach { (key, value) -> put(key, value) }
+    element["color_palette"]?.let { put("color_palette", it) }
+})
 
 private fun updatePalette(root: MutableMap<String, JsonElement>, objectKey: String, colors: List<String>) {
-    val target = requiredObject(root, objectKey).toMutableMap()
+    val target = root[objectKey]?.asObject()?.toMutableMap() ?: mutableMapOf()
     setPalette(target, colors)
     root[objectKey] = JsonObject(target)
 }

@@ -5,6 +5,8 @@ import kotlinx.serialization.json.jsonObject
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
 
 class IdeogramCompositionDocumentTest {
     private val source = """
@@ -60,5 +62,38 @@ class IdeogramCompositionDocumentTest {
 
         assertEquals(null, changed.style.photo)
         assertEquals("linocut", changed.style.artStyle)
+    }
+
+    @Test
+    fun serializerUsesCanonicalPhotoAndElementOrder() {
+        val serialized = parseIdeogramCompositionDocument(source).getOrThrow().serializeForBackend()
+
+        assertTrue(serialized.indexOf("\"aesthetics\"") < serialized.indexOf("\"lighting\""))
+        assertTrue(serialized.indexOf("\"lighting\"") < serialized.indexOf("\"photo\""))
+        assertTrue(serialized.indexOf("\"photo\"") < serialized.indexOf("\"medium\""))
+        assertTrue(serialized.indexOf("\"type\"") < serialized.indexOf("\"bbox\""))
+        assertTrue(serialized.indexOf("\"bbox\"") < serialized.indexOf("\"desc\""))
+    }
+
+    @Test
+    fun boundingBoxCanBeRemoved() {
+        val changed = parseIdeogramCompositionDocument(source).getOrThrow()
+            .applyMutation(CompositionMutation.UpdateElementBbox(0, null))
+            .getOrThrow()
+
+        assertEquals(emptyList(), changed.elements.first().bbox)
+        assertFalse(changed.serializeForBackend().contains("\"bbox\""))
+    }
+
+    @Test
+    fun compactSerializerPreservesLiteralUnicode() {
+        val changed = parseIdeogramCompositionDocument(source).getOrThrow()
+            .applyMutation(CompositionMutation.UpdateHighLevelDescription("Café in Köln"))
+            .getOrThrow()
+        val serialized = changed.serializeForBackend()
+
+        assertTrue(serialized.contains("Café in Köln"))
+        assertFalse(serialized.contains("\\u"))
+        assertFalse(serialized.contains("\n"))
     }
 }

@@ -73,7 +73,7 @@ class LlmRoleService(
                     ),
                     LlmChatMessage(
                         role = "user",
-                        content = "Canvas: ${width}x${height}\nRaw prompt: $prompt",
+                        content = "Target canvas: ${width}x${height} (aspect ratio $width:$height).\nUser idea: $prompt",
                     ),
                 ),
                 maxTokens = 4096,
@@ -91,15 +91,17 @@ class LlmRoleService(
         private const val IDEOGRAM_JSON_SYSTEM_PROMPT = """
 You convert raw image prompts into Ideogram 4 structured JSON captions. Think briefly, decide the visual layout once, then return only valid JSON. Do not write markdown or commentary.
 
-Required top-level keys: high_level_description, style_description, compositional_deconstruction.
+Emit exactly one JSON object using these top-level keys in order: high_level_description, style_description, compositional_deconstruction. Preserve literal non-ASCII characters.
 
-style_description requires aesthetics, lighting, medium, and exactly one of photo or art_style. If the result is photographic, include photo and omit art_style. color_palette is optional.
+style_description requires aesthetics, lighting, medium, and exactly one of photo or art_style. For photographs, order keys as aesthetics, lighting, photo, medium, then optional color_palette. For non-photographic work, order keys as aesthetics, lighting, medium, art_style, then optional color_palette.
 
-compositional_deconstruction requires background and elements. background must be a single string, not an object. Elements use type "obj" or "text". obj keys: type, bbox, desc, optional color_palette. text keys: type, bbox, text, desc, optional color_palette. bbox is [y_min, x_min, y_max, x_max] in 0-1000 coordinates on a 10-unit grid.
+compositional_deconstruction keys are background, then elements. background is a string describing the scene shell: architecture, ground or floor, sky, atmosphere, distant scenery, and scene-wide lighting. Do not duplicate those components as objects. Individually placeable people, animals, vehicles, furniture, products, signs, and props belong in elements.
 
-Keep the JSON compact. Use 3-8 important elements for most prompts, maximum 12. Create one obj for each named foreground character or distinct foreground subject. Do not collapse named lineups into one group element. Use group elements only for anonymous crowds, scenery, or low-importance background items. Omit minor props unless they are central to the prompt.
+Elements use type "obj" or "text". Object key order: type, optional bbox, desc, optional color_palette. Text key order: type, optional bbox, text, desc, optional color_palette. bbox is [y_min, x_min, y_max, x_max] in normalized 0-1000 coordinates and must account for the target aspect ratio. Include a bbox where precise placement matters; omit it for dense or hard-to-enumerate visuals.
 
-Descriptions should be concise, visual, and specific. Avoid analysis, alternatives, and long explanations. Use uppercase #RRGGBB colors, at most 16 global colors and at most 5 per element. If readable text is requested, create a text element with the exact literal text.
+Create one obj for each coherent subject rather than splitting a subject into anatomical or structural parts. Preserve every named visual unit from the user idea. Every distinct readable text block gets one text element with exact literal characters. Anonymous crowds and distant scenery may remain in background.
+
+Descriptions must be concrete, visual, and specific. Avoid analysis, alternatives, hedging, shadows, and repeated scene context inside element descriptions. Use uppercase #RRGGBB colors, at most 16 global colors and at most 5 per element. Return compact JSON only.
 """
     }
 }

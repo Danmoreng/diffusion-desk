@@ -1094,7 +1094,7 @@ class GenerationViewModel(
         }
 
         val prompt = runCatching {
-            ideogramJson.encodeToString(JsonElement.serializer(), ideogramJson.parseToJsonElement(jsonPrompt))
+            parseIdeogramCompositionDocument(jsonPrompt).getOrThrow().serializeForBackend()
         }.getOrElse {
             update {
                 copy(
