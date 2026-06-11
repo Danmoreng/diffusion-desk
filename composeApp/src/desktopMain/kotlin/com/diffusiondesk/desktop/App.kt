@@ -96,6 +96,7 @@ fun App(
                             onStructuredJsonPromptCommit = controller.generationViewModel::commitIdeogramJsonPrompt,
                             onFormatStructuredJson = controller.generationViewModel::formatIdeogramJsonPrompt,
                             onCompositionMutation = controller.generationViewModel::applyCompositionMutation,
+                            onImproveCompositionField = controller.generationViewModel::improveCompositionField,
                             onUndoComposition = controller.generationViewModel::undoComposition,
                             onRedoComposition = controller.generationViewModel::redoComposition,
                             onCompositionBboxEditStart = controller.generationViewModel::beginCompositionBboxEdit,

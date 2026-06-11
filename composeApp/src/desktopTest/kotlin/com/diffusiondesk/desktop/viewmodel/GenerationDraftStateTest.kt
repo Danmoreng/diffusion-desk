@@ -32,6 +32,7 @@ class GenerationDraftStateTest {
         val state = stateFor(params, ImagePromptMode.Text).copy(width = "768")
 
         assertTrue(state.isCurrentDraftModified)
+        assertTrue(state.isCurrentDraftResolutionModified)
     }
 
     @Test
@@ -39,6 +40,7 @@ class GenerationDraftStateTest {
         val state = stateFor(params, ImagePromptMode.Text).copy(prompt = "next prompt")
 
         assertTrue(state.isCurrentDraftModified)
+        assertFalse(state.isCurrentDraftResolutionModified)
     }
 
     @Test
@@ -71,6 +73,20 @@ class GenerationDraftStateTest {
         )
 
         assertTrue(state.isCurrentDraftModified)
+        assertFalse(state.isCurrentDraftResolutionModified)
+    }
+
+    @Test
+    fun generationSettingChangeKeepsCurrentResolution() {
+        val state = stateFor(params, ImagePromptMode.Text).copy(
+            steps = "8",
+            cfgScale = "2.0",
+            seed = "42",
+            sampler = "euler",
+        )
+
+        assertTrue(state.isCurrentDraftModified)
+        assertFalse(state.isCurrentDraftResolutionModified)
     }
 
     private fun stateFor(params: GenerationParams, mode: ImagePromptMode): GenerationUiState = GenerationUiState(
