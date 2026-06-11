@@ -394,17 +394,31 @@ have multiple fragile paths for rewriting JSON strings.
 
 Add focused actions throughout the structured editor:
 
-- **Improve field**: improve only the selected text or structured field.
-- **Improve style**: return only a `StylePatch`.
-- **Improve composition**: return a `CompositionPatch` for the background and
+- [x] **Improve field**: improve only the selected text or structured field.
+- [ ] **Improve style**: return only a `StylePatch`.
+- [ ] **Improve composition**: return a `CompositionPatch` for the background and
   element arrangement.
-- **Enhance description**: increase only the visual detail of `desc`.
-- **Regenerate element**: regenerate one element while retaining its type and,
+- [x] **Enhance description**: increase only the visual detail of `desc`.
+- [ ] **Regenerate element**: regenerate one element while retaining its type and,
   optionally, bounding box.
-- **Suggest palette**: generate only the element palette.
-- **Improve placement**: optimize only one element's bounding box.
-- **Add object** / **Add text**: create exactly one new element from a short
+- [x] **Suggest palette**: generate only the global or element palette.
+- [ ] **Improve placement**: optimize only one element's bounding box.
+- [ ] **Add object** / **Add text**: create exactly one new element from a short
   user description.
+
+Phase 3 infrastructure status:
+
+- [x] Route UI actions through typed `CompositionAction` commands and a shared
+  `CompositionActionExecutor` that can also back future assistant tool calls.
+- [x] Validate action responses and convert them into exactly one atomic,
+  undoable `CompositionMutation`.
+- [x] Use a separate composition completion request without changing the image
+  tagging vision request.
+- [x] Supply the current generated image to vision-capable composition presets.
+- [x] Use the complete image for global actions and an element bounding-box crop
+  with surrounding context for element-focused actions.
+- [x] Fall back to text-only composition context when no current image or vision
+  preset is available.
 
 Each request includes:
 
