@@ -34,6 +34,7 @@ fun SettingsScreen(
     onThemeModeChange: (String) -> Unit,
     onActionBarPositionChange: (String) -> Unit,
     onSaveImagesAutomaticallyChange: (Boolean) -> Unit,
+    onShowLlmDebugConsoleChange: (Boolean) -> Unit,
     onVramBudgetModeChange: (String) -> Unit,
     onManualVramBudgetGbChange: (String) -> Unit,
     onUseCurrentRepo: () -> Unit,
@@ -62,6 +63,7 @@ fun SettingsScreen(
                         onThemeModeChange = onThemeModeChange,
                         onActionBarPositionChange = onActionBarPositionChange,
                         onSaveImagesAutomaticallyChange = onSaveImagesAutomaticallyChange,
+                        onShowLlmDebugConsoleChange = onShowLlmDebugConsoleChange,
                         onVramBudgetModeChange = onVramBudgetModeChange,
                         onManualVramBudgetGbChange = onManualVramBudgetGbChange,
                         onOutputDirChange = onOutputDirChange,
@@ -97,6 +99,7 @@ fun SettingsScreen(
                     onThemeModeChange = onThemeModeChange,
                     onActionBarPositionChange = onActionBarPositionChange,
                     onSaveImagesAutomaticallyChange = onSaveImagesAutomaticallyChange,
+                    onShowLlmDebugConsoleChange = onShowLlmDebugConsoleChange,
                     onVramBudgetModeChange = onVramBudgetModeChange,
                     onManualVramBudgetGbChange = onManualVramBudgetGbChange,
                     onOutputDirChange = onOutputDirChange,
@@ -125,6 +128,7 @@ private fun GeneralSettingsSection(
     onThemeModeChange: (String) -> Unit,
     onActionBarPositionChange: (String) -> Unit,
     onSaveImagesAutomaticallyChange: (Boolean) -> Unit,
+    onShowLlmDebugConsoleChange: (Boolean) -> Unit,
     onVramBudgetModeChange: (String) -> Unit,
     onManualVramBudgetGbChange: (String) -> Unit,
     onOutputDirChange: (String) -> Unit,
@@ -157,6 +161,23 @@ private fun GeneralSettingsSection(
                 onCheckedChange = onSaveImagesAutomaticallyChange,
             )
             Text("Save Images Automatically")
+        }
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Checkbox(
+                checked = state.showLlmDebugConsole,
+                onCheckedChange = onShowLlmDebugConsoleChange,
+            )
+            Column {
+                Text("Show LLM Debug Console")
+                Text(
+                    text = "Displays complete system prompts, user prompts, and model responses in Generate.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
         }
         SettingsDropdownRow(
             label = "Streaming VRAM Budget",

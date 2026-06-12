@@ -77,8 +77,6 @@ bool LlamaServer::load_model(
     }
     if (n_ctx > 0) {
         llama_params.n_ctx = n_ctx;
-    } else if (llama_params.n_ctx <= 0) {
-        llama_params.n_ctx = 2048;
     }
     if (llama_params.n_parallel <= 0) {
         llama_params.n_parallel = 1;
@@ -87,8 +85,6 @@ bool LlamaServer::load_model(
         llama_params.n_predict = 512;
     }
     llama_params.warmup = false;
-    llama_params.fit_params = false; // Disable fitting to prevent crashes in multi-process env
-    // llama_params.fit_params_target = 4ULL * 1024 * 1024 * 1024; 
 
     DD_LOG_INFO("Initializing LLM server context: ctx=%d, parallel=%d, predict=%d, gpu_layers=%d, mmproj_gpu=%s, kv_offload=%s, op_offload=%s",
              llama_params.n_ctx,

@@ -8,7 +8,7 @@ namespace fs = std::filesystem;
 static std::string last_loaded_model_path;
 static std::string last_loaded_mmproj_path;
 static int last_n_gpu_layers = -1;
-static int last_n_ctx = 2048;
+static int last_n_ctx = -1;
 static int last_image_max_tokens = -1;
 static std::vector<std::string> last_advanced_args;
 static bool explicit_unload_requested = false;
@@ -85,7 +85,7 @@ void handle_unload_llm_model(httplib::Response& res, LlamaServer& llm_server) {
     last_loaded_model_path.clear();
     last_loaded_mmproj_path.clear();
     last_n_gpu_layers = -1;
-    last_n_ctx = 2048;
+    last_n_ctx = -1;
     last_image_max_tokens = -1;
     last_advanced_args.clear();
     explicit_unload_requested = true;
@@ -125,7 +125,7 @@ void ensure_llm_loaded(SDSvrParams& svr_params, LlamaServer& llm_server) {
 
         if (fs::exists(model_path)) {
             DD_LOG_INFO("Auto-loading default LLM: %s (mmproj: %s)", svr_params.default_llm_model.c_str(), mmproj_path.string().c_str());
-            llm_server.load_model(model_path.string(), mmproj_path.string(), 0, 2048, -1);
+            llm_server.load_model(model_path.string(), mmproj_path.string(), 0, -1, -1);
         } else {
             DD_LOG_WARN("Default LLM model not found: %s", model_path.string().c_str());
         }

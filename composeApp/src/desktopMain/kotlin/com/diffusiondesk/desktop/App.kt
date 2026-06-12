@@ -59,6 +59,7 @@ fun App(
     val libraryState by controller.libraryViewModel.uiState.collectAsState()
     val galleryState by controller.galleryViewModel.uiState.collectAsState()
     val notifications by controller.notificationCenter.notifications.collectAsState()
+    val llmDebugEntries by controller.llmDebugLog.entries.collectAsState()
     val systemDarkTheme = isSystemInDarkTheme()
     val darkTheme = when (settingsState.themeMode) {
         "light" -> false
@@ -92,6 +93,8 @@ fun App(
                             onNegativePromptChange = controller.generationViewModel::updateNegativePrompt,
                             onStructuredTabSelected = controller.generationViewModel::selectIdeogramTab,
                             onGenerateStructuredJson = controller.generationViewModel::generateIdeogramJsonPrompt,
+                            onIdeogramGenerationModeChange = controller.generationViewModel::updateIdeogramGenerationMode,
+                            onRetryStagedJson = controller.generationViewModel::retryStagedIdeogramJsonPrompt,
                             onStructuredJsonPromptChange = controller.generationViewModel::updateIdeogramJsonPrompt,
                             onStructuredJsonPromptCommit = controller.generationViewModel::commitIdeogramJsonPrompt,
                             onFormatStructuredJson = controller.generationViewModel::formatIdeogramJsonPrompt,
@@ -134,6 +137,9 @@ fun App(
                             onLeftPanelWidthChange = controller.generationViewModel::updateLeftPanelWidth,
                             actionBarPosition = settingsState.actionBarPosition,
                             outputDir = settingsState.outputDir,
+                            showLlmDebugConsole = settingsState.showLlmDebugConsole,
+                            llmDebugEntries = llmDebugEntries,
+                            onClearLlmDebugLog = controller.llmDebugLog::clear,
                         )
                         Screen.Gallery -> GalleryScreen(
                             state = galleryState,
@@ -228,6 +234,7 @@ fun App(
                             onThemeModeChange = controller.settingsViewModel::updateThemeMode,
                             onActionBarPositionChange = controller.settingsViewModel::updateActionBarPosition,
                             onSaveImagesAutomaticallyChange = controller.settingsViewModel::updateSaveImagesAutomatically,
+                            onShowLlmDebugConsoleChange = controller.settingsViewModel::updateShowLlmDebugConsole,
                             onVramBudgetModeChange = controller.settingsViewModel::updateVramBudgetMode,
                             onManualVramBudgetGbChange = controller.settingsViewModel::updateManualVramBudgetGb,
                             onUseCurrentRepo = controller.settingsViewModel::useCurrentRepo,

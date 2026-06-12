@@ -456,6 +456,20 @@ Benchmark whether several short structured calls actually outperform one large
 prompt on small local models. Use a compact evaluation set covering different
 scenes, typography requirements, and element counts.
 
+Phase 4 implementation status:
+
+- [x] Keep Fast one-shot generation and add an optional Staged mode.
+- [x] Generate scene/style, background, element plan, per-element details, and
+  placements as separately validated stages.
+- [x] Publish accepted intermediate drafts in the JSON editor while the pipeline
+  continues.
+- [x] Preserve completed stages and retry from the failed stage, including the
+  first element that has not yet been detailed.
+- [x] Validate and canonically format the final document before committing one
+  composition-history entry.
+- [ ] Run and document the comparative local-model benchmark across the compact
+  evaluation set.
+
 ## Phase 5: Compose Assistant with Composition Tools
 
 - Add a dedicated `AssistantViewModel` and Compose panel.

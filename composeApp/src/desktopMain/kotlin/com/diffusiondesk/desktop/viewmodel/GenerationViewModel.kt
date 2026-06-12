@@ -21,6 +21,9 @@ import com.diffusiondesk.desktop.core.LlmWorkerPool
 import com.diffusiondesk.desktop.core.SavedGenerationSettings
 import com.diffusiondesk.desktop.composition.CompositionAction
 import com.diffusiondesk.desktop.composition.CompositionActionExecutor
+import com.diffusiondesk.desktop.composition.StagedIdeogramDraft
+import com.diffusiondesk.desktop.composition.StagedIdeogramGenerator
+import com.diffusiondesk.desktop.composition.StagedIdeogramStep
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -49,6 +52,8 @@ enum class GenerationStatus {
     Failed,
     Cancelled,
 }
+
+enum class IdeogramGenerationMode { Fast, Staged }
 
 private val DEFAULT_SAMPLERS = listOf(
     "euler",
@@ -153,6 +158,11 @@ data class IdeogramUiState(
     val jsonPrompt: String = defaultIdeogramJsonPrompt(),
     val selectedTab: IdeogramStructureTab = IdeogramStructureTab.Text,
     val isGeneratingJson: Boolean = false,
+    val generationMode: IdeogramGenerationMode = IdeogramGenerationMode.Fast,
+    val stagedStep: StagedIdeogramStep? = null,
+    val stagedElementIndex: Int? = null,
+    val stagedElementCount: Int? = null,
+    val failedStagedStep: StagedIdeogramStep? = null,
     val jsonStatus: String = "JSON ready.",
     val jsonError: String? = null,
     val history: List<String> = listOf(jsonPrompt),
@@ -564,6 +574,8 @@ class GenerationViewModel(
     private var generationCancelRequested = false
     private var pendingAutoTagImageCount = 0
     private var compositionEditStartJson: String? = null
+    private var stagedIdeogramDraft: StagedIdeogramDraft? = null
+    private var stagedIdeogramSourcePrompt: String? = null
     private val recentStepTimes = ArrayDeque<Double>()
 
     init {
@@ -875,6 +887,10 @@ class GenerationViewModel(
         copy(ideogram = ideogram.copy(selectedTab = tab))
     }
 
+    fun updateIdeogramGenerationMode(mode: IdeogramGenerationMode) = update {
+        copy(ideogram = ideogram.copy(generationMode = mode, failedStagedStep = null))
+    }
+
     fun formatIdeogramJsonPrompt() = update {
         val formatted = runCatching {
             val normalized = normalizeIdeogramJsonPrompt(ideogram.jsonPrompt) ?: ideogram.jsonPrompt
@@ -888,6 +904,10 @@ class GenerationViewModel(
     }
 
     fun generateIdeogramJsonPrompt() {
+        if (_uiState.value.ideogram.generationMode == IdeogramGenerationMode.Staged) {
+            generateStagedIdeogramJsonPrompt(retry = false)
+            return
+        }
         scope.launch {
             val current = _uiState.value
             val prompt = current.prompt.trim()
@@ -961,6 +981,106 @@ class GenerationViewModel(
                         )
                     }
                 }
+        }
+    }
+
+    fun retryStagedIdeogramJsonPrompt() = generateStagedIdeogramJsonPrompt(retry = true)
+
+    private fun generateStagedIdeogramJsonPrompt(retry: Boolean) {
+        scope.launch {
+            val current = _uiState.value
+            val prompt = current.prompt.trim()
+            if (prompt.isBlank()) {
+                update { copy(ideogram = ideogram.copy(jsonError = "Prompt is required before JSON generation.")) }
+                return@launch
+            }
+            val sourcePrompt = if (retry) stagedIdeogramSourcePrompt ?: prompt else buildString {
+                append(prompt)
+                current.negativePrompt.trim().takeIf(String::isNotBlank)?.let { append("\n\nAvoid: $it") }
+            }
+            val startStep = if (retry) current.ideogram.failedStagedStep ?: StagedIdeogramStep.SceneAndStyle
+                else StagedIdeogramStep.SceneAndStyle
+            val initialDraft = if (retry) stagedIdeogramDraft ?: StagedIdeogramDraft() else StagedIdeogramDraft()
+            if (!retry) {
+                stagedIdeogramDraft = initialDraft
+                stagedIdeogramSourcePrompt = sourcePrompt
+            }
+            update {
+                copy(ideogram = ideogram.copy(
+                    isGeneratingJson = true,
+                    stagedStep = startStep,
+                    failedStagedStep = null,
+                    stagedElementIndex = null,
+                    stagedElementCount = null,
+                    jsonStatus = "Starting staged generation...",
+                    jsonError = null,
+                ))
+            }
+            val settings = settingsStore.load()
+            val presets = llmPresetStore.load()
+            val roles = llmPresetStore.loadRoles()
+            var activeStep = startStep
+            val pipeline = StagedIdeogramGenerator { systemPrompt, userPrompt, maxTokens ->
+                llmRoleService.completeIdeogramGenerationStage(
+                    settings, presets, roles, systemPrompt, userPrompt, maxTokens,
+                ).getOrThrow()
+            }
+            pipeline.run(
+                sourcePrompt = sourcePrompt,
+                width = current.width.toIntOrNull() ?: 1024,
+                height = current.height.toIntOrNull() ?: 1024,
+                initialDraft = initialDraft,
+                startStep = startStep,
+                onStepStarted = { step ->
+                    activeStep = step
+                    update { copy(ideogram = ideogram.copy(stagedStep = step, jsonStatus = "${step.label}...")) }
+                },
+                onValidationRepair = { step, attempt, maxAttempts, _ ->
+                    update {
+                        copy(ideogram = ideogram.copy(
+                            stagedStep = step,
+                            jsonStatus = "${step.label}: correcting invalid JSON ($attempt/$maxAttempts)...",
+                            jsonError = null,
+                        ))
+                    }
+                },
+                onProgress = { progress ->
+                    stagedIdeogramDraft = progress.draft
+                    update {
+                        copy(ideogram = ideogram.copy(
+                            jsonPrompt = progress.draft.previewJson(),
+                            jsonStatus = if (progress.elementIndex != null) {
+                                "${progress.step.label}: ${progress.elementIndex}/${progress.elementCount}"
+                            } else "${progress.step.label} complete.",
+                            jsonError = null,
+                            stagedElementIndex = progress.elementIndex,
+                            stagedElementCount = progress.elementCount,
+                        ))
+                    }
+                },
+            ).onSuccess { draft ->
+                val formatted = parseIdeogramCompositionDocument(draft.completeJson()).getOrThrow().serialize()
+                update {
+                    val committed = commitCompositionJson(formatted)
+                    committed.copy(ideogram = committed.ideogram.copy(
+                        isGeneratingJson = false,
+                        stagedStep = null,
+                        failedStagedStep = null,
+                        stagedElementIndex = null,
+                        stagedElementCount = null,
+                        jsonStatus = "Staged JSON ready.",
+                        jsonError = null,
+                    ))
+                }
+            }.onFailure { error ->
+                update { copy(ideogram = ideogram.copy(
+                    isGeneratingJson = false,
+                    stagedStep = activeStep,
+                    failedStagedStep = activeStep,
+                    jsonError = error.message ?: "Staged Ideogram generation failed.",
+                    jsonStatus = "${activeStep.label} failed.",
+                )) }
+            }
         }
     }
 
