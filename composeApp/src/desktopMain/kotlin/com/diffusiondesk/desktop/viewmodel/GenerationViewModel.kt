@@ -491,6 +491,7 @@ data class GenerationUiState(
     val isEndless: Boolean = false,
     val isEnhancingPrompt: Boolean = false,
     val activeCompositionImproveAction: String? = null,
+    val useImageAsCompositionReference: Boolean = true,
     val ideogram: IdeogramUiState = IdeogramUiState(),
     val selectedCompositionElementIndex: Int = 0,
     val message: String = "",
@@ -667,6 +668,9 @@ class GenerationViewModel(
     }
     fun updateLeftPanelWidth(value: Int) = update { copy(leftPanelWidthDp = value.coerceIn(MIN_LEFT_PANEL_WIDTH_DP, MAX_LEFT_PANEL_WIDTH_DP)) }
     fun toggleEndless() = update { copy(isEndless = !isEndless) }
+    fun updateUseImageAsCompositionReference(value: Boolean) = update {
+        copy(useImageAsCompositionReference = value)
+    }
 
     fun updateIdeogramJsonPrompt(value: String) = update {
         val validation = validateIdeogramJson(value)
@@ -780,7 +784,9 @@ class GenerationViewModel(
                 document = document,
                 width = state.width.toIntOrNull() ?: 1024,
                 height = state.height.toIntOrNull() ?: 1024,
-                image = state.images.firstOrNull().takeUnless { state.isCurrentDraftResolutionModified },
+                image = state.images.firstOrNull().takeIf {
+                    state.useImageAsCompositionReference && !state.isCurrentDraftResolutionModified
+                },
             ).onSuccess { mutation ->
                 applyCompositionMutation(mutation)
                 update {

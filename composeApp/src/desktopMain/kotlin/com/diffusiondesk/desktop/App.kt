@@ -109,6 +109,7 @@ fun App(
                             onCompositionElementSelected = controller.generationViewModel::selectCompositionElement,
                             showCompositionOverlay = settingsState.showCompositionOverlay,
                             onShowCompositionOverlayChange = controller.settingsViewModel::updateShowCompositionOverlay,
+                            onUseImageAsCompositionReferenceChange = controller.generationViewModel::updateUseImageAsCompositionReference,
                             onWidthChange = controller.generationViewModel::updateWidth,
                             onHeightChange = controller.generationViewModel::updateHeight,
                             onStepsChange = controller.generationViewModel::updateSteps,

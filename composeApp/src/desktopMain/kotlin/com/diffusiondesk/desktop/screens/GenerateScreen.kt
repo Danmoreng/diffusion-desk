@@ -154,6 +154,7 @@ fun GenerateScreen(
     onCompositionElementSelected: (Int) -> Unit,
     showCompositionOverlay: Boolean,
     onShowCompositionOverlayChange: (Boolean) -> Unit,
+    onUseImageAsCompositionReferenceChange: (Boolean) -> Unit,
     onWidthChange: (String) -> Unit,
     onHeightChange: (String) -> Unit,
     onStepsChange: (String) -> Unit,
@@ -301,6 +302,7 @@ fun GenerateScreen(
                     outputDir = outputDir,
                     showCompositionOverlay = showCompositionOverlay,
                     onShowCompositionOverlayChange = onShowCompositionOverlayChange,
+                    onUseImageAsCompositionReferenceChange = onUseImageAsCompositionReferenceChange,
                     onCompositionElementSelected = onCompositionElementSelected,
                     onCompositionBboxEditStart = onCompositionBboxEditStart,
                     onCompositionBboxChange = onCompositionBboxChange,
@@ -1660,6 +1662,7 @@ internal fun PreviewPanel(
     outputDir: String,
     showCompositionOverlay: Boolean,
     onShowCompositionOverlayChange: (Boolean) -> Unit,
+    onUseImageAsCompositionReferenceChange: (Boolean) -> Unit,
     onCompositionElementSelected: (Int) -> Unit,
     onCompositionBboxEditStart: () -> Unit,
     onCompositionBboxChange: (Int, List<Int>) -> Unit,
@@ -1676,6 +1679,7 @@ internal fun PreviewPanel(
             outputDir = outputDir,
             showCompositionOverlay = showCompositionOverlay,
             onShowCompositionOverlayChange = onShowCompositionOverlayChange,
+            onUseImageAsCompositionReferenceChange = onUseImageAsCompositionReferenceChange,
             onCompositionElementSelected = onCompositionElementSelected,
             onCompositionBboxEditStart = onCompositionBboxEditStart,
             onCompositionBboxChange = onCompositionBboxChange,
@@ -1976,6 +1980,7 @@ private fun CompositionPreviewHost(
     outputDir: String,
     showCompositionOverlay: Boolean,
     onShowCompositionOverlayChange: (Boolean) -> Unit,
+    onUseImageAsCompositionReferenceChange: (Boolean) -> Unit,
     onCompositionElementSelected: (Int) -> Unit,
     onCompositionBboxEditStart: () -> Unit,
     onCompositionBboxChange: (Int, List<Int>) -> Unit,
@@ -2013,30 +2018,54 @@ private fun CompositionPreviewHost(
             Row(
                 modifier = Modifier
                     .align(Alignment.TopEnd)
-                    .height(28.dp)
-                    .clip(RoundedCornerShape(DeskControlCornerRadius))
-                    .clickable { onShowCompositionOverlayChange(!showCompositionOverlay) }
-                    .padding(start = 8.dp, end = 2.dp),
+                    .clip(RoundedCornerShape(DeskControlCornerRadius)),
                 horizontalArrangement = Arrangement.spacedBy(4.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text(
-                    text = "Composition",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                PreviewToggle(
+                    label = "Use image for LLM improvements",
+                    checked = state.useImageAsCompositionReference,
+                    onCheckedChange = onUseImageAsCompositionReferenceChange,
                 )
-                Switch(
+                PreviewToggle(
+                    label = "Composition",
                     checked = showCompositionOverlay,
-                    onCheckedChange = null,
-                    modifier = Modifier
-                        .size(width = 36.dp, height = 24.dp)
-                        .graphicsLayer {
-                            scaleX = 0.7f
-                            scaleY = 0.7f
-                        },
+                    onCheckedChange = onShowCompositionOverlayChange,
                 )
             }
         }
+    }
+}
+
+@Composable
+private fun PreviewToggle(
+    label: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .height(28.dp)
+            .clickable { onCheckedChange(!checked) }
+            .padding(start = 8.dp, end = 2.dp),
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Switch(
+            checked = checked,
+            onCheckedChange = null,
+            modifier = Modifier
+                .size(width = 36.dp, height = 24.dp)
+                .graphicsLayer {
+                    scaleX = 0.7f
+                    scaleY = 0.7f
+                },
+        )
     }
 }
 
