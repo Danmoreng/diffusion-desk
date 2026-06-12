@@ -27,6 +27,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -89,6 +92,7 @@ import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.onPointerEvent
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
@@ -96,6 +100,7 @@ import androidx.compose.ui.unit.IntRect
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupPositionProvider
 import androidx.compose.ui.window.PopupProperties
@@ -104,6 +109,7 @@ import com.diffusiondesk.desktop.core.BackendStatus
 import com.diffusiondesk.desktop.core.BackendUiState
 import com.diffusiondesk.desktop.core.GeneratedImage
 import com.diffusiondesk.desktop.core.ImagePromptMode
+import com.diffusiondesk.desktop.core.LlmDebugEntry
 import com.diffusiondesk.desktop.composition.CompositionAction
 import com.diffusiondesk.desktop.composition.PaletteTarget
 import com.diffusiondesk.desktop.viewmodel.GenerationStatus
@@ -113,6 +119,7 @@ import com.diffusiondesk.desktop.viewmodel.CompositionImproveTarget
 import com.diffusiondesk.desktop.viewmodel.IdeogramElementPreview
 import com.diffusiondesk.desktop.viewmodel.IdeogramStyleField
 import com.diffusiondesk.desktop.viewmodel.IdeogramStructureTab
+import com.diffusiondesk.desktop.viewmodel.IdeogramGenerationMode
 import com.diffusiondesk.desktop.viewmodel.ideogramElementPreviews
 import java.awt.Cursor
 import java.awt.Desktop
@@ -125,6 +132,8 @@ import java.io.File
 import java.net.URI
 import java.net.URLDecoder
 import java.nio.charset.StandardCharsets
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 import java.util.Locale
 import kotlin.math.roundToInt
 import org.jetbrains.jewel.ui.component.DefaultButton as Button
@@ -144,6 +153,8 @@ fun GenerateScreen(
     onNegativePromptChange: (String) -> Unit,
     onStructuredTabSelected: (IdeogramStructureTab) -> Unit,
     onGenerateStructuredJson: () -> Unit,
+    onIdeogramGenerationModeChange: (IdeogramGenerationMode) -> Unit,
+    onRetryStagedJson: () -> Unit,
     onStructuredJsonPromptChange: (String) -> Unit,
     onStructuredJsonPromptCommit: () -> Unit,
     onFormatStructuredJson: () -> Unit,
@@ -184,6 +195,9 @@ fun GenerateScreen(
     onLeftPanelWidthChange: (Int) -> Unit,
     actionBarPosition: String,
     outputDir: String,
+    showLlmDebugConsole: Boolean,
+    llmDebugEntries: List<LlmDebugEntry>,
+    onClearLlmDebugLog: () -> Unit,
 ) {
     val showActionBarOnTop = actionBarPosition == "top"
     Column(
@@ -242,6 +256,8 @@ fun GenerateScreen(
                     onNegativePromptChange = onNegativePromptChange,
                     onStructuredTabSelected = onStructuredTabSelected,
                     onGenerateStructuredJson = onGenerateStructuredJson,
+                    onIdeogramGenerationModeChange = onIdeogramGenerationModeChange,
+                    onRetryStagedJson = onRetryStagedJson,
                     onStructuredJsonPromptChange = onStructuredJsonPromptChange,
                     onStructuredJsonPromptCommit = onStructuredJsonPromptCommit,
                     onFormatStructuredJson = onFormatStructuredJson,
@@ -319,6 +335,22 @@ fun GenerateScreen(
                         .weight(1f)
                         .fillMaxHeight(),
                 )
+
+                if (showLlmDebugConsole) {
+                    Splitter(
+                        modifier = Modifier
+                            .fillMaxHeight()
+                            .width(DeskLayoutGap),
+                    )
+
+                    LlmDebugConsole(
+                        entries = llmDebugEntries,
+                        onClear = onClearLlmDebugLog,
+                        modifier = Modifier
+                            .width(430.dp)
+                            .fillMaxHeight(),
+                    )
+                }
             }
         }
 
@@ -370,6 +402,8 @@ private fun GenerationPanel(
     onNegativePromptChange: (String) -> Unit,
     onStructuredTabSelected: (IdeogramStructureTab) -> Unit,
     onGenerateStructuredJson: () -> Unit,
+    onIdeogramGenerationModeChange: (IdeogramGenerationMode) -> Unit,
+    onRetryStagedJson: () -> Unit,
     onStructuredJsonPromptChange: (String) -> Unit,
     onStructuredJsonPromptCommit: () -> Unit,
     onFormatStructuredJson: () -> Unit,
@@ -430,6 +464,8 @@ private fun GenerationPanel(
                     onRedoPrompt = onRedoPrompt,
                     onNegativePromptChange = onNegativePromptChange,
                     onGenerateStructuredJson = onGenerateStructuredJson,
+                    onIdeogramGenerationModeChange = onIdeogramGenerationModeChange,
+                    onRetryStagedJson = onRetryStagedJson,
                     onStructuredJsonPromptChange = onStructuredJsonPromptChange,
                     onStructuredJsonPromptCommit = onStructuredJsonPromptCommit,
                     onFormatStructuredJson = onFormatStructuredJson,
@@ -481,6 +517,121 @@ private fun GenerationPanel(
 }
 
 @Composable
+private fun LlmDebugConsole(
+    entries: List<LlmDebugEntry>,
+    onClear: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val listState = rememberLazyListState()
+    LaunchedEffect(entries.size, entries.lastOrNull()?.response, entries.lastOrNull()?.error) {
+        if (entries.isNotEmpty()) listState.animateScrollToItem(entries.lastIndex)
+    }
+
+    Surface(
+        modifier = modifier,
+        shape = RoundedCornerShape(8.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        tonalElevation = 1.dp,
+    ) {
+        Column(modifier = Modifier.fillMaxSize().padding(12.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column {
+                    Text("LLM debug console", fontWeight = FontWeight.SemiBold)
+                    Text(
+                        "Session only · ${entries.size} calls",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontSize = 11.sp,
+                    )
+                }
+                Text(
+                    text = "Clear",
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(4.dp))
+                        .clickable(enabled = entries.isNotEmpty(), onClick = onClear)
+                        .padding(horizontal = 8.dp, vertical = 5.dp),
+                )
+            }
+
+            Spacer(Modifier.height(10.dp))
+            if (entries.isEmpty()) {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Text(
+                        "LLM calls will appear here.",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            } else {
+                LazyColumn(
+                    state = listState,
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                    modifier = Modifier.fillMaxSize(),
+                ) {
+                    items(entries, key = { it.id }) { entry ->
+                        LlmDebugCall(entry)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun LlmDebugCall(entry: LlmDebugEntry) {
+    Card(
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        SelectionContainer {
+            Column(modifier = Modifier.fillMaxWidth().padding(10.dp)) {
+                Text(
+                    "#${entry.id}  ${LLM_DEBUG_TIME_FORMAT.format(entry.startedAt.atZone(ZoneId.systemDefault()))}",
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 11.sp,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+                Text(
+                    entry.model,
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 11.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                DebugPromptBlock("SYSTEM", entry.systemPrompt.ifBlank { "(none)" })
+                DebugPromptBlock("PROMPT", entry.userPrompt.ifBlank { "(none)" })
+                when {
+                    entry.error != null -> DebugPromptBlock("ERROR", entry.error, MaterialTheme.colorScheme.error)
+                    entry.response != null -> DebugPromptBlock("RESPONSE", entry.response)
+                    else -> DebugPromptBlock("RESPONSE", "Waiting for LLM...", MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun DebugPromptBlock(label: String, value: String, color: Color = MaterialTheme.colorScheme.onSurface) {
+    Spacer(Modifier.height(9.dp))
+    Text(
+        label,
+        fontWeight = FontWeight.SemiBold,
+        fontSize = 10.sp,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+    Text(
+        value,
+        fontFamily = FontFamily.Monospace,
+        fontSize = 11.sp,
+        color = color,
+    )
+}
+
+private val LLM_DEBUG_TIME_FORMAT: DateTimeFormatter = DateTimeFormatter.ofPattern("HH:mm:ss")
+
+@Composable
 private fun PromptTabsHeader(
     state: GenerationUiState,
     onStructuredTabSelected: (IdeogramStructureTab) -> Unit,
@@ -520,6 +671,8 @@ private fun PromptTabContent(
     onRedoPrompt: () -> Unit,
     onNegativePromptChange: (String) -> Unit,
     onGenerateStructuredJson: () -> Unit,
+    onIdeogramGenerationModeChange: (IdeogramGenerationMode) -> Unit,
+    onRetryStagedJson: () -> Unit,
     onStructuredJsonPromptChange: (String) -> Unit,
     onStructuredJsonPromptCommit: () -> Unit,
     onFormatStructuredJson: () -> Unit,
@@ -547,6 +700,8 @@ private fun PromptTabContent(
         IdeogramStructureTab.Json -> JsonPromptPanel(
             state = state,
             onGenerateStructuredJson = onGenerateStructuredJson,
+            onIdeogramGenerationModeChange = onIdeogramGenerationModeChange,
+            onRetryStagedJson = onRetryStagedJson,
             onStructuredJsonPromptChange = onStructuredJsonPromptChange,
             onStructuredJsonPromptCommit = onStructuredJsonPromptCommit,
             onFormatStructuredJson = onFormatStructuredJson,
@@ -658,6 +813,8 @@ private fun TextPromptPanel(
 private fun JsonPromptPanel(
     state: GenerationUiState,
     onGenerateStructuredJson: () -> Unit,
+    onIdeogramGenerationModeChange: (IdeogramGenerationMode) -> Unit,
+    onRetryStagedJson: () -> Unit,
     onStructuredJsonPromptChange: (String) -> Unit,
     onStructuredJsonPromptCommit: () -> Unit,
     onFormatStructuredJson: () -> Unit,
@@ -668,6 +825,24 @@ private fun JsonPromptPanel(
             horizontalArrangement = Arrangement.spacedBy(DeskControlSpacing),
             verticalAlignment = Alignment.CenterVertically,
         ) {
+            Row(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(5.dp))
+                    .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(5.dp)),
+            ) {
+                IdeogramModeButton(
+                    text = "Fast",
+                    selected = state.ideogram.generationMode == IdeogramGenerationMode.Fast,
+                    onClick = { onIdeogramGenerationModeChange(IdeogramGenerationMode.Fast) },
+                    enabled = !state.ideogram.isGeneratingJson,
+                )
+                IdeogramModeButton(
+                    text = "Staged",
+                    selected = state.ideogram.generationMode == IdeogramGenerationMode.Staged,
+                    onClick = { onIdeogramGenerationModeChange(IdeogramGenerationMode.Staged) },
+                    enabled = !state.ideogram.isGeneratingJson,
+                )
+            }
             Button(
                 onClick = onGenerateStructuredJson,
                 enabled = state.prompt.isNotBlank() && !state.ideogram.isGeneratingJson,
@@ -675,13 +850,37 @@ private fun JsonPromptPanel(
             ) {
                 ButtonContent(
                     icon = Icons.Default.AutoFixHigh,
-                    text = if (state.ideogram.isGeneratingJson) "Generating JSON..." else "Generate JSON",
+                    text = if (state.ideogram.isGeneratingJson) {
+                        if (state.ideogram.stagedElementIndex != null) {
+                            "Elements ${state.ideogram.stagedElementIndex}/${state.ideogram.stagedElementCount}"
+                        } else state.ideogram.stagedStep?.label ?: "Generating JSON..."
+                    } else "Generate JSON",
                 )
             }
             DeskIconButton(Icons.Default.CheckCircle, "Format JSON", onFormatStructuredJson, tooltip = "Format JSON")
         }
 
-        if (!state.ideogram.isGeneratingJson || state.ideogram.jsonError != null) {
+        if (state.ideogram.failedStagedStep != null) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = "Stopped at ${state.ideogram.failedStagedStep.label}.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                )
+                SubtleTextButton(
+                    icon = Icons.Default.Refresh,
+                    text = "Retry step",
+                    onClick = onRetryStagedJson,
+                    enabled = !state.ideogram.isGeneratingJson,
+                )
+            }
+        }
+
+        if (state.ideogram.generationMode == IdeogramGenerationMode.Staged || !state.ideogram.isGeneratingJson || state.ideogram.jsonError != null) {
             StructuredJsonStatus(state)
         }
         PaddedTextArea(
@@ -695,6 +894,20 @@ private fun JsonPromptPanel(
                 .heightIn(min = 300.dp),
         )
     }
+}
+
+@Composable
+private fun IdeogramModeButton(text: String, selected: Boolean, onClick: () -> Unit, enabled: Boolean) {
+    Text(
+        text = text,
+        modifier = Modifier
+            .background(if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.18f) else Color.Transparent)
+            .then(if (enabled) Modifier.clickable(onClick = onClick) else Modifier)
+            .padding(horizontal = 9.dp, vertical = 6.dp),
+        style = MaterialTheme.typography.bodySmall,
+        color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+        fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+    )
 }
 
 @Composable

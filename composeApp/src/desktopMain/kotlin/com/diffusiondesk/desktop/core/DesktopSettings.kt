@@ -15,6 +15,7 @@ data class DesktopSettings(
     val actionBarPosition: String,
     val saveImagesAutomatically: Boolean,
     val showCompositionOverlay: Boolean,
+    val showLlmDebugConsole: Boolean,
     val vramBudgetMode: String,
     val manualVramBudgetGb: Double,
     val autostartLlmWorkers: Boolean,

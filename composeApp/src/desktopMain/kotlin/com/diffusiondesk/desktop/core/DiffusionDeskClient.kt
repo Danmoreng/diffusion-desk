@@ -114,6 +114,7 @@ sealed class GenerationJobEvent {
 
 class DiffusionDeskClient(
     private val internalToken: String = "",
+    private val llmDebugLog: LlmDebugLog? = null,
 ) {
     private val httpClient = HttpClient.newBuilder()
         .connectTimeout(Duration.ofSeconds(5))
@@ -394,6 +395,11 @@ class DiffusionDeskClient(
         reasoningBudgetTokens: Int? = null,
         timeout: Duration = Duration.ofMinutes(3),
     ): Result<String> = withContext(Dispatchers.IO) {
+        val callId = llmDebugLog?.start(
+            model = model,
+            systemPrompt = messages.filter { it.role == "system" }.joinToString("\n\n") { it.content },
+            userPrompt = messages.filter { it.role != "system" }.joinToString("\n\n") { "${it.role}: ${it.content}" },
+        )
         runCatching {
             val payload = buildJsonObject {
                 put("model", JsonPrimitive(model))
@@ -444,7 +450,7 @@ class DiffusionDeskClient(
             parseChatContent(root).ifBlank {
                 error("Chat completion returned empty content. Raw response: ${response.body().compactPreview()}")
             }
-        }
+        }.also { result -> recordLlmResult(callId, result) }
     }
 
     suspend fun visionChatCompletion(
@@ -454,6 +460,7 @@ class DiffusionDeskClient(
         userPrompt: String,
         imageDataUri: String,
     ): Result<String> = withContext(Dispatchers.IO) {
+        val callId = llmDebugLog?.start(model, systemPrompt, "$userPrompt\n\n[Image reference attached]")
         runCatching {
             val payload = buildJsonObject {
                 put("model", JsonPrimitive(model))
@@ -505,7 +512,7 @@ class DiffusionDeskClient(
             val response = httpClient.send(request, HttpResponse.BodyHandlers.ofString())
             check(response.statusCode() in 200..299) { response.body().ifBlank { "Vision chat completion failed with ${response.statusCode()}" } }
             parseChatContent(json.parseToJsonElement(response.body()).jsonObject)
-        }
+        }.also { result -> recordLlmResult(callId, result) }
     }
 
     suspend fun compositionChatCompletion(
@@ -517,6 +524,8 @@ class DiffusionDeskClient(
         maxTokens: Int = 1024,
         timeout: Duration = Duration.ofMinutes(5),
     ): Result<String> = withContext(Dispatchers.IO) {
+        val debugUserPrompt = if (imageDataUri == null) userPrompt else "$userPrompt\n\n[Image reference attached]"
+        val callId = llmDebugLog?.start(model, systemPrompt, debugUserPrompt)
         runCatching {
             val userContent: JsonElement = if (imageDataUri == null) {
                 JsonPrimitive(userPrompt)
@@ -586,7 +595,13 @@ class DiffusionDeskClient(
             parseChatContent(json.parseToJsonElement(response.body()).jsonObject).ifBlank {
                 error("Composition completion returned empty content.")
             }
-        }
+        }.also { result -> recordLlmResult(callId, result) }
+    }
+
+    private fun recordLlmResult(callId: Long?, result: Result<String>) {
+        if (callId == null) return
+        result.onSuccess { llmDebugLog?.complete(callId, it) }
+            .onFailure { llmDebugLog?.fail(callId, it) }
     }
 
     private fun imageTagsResponseFormat() = buildJsonObject {

@@ -9,6 +9,7 @@ import com.diffusiondesk.desktop.core.GenerationSettingsStore
 import com.diffusiondesk.desktop.core.ImagePresetStore
 import com.diffusiondesk.desktop.core.ImageTaggingService
 import com.diffusiondesk.desktop.core.LlmPresetStore
+import com.diffusiondesk.desktop.core.LlmDebugLog
 import com.diffusiondesk.desktop.core.LlmRoleService
 import com.diffusiondesk.desktop.core.LlmWorkerPool
 import com.diffusiondesk.desktop.core.NotificationCenter
@@ -28,7 +29,8 @@ import java.util.UUID
 class AppController {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Swing)
     private val internalToken = UUID.randomUUID().toString()
-    private val client = DiffusionDeskClient(internalToken)
+    val llmDebugLog = LlmDebugLog()
+    private val client = DiffusionDeskClient(internalToken, llmDebugLog)
     private val settingsStore = DesktopSettingsStore()
     private val presetStore = ImagePresetStore()
     private val llmPresetStore = LlmPresetStore()

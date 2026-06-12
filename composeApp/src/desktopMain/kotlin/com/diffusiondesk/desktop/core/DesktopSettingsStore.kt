@@ -19,6 +19,7 @@ class DesktopSettingsStore(
             actionBarPosition = "bottom",
             saveImagesAutomatically = true,
             showCompositionOverlay = true,
+            showLlmDebugConsole = false,
             vramBudgetMode = "auto",
             manualVramBudgetGb = 12.0,
             autostartLlmWorkers = false,
@@ -53,6 +54,8 @@ class DesktopSettingsStore(
                     ?: defaults.saveImagesAutomatically,
                 showCompositionOverlay = props.getProperty("showCompositionOverlay", defaults.showCompositionOverlay.toString()).toBooleanStrictOrNull()
                     ?: defaults.showCompositionOverlay,
+                showLlmDebugConsole = props.getProperty("showLlmDebugConsole", defaults.showLlmDebugConsole.toString()).toBooleanStrictOrNull()
+                    ?: defaults.showLlmDebugConsole,
                 vramBudgetMode = props.getProperty("vramBudgetMode", defaults.vramBudgetMode)
                     .takeIf { it in setOf("auto", "manual") }
                     ?: defaults.vramBudgetMode,
@@ -83,6 +86,7 @@ class DesktopSettingsStore(
         props.setProperty("actionBarPosition", settings.actionBarPosition)
         props.setProperty("saveImagesAutomatically", settings.saveImagesAutomatically.toString())
         props.setProperty("showCompositionOverlay", settings.showCompositionOverlay.toString())
+        props.setProperty("showLlmDebugConsole", settings.showLlmDebugConsole.toString())
         props.setProperty("vramBudgetMode", settings.vramBudgetMode)
         props.setProperty("manualVramBudgetGb", settings.manualVramBudgetGb.toString())
         props.setProperty("autostartLlmWorkers", settings.autostartLlmWorkers.toString())
