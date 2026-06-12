@@ -49,8 +49,12 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Recycling
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Repeat
 import androidx.compose.material.icons.filled.RestartAlt
+import androidx.compose.material.icons.filled.Palette
+import androidx.compose.material.icons.filled.CropFree
+import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.Tune
@@ -1118,8 +1122,6 @@ private fun IdeogramElementEditor(
             suggestPaletteEnabled = activeImproveAction == null,
             onRegenerate = { onRunAction(CompositionAction.RegenerateElement(index)) },
             isRegenerating = activeImproveAction == CompositionAction.RegenerateElement(index).actionId,
-            onImprovePlacement = { onRunAction(CompositionAction.ImprovePlacement(index)) },
-            isImprovingPlacement = activeImproveAction == CompositionAction.ImprovePlacement(index).actionId,
             actionEnabled = activeImproveAction == null,
             highlightPlacement = highlightPlacement,
             onHighlightHighLevelDescriptionChange = onHighlightHighLevelDescriptionChange,
@@ -1352,43 +1354,134 @@ private fun ElementPreviewRow(
     suggestPaletteEnabled: Boolean,
     onRegenerate: () -> Unit,
     isRegenerating: Boolean,
-    onImprovePlacement: () -> Unit,
-    isImprovingPlacement: Boolean,
     actionEnabled: Boolean,
     highlightPlacement: Boolean,
     onHighlightHighLevelDescriptionChange: (Boolean) -> Unit,
 ) {
     val shape = RoundedCornerShape(DeskControlCornerRadius)
     var highlightRegeneratedFields by remember { mutableStateOf(false) }
+    var expanded by remember { mutableStateOf(selected) }
+
+    LaunchedEffect(selected) {
+        if (selected) expanded = true
+    }
+
     Column(
         modifier = Modifier
             .fillMaxWidth()
             .clip(shape)
-            .clickable(onClick = onClick)
             .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = DeskSubtleSurfaceAlpha))
             .border(
                 1.dp,
                 if (selected) MaterialTheme.colorScheme.primary else Color.Transparent,
                 shape,
             )
-            .padding(DeskControlSpacing),
-        verticalArrangement = Arrangement.spacedBy(2.dp),
+            .padding(horizontal = DeskControlSpacing, vertical = 6.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(5.dp))
+                .clickable {
+                    onClick()
+                    expanded = !expanded
+                }
+                .padding(vertical = 3.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
+            Icon(
+                imageVector = if (expanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                contentDescription = if (expanded) "Collapse element $index" else "Expand element $index",
+                modifier = Modifier.size(17.dp),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
             Text(
                 text = "$index / $type",
                 style = MaterialTheme.typography.labelMedium,
                 fontWeight = FontWeight.SemiBold,
                 color = MaterialTheme.colorScheme.primary,
             )
-            Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(
+                text = if (type == "text" && textValue.isNotBlank()) "“$textValue”" else desc,
+                modifier = Modifier.weight(1f),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                text = compositionBboxLabel(bbox),
+                modifier = Modifier
+                    .clip(RoundedCornerShape(4.dp))
+                    .background(
+                        if (highlightPlacement) MaterialTheme.colorScheme.primary.copy(alpha = 0.10f)
+                        else Color.Transparent,
+                    )
+                    .padding(horizontal = 3.dp, vertical = 1.dp),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+                colors.take(4).forEach { color ->
+                    Box(
+                        modifier = Modifier
+                            .size(12.dp)
+                            .clip(CircleShape)
+                            .background(ideogramComposeColor(color) ?: MaterialTheme.colorScheme.surface)
+                            .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.7f), CircleShape),
+                    )
+                }
+            }
+        }
+        if (expanded) {
+            if (type == "text") {
+                InlineCompositionField(
+                    value = textValue,
+                    onValueChange = onTextChange,
+                    placeholder = "Text",
+                    modifier = Modifier.fillMaxWidth(),
+                    textStyle = MaterialTheme.typography.bodyMedium.copy(
+                        color = MaterialTheme.colorScheme.onSurface,
+                        fontWeight = FontWeight.Medium,
+                    ),
+                    singleLine = true,
+                )
+            }
+            InlineCompositionField(
+                value = desc,
+                onValueChange = onDescriptionChange,
+                placeholder = "Description",
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 58.dp),
+                textStyle = MaterialTheme.typography.bodySmall.copy(color = MaterialTheme.colorScheme.onSurfaceVariant),
+                highlighted = highlightRegeneratedFields,
+            )
+            PaletteEditor(
+                label = "Palette",
+                colors = colors,
+                maxColors = 5,
+                onColorsChange = onPaletteChange,
+                onSuggest = null,
+                highlighted = highlightRegeneratedFields,
+            )
+            FlowRow(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
                 SubtleTextButton(
                     icon = Icons.Default.AutoFixHigh,
-                    text = if (isRegenerating) "Regenerating..." else "Regenerate",
+                    text = if (isImprovingDescription) "Improving..." else "Improve",
+                    onClick = onImproveDescription,
+                    enabled = improveDescriptionEnabled && desc.isNotBlank(),
+                )
+                SubtleTextButton(
+                    icon = Icons.Default.Refresh,
+                    text = if (isRegenerating) "Creating..." else "Variant",
                     onClick = onRegenerate,
                     enabled = actionEnabled,
                     modifier = Modifier
@@ -1402,15 +1495,25 @@ private fun ElementPreviewRow(
                         },
                 )
                 SubtleTextButton(
+                    icon = Icons.Default.Palette,
+                    text = if (isSuggestingPalette) "Choosing..." else "Colors",
+                    onClick = onSuggestPalette,
+                    enabled = suggestPaletteEnabled,
+                )
+                SubtleTextButton(
                     icon = Icons.Default.SwapHoriz,
-                    text = if (type == "text") "Use object" else "Use text",
+                    text = if (type == "text") "To object" else "To text",
                     onClick = { onTypeChange(if (type == "text") "obj" else "text") },
                 )
-                DeskIconButton(
-                    icon = Icons.Default.Delete,
-                    contentDescription = if (isDeleting) "Deleting element $index" else "Delete element $index",
+                SubtleTextButton(
+                    icon = Icons.Default.CropFree,
+                    text = if (bbox.size == 4) "No bounds" else "Add bounds",
+                    onClick = { onBboxChange(if (bbox.size == 4) null else listOf(250, 250, 750, 750)) },
+                )
+                SubtleTextButton(
+                    icon = Icons.Default.DeleteOutline,
+                    text = if (isDeleting) "Deleting..." else "Delete",
                     onClick = onDelete,
-                    tooltip = "Delete element",
                     enabled = actionEnabled,
                     modifier = Modifier
                         .onPointerEvent(PointerEventType.Enter) { onHighlightHighLevelDescriptionChange(true) }
@@ -1418,85 +1521,6 @@ private fun ElementPreviewRow(
                 )
             }
         }
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(5.dp))
-                .background(
-                    if (highlightPlacement) MaterialTheme.colorScheme.primary.copy(alpha = 0.10f)
-                    else Color.Transparent,
-                )
-                .border(
-                    1.dp,
-                    if (highlightPlacement) MaterialTheme.colorScheme.primary else Color.Transparent,
-                    RoundedCornerShape(5.dp),
-                )
-                .padding(horizontal = 4.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                text = compositionBboxLabel(bbox),
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            SubtleTextButton(
-                icon = Icons.Default.AutoFixHigh,
-                text = if (isImprovingPlacement) "Improving..." else "Improve placement",
-                onClick = onImprovePlacement,
-                enabled = actionEnabled,
-            )
-            Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-                SubtleTextButton(
-                    icon = if (bbox.size == 4) Icons.Default.Delete else Icons.Default.Add,
-                    text = if (bbox.size == 4) "Remove bounds" else "Place",
-                    onClick = { onBboxChange(if (bbox.size == 4) null else listOf(250, 250, 750, 750)) },
-                )
-            }
-        }
-        if (type == "text") {
-            InlineCompositionField(
-                value = textValue,
-                onValueChange = onTextChange,
-                placeholder = "Text",
-                modifier = Modifier.fillMaxWidth(),
-                textStyle = MaterialTheme.typography.bodyMedium.copy(
-                    color = MaterialTheme.colorScheme.onSurface,
-                    fontWeight = FontWeight.Medium,
-                ),
-                singleLine = true,
-            )
-        }
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            InlineCompositionField(
-                value = desc,
-                onValueChange = onDescriptionChange,
-                placeholder = "Description",
-                modifier = Modifier.weight(1f),
-                textStyle = MaterialTheme.typography.bodySmall.copy(color = MaterialTheme.colorScheme.onSurfaceVariant),
-                highlighted = highlightRegeneratedFields,
-            )
-            SubtleTextButton(
-                icon = Icons.Default.AutoFixHigh,
-                text = if (isImprovingDescription) "Improving..." else "Improve",
-                onClick = onImproveDescription,
-                enabled = improveDescriptionEnabled && desc.isNotBlank(),
-            )
-        }
-        PaletteEditor(
-            label = "Palette",
-            colors = colors,
-            maxColors = 5,
-            onColorsChange = onPaletteChange,
-            onSuggest = onSuggestPalette,
-            isSuggesting = isSuggestingPalette,
-            suggestEnabled = suggestPaletteEnabled,
-            highlighted = highlightRegeneratedFields,
-        )
     }
 }
 

@@ -95,7 +95,6 @@ class CompositionActionExecutorTest {
         )
 
         assertEquals("HELLO", element.text)
-        assertEquals(listOf(100, 200, 300, 800), parsePlacementPatch("""{"bbox":[100,200,300,800]}"""))
         assertTrue(element.colorPalette.contains("#FFFFFF"))
     }
 
@@ -103,9 +102,6 @@ class CompositionActionExecutorTest {
     fun rejectsElementTypeChangeAndInvalidBounds() {
         assertFailsWith<IllegalArgumentException> {
             parseElementPatch("""{"type":"obj","desc":"subject"}""", expectedType = "text")
-        }
-        assertFailsWith<IllegalArgumentException> {
-            parsePlacementPatch("""{"bbox":[500,200,300,800]}""")
         }
     }
 

@@ -45,9 +45,6 @@ sealed interface CompositionAction {
     data class RegenerateElement(val index: Int) : CompositionAction {
         override val actionId = "regenerate:compositional_deconstruction.elements[$index]"
     }
-    data class ImprovePlacement(val index: Int) : CompositionAction {
-        override val actionId = "improve:compositional_deconstruction.elements[$index].bbox"
-    }
     data class AddElement(val type: String, val description: String) : CompositionAction {
         override val actionId = "add:compositional_deconstruction.elements:$type"
     }
@@ -103,7 +100,6 @@ class CompositionActionExecutor(
             CompositionAction.ImproveStyle -> improveStyle(settings, presets, roles, document, width, height, imageInput)
             CompositionAction.ImproveComposition -> improveComposition(settings, presets, roles, document, width, height, imageInput)
             is CompositionAction.RegenerateElement -> regenerateElement(settings, presets, roles, action.index, document, width, height, imageInput)
-            is CompositionAction.ImprovePlacement -> improvePlacement(settings, presets, roles, action.index, document, width, height, imageInput)
             is CompositionAction.AddElement -> addElement(settings, presets, roles, action.type, action.description, document, width, height, imageInput)
             is CompositionAction.DeleteElement -> deleteElement(settings, presets, roles, action.index, document, width, height, imageInput)
         }
@@ -163,22 +159,6 @@ class CompositionActionExecutor(
             index,
             patch.copy(element = prepareRegeneratedElement(current, patch.element)),
         )
-    }
-
-    private suspend fun improvePlacement(
-        settings: DesktopSettings,
-        presets: List<LlmPreset>,
-        roles: LlmRoleSettings,
-        index: Int,
-        document: IdeogramCompositionDocument,
-        width: Int,
-        height: Int,
-        imageInput: CompositionImageInput?,
-    ): CompositionMutation {
-        require(index in document.elements.indices) { "Element ${index + 1} is missing." }
-        val response = completeAction(settings, presets, roles, PLACEMENT_SYSTEM_PROMPT, document, width, height, imageInput,
-            "Improve only the bbox for element index $index.", 512)
-        return CompositionMutation.UpdateElementBbox(index, parsePlacementPatch(response))
     }
 
     private suspend fun addElement(
@@ -329,7 +309,6 @@ class CompositionActionExecutor(
             is CompositionAction.ImproveField -> (target as? CompositionImproveTarget.ElementDescription)?.index
             is CompositionAction.SuggestPalette -> (target as? PaletteTarget.Element)?.index
             is CompositionAction.RegenerateElement -> index
-            is CompositionAction.ImprovePlacement -> index
             is CompositionAction.DeleteElement -> index
             CompositionAction.ImproveStyle,
             CompositionAction.ImproveComposition,
@@ -380,9 +359,6 @@ You regenerate exactly one Ideogram 4 element as a clearly different creative al
 """
         private const val DELETE_ELEMENT_SYSTEM_PROMPT = """
 You remove one element from an Ideogram 4 composition summary. Return only {"high_level_description":"..."}. Rewrite the high-level description so it accurately summarizes the remaining complete scene without mentioning the removed element. Preserve unrelated scene intent and do not return markdown, explanations, or additional fields.
-"""
-        private const val PLACEMENT_SYSTEM_PROMPT = """
-You improve exactly one Ideogram element placement. Return only {"bbox":[y_min,x_min,y_max,x_max]}. Coordinates are integers from 0 to 1000 with positive dimensions. Consider the canvas aspect ratio, other elements, and any reference image. Do not return explanations or additional fields.
 """
     }
 }
@@ -494,12 +470,6 @@ internal fun parseHighLevelPatch(response: String): String {
     return root["high_level_description"]?.jsonPrimitive?.content?.trim().orEmpty().also {
         require(it.isNotBlank()) { "The LLM returned an empty high-level description." }
     }
-}
-
-internal fun parsePlacementPatch(response: String): List<Int> {
-    val root = COMPOSITION_ACTION_JSON.parseToJsonElement(response).jsonObject
-    require(root.keys == setOf("bbox")) { "The LLM placement patch must contain only bbox." }
-    return parseBbox(root["bbox"])
 }
 
 private fun parseBbox(value: kotlinx.serialization.json.JsonElement?): List<Int> {
