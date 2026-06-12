@@ -26,6 +26,25 @@ data class IdeogramCompositionElement(
     val colorPalette: List<String>,
 )
 
+data class IdeogramStylePatch(
+    val aesthetics: String,
+    val lighting: String,
+    val medium: String,
+    val photo: String?,
+    val artStyle: String?,
+    val colorPalette: List<String>,
+)
+
+data class IdeogramCompositionPatch(
+    val background: String,
+    val elementBboxes: List<List<Int>?>,
+)
+
+data class IdeogramElementDocumentPatch(
+    val highLevelDescription: String,
+    val element: IdeogramCompositionElement,
+)
+
 data class IdeogramAdditionalField(
     val path: String,
     val jsonValue: String,
@@ -58,6 +77,13 @@ sealed interface CompositionMutation {
     data class UpdateElementDescription(val index: Int, val value: String) : CompositionMutation
     data class UpdateElementText(val index: Int, val value: String) : CompositionMutation
     data class UpdateElementPalette(val index: Int, val colors: List<String>) : CompositionMutation
+    data class ReplaceStyle(val value: IdeogramStylePatch) : CompositionMutation
+    data class ReplaceComposition(val value: IdeogramCompositionPatch) : CompositionMutation
+    data class ReplaceElement(val index: Int, val value: IdeogramCompositionElement) : CompositionMutation
+    data class AddGeneratedElement(val value: IdeogramCompositionElement) : CompositionMutation
+    data class ReplaceElementAndHighLevel(val index: Int, val value: IdeogramElementDocumentPatch) : CompositionMutation
+    data class AddElementAndHighLevel(val value: IdeogramElementDocumentPatch) : CompositionMutation
+    data class RemoveElementAndUpdateHighLevel(val index: Int, val highLevelDescription: String) : CompositionMutation
     data class AddElement(val type: String) : CompositionMutation
     data class RemoveElement(val index: Int) : CompositionMutation
     data class UpdateAdditionalField(val path: String, val jsonValue: String) : CompositionMutation
@@ -142,6 +168,80 @@ internal fun IdeogramCompositionDocument.applyMutation(mutation: CompositionMuta
         is CompositionMutation.UpdateElementPalette -> updateElement(root, mutation.index) { element ->
             setPalette(element, mutation.colors)
         }
+        is CompositionMutation.ReplaceStyle -> {
+            val patch = mutation.value
+            require(patch.aesthetics.isNotBlank()) { "Style aesthetics cannot be empty." }
+            require(patch.lighting.isNotBlank()) { "Style lighting cannot be empty." }
+            require(patch.medium.isNotBlank()) { "Style medium cannot be empty." }
+            require((patch.photo == null) != (patch.artStyle == null)) { "Style must contain exactly one of photo or art_style." }
+            validatePalette(patch.colorPalette, 16)
+            val style = root["style_description"]?.asObject()?.toMutableMap() ?: mutableMapOf()
+            knownStyleFields.forEach(style::remove)
+            style["aesthetics"] = JsonPrimitive(patch.aesthetics)
+            style["lighting"] = JsonPrimitive(patch.lighting)
+            style["medium"] = JsonPrimitive(patch.medium)
+            patch.photo?.let { style["photo"] = JsonPrimitive(it) }
+            patch.artStyle?.let { style["art_style"] = JsonPrimitive(it) }
+            setPalette(style, patch.colorPalette)
+            root["style_description"] = JsonObject(style)
+        }
+        is CompositionMutation.ReplaceComposition -> {
+            val patch = mutation.value
+            require(patch.background.isNotBlank()) { "Composition background cannot be empty." }
+            val composition = requiredObject(root, "compositional_deconstruction").toMutableMap()
+            val elements = composition["elements"]?.asArray()?.toMutableList()
+                ?: error("compositional_deconstruction.elements is required.")
+            require(patch.elementBboxes.size == elements.size) { "Composition patch must contain one placement per element." }
+            patch.elementBboxes.forEachIndexed { index, bbox ->
+                val element = elements[index].asObject()?.toMutableMap() ?: error("Element ${index + 1} must be an object.")
+                if (bbox == null) element.remove("bbox") else {
+                    validateBbox(bbox)
+                    element["bbox"] = JsonArray(bbox.map(::JsonPrimitive))
+                }
+                elements[index] = JsonObject(element)
+            }
+            composition["background"] = JsonPrimitive(patch.background)
+            composition["elements"] = JsonArray(elements)
+            root["compositional_deconstruction"] = JsonObject(composition)
+        }
+        is CompositionMutation.ReplaceElement -> updateElement(root, mutation.index) { element ->
+            val replacement = mutation.value
+            validateElement(replacement)
+            knownElementFields.forEach(element::remove)
+            putElementFields(element, replacement)
+        }
+        is CompositionMutation.AddGeneratedElement -> {
+            validateElement(mutation.value)
+            val composition = requiredObject(root, "compositional_deconstruction").toMutableMap()
+            val elements = composition["elements"]?.asArray()?.toMutableList() ?: mutableListOf()
+            elements += JsonObject(linkedMapOf<String, JsonElement>().apply { putElementFields(this, mutation.value) })
+            composition["elements"] = JsonArray(elements)
+            root["compositional_deconstruction"] = JsonObject(composition)
+        }
+        is CompositionMutation.ReplaceElementAndHighLevel -> {
+            require(mutation.value.highLevelDescription.isNotBlank()) { "High-level description cannot be empty." }
+            validateElement(mutation.value.element)
+            root["high_level_description"] = JsonPrimitive(mutation.value.highLevelDescription)
+            updateElement(root, mutation.index) { element ->
+                knownElementFields.forEach(element::remove)
+                putElementFields(element, mutation.value.element)
+            }
+        }
+        is CompositionMutation.AddElementAndHighLevel -> {
+            require(mutation.value.highLevelDescription.isNotBlank()) { "High-level description cannot be empty." }
+            validateElement(mutation.value.element)
+            root["high_level_description"] = JsonPrimitive(mutation.value.highLevelDescription)
+            val composition = requiredObject(root, "compositional_deconstruction").toMutableMap()
+            val elements = composition["elements"]?.asArray()?.toMutableList() ?: mutableListOf()
+            elements += JsonObject(linkedMapOf<String, JsonElement>().apply { putElementFields(this, mutation.value.element) })
+            composition["elements"] = JsonArray(elements)
+            root["compositional_deconstruction"] = JsonObject(composition)
+        }
+        is CompositionMutation.RemoveElementAndUpdateHighLevel -> {
+            require(mutation.highLevelDescription.isNotBlank()) { "High-level description cannot be empty." }
+            root["high_level_description"] = JsonPrimitive(mutation.highLevelDescription)
+            removeElement(root, mutation.index)
+        }
         is CompositionMutation.AddElement -> {
             require(mutation.type in setOf("obj", "text")) { "Element type must be obj or text." }
             val composition = requiredObject(root, "compositional_deconstruction").toMutableMap()
@@ -155,13 +255,7 @@ internal fun IdeogramCompositionDocument.applyMutation(mutation: CompositionMuta
             root["compositional_deconstruction"] = JsonObject(composition)
         }
         is CompositionMutation.RemoveElement -> {
-            val composition = requiredObject(root, "compositional_deconstruction").toMutableMap()
-            val elements = composition["elements"]?.asArray()?.toMutableList()
-                ?: error("compositional_deconstruction.elements is required.")
-            require(mutation.index in elements.indices) { "Element ${mutation.index + 1} is missing." }
-            elements.removeAt(mutation.index)
-            composition["elements"] = JsonArray(elements)
-            root["compositional_deconstruction"] = JsonObject(composition)
+            removeElement(root, mutation.index)
         }
         is CompositionMutation.UpdateAdditionalField -> {
             val value = compositionJson.parseToJsonElement(mutation.jsonValue)
@@ -243,6 +337,33 @@ private fun setPalette(target: MutableMap<String, JsonElement>, colors: List<Str
     else target["color_palette"] = JsonArray(colors.map(::JsonPrimitive))
 }
 
+private fun putElementFields(target: MutableMap<String, JsonElement>, element: IdeogramCompositionElement) {
+    target["type"] = JsonPrimitive(element.type)
+    if (element.bbox.isNotEmpty()) target["bbox"] = JsonArray(element.bbox.map(::JsonPrimitive))
+    if (element.type == "text") target["text"] = JsonPrimitive(element.text.orEmpty())
+    target["desc"] = JsonPrimitive(element.description)
+    setPalette(target, element.colorPalette)
+}
+
+private fun validateElement(element: IdeogramCompositionElement) {
+    require(element.type in setOf("obj", "text")) { "Element type must be obj or text." }
+    require(element.description.isNotBlank()) { "Element description cannot be empty." }
+    if (element.type == "text") require(!element.text.isNullOrBlank()) { "Text elements require literal text." }
+    if (element.bbox.isNotEmpty()) validateBbox(element.bbox)
+    validatePalette(element.colorPalette, 5)
+}
+
+private fun validateBbox(bbox: List<Int>) {
+    require(bbox.size == 4) { "Bounding box must contain four values." }
+    require(bbox.all { it in 0..1000 }) { "Bounding box values must be between 0 and 1000." }
+    require(bbox[0] < bbox[2] && bbox[1] < bbox[3]) { "Bounding box must have positive dimensions." }
+}
+
+private fun validatePalette(colors: List<String>, maxColors: Int) {
+    require(colors.size <= maxColors) { "Palette contains more than $maxColors colors." }
+    require(colors.all { HEX_COLOR.matches(it) }) { "Palette colors must use uppercase #RRGGBB values." }
+}
+
 private fun updateElement(
     root: MutableMap<String, JsonElement>,
     index: Int,
@@ -255,6 +376,16 @@ private fun updateElement(
         ?: error("Element ${index + 1} is missing.")
     transform(element)
     elements[index] = JsonObject(element)
+    composition["elements"] = JsonArray(elements)
+    root["compositional_deconstruction"] = JsonObject(composition)
+}
+
+private fun removeElement(root: MutableMap<String, JsonElement>, index: Int) {
+    val composition = requiredObject(root, "compositional_deconstruction").toMutableMap()
+    val elements = composition["elements"]?.asArray()?.toMutableList()
+        ?: error("compositional_deconstruction.elements is required.")
+    require(index in elements.indices) { "Element ${index + 1} is missing." }
+    elements.removeAt(index)
     composition["elements"] = JsonArray(elements)
     root["compositional_deconstruction"] = JsonObject(composition)
 }
@@ -275,6 +406,7 @@ private val knownRootFields = setOf("high_level_description", "style_description
 private val knownStyleFields = setOf("aesthetics", "lighting", "medium", "photo", "art_style", "color_palette")
 private val knownCompositionFields = setOf("background", "elements")
 private val knownElementFields = setOf("type", "bbox", "desc", "text", "color_palette")
+private val HEX_COLOR = Regex("^#[0-9A-F]{6}$")
 
 private fun collectAdditionalFields(root: JsonObject): List<IdeogramAdditionalField> = buildList {
     root.filterKeys { it !in knownRootFields }.forEach { (key, value) -> addAdditional(key, value) }

@@ -4,6 +4,8 @@ import com.diffusiondesk.desktop.core.ImagePromptMode
 import kotlin.test.Test
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
+import kotlin.test.assertEquals
+import kotlin.test.assertNull
 
 class GenerationDraftStateTest {
     private val params = GenerationParams(
@@ -87,6 +89,14 @@ class GenerationDraftStateTest {
 
         assertTrue(state.isCurrentDraftModified)
         assertFalse(state.isCurrentDraftResolutionModified)
+    }
+
+    @Test
+    fun compositionReferenceRequiresExplicitlyEnabledVisibleImage() {
+        assertEquals("image", selectCompositionReferenceImage("image", enabled = true, resolutionModified = false))
+        assertNull(selectCompositionReferenceImage("image", enabled = false, resolutionModified = false))
+        assertNull(selectCompositionReferenceImage("image", enabled = true, resolutionModified = true))
+        assertNull(selectCompositionReferenceImage<String>(null, enabled = true, resolutionModified = false))
     }
 
     private fun stateFor(params: GenerationParams, mode: ImagePromptMode): GenerationUiState = GenerationUiState(

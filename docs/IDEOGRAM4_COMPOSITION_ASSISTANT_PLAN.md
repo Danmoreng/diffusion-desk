@@ -395,15 +395,15 @@ have multiple fragile paths for rewriting JSON strings.
 Add focused actions throughout the structured editor:
 
 - [x] **Improve field**: improve only the selected text or structured field.
-- [ ] **Improve style**: return only a `StylePatch`.
-- [ ] **Improve composition**: return a `CompositionPatch` for the background and
+- [x] **Improve style**: return only a `StylePatch`.
+- [x] **Improve composition**: return a `CompositionPatch` for the background and
   element arrangement.
 - [x] **Enhance description**: increase only the visual detail of `desc`.
-- [ ] **Regenerate element**: regenerate one element while retaining its type and,
+- [x] **Regenerate element**: regenerate one element while retaining its type and,
   optionally, bounding box.
 - [x] **Suggest palette**: generate only the global or element palette.
-- [ ] **Improve placement**: optimize only one element's bounding box.
-- [ ] **Add object** / **Add text**: create exactly one new element from a short
+- [x] **Improve placement**: optimize only one element's bounding box.
+- [x] **Add object** / **Add text**: create exactly one new element from a short
   user description.
 
 Phase 3 infrastructure status:

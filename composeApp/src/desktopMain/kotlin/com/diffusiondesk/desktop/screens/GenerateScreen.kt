@@ -68,6 +68,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
@@ -80,6 +81,8 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.input.pointer.PointerIcon
 import androidx.compose.ui.input.pointer.pointerHoverIcon
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.PointerEventType
+import androidx.compose.ui.input.pointer.onPointerEvent
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -545,6 +548,9 @@ private fun PromptTabContent(
             onFormatStructuredJson = onFormatStructuredJson,
         )
         IdeogramStructureTab.Preview -> {
+            var highlightStyleFields by remember { mutableStateOf(false) }
+            var highlightCompositionFields by remember { mutableStateOf(false) }
+            var highlightHighLevelDescription by remember { mutableStateOf(false) }
             state.ideogram.jsonError?.let { error ->
                 Text(
                     text = error,
@@ -558,6 +564,12 @@ private fun PromptTabContent(
                 onRunAction = onRunCompositionAction,
                 onUndo = onUndoComposition,
                 onRedo = onRedoComposition,
+                highlightStyleFields = highlightStyleFields,
+                highlightCompositionFields = highlightCompositionFields,
+                highlightHighLevelDescription = highlightHighLevelDescription,
+                onHighlightStyleFieldsChange = { highlightStyleFields = it },
+                onHighlightCompositionFieldsChange = { highlightCompositionFields = it },
+                onHighlightHighLevelDescriptionChange = { highlightHighLevelDescription = it },
             )
             IdeogramElementEditor(
                 elements = ideogramElementPreviews(state.ideogram.jsonPrompt),
@@ -569,6 +581,8 @@ private fun PromptTabContent(
                 onElementDescriptionChange = onCompositionDescriptionChange,
                 onElementTextChange = onCompositionTextChange,
                 onElementPaletteChange = onCompositionPaletteChange,
+                highlightPlacement = highlightCompositionFields,
+                onHighlightHighLevelDescriptionChange = { highlightHighLevelDescription = it },
             )
         }
     }
@@ -702,12 +716,19 @@ private fun StructuredJsonStatus(state: GenerationUiState) {
 }
 
 @Composable
+@OptIn(ExperimentalComposeUiApi::class)
 private fun CompositionDocumentEditor(
     state: GenerationUiState,
     onMutation: (CompositionMutation) -> Unit,
     onRunAction: (CompositionAction) -> Unit,
     onUndo: () -> Unit,
     onRedo: () -> Unit,
+    highlightStyleFields: Boolean,
+    highlightCompositionFields: Boolean,
+    highlightHighLevelDescription: Boolean,
+    onHighlightStyleFieldsChange: (Boolean) -> Unit,
+    onHighlightCompositionFieldsChange: (Boolean) -> Unit,
+    onHighlightHighLevelDescriptionChange: (Boolean) -> Unit,
 ) {
     val document = state.ideogram.document ?: return
     Column(
@@ -743,24 +764,43 @@ private fun CompositionDocumentEditor(
             isImproving = state.activeCompositionImproveAction == CompositionAction.ImproveField(CompositionImproveTarget.HighLevelDescription).actionId,
             improveEnabled = state.activeCompositionImproveAction == null,
             minHeight = 82.dp,
+            highlighted = highlightHighLevelDescription,
         )
 
-        Label("Style")
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Label("Style")
+            SubtleTextButton(
+                icon = Icons.Default.AutoFixHigh,
+                text = if (state.activeCompositionImproveAction == CompositionAction.ImproveStyle.actionId) "Improving..." else "Improve style",
+                onClick = { onRunAction(CompositionAction.ImproveStyle) },
+                enabled = state.activeCompositionImproveAction == null,
+                modifier = Modifier
+                    .onPointerEvent(PointerEventType.Enter) { onHighlightStyleFieldsChange(true) }
+                    .onPointerEvent(PointerEventType.Exit) { onHighlightStyleFieldsChange(false) },
+            )
+        }
         CompositionEditField("Aesthetics", document.style.aesthetics, {
             onMutation(CompositionMutation.UpdateStyleField(IdeogramStyleField.Aesthetics, it))
         }, onImprove = { onRunAction(CompositionAction.ImproveField(CompositionImproveTarget.StyleField(IdeogramStyleField.Aesthetics))) },
             isImproving = state.activeCompositionImproveAction == CompositionAction.ImproveField(CompositionImproveTarget.StyleField(IdeogramStyleField.Aesthetics)).actionId,
-            improveEnabled = state.activeCompositionImproveAction == null)
+            improveEnabled = state.activeCompositionImproveAction == null,
+            highlighted = highlightStyleFields)
         CompositionEditField("Lighting", document.style.lighting, {
             onMutation(CompositionMutation.UpdateStyleField(IdeogramStyleField.Lighting, it))
         }, onImprove = { onRunAction(CompositionAction.ImproveField(CompositionImproveTarget.StyleField(IdeogramStyleField.Lighting))) },
             isImproving = state.activeCompositionImproveAction == CompositionAction.ImproveField(CompositionImproveTarget.StyleField(IdeogramStyleField.Lighting)).actionId,
-            improveEnabled = state.activeCompositionImproveAction == null)
+            improveEnabled = state.activeCompositionImproveAction == null,
+            highlighted = highlightStyleFields)
         CompositionEditField("Medium", document.style.medium, {
             onMutation(CompositionMutation.UpdateStyleField(IdeogramStyleField.Medium, it))
         }, onImprove = { onRunAction(CompositionAction.ImproveField(CompositionImproveTarget.StyleField(IdeogramStyleField.Medium))) },
             isImproving = state.activeCompositionImproveAction == CompositionAction.ImproveField(CompositionImproveTarget.StyleField(IdeogramStyleField.Medium)).actionId,
-            improveEnabled = state.activeCompositionImproveAction == null)
+            improveEnabled = state.activeCompositionImproveAction == null,
+            highlighted = highlightStyleFields)
         val usesPhoto = document.style.photo != null
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -803,6 +843,7 @@ private fun CompositionDocumentEditor(
                 CompositionImproveTarget.StyleField(if (usesPhoto) IdeogramStyleField.Photo else IdeogramStyleField.ArtStyle),
             ).actionId,
             improveEnabled = state.activeCompositionImproveAction == null,
+            highlighted = highlightStyleFields,
         )
         PaletteEditor(
             label = "Global palette",
@@ -812,9 +853,25 @@ private fun CompositionDocumentEditor(
             onSuggest = { onRunAction(CompositionAction.SuggestPalette(PaletteTarget.Global)) },
             isSuggesting = state.activeCompositionImproveAction == CompositionAction.SuggestPalette(PaletteTarget.Global).actionId,
             suggestEnabled = state.activeCompositionImproveAction == null,
+            highlighted = highlightStyleFields,
         )
 
-        Label("Composition")
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Label("Composition")
+            SubtleTextButton(
+                icon = Icons.Default.AutoFixHigh,
+                text = if (state.activeCompositionImproveAction == CompositionAction.ImproveComposition.actionId) "Improving..." else "Improve composition",
+                onClick = { onRunAction(CompositionAction.ImproveComposition) },
+                enabled = state.activeCompositionImproveAction == null,
+                modifier = Modifier
+                    .onPointerEvent(PointerEventType.Enter) { onHighlightCompositionFieldsChange(true) }
+                    .onPointerEvent(PointerEventType.Exit) { onHighlightCompositionFieldsChange(false) },
+            )
+        }
         CompositionEditField(
             label = "Background",
             value = document.background,
@@ -823,6 +880,7 @@ private fun CompositionDocumentEditor(
             isImproving = state.activeCompositionImproveAction == CompositionAction.ImproveField(CompositionImproveTarget.Background).actionId,
             improveEnabled = state.activeCompositionImproveAction == null,
             minHeight = 70.dp,
+            highlighted = highlightCompositionFields,
         )
         if (document.additionalFields.isNotEmpty()) {
             Label("Additional fields")
@@ -882,6 +940,7 @@ private fun CompositionDocumentEditor(
                 tooltip = "Add field",
             )
         }
+        var newElementDescription by remember { mutableStateOf("") }
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
@@ -891,16 +950,30 @@ private fun CompositionDocumentEditor(
             Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 SubtleTextButton(
                     icon = Icons.Default.Add,
-                    text = "Add object",
-                    onClick = { onMutation(CompositionMutation.AddElement("obj")) },
+                    text = if (state.activeCompositionImproveAction == CompositionAction.AddElement("obj", newElementDescription).actionId) "Adding..." else "Add object",
+                    onClick = { onRunAction(CompositionAction.AddElement("obj", newElementDescription)) },
+                    enabled = newElementDescription.isNotBlank() && state.activeCompositionImproveAction == null,
+                    modifier = Modifier
+                        .onPointerEvent(PointerEventType.Enter) { onHighlightHighLevelDescriptionChange(true) }
+                        .onPointerEvent(PointerEventType.Exit) { onHighlightHighLevelDescriptionChange(false) },
                 )
                 SubtleTextButton(
                     icon = Icons.Default.Add,
-                    text = "Add text",
-                    onClick = { onMutation(CompositionMutation.AddElement("text")) },
+                    text = if (state.activeCompositionImproveAction == CompositionAction.AddElement("text", newElementDescription).actionId) "Adding..." else "Add text",
+                    onClick = { onRunAction(CompositionAction.AddElement("text", newElementDescription)) },
+                    enabled = newElementDescription.isNotBlank() && state.activeCompositionImproveAction == null,
+                    modifier = Modifier
+                        .onPointerEvent(PointerEventType.Enter) { onHighlightHighLevelDescriptionChange(true) }
+                        .onPointerEvent(PointerEventType.Exit) { onHighlightHighLevelDescriptionChange(false) },
                 )
             }
         }
+        CompactCompositionInput(
+            label = "Describe the element to add",
+            value = newElementDescription,
+            onValueChange = { newElementDescription = it },
+            modifier = Modifier.fillMaxWidth(),
+        )
     }
 }
 
@@ -940,6 +1013,7 @@ private fun CompositionEditField(
     improveEnabled: Boolean = true,
     minHeight: Dp = 42.dp,
     singleLine: Boolean = false,
+    highlighted: Boolean = false,
 ) {
     var draft by remember(value) { mutableStateOf(value) }
     Column(
@@ -979,8 +1053,15 @@ private fun CompositionEditField(
                     hadFocus = focusState.isFocused
                 }
                 .clip(shape)
-                .background(MaterialTheme.colorScheme.surface)
-                .border(1.dp, MaterialTheme.colorScheme.outlineVariant, shape)
+                .background(
+                    if (highlighted) MaterialTheme.colorScheme.primary.copy(alpha = 0.10f)
+                    else MaterialTheme.colorScheme.surface,
+                )
+                .border(
+                    1.dp,
+                    if (highlighted) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant,
+                    shape,
+                )
                 .padding(horizontal = 9.dp, vertical = 7.dp),
             textStyle = MaterialTheme.typography.bodyMedium.copy(color = MaterialTheme.colorScheme.onSurface),
             cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
@@ -999,6 +1080,8 @@ private fun IdeogramElementEditor(
     onElementDescriptionChange: (Int, String) -> Unit,
     onElementTextChange: (Int, String) -> Unit,
     onElementPaletteChange: (Int, List<String>) -> Unit,
+    highlightPlacement: Boolean,
+    onHighlightHighLevelDescriptionChange: (Boolean) -> Unit,
 ) {
     LaunchedEffect(elements.size, selectedIndex) {
         if (elements.isNotEmpty() && selectedIndex !in elements.indices) {
@@ -1021,7 +1104,8 @@ private fun IdeogramElementEditor(
             selected = index == selectedIndex,
             onClick = { onElementSelected(index) },
             onTypeChange = { onMutation(CompositionMutation.UpdateElementType(index, it)) },
-            onDelete = { onMutation(CompositionMutation.RemoveElement(index)) },
+            onDelete = { onRunAction(CompositionAction.DeleteElement(index)) },
+            isDeleting = activeImproveAction == CompositionAction.DeleteElement(index).actionId,
             onBboxChange = { onMutation(CompositionMutation.UpdateElementBbox(index, it)) },
             onDescriptionChange = { onElementDescriptionChange(index, it) },
             onImproveDescription = { onRunAction(CompositionAction.ImproveField(CompositionImproveTarget.ElementDescription(index))) },
@@ -1032,6 +1116,13 @@ private fun IdeogramElementEditor(
             onSuggestPalette = { onRunAction(CompositionAction.SuggestPalette(PaletteTarget.Element(index))) },
             isSuggestingPalette = activeImproveAction == CompositionAction.SuggestPalette(PaletteTarget.Element(index)).actionId,
             suggestPaletteEnabled = activeImproveAction == null,
+            onRegenerate = { onRunAction(CompositionAction.RegenerateElement(index)) },
+            isRegenerating = activeImproveAction == CompositionAction.RegenerateElement(index).actionId,
+            onImprovePlacement = { onRunAction(CompositionAction.ImprovePlacement(index)) },
+            isImprovingPlacement = activeImproveAction == CompositionAction.ImprovePlacement(index).actionId,
+            actionEnabled = activeImproveAction == null,
+            highlightPlacement = highlightPlacement,
+            onHighlightHighLevelDescriptionChange = onHighlightHighLevelDescriptionChange,
         )
     }
 }
@@ -1235,7 +1326,7 @@ private fun BoxScope.CompositionResizeHandleBox(
     )
 }
 
-@OptIn(ExperimentalLayoutApi::class)
+@OptIn(ExperimentalLayoutApi::class, ExperimentalComposeUiApi::class)
 @Composable
 private fun ElementPreviewRow(
     index: Int,
@@ -1248,6 +1339,7 @@ private fun ElementPreviewRow(
     onClick: () -> Unit,
     onTypeChange: (String) -> Unit,
     onDelete: () -> Unit,
+    isDeleting: Boolean,
     onBboxChange: (List<Int>?) -> Unit,
     onDescriptionChange: (String) -> Unit,
     onImproveDescription: () -> Unit,
@@ -1258,8 +1350,16 @@ private fun ElementPreviewRow(
     onSuggestPalette: () -> Unit,
     isSuggestingPalette: Boolean,
     suggestPaletteEnabled: Boolean,
+    onRegenerate: () -> Unit,
+    isRegenerating: Boolean,
+    onImprovePlacement: () -> Unit,
+    isImprovingPlacement: Boolean,
+    actionEnabled: Boolean,
+    highlightPlacement: Boolean,
+    onHighlightHighLevelDescriptionChange: (Boolean) -> Unit,
 ) {
     val shape = RoundedCornerShape(DeskControlCornerRadius)
+    var highlightRegeneratedFields by remember { mutableStateOf(false) }
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -1287,20 +1387,51 @@ private fun ElementPreviewRow(
             )
             Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
                 SubtleTextButton(
+                    icon = Icons.Default.AutoFixHigh,
+                    text = if (isRegenerating) "Regenerating..." else "Regenerate",
+                    onClick = onRegenerate,
+                    enabled = actionEnabled,
+                    modifier = Modifier
+                        .onPointerEvent(PointerEventType.Enter) {
+                            highlightRegeneratedFields = true
+                            onHighlightHighLevelDescriptionChange(true)
+                        }
+                        .onPointerEvent(PointerEventType.Exit) {
+                            highlightRegeneratedFields = false
+                            onHighlightHighLevelDescriptionChange(false)
+                        },
+                )
+                SubtleTextButton(
                     icon = Icons.Default.SwapHoriz,
                     text = if (type == "text") "Use object" else "Use text",
                     onClick = { onTypeChange(if (type == "text") "obj" else "text") },
                 )
                 DeskIconButton(
                     icon = Icons.Default.Delete,
-                    contentDescription = "Delete element $index",
+                    contentDescription = if (isDeleting) "Deleting element $index" else "Delete element $index",
                     onClick = onDelete,
                     tooltip = "Delete element",
+                    enabled = actionEnabled,
+                    modifier = Modifier
+                        .onPointerEvent(PointerEventType.Enter) { onHighlightHighLevelDescriptionChange(true) }
+                        .onPointerEvent(PointerEventType.Exit) { onHighlightHighLevelDescriptionChange(false) },
                 )
             }
         }
         Row(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(5.dp))
+                .background(
+                    if (highlightPlacement) MaterialTheme.colorScheme.primary.copy(alpha = 0.10f)
+                    else Color.Transparent,
+                )
+                .border(
+                    1.dp,
+                    if (highlightPlacement) MaterialTheme.colorScheme.primary else Color.Transparent,
+                    RoundedCornerShape(5.dp),
+                )
+                .padding(horizontal = 4.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -1310,10 +1441,18 @@ private fun ElementPreviewRow(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             SubtleTextButton(
-                icon = if (bbox.size == 4) Icons.Default.Delete else Icons.Default.Add,
-                text = if (bbox.size == 4) "Remove bounds" else "Place",
-                onClick = { onBboxChange(if (bbox.size == 4) null else listOf(250, 250, 750, 750)) },
+                icon = Icons.Default.AutoFixHigh,
+                text = if (isImprovingPlacement) "Improving..." else "Improve placement",
+                onClick = onImprovePlacement,
+                enabled = actionEnabled,
             )
+            Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                SubtleTextButton(
+                    icon = if (bbox.size == 4) Icons.Default.Delete else Icons.Default.Add,
+                    text = if (bbox.size == 4) "Remove bounds" else "Place",
+                    onClick = { onBboxChange(if (bbox.size == 4) null else listOf(250, 250, 750, 750)) },
+                )
+            }
         }
         if (type == "text") {
             InlineCompositionField(
@@ -1339,6 +1478,7 @@ private fun ElementPreviewRow(
                 placeholder = "Description",
                 modifier = Modifier.weight(1f),
                 textStyle = MaterialTheme.typography.bodySmall.copy(color = MaterialTheme.colorScheme.onSurfaceVariant),
+                highlighted = highlightRegeneratedFields,
             )
             SubtleTextButton(
                 icon = Icons.Default.AutoFixHigh,
@@ -1355,6 +1495,7 @@ private fun ElementPreviewRow(
             onSuggest = onSuggestPalette,
             isSuggesting = isSuggestingPalette,
             suggestEnabled = suggestPaletteEnabled,
+            highlighted = highlightRegeneratedFields,
         )
     }
 }
@@ -1367,6 +1508,7 @@ private fun InlineCompositionField(
     modifier: Modifier,
     textStyle: androidx.compose.ui.text.TextStyle,
     singleLine: Boolean = false,
+    highlighted: Boolean = false,
 ) {
     val shape = RoundedCornerShape(5.dp)
     var draft by remember(value) { mutableStateOf(value) }
@@ -1380,8 +1522,15 @@ private fun InlineCompositionField(
                 hadFocus = focusState.isFocused
             }
             .clip(shape)
-            .background(MaterialTheme.colorScheme.surface)
-            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, shape)
+            .background(
+                if (highlighted) MaterialTheme.colorScheme.primary.copy(alpha = 0.10f)
+                else MaterialTheme.colorScheme.surface,
+            )
+            .border(
+                1.dp,
+                if (highlighted) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant,
+                shape,
+            )
             .padding(horizontal = 8.dp, vertical = 6.dp),
         singleLine = singleLine,
         textStyle = textStyle,
@@ -1411,9 +1560,22 @@ private fun PaletteEditor(
     onSuggest: (() -> Unit)? = null,
     isSuggesting: Boolean = false,
     suggestEnabled: Boolean = true,
+    highlighted: Boolean = false,
 ) {
     Column(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(5.dp))
+            .background(
+                if (highlighted) MaterialTheme.colorScheme.primary.copy(alpha = 0.10f)
+                else Color.Transparent,
+            )
+            .border(
+                1.dp,
+                if (highlighted) MaterialTheme.colorScheme.primary else Color.Transparent,
+                RoundedCornerShape(5.dp),
+            )
+            .padding(horizontal = 4.dp, vertical = 2.dp),
         verticalArrangement = Arrangement.spacedBy(5.dp),
     ) {
         Row(
@@ -2605,6 +2767,7 @@ internal fun SubtleTextButton(
     text: String,
     onClick: () -> Unit,
     enabled: Boolean = true,
+    modifier: Modifier = Modifier,
 ) {
     val shape = RoundedCornerShape(5.dp)
     val tint = if (enabled) {
@@ -2613,7 +2776,7 @@ internal fun SubtleTextButton(
         MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f)
     }
     Row(
-        modifier = Modifier
+        modifier = modifier
             .clip(shape)
             .then(if (enabled) Modifier.clickable(onClick = onClick) else Modifier)
             .padding(horizontal = 8.dp, vertical = 4.dp),
