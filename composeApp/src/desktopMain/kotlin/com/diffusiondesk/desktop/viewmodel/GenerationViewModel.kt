@@ -784,9 +784,11 @@ class GenerationViewModel(
                 document = document,
                 width = state.width.toIntOrNull() ?: 1024,
                 height = state.height.toIntOrNull() ?: 1024,
-                image = state.images.firstOrNull().takeIf {
-                    state.useImageAsCompositionReference && !state.isCurrentDraftResolutionModified
-                },
+                image = selectCompositionReferenceImage(
+                    image = state.images.firstOrNull(),
+                    enabled = state.useImageAsCompositionReference,
+                    resolutionModified = state.isCurrentDraftResolutionModified,
+                ),
             ).onSuccess { mutation ->
                 applyCompositionMutation(mutation)
                 update {
@@ -815,8 +817,11 @@ class GenerationViewModel(
         }
         val nextState = if (recordHistory) commitCompositionJson(changed.serialize()) else updateCompositionJson(changed.serialize())
         when (mutation) {
-            is CompositionMutation.AddElement -> nextState.copy(selectedCompositionElementIndex = changed.elements.lastIndex.coerceAtLeast(0))
-            is CompositionMutation.RemoveElement -> nextState.copy(
+            is CompositionMutation.AddElement,
+            is CompositionMutation.AddGeneratedElement,
+            is CompositionMutation.AddElementAndHighLevel -> nextState.copy(selectedCompositionElementIndex = changed.elements.lastIndex.coerceAtLeast(0))
+            is CompositionMutation.RemoveElement,
+            is CompositionMutation.RemoveElementAndUpdateHighLevel -> nextState.copy(
                 selectedCompositionElementIndex = selectedCompositionElementIndex.coerceIn(0, changed.elements.lastIndex.coerceAtLeast(0)),
             )
             else -> nextState
@@ -1941,3 +1946,6 @@ class GenerationViewModel(
         private const val PROGRESS_STAGE_DECODE = "decode"
     }
 }
+
+internal fun <T> selectCompositionReferenceImage(image: T?, enabled: Boolean, resolutionModified: Boolean): T? =
+    image.takeIf { enabled && !resolutionModified }

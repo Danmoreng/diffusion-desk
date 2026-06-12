@@ -161,4 +161,83 @@ class IdeogramCompositionDocumentTest {
         assertEquals(document.background, changed.background)
         assertEquals(document.style, changed.style)
     }
+
+    @Test
+    fun stylePatchIsAtomicAndPreservesUnknownFields() {
+        val document = parseIdeogramCompositionDocument(source).getOrThrow()
+        val changed = document.applyMutation(
+            CompositionMutation.ReplaceStyle(
+                IdeogramStylePatch("dramatic", "rim", "photography", "fashion", null, listOf("#112233")),
+            ),
+        ).getOrThrow()
+
+        assertEquals("dramatic", changed.style.aesthetics)
+        assertEquals(document.background, changed.background)
+        assertTrue(changed.additionalFields.any { it.path == "style_description.custom_style" })
+    }
+
+    @Test
+    fun compositionPatchOnlyChangesBackgroundAndPlacements() {
+        val document = parseIdeogramCompositionDocument(source).getOrThrow()
+        val changed = document.applyMutation(
+            CompositionMutation.ReplaceComposition(
+                IdeogramCompositionPatch("night city", listOf(listOf(100, 200, 700, 800))),
+            ),
+        ).getOrThrow()
+
+        assertEquals("night city", changed.background)
+        assertEquals(listOf(100, 200, 700, 800), changed.elements.first().bbox)
+        assertEquals(document.elements.first().description, changed.elements.first().description)
+        assertEquals(document.style, changed.style)
+    }
+
+    @Test
+    fun generatedElementCanReplaceOrAppendAsOneMutation() {
+        val document = parseIdeogramCompositionDocument(source).getOrThrow()
+        val replacement = IdeogramCompositionElement("obj", listOf(0, 0, 500, 500), "new subject", null, listOf("#ABCDEF"))
+        val replaced = document.applyMutation(CompositionMutation.ReplaceElement(0, replacement)).getOrThrow()
+
+        assertEquals("new subject", replaced.elements.first().description)
+        assertTrue(replaced.additionalFields.any { it.path == "compositional_deconstruction.elements[0].custom_element" })
+
+        val added = replaced.applyMutation(
+            CompositionMutation.AddGeneratedElement(
+                IdeogramCompositionElement("text", listOf(700, 100, 900, 900), "headline", "HELLO", emptyList()),
+            ),
+        ).getOrThrow()
+        assertEquals(2, added.elements.size)
+        assertEquals("HELLO", added.elements.last().text)
+    }
+
+    @Test
+    fun elementAndHighLevelChangesAreAppliedAtomically() {
+        val document = parseIdeogramCompositionDocument(source).getOrThrow()
+        val replacement = IdeogramCompositionElement("obj", listOf(0, 0, 500, 500), "new subject", null, listOf("#ABCDEF"))
+        val replaced = document.applyMutation(
+            CompositionMutation.ReplaceElementAndHighLevel(
+                0,
+                IdeogramElementDocumentPatch("Scene with a new subject", replacement),
+            ),
+        ).getOrThrow()
+
+        assertEquals("Scene with a new subject", replaced.highLevelDescription)
+        assertEquals("new subject", replaced.elements.first().description)
+
+        val added = replaced.applyMutation(
+            CompositionMutation.AddElementAndHighLevel(
+                IdeogramElementDocumentPatch(
+                    "Scene with a new subject and title",
+                    IdeogramCompositionElement("text", emptyList(), "title", "HELLO", listOf("#FFFFFF")),
+                ),
+            ),
+        ).getOrThrow()
+        assertEquals(2, added.elements.size)
+        assertEquals("Scene with a new subject and title", added.highLevelDescription)
+
+        val removed = added.applyMutation(
+            CompositionMutation.RemoveElementAndUpdateHighLevel(1, "Scene with a new subject"),
+        ).getOrThrow()
+        assertEquals(1, removed.elements.size)
+        assertEquals("Scene with a new subject", removed.highLevelDescription)
+    }
 }
