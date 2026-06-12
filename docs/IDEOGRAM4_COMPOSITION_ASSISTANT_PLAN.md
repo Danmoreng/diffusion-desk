@@ -402,7 +402,6 @@ Add focused actions throughout the structured editor:
 - [x] **Regenerate element**: regenerate one element while retaining its type and,
   optionally, bounding box.
 - [x] **Suggest palette**: generate only the global or element palette.
-- [x] **Improve placement**: optimize only one element's bounding box.
 - [x] **Add object** / **Add text**: create exactly one new element from a short
   user description.
 
