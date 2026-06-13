@@ -33,12 +33,10 @@ data class StagedIdeogramDraft(
         buildJsonObject {
             if (highLevelDescription.isNotBlank()) put("high_level_description", JsonPrimitive(highLevelDescription))
             style?.let { put("style_description", it) }
-            if (background.isNotBlank() || elements.isNotEmpty()) {
-                put("compositional_deconstruction", buildJsonObject {
-                    if (background.isNotBlank()) put("background", JsonPrimitive(background))
-                    put("elements", JsonArray(elements))
-                })
-            }
+            put("compositional_deconstruction", buildJsonObject {
+                put("background", JsonPrimitive(background))
+                put("elements", JsonArray(elements))
+            })
         },
     )
 

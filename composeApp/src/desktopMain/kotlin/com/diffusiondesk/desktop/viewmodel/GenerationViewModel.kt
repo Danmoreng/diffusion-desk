@@ -53,8 +53,6 @@ enum class GenerationStatus {
     Cancelled,
 }
 
-enum class IdeogramGenerationMode { Fast, Staged }
-
 private val DEFAULT_SAMPLERS = listOf(
     "euler",
     "euler_a",
@@ -128,7 +126,6 @@ internal fun commitCompositionHistory(entries: List<String>, index: Int, value: 
 
 enum class IdeogramStructureTab {
     Text,
-    Json,
     Preview,
 }
 
@@ -146,26 +143,17 @@ sealed interface CompositionImproveTarget {
 
 internal const val IDEOGRAM_BBOX_GRID = 10
 
-data class IdeogramElementPreview(
-    val type: String,
-    val text: String,
-    val desc: String,
-    val bbox: List<Int> = emptyList(),
-    val colors: List<String> = emptyList(),
-)
-
 data class IdeogramUiState(
-    val jsonPrompt: String = defaultIdeogramJsonPrompt(),
+    val jsonPrompt: String = "",
     val selectedTab: IdeogramStructureTab = IdeogramStructureTab.Text,
     val isGeneratingJson: Boolean = false,
-    val generationMode: IdeogramGenerationMode = IdeogramGenerationMode.Fast,
     val stagedStep: StagedIdeogramStep? = null,
     val stagedElementIndex: Int? = null,
     val stagedElementCount: Int? = null,
     val failedStagedStep: StagedIdeogramStep? = null,
-    val jsonStatus: String = "JSON ready.",
+    val jsonStatus: String = "No composition yet.",
     val jsonError: String? = null,
-    val history: List<String> = listOf(jsonPrompt),
+    val history: List<String> = emptyList(),
     val historyIndex: Int = 0,
 ) {
     val isJsonValid: Boolean get() = jsonError == null
@@ -184,37 +172,6 @@ private val ideogramJsonPretty = Json {
     prettyPrint = true
     prettyPrintIndent = "  "
 }
-
-private fun defaultIdeogramJsonPrompt(): String = """
-{
-  "high_level_description": "A cinematic macro photograph of a single ripe strawberry with glossy red skin and a clear handwritten-style caption that reads EAT ME.",
-  "style_description": {
-    "aesthetics": "warm, appetizing, premium editorial food photography",
-    "lighting": "soft golden-hour light, gentle highlights, shallow shadows",
-    "photo": "macro photography, shallow depth of field, crisp subject detail",
-    "medium": "photograph",
-    "color_palette": ["#B91C1C", "#F43F5E", "#F8FAFC", "#FBBF24", "#1F2937"]
-  },
-  "compositional_deconstruction": {
-    "background": "A soft-focus warm kitchen or studio background with subtle bokeh and no distracting details.",
-    "elements": [
-      {
-        "type": "obj",
-        "bbox": [140, 210, 810, 800],
-        "desc": "A single ripe strawberry centered in the frame, glossy red skin, fresh green leaves, appealing macro detail.",
-        "color_palette": ["#B91C1C", "#F43F5E", "#166534"]
-      },
-      {
-        "type": "text",
-        "bbox": [790, 240, 930, 760],
-        "text": "EAT ME",
-        "desc": "Bold white handwritten-style caption along the bottom, horizontal and clearly readable.",
-        "color_palette": ["#F8FAFC", "#FBBF24"]
-      }
-    ]
-  }
-}
-""".trimIndent()
 
 private fun validateIdeogramJson(value: String): Pair<String, String?> {
     val root = runCatching { ideogramJson.parseToJsonElement(value).jsonObject }
@@ -377,24 +334,8 @@ private fun normalizeIdeogramBackground(background: JsonElement?): String? {
         .firstNotNullOfOrNull { key -> obj[key]?.jsonPrimitiveOrNull()?.content?.trim()?.takeIf(String::isNotBlank) }
 }
 
-internal fun ideogramElementPreviews(value: String): List<IdeogramElementPreview> {
-    val root = runCatching { ideogramJson.parseToJsonElement(value).jsonObject }.getOrNull() ?: return emptyList()
-    val elements = root["compositional_deconstruction"]
-        ?.jsonObjectOrNull()
-        ?.get("elements")
-        ?.jsonArrayOrNull()
-        ?: return emptyList()
-    return elements.mapNotNull { element ->
-        val obj = element.jsonObjectOrNull() ?: return@mapNotNull null
-        IdeogramElementPreview(
-            type = obj["type"]?.jsonPrimitiveOrNull()?.content.orEmpty(),
-            text = obj["text"]?.jsonPrimitiveOrNull()?.content.orEmpty(),
-            desc = obj["desc"]?.jsonPrimitiveOrNull()?.content.orEmpty(),
-            bbox = obj["bbox"]?.jsonArrayOrNull()?.mapNotNull { it.jsonPrimitiveOrNull()?.content?.toIntOrNull() } ?: emptyList(),
-            colors = obj["color_palette"]?.jsonArrayOrNull()?.mapNotNull { it.jsonPrimitiveOrNull()?.content } ?: emptyList(),
-        )
-    }
-}
+internal fun ideogramElementPreviews(value: String): List<IdeogramCompositionElement> =
+    parseIdeogramCompositionDocument(value).getOrNull()?.elements.orEmpty()
 
 private fun validatePalette(element: JsonElement, maxColors: Int, label: String): String? {
     val values = element.jsonArrayOrNull()
@@ -887,10 +828,6 @@ class GenerationViewModel(
         copy(ideogram = ideogram.copy(selectedTab = tab))
     }
 
-    fun updateIdeogramGenerationMode(mode: IdeogramGenerationMode) = update {
-        copy(ideogram = ideogram.copy(generationMode = mode, failedStagedStep = null))
-    }
-
     fun formatIdeogramJsonPrompt() = update {
         val formatted = runCatching {
             val normalized = normalizeIdeogramJsonPrompt(ideogram.jsonPrompt) ?: ideogram.jsonPrompt
@@ -903,86 +840,7 @@ class GenerationViewModel(
         }
     }
 
-    fun generateIdeogramJsonPrompt() {
-        if (_uiState.value.ideogram.generationMode == IdeogramGenerationMode.Staged) {
-            generateStagedIdeogramJsonPrompt(retry = false)
-            return
-        }
-        scope.launch {
-            val current = _uiState.value
-            val prompt = current.prompt.trim()
-            if (prompt.isBlank()) {
-                update { copy(ideogram = ideogram.copy(jsonError = "Prompt is required before JSON generation.")) }
-                return@launch
-            }
-            val negativePrompt = current.negativePrompt.trim()
-            val jsonSourcePrompt = buildString {
-                append(prompt)
-                if (negativePrompt.isNotBlank()) {
-                    append("\n\nAvoid: ")
-                    append(negativePrompt)
-                }
-            }
-
-            val width = current.width.toIntOrNull() ?: 1024
-            val height = current.height.toIntOrNull() ?: 1024
-            update {
-                copy(
-                    ideogram = ideogram.copy(
-                        isGeneratingJson = true,
-                        jsonStatus = "Generating JSON prompt...",
-                        jsonError = null,
-                    ),
-                )
-            }
-
-            val settings = settingsStore.load()
-            val presets = llmPresetStore.load()
-            val roles = llmPresetStore.loadRoles()
-            llmRoleService.generateIdeogramJsonPrompt(settings, presets, roles, jsonSourcePrompt, width, height)
-                .onSuccess { response ->
-                    val jsonText = extractJsonObject(response)
-                    val formatted = jsonText?.let {
-                        runCatching {
-                            val normalized = normalizeIdeogramJsonPrompt(it) ?: it
-                            parseIdeogramCompositionDocument(normalized).getOrThrow().serialize()
-                        }.getOrNull()
-                    }
-                    if (formatted == null) {
-                        update {
-                            copy(
-                                ideogram = ideogram.copy(
-                                    isGeneratingJson = false,
-                                    jsonError = "LLM response did not contain a valid JSON object. Response: ${compactLlmPreview(response)}",
-                                ),
-                            )
-                        }
-                    } else {
-                        val validation = validateIdeogramJson(formatted)
-                        update {
-                            val committed = commitCompositionJson(formatted)
-                            committed.copy(
-                                ideogram = committed.ideogram.copy(
-                                    isGeneratingJson = false,
-                                    jsonStatus = validation.first,
-                                    jsonError = validation.second,
-                                ),
-                            )
-                        }
-                    }
-                }
-                .onFailure { error ->
-                    update {
-                        copy(
-                            ideogram = ideogram.copy(
-                                isGeneratingJson = false,
-                                jsonError = error.message ?: "Ideogram JSON generation failed.",
-                            ),
-                        )
-                    }
-                }
-        }
-    }
+    fun generateIdeogramJsonPrompt() = generateStagedIdeogramJsonPrompt(retry = false)
 
     fun retryStagedIdeogramJsonPrompt() = generateStagedIdeogramJsonPrompt(retry = true)
 
@@ -1012,7 +870,7 @@ class GenerationViewModel(
                     failedStagedStep = null,
                     stagedElementIndex = null,
                     stagedElementCount = null,
-                    jsonStatus = "Starting staged generation...",
+                    jsonStatus = "Starting composition generation...",
                     jsonError = null,
                 ))
             }
@@ -1068,7 +926,7 @@ class GenerationViewModel(
                         failedStagedStep = null,
                         stagedElementIndex = null,
                         stagedElementCount = null,
-                        jsonStatus = "Staged JSON ready.",
+                        jsonStatus = "Composition ready.",
                         jsonError = null,
                     ))
                 }
@@ -1077,7 +935,7 @@ class GenerationViewModel(
                     isGeneratingJson = false,
                     stagedStep = activeStep,
                     failedStagedStep = activeStep,
-                    jsonError = error.message ?: "Staged Ideogram generation failed.",
+                    jsonError = error.message ?: "Composition generation failed.",
                     jsonStatus = "${activeStep.label} failed.",
                 )) }
             }
