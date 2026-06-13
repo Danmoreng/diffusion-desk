@@ -106,6 +106,26 @@ data class GenerationProgressStage(
     val isComplete: Boolean,
 )
 
+internal fun nextGenerationOverallProgress(
+    current: Float,
+    stageKey: String,
+    step: Int,
+    steps: Int,
+): Float {
+    val stageProgress = if (steps > 0 && step > 0) {
+        (step.toFloat() / steps.toFloat()).coerceIn(0f, 1f)
+    } else {
+        0.35f
+    }
+    val proposed = when (stageKey) {
+        "prepare" -> stageProgress * 0.05f
+        "sampling", "highres" -> 0.05f + stageProgress * 0.90f
+        "decode" -> 0.95f + stageProgress * 0.05f
+        else -> current
+    }
+    return maxOf(current, proposed).coerceIn(0f, 1f)
+}
+
 private data class ProgressTiming(
     val elapsedSeconds: Double,
     val etaSeconds: Int,
@@ -432,6 +452,7 @@ data class GenerationUiState(
     val progressPhase: String = "",
     val progressMessage: String = "",
     val progressStages: List<GenerationProgressStage> = emptyList(),
+    val progressOverall: Float = 0f,
     val isGenerating: Boolean = false,
     val isCancelling: Boolean = false,
     val resultUrls: List<String> = emptyList(),
@@ -482,6 +503,14 @@ data class GenerationUiState(
         }
     }
 }
+
+internal fun GenerationUiState.startNewCompositionDraft(): GenerationUiState = copy(
+    prompt = "",
+    negativePrompt = "",
+    activeCompositionImproveAction = null,
+    ideogram = IdeogramUiState(selectedTab = IdeogramStructureTab.Preview),
+    selectedCompositionElementIndex = 0,
+)
 
 private fun canonicalIdeogramPromptOrNull(value: String): String? =
     parseIdeogramCompositionDocument(value).getOrNull()?.serializeForBackend()
@@ -544,6 +573,7 @@ class GenerationViewModel(
                             progressPhase = "",
                             progressMessage = "",
                             progressStages = emptyList(),
+                            progressOverall = 0f,
                         )
                     }
                 }
@@ -609,6 +639,15 @@ class GenerationViewModel(
     }
 
     fun updateNegativePrompt(value: String) = update { copy(negativePrompt = value) }
+
+    fun startOverComposition() {
+        if (_uiState.value.ideogram.isGeneratingJson) return
+        stagedIdeogramDraft = null
+        stagedIdeogramSourcePrompt = null
+        compositionEditStartJson = null
+        update { startNewCompositionDraft() }
+    }
+
     fun updateWidth(value: String) = update { copy(width = value) }
     fun updateHeight(value: String) = update { copy(height = value) }
     fun updateSteps(value: String) = update { copy(steps = value) }
@@ -1424,6 +1463,7 @@ class GenerationViewModel(
                     progressPhase = "Starting...",
                     progressMessage = "",
                     progressStages = initialProgressStages(),
+                    progressOverall = 0f,
                     message = "Generating...",
                     error = null,
                 )
@@ -1497,6 +1537,7 @@ class GenerationViewModel(
                     copy(
                         progressEtaSeconds = 0,
                         progressStages = progressStages.markAllComplete(),
+                        progressOverall = 1f,
                     )
                 }
                 val bitmapResult = client.fetchGeneratedImages(backendManager.state.value.baseUrl, result.imageUrls)
@@ -1658,6 +1699,7 @@ class GenerationViewModel(
             val nextPhase = displayProgressPhase(event, progressPhase)
             val nextStages = updateProgressStages(progressStages, nextPhase, event)
             val timing = estimateProgressTiming(event, nextPhase)
+            val stageKey = progressStageKey(nextPhase, event)
             copy(
                 progressStep = event.step,
                 progressSteps = event.steps,
@@ -1666,6 +1708,12 @@ class GenerationViewModel(
                 progressPhase = nextPhase,
                 progressMessage = displayProgressMessage(event.message),
                 progressStages = nextStages,
+                progressOverall = nextGenerationOverallProgress(
+                    current = progressOverall,
+                    stageKey = stageKey,
+                    step = event.step,
+                    steps = event.steps,
+                ),
             )
         }
     }
@@ -1683,7 +1731,6 @@ class GenerationViewModel(
         val hasStepProgress = event.steps > 0 && event.step > 0
         return when {
             hasStepProgress && (normalized.isBlank() || normalized.equals("idle", ignoreCase = true)) -> "Sampling..."
-            hasStepProgress && normalized.startsWith("Encoding Prompt", ignoreCase = true) -> "Sampling..."
             normalized.isBlank() || normalized.equals("idle", ignoreCase = true) -> {
                 currentPhase.takeUnless { it.isBlank() || it.equals("idle", ignoreCase = true) } ?: "Starting..."
             }
@@ -1772,6 +1819,7 @@ class GenerationViewModel(
             normalized.contains("vae") || normalized.contains("decod") || normalized.contains("sav") -> PROGRESS_STAGE_DECODE
             normalized.contains("highres") || normalized.contains("high-res") || normalized.contains("hires") -> PROGRESS_STAGE_HIGHRES
             normalized.contains("sampl") -> PROGRESS_STAGE_SAMPLING
+            normalized.contains("encod") || normalized.contains("clip") || normalized.contains("prompt") -> PROGRESS_STAGE_PREPARE
             event.steps > 0 && event.step > 0 -> PROGRESS_STAGE_SAMPLING
             else -> PROGRESS_STAGE_PREPARE
         }

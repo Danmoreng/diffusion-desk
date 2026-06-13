@@ -153,6 +153,7 @@ fun GenerateScreen(
     onStructuredTabSelected: (IdeogramStructureTab) -> Unit,
     onGenerateStructuredJson: () -> Unit,
     onRetryStagedJson: () -> Unit,
+    onStartOverComposition: () -> Unit,
     onCompositionMutation: (CompositionMutation) -> Unit,
     onRunCompositionAction: (CompositionAction) -> Unit,
     onUndoComposition: () -> Unit,
@@ -252,6 +253,7 @@ fun GenerateScreen(
                     onStructuredTabSelected = onStructuredTabSelected,
                     onGenerateStructuredJson = onGenerateStructuredJson,
                     onRetryStagedJson = onRetryStagedJson,
+                    onStartOverComposition = onStartOverComposition,
                     onCompositionMutation = onCompositionMutation,
                     onRunCompositionAction = onRunCompositionAction,
                     onUndoComposition = onUndoComposition,
@@ -394,6 +396,7 @@ private fun GenerationPanel(
     onStructuredTabSelected: (IdeogramStructureTab) -> Unit,
     onGenerateStructuredJson: () -> Unit,
     onRetryStagedJson: () -> Unit,
+    onStartOverComposition: () -> Unit,
     onCompositionMutation: (CompositionMutation) -> Unit,
     onRunCompositionAction: (CompositionAction) -> Unit,
     onUndoComposition: () -> Unit,
@@ -452,6 +455,7 @@ private fun GenerationPanel(
                     onNegativePromptChange = onNegativePromptChange,
                     onGenerateStructuredJson = onGenerateStructuredJson,
                     onRetryStagedJson = onRetryStagedJson,
+                    onStartOverComposition = onStartOverComposition,
                     onCompositionMutation = onCompositionMutation,
                     onRunCompositionAction = onRunCompositionAction,
                     onUndoComposition = onUndoComposition,
@@ -649,6 +653,7 @@ private fun PromptTabContent(
     onNegativePromptChange: (String) -> Unit,
     onGenerateStructuredJson: () -> Unit,
     onRetryStagedJson: () -> Unit,
+    onStartOverComposition: () -> Unit,
     onCompositionMutation: (CompositionMutation) -> Unit,
     onRunCompositionAction: (CompositionAction) -> Unit,
     onUndoComposition: () -> Unit,
@@ -691,7 +696,12 @@ private fun PromptTabContent(
                     inputsEnabled = !state.ideogram.isGeneratingJson,
                 )
             }
-            CompositionGenerationHeader(state, onGenerateStructuredJson, onRetryStagedJson)
+            CompositionGenerationHeader(
+                state = state,
+                onGenerateComposition = onGenerateStructuredJson,
+                onRetry = onRetryStagedJson,
+                onStartOver = onStartOverComposition,
+            )
             if (state.ideogram.document != null) {
                 Box(modifier = Modifier.fillMaxWidth()) {
                     Column(
@@ -818,6 +828,7 @@ private fun CompositionGenerationHeader(
     state: GenerationUiState,
     onGenerateComposition: () -> Unit,
     onRetry: () -> Unit,
+    onStartOver: () -> Unit,
 ) {
     val hasComposition = state.ideogram.document != null
     Column(
@@ -833,6 +844,18 @@ private fun CompositionGenerationHeader(
                 ButtonContent(
                     icon = Icons.Default.AutoFixHigh,
                     text = "Generate composition",
+                )
+            }
+        }
+        if (hasComposition && !state.ideogram.isGeneratingJson) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End,
+            ) {
+                SubtleTextButton(
+                    icon = Icons.Default.RestartAlt,
+                    text = "Start over",
+                    onClick = onStartOver,
                 )
             }
         }
@@ -2284,26 +2307,7 @@ private fun CompactGenerationProgress(
 }
 
 private fun generationOverallProgress(state: GenerationUiState): Float {
-    if (state.progressSteps > 0 && state.progressStep > 0) {
-        return (state.progressStep.toFloat() / state.progressSteps.toFloat()).coerceIn(0.02f, 0.99f)
-    }
-
-    val stages = state.progressStages
-    if (stages.isEmpty()) {
-        return 0.02f
-    }
-
-    val weightedProgress = stages.map { stage ->
-        when (stage.key) {
-            "prepare" -> stage.progress * 0.08f
-            "sampling" -> 0.08f + stage.progress * 0.82f
-            "highres" -> 0.55f + stage.progress * 0.35f
-            "decode" -> 0.9f + stage.progress * 0.09f
-            else -> stage.progress * 0.9f
-        }
-    }.maxOrNull() ?: 0f
-
-    return weightedProgress.coerceIn(0.02f, 0.99f)
+    return state.progressOverall.coerceIn(0.02f, if (state.isGenerating) 0.99f else 1f)
 }
 
 private data class CompositionProgressInfo(

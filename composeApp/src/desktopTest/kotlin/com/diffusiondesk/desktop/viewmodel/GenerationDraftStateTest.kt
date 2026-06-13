@@ -99,6 +99,60 @@ class GenerationDraftStateTest {
         assertNull(selectCompositionReferenceImage<String>(null, enabled = true, resolutionModified = false))
     }
 
+    @Test
+    fun startNewCompositionClearsDraftButKeepsPromptHistory() {
+        val state = GenerationUiState(
+            prompt = "Current prompt",
+            promptHistory = listOf("First prompt", "Current prompt"),
+            promptHistoryIndex = 1,
+            negativePrompt = "Current negative prompt",
+            activeCompositionImproveAction = "improve_style",
+            ideogram = IdeogramUiState(
+                jsonPrompt = "{\"compositional_deconstruction\":{}}",
+                jsonStatus = "Composition ready.",
+                history = listOf("old composition"),
+            ),
+            selectedCompositionElementIndex = 2,
+        )
+
+        val reset = state.startNewCompositionDraft()
+
+        assertEquals("", reset.prompt)
+        assertEquals("", reset.negativePrompt)
+        assertEquals(state.promptHistory, reset.promptHistory)
+        assertEquals(state.promptHistoryIndex, reset.promptHistoryIndex)
+        assertEquals("", reset.ideogram.jsonPrompt)
+        assertEquals("No composition yet.", reset.ideogram.jsonStatus)
+        assertEquals(IdeogramStructureTab.Preview, reset.ideogram.selectedTab)
+        assertTrue(reset.ideogram.history.isEmpty())
+        assertNull(reset.activeCompositionImproveAction)
+        assertEquals(0, reset.selectedCompositionElementIndex)
+    }
+
+    @Test
+    fun generationProgressUsesClipSamplingAndVaeRangesWithoutMovingBackward() {
+        val clip = nextGenerationOverallProgress(0f, "prepare", step = 9, steps = 10)
+        val firstSamplingStep = nextGenerationOverallProgress(clip, "sampling", step = 1, steps = 20)
+        val finalSamplingStep = nextGenerationOverallProgress(firstSamplingStep, "sampling", step = 20, steps = 20)
+        val vae = nextGenerationOverallProgress(finalSamplingStep, "decode", step = 1, steps = 2)
+
+        assertEquals(0.045f, clip, 0.0001f)
+        assertEquals(0.095f, firstSamplingStep, 0.0001f)
+        assertEquals(0.95f, finalSamplingStep, 0.0001f)
+        assertEquals(0.975f, vae, 0.0001f)
+    }
+
+    @Test
+    fun generationProgressNeverDropsOnAStageCounterReset() {
+        val previous = 0.72f
+
+        assertEquals(
+            previous,
+            nextGenerationOverallProgress(previous, "sampling", step = 1, steps = 30),
+            0.0001f,
+        )
+    }
+
     private fun stateFor(params: GenerationParams, mode: ImagePromptMode): GenerationUiState = GenerationUiState(
         prompt = params.prompt,
         negativePrompt = params.negativePrompt,
