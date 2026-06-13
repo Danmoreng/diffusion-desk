@@ -94,6 +94,7 @@ fun App(
                             onStructuredTabSelected = controller.generationViewModel::selectIdeogramTab,
                             onGenerateStructuredJson = controller.generationViewModel::generateIdeogramJsonPrompt,
                             onRetryStagedJson = controller.generationViewModel::retryStagedIdeogramJsonPrompt,
+                            onStartOverComposition = controller.generationViewModel::startOverComposition,
                             onCompositionMutation = controller.generationViewModel::applyCompositionMutation,
                             onRunCompositionAction = controller.generationViewModel::runCompositionAction,
                             onUndoComposition = controller.generationViewModel::undoComposition,
