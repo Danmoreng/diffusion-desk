@@ -43,8 +43,6 @@ import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Casino
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.AutoFixHigh
-import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.Dashboard
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
@@ -77,6 +75,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
@@ -85,6 +84,7 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.input.pointer.PointerIcon
 import androidx.compose.ui.input.pointer.pointerHoverIcon
 import androidx.compose.ui.input.pointer.pointerInput
@@ -112,14 +112,13 @@ import com.diffusiondesk.desktop.core.ImagePromptMode
 import com.diffusiondesk.desktop.core.LlmDebugEntry
 import com.diffusiondesk.desktop.composition.CompositionAction
 import com.diffusiondesk.desktop.composition.PaletteTarget
-import com.diffusiondesk.desktop.viewmodel.GenerationStatus
+import com.diffusiondesk.desktop.composition.StagedIdeogramStep
 import com.diffusiondesk.desktop.viewmodel.GenerationUiState
 import com.diffusiondesk.desktop.viewmodel.CompositionMutation
 import com.diffusiondesk.desktop.viewmodel.CompositionImproveTarget
-import com.diffusiondesk.desktop.viewmodel.IdeogramElementPreview
+import com.diffusiondesk.desktop.viewmodel.IdeogramCompositionElement
 import com.diffusiondesk.desktop.viewmodel.IdeogramStyleField
 import com.diffusiondesk.desktop.viewmodel.IdeogramStructureTab
-import com.diffusiondesk.desktop.viewmodel.IdeogramGenerationMode
 import com.diffusiondesk.desktop.viewmodel.ideogramElementPreviews
 import java.awt.Cursor
 import java.awt.Desktop
@@ -153,11 +152,7 @@ fun GenerateScreen(
     onNegativePromptChange: (String) -> Unit,
     onStructuredTabSelected: (IdeogramStructureTab) -> Unit,
     onGenerateStructuredJson: () -> Unit,
-    onIdeogramGenerationModeChange: (IdeogramGenerationMode) -> Unit,
     onRetryStagedJson: () -> Unit,
-    onStructuredJsonPromptChange: (String) -> Unit,
-    onStructuredJsonPromptCommit: () -> Unit,
-    onFormatStructuredJson: () -> Unit,
     onCompositionMutation: (CompositionMutation) -> Unit,
     onRunCompositionAction: (CompositionAction) -> Unit,
     onUndoComposition: () -> Unit,
@@ -210,7 +205,7 @@ fun GenerateScreen(
                 state = state,
                 backendState = backendState,
                 isTop = true,
-                generateEnabled = backendState.status == BackendStatus.Ready && generationPromptReady(state),
+                generateEnabled = backendState.status == BackendStatus.Ready && generationPromptReady(state) && !state.ideogram.isGeneratingJson,
                 onGenerate = onGenerate,
                 onCancelGeneration = onCancelGeneration,
                 onToggleEndless = onToggleEndless,
@@ -256,11 +251,7 @@ fun GenerateScreen(
                     onNegativePromptChange = onNegativePromptChange,
                     onStructuredTabSelected = onStructuredTabSelected,
                     onGenerateStructuredJson = onGenerateStructuredJson,
-                    onIdeogramGenerationModeChange = onIdeogramGenerationModeChange,
                     onRetryStagedJson = onRetryStagedJson,
-                    onStructuredJsonPromptChange = onStructuredJsonPromptChange,
-                    onStructuredJsonPromptCommit = onStructuredJsonPromptCommit,
-                    onFormatStructuredJson = onFormatStructuredJson,
                     onCompositionMutation = onCompositionMutation,
                     onRunCompositionAction = onRunCompositionAction,
                     onUndoComposition = onUndoComposition,
@@ -359,7 +350,7 @@ fun GenerateScreen(
                 state = state,
                 backendState = backendState,
                 isTop = false,
-                generateEnabled = backendState.status == BackendStatus.Ready && generationPromptReady(state),
+                generateEnabled = backendState.status == BackendStatus.Ready && generationPromptReady(state) && !state.ideogram.isGeneratingJson,
                 onGenerate = onGenerate,
                 onCancelGeneration = onCancelGeneration,
                 onToggleEndless = onToggleEndless,
@@ -402,11 +393,7 @@ private fun GenerationPanel(
     onNegativePromptChange: (String) -> Unit,
     onStructuredTabSelected: (IdeogramStructureTab) -> Unit,
     onGenerateStructuredJson: () -> Unit,
-    onIdeogramGenerationModeChange: (IdeogramGenerationMode) -> Unit,
     onRetryStagedJson: () -> Unit,
-    onStructuredJsonPromptChange: (String) -> Unit,
-    onStructuredJsonPromptCommit: () -> Unit,
-    onFormatStructuredJson: () -> Unit,
     onCompositionMutation: (CompositionMutation) -> Unit,
     onRunCompositionAction: (CompositionAction) -> Unit,
     onUndoComposition: () -> Unit,
@@ -464,11 +451,7 @@ private fun GenerationPanel(
                     onRedoPrompt = onRedoPrompt,
                     onNegativePromptChange = onNegativePromptChange,
                     onGenerateStructuredJson = onGenerateStructuredJson,
-                    onIdeogramGenerationModeChange = onIdeogramGenerationModeChange,
                     onRetryStagedJson = onRetryStagedJson,
-                    onStructuredJsonPromptChange = onStructuredJsonPromptChange,
-                    onStructuredJsonPromptCommit = onStructuredJsonPromptCommit,
-                    onFormatStructuredJson = onFormatStructuredJson,
                     onCompositionMutation = onCompositionMutation,
                     onRunCompositionAction = onRunCompositionAction,
                     onUndoComposition = onUndoComposition,
@@ -645,12 +628,6 @@ private fun PromptTabsHeader(
                 onClick = { onStructuredTabSelected(IdeogramStructureTab.Text) },
             ),
             DeskTabItem(
-                selected = state.ideogram.selectedTab == IdeogramStructureTab.Json,
-                icon = Icons.Default.Code,
-                label = "JSON",
-                onClick = { onStructuredTabSelected(IdeogramStructureTab.Json) },
-            ),
-            DeskTabItem(
                 selected = state.ideogram.selectedTab == IdeogramStructureTab.Preview,
                 icon = Icons.Default.Dashboard,
                 label = "Composition",
@@ -671,11 +648,7 @@ private fun PromptTabContent(
     onRedoPrompt: () -> Unit,
     onNegativePromptChange: (String) -> Unit,
     onGenerateStructuredJson: () -> Unit,
-    onIdeogramGenerationModeChange: (IdeogramGenerationMode) -> Unit,
     onRetryStagedJson: () -> Unit,
-    onStructuredJsonPromptChange: (String) -> Unit,
-    onStructuredJsonPromptCommit: () -> Unit,
-    onFormatStructuredJson: () -> Unit,
     onCompositionMutation: (CompositionMutation) -> Unit,
     onRunCompositionAction: (CompositionAction) -> Unit,
     onUndoComposition: () -> Unit,
@@ -697,52 +670,81 @@ private fun PromptTabContent(
             onNegativePromptChange = onNegativePromptChange,
             onEnhancePrompt = onEnhancePrompt,
         )
-        IdeogramStructureTab.Json -> JsonPromptPanel(
-            state = state,
-            onGenerateStructuredJson = onGenerateStructuredJson,
-            onIdeogramGenerationModeChange = onIdeogramGenerationModeChange,
-            onRetryStagedJson = onRetryStagedJson,
-            onStructuredJsonPromptChange = onStructuredJsonPromptChange,
-            onStructuredJsonPromptCommit = onStructuredJsonPromptCommit,
-            onFormatStructuredJson = onFormatStructuredJson,
-        )
         IdeogramStructureTab.Preview -> {
             var highlightStyleFields by remember { mutableStateOf(false) }
             var highlightCompositionFields by remember { mutableStateOf(false) }
             var highlightHighLevelDescription by remember { mutableStateOf(false) }
-            state.ideogram.jsonError?.let { error ->
-                Text(
-                    text = error,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.error,
+            val focusManager = LocalFocusManager.current
+            LaunchedEffect(state.ideogram.isGeneratingJson) {
+                if (state.ideogram.isGeneratingJson) focusManager.clearFocus(force = true)
+            }
+            if (state.ideogram.document == null) {
+                TextPromptPanel(
+                    state = state,
+                    showNegativePrompt = showNegativePrompt,
+                    onPromptChange = onPromptChange,
+                    onPromptCommit = onPromptCommit,
+                    onUndoPrompt = onUndoPrompt,
+                    onRedoPrompt = onRedoPrompt,
+                    onNegativePromptChange = onNegativePromptChange,
+                    onEnhancePrompt = onEnhancePrompt,
+                    inputsEnabled = !state.ideogram.isGeneratingJson,
                 )
             }
-            CompositionDocumentEditor(
-                state = state,
-                onMutation = onCompositionMutation,
-                onRunAction = onRunCompositionAction,
-                onUndo = onUndoComposition,
-                onRedo = onRedoComposition,
-                highlightStyleFields = highlightStyleFields,
-                highlightCompositionFields = highlightCompositionFields,
-                highlightHighLevelDescription = highlightHighLevelDescription,
-                onHighlightStyleFieldsChange = { highlightStyleFields = it },
-                onHighlightCompositionFieldsChange = { highlightCompositionFields = it },
-                onHighlightHighLevelDescriptionChange = { highlightHighLevelDescription = it },
-            )
-            IdeogramElementEditor(
-                elements = ideogramElementPreviews(state.ideogram.jsonPrompt),
-                selectedIndex = state.selectedCompositionElementIndex,
-                activeImproveAction = state.activeCompositionImproveAction,
-                onElementSelected = onCompositionElementSelected,
-                onMutation = onCompositionMutation,
-                onRunAction = onRunCompositionAction,
-                onElementDescriptionChange = onCompositionDescriptionChange,
-                onElementTextChange = onCompositionTextChange,
-                onElementPaletteChange = onCompositionPaletteChange,
-                highlightPlacement = highlightCompositionFields,
-                onHighlightHighLevelDescriptionChange = { highlightHighLevelDescription = it },
-            )
+            CompositionGenerationHeader(state, onGenerateStructuredJson, onRetryStagedJson)
+            if (state.ideogram.document != null) {
+                Box(modifier = Modifier.fillMaxWidth()) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .graphicsLayer { alpha = if (state.ideogram.isGeneratingJson) 0.62f else 1f },
+                        verticalArrangement = Arrangement.spacedBy(DeskPanelSpacing),
+                    ) {
+                        CompositionDocumentEditor(
+                            state = state,
+                            onMutation = onCompositionMutation,
+                            onRunAction = onRunCompositionAction,
+                            onUndo = onUndoComposition,
+                            onRedo = onRedoComposition,
+                            highlightStyleFields = highlightStyleFields,
+                            highlightCompositionFields = highlightCompositionFields,
+                            highlightHighLevelDescription = highlightHighLevelDescription,
+                            onHighlightStyleFieldsChange = { highlightStyleFields = it },
+                            onHighlightCompositionFieldsChange = { highlightCompositionFields = it },
+                            onHighlightHighLevelDescriptionChange = { highlightHighLevelDescription = it },
+                        )
+                        IdeogramElementEditor(
+                            elements = ideogramElementPreviews(state.ideogram.jsonPrompt),
+                            selectedIndex = state.selectedCompositionElementIndex,
+                            activeImproveAction = state.activeCompositionImproveAction,
+                            onElementSelected = onCompositionElementSelected,
+                            onMutation = onCompositionMutation,
+                            onRunAction = onRunCompositionAction,
+                            onElementDescriptionChange = onCompositionDescriptionChange,
+                            onElementTextChange = onCompositionTextChange,
+                            onElementPaletteChange = onCompositionPaletteChange,
+                            highlightPlacement = highlightCompositionFields,
+                            onHighlightHighLevelDescriptionChange = { highlightHighLevelDescription = it },
+                        )
+                    }
+                    if (state.ideogram.isGeneratingJson) {
+                        Box(
+                            modifier = Modifier
+                                .matchParentSize()
+                                .pointerInput(Unit) {
+                                    awaitPointerEventScope {
+                                        while (true) {
+                                            val event = awaitPointerEvent()
+                                            if (event.changes.all { it.scrollDelta == Offset.Zero }) {
+                                                event.changes.forEach { it.consume() }
+                                            }
+                                        }
+                                    }
+                                },
+                        )
+                    }
+                }
+            }
         }
     }
 }
@@ -757,6 +759,7 @@ private fun TextPromptPanel(
     onRedoPrompt: () -> Unit,
     onNegativePromptChange: (String) -> Unit,
     onEnhancePrompt: () -> Unit,
+    inputsEnabled: Boolean = true,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(DeskPanelSpacing)) {
         Row(
@@ -770,19 +773,19 @@ private fun TextPromptPanel(
                     icon = Icons.Default.AutoFixHigh,
                     text = if (state.isEnhancingPrompt) "Enhancing..." else "Enhance",
                     onClick = onEnhancePrompt,
-                    enabled = state.prompt.isNotBlank() && !state.isEnhancingPrompt,
+                    enabled = inputsEnabled && state.prompt.isNotBlank() && !state.isEnhancingPrompt,
                 )
                 PromptHistoryButton(
                     icon = Icons.AutoMirrored.Filled.Undo,
                     contentDescription = "Previous prompt",
                     onClick = onUndoPrompt,
-                    enabled = state.canUndoPrompt,
+                    enabled = inputsEnabled && state.canUndoPrompt,
                 )
                 PromptHistoryButton(
                     icon = Icons.AutoMirrored.Filled.Redo,
                     contentDescription = "Next prompt",
                     onClick = onRedoPrompt,
-                    enabled = state.canRedoPrompt,
+                    enabled = inputsEnabled && state.canRedoPrompt,
                 )
             }
         }
@@ -790,7 +793,7 @@ private fun TextPromptPanel(
             value = state.prompt,
             onValueChange = onPromptChange,
             onFocusLost = onPromptCommit,
-            enabled = !state.isEnhancingPrompt,
+            enabled = inputsEnabled && !state.isEnhancingPrompt,
             modifier = Modifier
                 .fillMaxWidth()
                 .heightIn(min = 142.dp),
@@ -801,6 +804,7 @@ private fun TextPromptPanel(
             PaddedTextArea(
                 value = state.negativePrompt,
                 onValueChange = onNegativePromptChange,
+                enabled = inputsEnabled,
                 modifier = Modifier
                     .fillMaxWidth()
                     .heightIn(min = 74.dp),
@@ -810,125 +814,54 @@ private fun TextPromptPanel(
 }
 
 @Composable
-private fun JsonPromptPanel(
+private fun CompositionGenerationHeader(
     state: GenerationUiState,
-    onGenerateStructuredJson: () -> Unit,
-    onIdeogramGenerationModeChange: (IdeogramGenerationMode) -> Unit,
-    onRetryStagedJson: () -> Unit,
-    onStructuredJsonPromptChange: (String) -> Unit,
-    onStructuredJsonPromptCommit: () -> Unit,
-    onFormatStructuredJson: () -> Unit,
+    onGenerateComposition: () -> Unit,
+    onRetry: () -> Unit,
 ) {
-    Column(verticalArrangement = Arrangement.spacedBy(DeskPanelSpacing)) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(DeskControlSpacing),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Row(
-                modifier = Modifier
-                    .clip(RoundedCornerShape(5.dp))
-                    .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(5.dp)),
-            ) {
-                IdeogramModeButton(
-                    text = "Fast",
-                    selected = state.ideogram.generationMode == IdeogramGenerationMode.Fast,
-                    onClick = { onIdeogramGenerationModeChange(IdeogramGenerationMode.Fast) },
-                    enabled = !state.ideogram.isGeneratingJson,
-                )
-                IdeogramModeButton(
-                    text = "Staged",
-                    selected = state.ideogram.generationMode == IdeogramGenerationMode.Staged,
-                    onClick = { onIdeogramGenerationModeChange(IdeogramGenerationMode.Staged) },
-                    enabled = !state.ideogram.isGeneratingJson,
-                )
-            }
+    val hasComposition = state.ideogram.document != null
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        if (!hasComposition && !state.ideogram.isGeneratingJson) {
             Button(
-                onClick = onGenerateStructuredJson,
+                onClick = onGenerateComposition,
                 enabled = state.prompt.isNotBlank() && !state.ideogram.isGeneratingJson,
-                modifier = Modifier.weight(1f).height(40.dp),
+                modifier = Modifier.fillMaxWidth().height(40.dp),
             ) {
                 ButtonContent(
                     icon = Icons.Default.AutoFixHigh,
-                    text = if (state.ideogram.isGeneratingJson) {
-                        if (state.ideogram.stagedElementIndex != null) {
-                            "Elements ${state.ideogram.stagedElementIndex}/${state.ideogram.stagedElementCount}"
-                        } else state.ideogram.stagedStep?.label ?: "Generating JSON..."
-                    } else "Generate JSON",
+                    text = "Generate composition",
                 )
             }
-            DeskIconButton(Icons.Default.CheckCircle, "Format JSON", onFormatStructuredJson, tooltip = "Format JSON")
         }
-
-        if (state.ideogram.failedStagedStep != null) {
+        if (state.ideogram.jsonError != null || state.ideogram.failedStagedStep != null) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
-                    text = "Stopped at ${state.ideogram.failedStagedStep.label}.",
+                    text = state.ideogram.jsonError ?: when {
+                        state.ideogram.stagedElementIndex != null ->
+                            "Element details ${state.ideogram.stagedElementIndex}/${state.ideogram.stagedElementCount}"
+                        else -> state.ideogram.jsonStatus
+                    },
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.error,
+                    color = if (state.ideogram.jsonError == null) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.error,
+                    modifier = Modifier.weight(1f),
                 )
-                SubtleTextButton(
-                    icon = Icons.Default.Refresh,
-                    text = "Retry step",
-                    onClick = onRetryStagedJson,
-                    enabled = !state.ideogram.isGeneratingJson,
-                )
+                if (state.ideogram.failedStagedStep != null) {
+                    SubtleTextButton(
+                        icon = Icons.Default.Refresh,
+                        text = "Retry step",
+                        onClick = onRetry,
+                        enabled = !state.ideogram.isGeneratingJson,
+                    )
+                }
             }
         }
-
-        if (state.ideogram.generationMode == IdeogramGenerationMode.Staged || !state.ideogram.isGeneratingJson || state.ideogram.jsonError != null) {
-            StructuredJsonStatus(state)
-        }
-        PaddedTextArea(
-            value = state.ideogram.jsonPrompt,
-            onValueChange = onStructuredJsonPromptChange,
-            onFocusLost = onStructuredJsonPromptCommit,
-            enabled = !state.ideogram.isGeneratingJson,
-            monospace = true,
-            modifier = Modifier
-                .fillMaxWidth()
-                .heightIn(min = 300.dp),
-        )
-    }
-}
-
-@Composable
-private fun IdeogramModeButton(text: String, selected: Boolean, onClick: () -> Unit, enabled: Boolean) {
-    Text(
-        text = text,
-        modifier = Modifier
-            .background(if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.18f) else Color.Transparent)
-            .then(if (enabled) Modifier.clickable(onClick = onClick) else Modifier)
-            .padding(horizontal = 9.dp, vertical = 6.dp),
-        style = MaterialTheme.typography.bodySmall,
-        color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-        fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
-    )
-}
-
-@Composable
-private fun StructuredJsonStatus(state: GenerationUiState) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(DeskControlSpacing),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Box(
-            modifier = Modifier
-                .size(8.dp)
-                .background(if (state.ideogram.jsonError == null) Color(0xFF2EAD4A) else MaterialTheme.colorScheme.error, RoundedCornerShape(50)),
-        )
-        Text(
-            text = state.ideogram.jsonError ?: state.ideogram.jsonStatus,
-            style = MaterialTheme.typography.bodySmall,
-            color = if (state.ideogram.jsonError == null) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.error,
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis,
-        )
     }
 }
 
@@ -1288,7 +1221,7 @@ private fun CompositionEditField(
 
 @Composable
 private fun IdeogramElementEditor(
-    elements: List<IdeogramElementPreview>,
+    elements: List<IdeogramCompositionElement>,
     selectedIndex: Int,
     activeImproveAction: String?,
     onElementSelected: (Int) -> Unit,
@@ -1314,10 +1247,10 @@ private fun IdeogramElementEditor(
         ElementPreviewRow(
             index = index + 1,
             type = element.type,
-            textValue = element.text,
-            desc = element.desc,
+            textValue = element.text.orEmpty(),
+            desc = element.description,
             bbox = element.bbox,
-            colors = element.colors,
+            colors = element.colorPalette,
             selected = index == selectedIndex,
             onClick = { onElementSelected(index) },
             onTypeChange = { onMutation(CompositionMutation.UpdateElementType(index, it)) },
@@ -1344,7 +1277,7 @@ private fun IdeogramElementEditor(
 
 @Composable
 private fun IdeogramCompositionCanvas(
-    elements: List<IdeogramElementPreview>,
+    elements: List<IdeogramCompositionElement>,
     width: Int,
     height: Int,
     selectedIndex: Int,
@@ -1459,7 +1392,7 @@ private fun IdeogramCompositionCanvas(
                                 .padding(4.dp),
                         ) {
                             Text(
-                                text = if (element.type == "text" && element.text.isNotBlank()) element.text else "${index + 1}",
+                                text = element.text?.takeIf { element.type == "text" && it.isNotBlank() } ?: "${index + 1}",
                                 style = MaterialTheme.typography.labelSmall,
                                 color = boxColor,
                                 maxLines = 1,
@@ -2373,6 +2306,73 @@ private fun generationOverallProgress(state: GenerationUiState): Float {
     return weightedProgress.coerceIn(0.02f, 0.99f)
 }
 
+private data class CompositionProgressInfo(
+    val step: StagedIdeogramStep,
+    val stepIndex: Int,
+    val progress: Float,
+    val percent: Int,
+    val detail: String,
+)
+
+private fun compositionProgressInfo(state: GenerationUiState): CompositionProgressInfo {
+    val step = state.ideogram.stagedStep ?: StagedIdeogramStep.SceneAndStyle
+    val stepIndex = StagedIdeogramStep.entries.indexOf(step).coerceAtLeast(0)
+    val elementFraction = if (step == StagedIdeogramStep.ElementDetails) {
+        val count = state.ideogram.stagedElementCount ?: 0
+        val index = state.ideogram.stagedElementIndex ?: 0
+        if (count > 0) index.toFloat() / count.toFloat() else 0f
+    } else 0f
+    val progress = ((stepIndex + elementFraction) / StagedIdeogramStep.entries.size.toFloat()).coerceIn(0.02f, 0.99f)
+    val percent = (progress * 100f).roundToInt().coerceIn(0, 99)
+    val detail = if (step == StagedIdeogramStep.ElementDetails && state.ideogram.stagedElementCount != null) {
+        "${step.label}: element ${state.ideogram.stagedElementIndex ?: 0} / ${state.ideogram.stagedElementCount}"
+    } else {
+        "${step.label}: stage ${stepIndex + 1} / ${StagedIdeogramStep.entries.size}"
+    }
+    return CompositionProgressInfo(step, stepIndex, progress, percent, detail)
+}
+
+@Composable
+private fun CompactCompositionProgress(
+    state: GenerationUiState,
+    modifier: Modifier = Modifier,
+) {
+    val composition = compositionProgressInfo(state)
+    Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(5.dp)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = composition.step.label,
+                modifier = Modifier.weight(1f),
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                text = "${composition.percent}%",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.primary,
+                fontWeight = FontWeight.Bold,
+            )
+        }
+        GenerationProgressTrack(
+            progress = composition.progress,
+            modifier = Modifier.fillMaxWidth().height(5.dp),
+        )
+        Text(
+            text = composition.detail,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+}
+
 @Composable
 private fun CompositionPreviewHost(
     state: GenerationUiState,
@@ -2432,6 +2432,22 @@ private fun CompositionPreviewHost(
                     onCheckedChange = onShowCompositionOverlayChange,
                 )
             }
+        }
+        if (state.ideogram.isGeneratingJson) {
+            Box(
+                modifier = Modifier
+                    .matchParentSize()
+                    .pointerInput(Unit) {
+                        awaitPointerEventScope {
+                            while (true) {
+                                val event = awaitPointerEvent()
+                                if (event.changes.all { it.scrollDelta == Offset.Zero }) {
+                                    event.changes.forEach { it.consume() }
+                                }
+                            }
+                        }
+                    },
+            )
         }
     }
 }
@@ -2618,26 +2634,23 @@ internal fun ActionBar(
                         .background(MaterialTheme.colorScheme.outlineVariant),
                 )
 
-                if (state.isGenerating) {
-                    CompactGenerationProgress(
-                        state = state,
-                        modifier = Modifier.width(if (compact) 220.dp else 300.dp),
-                    )
-                } else {
-                    PresetActionControl(
-                        state = state,
-                        backendState = backendState,
-                        onPresetSelected = onPresetSelected,
-                        modifier = Modifier.width(if (compact) 220.dp else 300.dp),
-                    )
-                }
+                PresetActionControl(
+                    state = state,
+                    backendState = backendState,
+                    onPresetSelected = onPresetSelected,
+                    modifier = Modifier.width(if (compact) 220.dp else 300.dp),
+                )
 
                 Spacer(Modifier.weight(1f))
 
-                if (!compact) {
-                    ActionStatus(
+                when {
+                    state.isGenerating -> CompactGenerationProgress(
                         state = state,
-                        backendState = backendState,
+                        modifier = Modifier.width(if (compact) 220.dp else 300.dp),
+                    )
+                    state.ideogram.isGeneratingJson -> CompactCompositionProgress(
+                        state = state,
+                        modifier = Modifier.width(if (compact) 220.dp else 300.dp),
                     )
                 }
             }
@@ -2752,75 +2765,6 @@ private fun HistoryNavButton(
             contentDescription = contentDescription,
             tint = tint,
             modifier = Modifier.size(22.dp),
-        )
-    }
-}
-
-@Composable
-private fun ActionStatus(
-    state: GenerationUiState,
-    backendState: BackendUiState,
-) {
-    val item = state.currentHistoryItem
-    val generationStatus = item?.status
-    val statusText = when (generationStatus) {
-        GenerationStatus.Pending -> "Queued"
-        GenerationStatus.Processing -> "Generating"
-        GenerationStatus.Completed -> "Completed"
-        GenerationStatus.Failed -> "Failed"
-        GenerationStatus.Cancelled -> "Cancelled"
-        null -> "No generation selected"
-    }
-    val statusColor = when (generationStatus) {
-        GenerationStatus.Completed -> MaterialTheme.colorScheme.primary
-        GenerationStatus.Failed -> MaterialTheme.colorScheme.error
-        GenerationStatus.Cancelled -> MaterialTheme.colorScheme.onSurfaceVariant
-        GenerationStatus.Pending,
-        GenerationStatus.Processing,
-        null -> MaterialTheme.colorScheme.onSurfaceVariant
-    }
-    val workerText = when (backendState.status) {
-        BackendStatus.Ready -> "Worker ready"
-        BackendStatus.Starting -> "Worker starting"
-        BackendStatus.Error -> "Worker error"
-        BackendStatus.Stopped -> "Worker stopped"
-    }
-    val workerColor = if (backendState.status == BackendStatus.Ready) {
-        MaterialTheme.colorScheme.primary
-    } else {
-        MaterialTheme.colorScheme.onSurfaceVariant
-    }
-    val detailText = when {
-        state.error != null -> state.error
-        item?.generationTime != null -> "Generated in ${"%.1f".format(item.generationTime)}s"
-        state.message.isNotBlank() -> state.message
-        else -> workerText
-    }
-    val detailColor = when {
-        state.error != null -> MaterialTheme.colorScheme.error
-        detailText == workerText -> workerColor
-        else -> MaterialTheme.colorScheme.onSurfaceVariant
-    }
-
-    Column(
-        modifier = Modifier.widthIn(min = 180.dp, max = 360.dp),
-        horizontalAlignment = Alignment.End,
-        verticalArrangement = Arrangement.spacedBy(3.dp),
-    ) {
-        Text(
-            text = statusText,
-            style = MaterialTheme.typography.bodyMedium,
-            color = statusColor,
-            fontWeight = FontWeight.SemiBold,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
-        Text(
-            text = detailText,
-            style = MaterialTheme.typography.bodySmall,
-            color = detailColor,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
         )
     }
 }

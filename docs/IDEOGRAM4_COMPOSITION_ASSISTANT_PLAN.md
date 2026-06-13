@@ -438,8 +438,7 @@ consistency.
 
 ## Phase 4: Incremental Full Composition Generation
 
-Keep the existing one-shot generation as a fast mode and add an optional staged
-mode:
+Use staged generation as the only composition-generation flow:
 
 1. Generate the high-level description and style.
 2. Generate the background.
@@ -458,7 +457,11 @@ scenes, typography requirements, and element counts.
 
 Phase 4 implementation status:
 
-- [x] Keep Fast one-shot generation and add an optional Staged mode.
+- [x] Use Staged generation as the only composition-generation mode.
+- [x] Remove the raw JSON tab from the primary workflow. Start generation from
+  an empty Composition tab with a Generate composition action.
+- [x] Render accepted intermediate drafts progressively in the structured
+  Composition UI.
 - [x] Generate scene/style, background, element plan, per-element details, and
   placements as separately validated stages.
 - [x] Publish accepted intermediate drafts in the JSON editor while the pipeline
