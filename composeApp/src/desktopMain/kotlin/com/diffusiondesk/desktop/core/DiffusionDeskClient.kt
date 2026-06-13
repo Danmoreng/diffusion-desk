@@ -393,6 +393,8 @@ class DiffusionDeskClient(
         reasoningFormat: String? = null,
         enableThinking: Boolean? = null,
         reasoningBudgetTokens: Int? = null,
+        cachePrompt: Boolean? = null,
+        slotId: Int? = null,
         timeout: Duration = Duration.ofMinutes(3),
     ): Result<String> = withContext(Dispatchers.IO) {
         val callId = llmDebugLog?.start(
@@ -419,6 +421,8 @@ class DiffusionDeskClient(
                 temperature?.let { put("temperature", JsonPrimitive(it)) }
                 reasoningFormat?.let { put("reasoning_format", JsonPrimitive(it)) }
                 reasoningBudgetTokens?.let { put("thinking_budget_tokens", JsonPrimitive(it)) }
+                cachePrompt?.let { put("cache_prompt", JsonPrimitive(it)) }
+                slotId?.let { put("id_slot", JsonPrimitive(it)) }
                 enableThinking?.let {
                     put(
                         "chat_template_kwargs",

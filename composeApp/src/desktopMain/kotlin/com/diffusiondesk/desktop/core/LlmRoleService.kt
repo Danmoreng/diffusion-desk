@@ -79,8 +79,7 @@ class LlmRoleService(
         settings: DesktopSettings,
         presets: List<LlmPreset>,
         roles: LlmRoleSettings,
-        systemPrompt: String,
-        userPrompt: String,
+        messages: List<LlmChatMessage>,
         maxTokens: Int,
     ): Result<String> = withContext(Dispatchers.IO) {
         runCatching {
@@ -91,16 +90,15 @@ class LlmRoleService(
             client.chatCompletion(
                 baseUrl = worker.baseUrl,
                 model = preset.modelPath,
-                messages = listOf(
-                    LlmChatMessage(role = "system", content = systemPrompt),
-                    LlmChatMessage(role = "user", content = userPrompt),
-                ),
+                messages = messages,
                 maxTokens = maxTokens,
                 temperature = 0.0,
                 jsonResponse = true,
                 reasoningFormat = "deepseek",
                 enableThinking = true,
                 reasoningBudgetTokens = 256,
+                cachePrompt = true,
+                slotId = 0,
                 timeout = Duration.ofMinutes(10),
             ).getOrThrow()
         }

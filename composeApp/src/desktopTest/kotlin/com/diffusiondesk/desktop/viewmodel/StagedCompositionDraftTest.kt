@@ -22,7 +22,7 @@ class StagedCompositionDraftTest {
         )
         val progress = mutableListOf<StagedIdeogramProgress>()
 
-        StagedIdeogramGenerator { _, _, _ -> responses.removeFirst() }
+        StagedIdeogramGenerator { _, _ -> responses.removeFirst() }
             .run("poster", 1000, 1500, onProgress = progress::add)
             .getOrThrow()
 
