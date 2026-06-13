@@ -1,10 +1,11 @@
 # Diffusion Desk
 
 Diffusion Desk is a Windows desktop application for generating, refining, and
-organizing images on your own machine. It combines a native
-[`stable-diffusion.cpp`](https://github.com/leejet/stable-diffusion.cpp) worker
-with a Kotlin Compose desktop interface, so image generation and optional LLM
-assistance stay local.
+organizing images on your own machine. It combines native workers built around
+[`stable-diffusion.cpp`](https://github.com/leejet/stable-diffusion.cpp) and
+[`llama.cpp`](https://github.com/ggml-org/llama.cpp) with a Kotlin Compose
+desktop interface. Image generation, prompt assistance, composition creation,
+and image tagging can all run locally.
 
 ![Diffusion Desk Generate view with an Ideogram composition overlay](screenshots/generate-composition-overlay.png)
 
@@ -16,15 +17,15 @@ Diffusion Desk is designed as a practical workspace around local image models:
   are queued.
 - **Compose** structured Ideogram 4 prompts visually, including text, objects,
   colors, and bounding boxes on the image canvas.
-- **Refine** prompts and composition elements with an optional local LLM. Vision
-  models can use the current image or a selected region as context.
+- **Refine** prompts with local LLMs powered by `llama.cpp`, or generate and
+  edit complete structured compositions with LLM assistance.
 - **Browse** generated images in a searchable gallery, inspect their metadata,
-  and reuse their settings for another generation.
+  reuse their settings, and tag them with an optional local vision model.
 - **Manage** image models, LLMs, workers, output folders, and GPU memory from the
   desktop application.
 
 Everything runs locally. Diffusion Desk does not provide models and does not
-require a hosted generation service.
+require hosted image-generation or LLM services.
 
 ## Project Status
 
@@ -92,9 +93,11 @@ installations, and Gradle-provisioned JDKs. You can also pass it explicitly:
    generation.
 
 Generated images are stored in the configured output directory and appear in
-the Gallery. Local LLM features are optional; configure an LLM preset and
-assign it to a role in the System screen when you want prompt enhancement,
-composition assistance, or image tagging.
+the Gallery. Local LLM features are optional and run through the integrated
+`llama.cpp` worker. Configure an LLM preset and assign it to a role in the
+System screen when you want prompt enhancement, composition generation, or
+image tagging. Multimodal GGUF models can use an `mmproj` projector to inspect
+the generated image or a selected composition region.
 
 ## Ideogram Composition
 
@@ -111,6 +114,21 @@ canvas. Changes support undo and redo, and the planned composition can be shown
 over the generated image. Optional local LLM actions can improve individual
 fields or generate a complete composition without sending the prompt or image
 to a remote service.
+
+## Local LLM Workflows
+
+The integrated `llama.cpp` worker is more than a general prompt helper. It is
+used in three parts of the application:
+
+- **Prompt enhancement** expands or rewrites regular image prompts before
+  generation.
+- **Composition generation** creates structured Ideogram 4 prompts and can
+  refine individual descriptions, elements, or color palettes.
+- **Image tagging** analyzes gallery images with a local multimodal model and
+  stores searchable tags alongside their metadata.
+
+LLM presets and roles are managed independently from image-model presets, so
+different local models can be used for prompting, assistance, and tagging.
 
 ## Portable Windows Build
 
@@ -169,6 +187,15 @@ Run the Compose desktop tests with:
 
 For native changes, use `.\scripts\build.ps1` so the repository's Windows
 build configuration and patches are applied consistently.
+
+## Acknowledgements
+
+Diffusion Desk builds on two excellent local inference projects:
+
+- [`stable-diffusion.cpp`](https://github.com/leejet/stable-diffusion.cpp) for
+  native image generation
+- [`llama.cpp`](https://github.com/ggml-org/llama.cpp) for local text and
+  multimodal LLM inference
 
 ## License
 
