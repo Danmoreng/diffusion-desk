@@ -917,9 +917,9 @@ class GenerationViewModel(
             val presets = llmPresetStore.load()
             val roles = llmPresetStore.loadRoles()
             var activeStep = startStep
-            val pipeline = StagedIdeogramGenerator { systemPrompt, userPrompt, maxTokens ->
+            val pipeline = StagedIdeogramGenerator { messages, maxTokens ->
                 llmRoleService.completeIdeogramGenerationStage(
-                    settings, presets, roles, systemPrompt, userPrompt, maxTokens,
+                    settings, presets, roles, messages, maxTokens,
                 ).getOrThrow()
             }
             pipeline.run(

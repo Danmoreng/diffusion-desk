@@ -1,5 +1,6 @@
 package com.diffusiondesk.desktop.composition
 
+import com.diffusiondesk.desktop.core.LlmChatMessage
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -12,9 +13,9 @@ class StagedIdeogramGeneratorTest {
     fun completesAllStagesAndPublishesDrafts() = runBlocking {
         val responses = ArrayDeque(successResponses())
         val progress = mutableListOf<StagedIdeogramProgress>()
-        val systemPrompts = mutableListOf<String>()
-        val generator = StagedIdeogramGenerator { systemPrompt, _, _ ->
-            systemPrompts += systemPrompt
+        val conversations = mutableListOf<List<LlmChatMessage>>()
+        val generator = StagedIdeogramGenerator { messages, _ ->
+            conversations += messages
             responses.removeFirst()
         }
 
@@ -30,20 +31,24 @@ class StagedIdeogramGeneratorTest {
         assertTrue(progress.first().draft.previewJson().contains("\"compositional_deconstruction\""))
         assertTrue(progress.first().draft.previewJson().contains("\"background\": \"\""))
         assertTrue(progress.first().draft.previewJson().contains("\"elements\": []"))
+        val systemPrompts = conversations.map { it.single { message -> message.role == "system" }.content }
         assertTrue(systemPrompts.all { it.contains("<ideogram4_json_schema>") })
         assertTrue(systemPrompts.all { it.contains("\"${'$'}schema\": \"https://json-schema.org/draft/2020-12/schema\"") })
         assertTrue(systemPrompts.all { it.contains("\"${'$'}ref\": \"#/${'$'}defs/objectElement\"") })
-        assertTrue(systemPrompts.all { it.contains("Return only the stage-specific response fragment") })
+        assertTrue(systemPrompts.all { it.contains("multi-turn conversation") })
+        assertEquals(listOf(2, 4, 6, 8, 10, 12), conversations.map { it.size })
+        assertEquals(successResponses()[0], conversations[1][2].content)
+        assertEquals(successResponses()[4], conversations.last()[10].content)
     }
 
     @Test
     fun sendsValidationErrorBackToModelAndContinuesAutomatically() = runBlocking {
         val invalidStyle = """{"high_level_description":"A strawberry poster with a title","style_description":{"aesthetics":"clean","lighting":"soft","medium":"photo"}}"""
         val responses = ArrayDeque(listOf(invalidStyle) + successResponses())
-        val userPrompts = mutableListOf<String>()
+        val conversations = mutableListOf<List<LlmChatMessage>>()
         val repairs = mutableListOf<String>()
-        val generator = StagedIdeogramGenerator { _, userPrompt, _ ->
-            userPrompts += userPrompt
+        val generator = StagedIdeogramGenerator { messages, _ ->
+            conversations += messages
             responses.removeFirst()
         }
 
@@ -55,9 +60,11 @@ class StagedIdeogramGeneratorTest {
             onProgress = {},
         ).getOrThrow()
 
-        assertEquals(7, userPrompts.size)
-        assertTrue(userPrompts[1].contains("The required \"medium\" field does not count"))
-        assertTrue(userPrompts[1].contains(invalidStyle))
+        assertEquals(7, conversations.size)
+        val repairPrompt = conversations[1].last().content
+        assertTrue(repairPrompt.contains("The required \"medium\" field does not count"))
+        assertTrue(repairPrompt.contains(invalidStyle))
+        assertEquals(invalidStyle, conversations[1][2].content)
         assertEquals(1, repairs.size)
         assertTrue(repairs.single().contains("Add exactly one separate string field"))
         assertEquals("editorial", result.style?.get("photo")?.jsonPrimitive?.content)
@@ -68,7 +75,7 @@ class StagedIdeogramGeneratorTest {
         val firstResponses = ArrayDeque(successResponses().take(4) + "not-json")
         var acceptedDraft = StagedIdeogramDraft()
         var activeStep = StagedIdeogramStep.SceneAndStyle
-        val first = StagedIdeogramGenerator { _, _, _ -> firstResponses.removeFirst() }
+        val first = StagedIdeogramGenerator { _, _ -> firstResponses.removeFirst() }
 
         val failed = first.run(
             sourcePrompt = "poster",
@@ -84,7 +91,7 @@ class StagedIdeogramGeneratorTest {
 
         var retryCalls = 0
         val retryResponses = ArrayDeque(listOf(successResponses()[4], successResponses()[5]))
-        val retry = StagedIdeogramGenerator { _, _, _ -> retryCalls++; retryResponses.removeFirst() }
+        val retry = StagedIdeogramGenerator { _, _ -> retryCalls++; retryResponses.removeFirst() }
             .run(
                 sourcePrompt = "poster",
                 width = 1000,

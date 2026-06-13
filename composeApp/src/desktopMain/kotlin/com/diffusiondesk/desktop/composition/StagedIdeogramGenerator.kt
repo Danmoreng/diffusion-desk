@@ -1,6 +1,7 @@
 package com.diffusiondesk.desktop.composition
 
 import com.diffusiondesk.desktop.core.IDEOGRAM4_SCHEMA_INSTRUCTION
+import com.diffusiondesk.desktop.core.LlmChatMessage
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
@@ -56,7 +57,7 @@ data class StagedIdeogramProgress(
 )
 
 class StagedIdeogramGenerator(
-    private val complete: suspend (systemPrompt: String, userPrompt: String, maxTokens: Int) -> String,
+    private val complete: suspend (messages: List<LlmChatMessage>, maxTokens: Int) -> String,
 ) {
     suspend fun run(
         sourcePrompt: String,
@@ -69,15 +70,16 @@ class StagedIdeogramGenerator(
         onProgress: (StagedIdeogramProgress) -> Unit,
     ): Result<StagedIdeogramDraft> = runCatching {
         var draft = initialDraft
+        val conversation = mutableListOf(LlmChatMessage(role = "system", content = STAGED_SCHEMA_CONTEXT))
         val steps = StagedIdeogramStep.entries.dropWhile { it != startStep }
         for (step in steps) {
             onStepStarted(step)
             draft = when (step) {
-                StagedIdeogramStep.SceneAndStyle -> generateSceneAndStyle(sourcePrompt, width, height, onValidationRepair)
-                StagedIdeogramStep.Background -> draft.copy(background = generateBackground(sourcePrompt, draft, width, height, onValidationRepair))
-                StagedIdeogramStep.ElementPlan -> draft.copy(elements = generateElementPlan(sourcePrompt, draft, width, height, onValidationRepair))
-                StagedIdeogramStep.ElementDetails -> detailElements(sourcePrompt, draft, width, height, onProgress, onValidationRepair)
-                StagedIdeogramStep.Placements -> draft.copy(elements = applyPlacements(draft, generatePlacements(draft, width, height, onValidationRepair)))
+                StagedIdeogramStep.SceneAndStyle -> generateSceneAndStyle(conversation, sourcePrompt, width, height, onValidationRepair)
+                StagedIdeogramStep.Background -> draft.copy(background = generateBackground(conversation, sourcePrompt, draft, width, height, onValidationRepair))
+                StagedIdeogramStep.ElementPlan -> draft.copy(elements = generateElementPlan(conversation, sourcePrompt, draft, width, height, onValidationRepair))
+                StagedIdeogramStep.ElementDetails -> detailElements(conversation, sourcePrompt, draft, width, height, onProgress, onValidationRepair)
+                StagedIdeogramStep.Placements -> draft.copy(elements = applyPlacements(draft, generatePlacements(conversation, draft, width, height, onValidationRepair)))
                 StagedIdeogramStep.Finalize -> {
                     draft.completeJson()
                     draft
@@ -89,12 +91,13 @@ class StagedIdeogramGenerator(
     }
 
     private suspend fun generateSceneAndStyle(
+        conversation: MutableList<LlmChatMessage>,
         prompt: String,
         width: Int,
         height: Int,
         onRepair: (StagedIdeogramStep, Int, Int, String) -> Unit,
     ): StagedIdeogramDraft {
-        return completeValidated(StagedIdeogramStep.SceneAndStyle, SCENE_STYLE_PROMPT, canvasPrompt(prompt, width, height), 1024, onRepair) { response ->
+        return completeValidated(conversation, StagedIdeogramStep.SceneAndStyle, SCENE_STYLE_PROMPT, canvasPrompt(prompt, width, height), 1024, onRepair) { response ->
             val root = parseRoot(response, setOf("high_level_description", "style_description"))
             val highLevel = root.requiredString("high_level_description")
             val style = root["style_description"]?.jsonObject ?: error("style_description is required.")
@@ -103,16 +106,16 @@ class StagedIdeogramGenerator(
         }
     }
 
-    private suspend fun generateBackground(prompt: String, draft: StagedIdeogramDraft, width: Int, height: Int, onRepair: (StagedIdeogramStep, Int, Int, String) -> Unit): String {
+    private suspend fun generateBackground(conversation: MutableList<LlmChatMessage>, prompt: String, draft: StagedIdeogramDraft, width: Int, height: Int, onRepair: (StagedIdeogramStep, Int, Int, String) -> Unit): String {
         val userPrompt = "${canvasPrompt(prompt, width, height)}\nAccepted draft: ${draft.previewJson()}"
-        return completeValidated(StagedIdeogramStep.Background, BACKGROUND_PROMPT, userPrompt, 768, onRepair) {
+        return completeValidated(conversation, StagedIdeogramStep.Background, BACKGROUND_PROMPT, userPrompt, 768, onRepair) {
             parseRoot(it, setOf("background")).requiredString("background")
         }
     }
 
-    private suspend fun generateElementPlan(prompt: String, draft: StagedIdeogramDraft, width: Int, height: Int, onRepair: (StagedIdeogramStep, Int, Int, String) -> Unit): List<JsonObject> {
+    private suspend fun generateElementPlan(conversation: MutableList<LlmChatMessage>, prompt: String, draft: StagedIdeogramDraft, width: Int, height: Int, onRepair: (StagedIdeogramStep, Int, Int, String) -> Unit): List<JsonObject> {
         val userPrompt = "${canvasPrompt(prompt, width, height)}\nAccepted draft: ${draft.previewJson()}"
-        return completeValidated(StagedIdeogramStep.ElementPlan, ELEMENT_PLAN_PROMPT, userPrompt, 1536, onRepair) {
+        return completeValidated(conversation, StagedIdeogramStep.ElementPlan, ELEMENT_PLAN_PROMPT, userPrompt, 1536, onRepair) {
             val elements = parseRoot(it, setOf("elements"))["elements"]?.jsonArray ?: error("elements is required.")
             require(elements.isNotEmpty()) { "The element plan is empty." }
             elements.mapIndexed { index, value -> validatePlannedElement(value.jsonObject, index) }
@@ -120,6 +123,7 @@ class StagedIdeogramGenerator(
     }
 
     private suspend fun detailElements(
+        conversation: MutableList<LlmChatMessage>,
         prompt: String,
         initial: StagedIdeogramDraft,
         width: Int,
@@ -131,7 +135,7 @@ class StagedIdeogramGenerator(
         (initial.detailedElementCount until initial.elements.size).forEach { index ->
             val current = draft.elements[index]
             val userPrompt = "${canvasPrompt(prompt, width, height)}\nDetail element index $index only.\nCurrent element: $current\nFull accepted draft: ${draft.previewJson()}"
-            val element = completeValidated(StagedIdeogramStep.ElementDetails, ELEMENT_DETAIL_PROMPT, userPrompt, 1024, onRepair) {
+            val element = completeValidated(conversation, StagedIdeogramStep.ElementDetails, ELEMENT_DETAIL_PROMPT, userPrompt, 1024, onRepair) {
                 val parsed = parseRoot(it, setOf("element"))["element"]?.jsonObject ?: error("element is required.")
                 validateDetailedElement(parsed, current.requiredString("type"))
                 parsed
@@ -145,9 +149,9 @@ class StagedIdeogramGenerator(
         return draft
     }
 
-    private suspend fun generatePlacements(draft: StagedIdeogramDraft, width: Int, height: Int, onRepair: (StagedIdeogramStep, Int, Int, String) -> Unit): Map<Int, List<Int>?> {
+    private suspend fun generatePlacements(conversation: MutableList<LlmChatMessage>, draft: StagedIdeogramDraft, width: Int, height: Int, onRepair: (StagedIdeogramStep, Int, Int, String) -> Unit): Map<Int, List<Int>?> {
         val userPrompt = "Target canvas: ${width}x$height.\nAccepted draft: ${draft.previewJson()}"
-        return completeValidated(StagedIdeogramStep.Placements, PLACEMENTS_PROMPT, userPrompt, 1536, onRepair) {
+        return completeValidated(conversation, StagedIdeogramStep.Placements, PLACEMENTS_PROMPT, userPrompt, 1536, onRepair) {
             val placements = parseRoot(it, setOf("placements"))["placements"]?.jsonArray ?: error("placements is required.")
             require(placements.size == draft.elements.size) { "Placements must include every element." }
             val byIndex = placements.associate { value ->
@@ -162,14 +166,17 @@ class StagedIdeogramGenerator(
     }
 
     private suspend fun <T> completeValidated(
+        conversation: MutableList<LlmChatMessage>,
         step: StagedIdeogramStep,
-        systemPrompt: String,
+        stagePrompt: String,
         userPrompt: String,
         maxTokens: Int,
         onRepair: (StagedIdeogramStep, Int, Int, String) -> Unit,
         validate: (String) -> T,
     ): T {
-        var response = complete(systemPrompt, userPrompt, maxTokens)
+        conversation += LlmChatMessage(role = "user", content = "$stagePrompt\n\n$userPrompt")
+        var response = complete(conversation.toList(), maxTokens)
+        conversation += LlmChatMessage(role = "assistant", content = response)
         repeat(MAX_VALIDATION_REPAIRS + 1) { attempt ->
             val validation = runCatching { validate(response) }
             validation.getOrNull()?.let { return it }
@@ -177,11 +184,12 @@ class StagedIdeogramGenerator(
             if (attempt == MAX_VALIDATION_REPAIRS) throw validation.exceptionOrNull() ?: IllegalArgumentException(error)
 
             onRepair(step, attempt + 1, MAX_VALIDATION_REPAIRS, error)
-            response = complete(
-                "$systemPrompt\n\n$JSON_REPAIR_PROMPT",
-                buildRepairPrompt(userPrompt, response, error),
-                maxTokens,
+            conversation += LlmChatMessage(
+                role = "user",
+                content = "$JSON_REPAIR_PROMPT\n\n${buildRepairPrompt(userPrompt, response, error)}",
             )
+            response = complete(conversation.toList(), maxTokens)
+            conversation += LlmChatMessage(role = "assistant", content = response)
         }
         error("JSON validation failed.")
     }
@@ -283,12 +291,10 @@ Your previous response failed validation. Correct only the JSON structure or val
 private const val STAGED_SCHEMA_CONTEXT = """
 $IDEOGRAM4_SCHEMA_INSTRUCTION
 
-This is a staged generation call. Return only the stage-specific response fragment requested below, not the complete final document. The fragment's fields must use the same names, types, and constraints as the final schema.
+You are building one Ideogram composition over a multi-turn conversation. Follow each stage instruction and return only its requested JSON fragment, not the complete final document. Fragment fields must use the same names, types, and constraints as the final schema. Treat earlier accepted assistant responses as established composition context and keep later stages consistent with them.
 """
 
 private const val SCENE_STYLE_PROMPT = """
-$STAGED_SCHEMA_CONTEXT
-
 Create the scene summary and style for an Ideogram 4 caption. Return only {"high_level_description":"...","style_description":{...}}. Do not include background or elements.
 
 style_description must use exactly one of these two shapes:
@@ -298,22 +304,14 @@ style_description must use exactly one of these two shapes:
 The keys "photo" and "art_style" are mutually exclusive style-mode fields. The separate required key "medium" never replaces them; for example, {"medium":"photo"} is incomplete without a separate "photo" field. An optional color_palette may contain at most 16 uppercase #RRGGBB colors.
 """
 private const val BACKGROUND_PROMPT = """
-$STAGED_SCHEMA_CONTEXT
-
 Create only the background for the accepted Ideogram scene. Return only {"background":"..."}. Describe architecture, ground, sky, atmosphere, distant scenery, and scene-wide lighting. Do not include individually placeable subjects or text.
 """
 private const val ELEMENT_PLAN_PROMPT = """
-$STAGED_SCHEMA_CONTEXT
-
 Create a concise element plan for the accepted Ideogram scene. Return only {"elements":[...]}. Each element contains type obj or text, a concise desc, and exact literal text for text elements. Preserve every named visual unit. Do not include bbox or color_palette yet.
 """
 private const val ELEMENT_DETAIL_PROMPT = """
-$STAGED_SCHEMA_CONTEXT
-
 Detail exactly one planned Ideogram element. Return only {"element":{...}}. Preserve its type and literal text. Return a concrete visual desc and optional color_palette with at most 5 uppercase #RRGGBB colors. Do not include bbox or unrelated elements.
 """
 private const val PLACEMENTS_PROMPT = """
-$STAGED_SCHEMA_CONTEXT
-
 Plan placements for every accepted Ideogram element. Return only {"placements":[{"index":0,"bbox":[y_min,x_min,y_max,x_max]}]}. Include each index exactly once. bbox may be null for dense or non-placeable content. Coordinates are normalized integers from 0 to 1000 and must respect the target aspect ratio and avoid harmful overlaps.
 """
