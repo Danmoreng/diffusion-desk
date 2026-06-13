@@ -1,6 +1,8 @@
 package com.diffusiondesk.desktop.core
 
 import java.io.File
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonObject
 
 data class GalleryImage(
     val id: Long,
@@ -33,6 +35,7 @@ data class GalleryImage(
 
 data class GalleryReusableParams(
     val prompt: String,
+    val promptMode: ImagePromptMode,
     val negativePrompt: String,
     val width: Int?,
     val height: Int?,
@@ -43,6 +46,22 @@ data class GalleryReusableParams(
     val modelId: String,
     val presetId: String,
 )
+
+fun inferGalleryPromptMode(prompt: String, modelId: String, presetId: String): ImagePromptMode {
+    if (presetId.contains("ideogram", ignoreCase = true) || modelId.contains("ideogram", ignoreCase = true)) {
+        return ImagePromptMode.Json
+    }
+    val isCompositionJson = runCatching {
+        val root = Json.parseToJsonElement(prompt).jsonObject
+        val composition = root["compositional_deconstruction"]?.jsonObject
+        composition?.containsKey("elements") == true
+    }.getOrDefault(false)
+    return if (isCompositionJson) {
+        ImagePromptMode.Json
+    } else {
+        ImagePromptMode.Text
+    }
+}
 
 data class ParsedImageMetadata(
     val prompt: String = "",

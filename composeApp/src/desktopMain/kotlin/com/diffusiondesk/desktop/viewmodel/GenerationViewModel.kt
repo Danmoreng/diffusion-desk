@@ -112,7 +112,7 @@ internal fun nextGenerationOverallProgress(
     step: Int,
     steps: Int,
 ): Float {
-    val stageProgress = if (steps > 0 && step > 0) {
+    val stageProgress = if (steps > 0) {
         (step.toFloat() / steps.toFloat()).coerceIn(0f, 1f)
     } else {
         0.35f
@@ -124,6 +124,33 @@ internal fun nextGenerationOverallProgress(
         else -> current
     }
     return maxOf(current, proposed).coerceIn(0f, 1f)
+}
+
+internal fun generationProgressStageKey(phase: String, step: Int, steps: Int): String {
+    val normalized = phase.lowercase()
+    return when {
+        normalized.isBlank() || normalized == "idle" -> "prepare"
+        normalized.contains("encod") || normalized.contains("clip") || normalized.contains("prompt") -> "prepare"
+        normalized.contains("highres") || normalized.contains("high-res") || normalized.contains("hires") -> "highres"
+        normalized.contains("sampl") -> "sampling"
+        normalized.contains("decod") || normalized.contains("sav") || normalized.contains("vae") -> "decode"
+        steps > 0 && step > 0 -> "sampling"
+        else -> "prepare"
+    }
+}
+
+internal fun resolvedGenerationProgressStageKey(
+    rawPhase: String,
+    displayPhase: String,
+    step: Int,
+    steps: Int,
+): String {
+    val normalizedRawPhase = rawPhase.trim()
+    return if (normalizedRawPhase.isBlank() || normalizedRawPhase.equals("idle", ignoreCase = true)) {
+        "prepare"
+    } else {
+        generationProgressStageKey(displayPhase, step, steps)
+    }
 }
 
 private data class ProgressTiming(
@@ -1085,10 +1112,38 @@ class GenerationViewModel(
     }
 
     fun reuseGalleryParams(params: GalleryReusableParams) {
+        val compositionValidation = params.prompt.takeIf { params.promptMode == ImagePromptMode.Json }
+            ?.let(::validateIdeogramJson)
+        val matchingCompositionPreset = if (params.promptMode == ImagePromptMode.Json) {
+            _uiState.value.presets.firstOrNull { preset ->
+                preset.promptMode == ImagePromptMode.Json && preset.id == params.presetId
+            } ?: _uiState.value.presets.firstOrNull { preset ->
+                params.modelId.isNotBlank() && preset.promptMode == ImagePromptMode.Json && (
+                    preset.diffusionModel == params.modelId ||
+                        preset.diffusionModel.endsWith(params.modelId) ||
+                        params.modelId.endsWith(preset.diffusionModel)
+                    )
+            } ?: _uiState.value.presets.firstOrNull { it.promptMode == ImagePromptMode.Json }
+        } else {
+            null
+        }
         update {
             copy(
-                prompt = params.prompt.ifBlank { prompt },
+                prompt = if (params.promptMode == ImagePromptMode.Text) params.prompt.ifBlank { prompt } else prompt,
                 negativePrompt = params.negativePrompt,
+                ideogram = if (params.promptMode == ImagePromptMode.Json) {
+                    ideogram.copy(
+                        jsonPrompt = params.prompt,
+                        selectedTab = IdeogramStructureTab.Preview,
+                        jsonStatus = compositionValidation?.first ?: "Invalid JSON.",
+                        jsonError = compositionValidation?.second,
+                        history = listOf(params.prompt),
+                        historyIndex = 0,
+                    )
+                } else {
+                    ideogram
+                },
+                selectedPresetId = matchingCompositionPreset?.id ?: selectedPresetId,
                 width = params.width?.toString() ?: width,
                 height = params.height?.toString() ?: height,
                 steps = params.steps?.toString() ?: steps,
@@ -1098,11 +1153,19 @@ class GenerationViewModel(
                 resultUrls = emptyList(),
                 images = emptyList(),
                 usedSeed = "",
-                message = "Reused gallery image settings.",
+                message = if (params.promptMode == ImagePromptMode.Json) {
+                    "Reused gallery composition."
+                } else {
+                    "Reused gallery image settings."
+                },
                 error = null,
             )
         }
-        commitPrompt()
+        if (params.promptMode == ImagePromptMode.Text) {
+            commitPrompt()
+        } else {
+            matchingCompositionPreset?.let { presetStore.saveLastPresetId(it.id) }
+        }
     }
 
     fun reloadPresets() {
@@ -1700,6 +1763,20 @@ class GenerationViewModel(
             val nextStages = updateProgressStages(progressStages, nextPhase, event)
             val timing = estimateProgressTiming(event, nextPhase)
             val stageKey = progressStageKey(nextPhase, event)
+            val nextOverall = nextGenerationOverallProgress(
+                current = progressOverall,
+                stageKey = stageKey,
+                step = event.step,
+                steps = event.steps,
+            )
+            val logInterval = (event.steps / 20).coerceAtLeast(1)
+            if (event.step <= 1 || event.step >= event.steps || event.step % logInterval == 0) {
+                System.err.println(
+                    "[GenerationProgress] rawPhase='${event.phase}' displayPhase='$nextPhase' " +
+                        "step=${event.step}/${event.steps} stage=$stageKey " +
+                        "previous=${"%.4f".format(progressOverall)} next=${"%.4f".format(nextOverall)}",
+                )
+            }
             copy(
                 progressStep = event.step,
                 progressSteps = event.steps,
@@ -1708,12 +1785,7 @@ class GenerationViewModel(
                 progressPhase = nextPhase,
                 progressMessage = displayProgressMessage(event.message),
                 progressStages = nextStages,
-                progressOverall = nextGenerationOverallProgress(
-                    current = progressOverall,
-                    stageKey = stageKey,
-                    step = event.step,
-                    steps = event.steps,
-                ),
+                progressOverall = nextOverall,
             )
         }
     }
@@ -1728,9 +1800,7 @@ class GenerationViewModel(
 
     private fun displayProgressPhase(event: GenerationJobEvent.Progress, currentPhase: String): String {
         val normalized = event.phase.trim()
-        val hasStepProgress = event.steps > 0 && event.step > 0
         return when {
-            hasStepProgress && (normalized.isBlank() || normalized.equals("idle", ignoreCase = true)) -> "Sampling..."
             normalized.isBlank() || normalized.equals("idle", ignoreCase = true) -> {
                 currentPhase.takeUnless { it.isBlank() || it.equals("idle", ignoreCase = true) } ?: "Starting..."
             }
@@ -1814,15 +1884,7 @@ class GenerationViewModel(
     }
 
     private fun progressStageKey(phase: String, event: GenerationJobEvent.Progress): String {
-        val normalized = phase.lowercase()
-        return when {
-            normalized.contains("vae") || normalized.contains("decod") || normalized.contains("sav") -> PROGRESS_STAGE_DECODE
-            normalized.contains("highres") || normalized.contains("high-res") || normalized.contains("hires") -> PROGRESS_STAGE_HIGHRES
-            normalized.contains("sampl") -> PROGRESS_STAGE_SAMPLING
-            normalized.contains("encod") || normalized.contains("clip") || normalized.contains("prompt") -> PROGRESS_STAGE_PREPARE
-            event.steps > 0 && event.step > 0 -> PROGRESS_STAGE_SAMPLING
-            else -> PROGRESS_STAGE_PREPARE
-        }
+        return resolvedGenerationProgressStageKey(event.phase, phase, event.step, event.steps)
     }
 
     private fun progressStageLabel(stageKey: String, phase: String): String {
@@ -1931,19 +1993,33 @@ class GenerationViewModel(
         generationSettingsStore.save(_uiState.value.toSavedSettings())
     }
 
-    private fun SavedGenerationSettings.toUiState() = GenerationUiState(
-        prompt = prompt,
-        promptHistory = listOf(prompt),
-        promptHistoryIndex = 0,
-        negativePrompt = negativePrompt,
-        width = width,
-        height = height,
-        steps = steps,
-        cfgScale = cfgScale,
-        seed = seed,
-        sampler = sampler,
-        leftPanelWidthDp = leftPanelWidthDp,
-    )
+    private fun SavedGenerationSettings.toUiState(): GenerationUiState {
+        val validation = ideogramJsonPrompt.takeIf(String::isNotBlank)?.let(::validateIdeogramJson)
+        return GenerationUiState(
+            prompt = prompt,
+            promptHistory = listOf(prompt),
+            promptHistoryIndex = 0,
+            negativePrompt = negativePrompt,
+            width = width,
+            height = height,
+            steps = steps,
+            cfgScale = cfgScale,
+            seed = seed,
+            sampler = sampler,
+            leftPanelWidthDp = leftPanelWidthDp,
+            ideogram = IdeogramUiState(
+                jsonPrompt = ideogramJsonPrompt,
+                selectedTab = if (validation?.second == null && ideogramJsonPrompt.isNotBlank()) {
+                    IdeogramStructureTab.Preview
+                } else {
+                    IdeogramStructureTab.Text
+                },
+                jsonStatus = validation?.first ?: "No composition yet.",
+                jsonError = validation?.second,
+                history = ideogramJsonPrompt.takeIf(String::isNotBlank)?.let(::listOf).orEmpty(),
+            ),
+        )
+    }
 
     private fun GenerationUiState.toSavedSettings() = SavedGenerationSettings(
         prompt = prompt,
@@ -1955,6 +2031,7 @@ class GenerationViewModel(
         seed = seed,
         sampler = sampler,
         leftPanelWidthDp = leftPanelWidthDp,
+        ideogramJsonPrompt = ideogram.jsonPrompt,
     )
 
     private fun gcd(a: Int, b: Int): Int = if (b == 0) kotlin.math.abs(a) else gcd(b, a % b)
