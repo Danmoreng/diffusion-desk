@@ -153,6 +153,42 @@ class GenerationDraftStateTest {
         )
     }
 
+    @Test
+    fun encodingPhasesStayInPrepareRangeUntilSamplingStarts() {
+        val promptEncodeStage = generationProgressStageKey("Encoding Prompt (CLIP CPU)...", step = 20, steps = 20)
+        val vaeEncodeStage = generationProgressStageKey("VAE Encoding...", step = 20, steps = 20)
+        val vaeDecodeStage = generationProgressStageKey("VAE Decoding...", step = 1, steps = 2)
+
+        assertEquals("prepare", promptEncodeStage)
+        assertEquals("prepare", vaeEncodeStage)
+        assertEquals("decode", vaeDecodeStage)
+        assertEquals(0.05f, nextGenerationOverallProgress(0f, vaeEncodeStage, step = 20, steps = 20), 0.0001f)
+        assertEquals(0.975f, nextGenerationOverallProgress(0f, vaeDecodeStage, step = 1, steps = 2), 0.0001f)
+    }
+
+    @Test
+    fun encodeAndDiffusionCountersUseSeparateOverallProgressRanges() {
+        assertEquals(0f, nextGenerationOverallProgress(0f, "prepare", step = 0, steps = 1500), 0.0001f)
+        assertEquals(0.025f, nextGenerationOverallProgress(0f, "prepare", step = 750, steps = 1500), 0.0001f)
+        assertEquals(0.05f, nextGenerationOverallProgress(0f, "prepare", step = 1500, steps = 1500), 0.0001f)
+        assertEquals(0.05f, nextGenerationOverallProgress(0.05f, "sampling", step = 0, steps = 20), 0.0001f)
+        assertEquals(0.50f, nextGenerationOverallProgress(0.05f, "sampling", step = 10, steps = 20), 0.0001f)
+        assertEquals(0.95f, nextGenerationOverallProgress(0.05f, "sampling", step = 20, steps = 20), 0.0001f)
+    }
+
+    @Test
+    fun staleIdleCountersCannotAdvanceSamplingProgress() {
+        val stage = resolvedGenerationProgressStageKey(
+            rawPhase = "idle",
+            displayPhase = "Releasing LLM VRAM...",
+            step = 1562,
+            steps = 1562,
+        )
+
+        assertEquals("prepare", stage)
+        assertEquals(0.05f, nextGenerationOverallProgress(0f, stage, step = 1562, steps = 1562), 0.0001f)
+    }
+
     private fun stateFor(params: GenerationParams, mode: ImagePromptMode): GenerationUiState = GenerationUiState(
         prompt = params.prompt,
         negativePrompt = params.negativePrompt,

@@ -305,6 +305,7 @@ class GalleryRepository(
     fun reusableParams(image: GalleryImage): GalleryReusableParams {
         return GalleryReusableParams(
             prompt = image.prompt,
+            promptMode = inferGalleryPromptMode(image.prompt, image.modelId, image.presetId),
             negativePrompt = image.negativePrompt,
             width = image.width,
             height = image.height,

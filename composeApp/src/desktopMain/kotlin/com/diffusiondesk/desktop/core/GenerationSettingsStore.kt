@@ -13,10 +13,12 @@ data class SavedGenerationSettings(
     val seed: String = "-1",
     val sampler: String = "euler_a",
     val leftPanelWidthDp: Int = 560,
+    val ideogramJsonPrompt: String = "",
 )
 
-class GenerationSettingsStore {
-    private val settingsFile = File(AppPaths.appDir, "generation.properties")
+class GenerationSettingsStore(
+    private val settingsFile: File = File(AppPaths.appDir, "generation.properties"),
+) {
 
     fun load(): SavedGenerationSettings {
         if (!settingsFile.exists()) {
@@ -36,6 +38,7 @@ class GenerationSettingsStore {
                 sampler = props.getProperty("sampler", SavedGenerationSettings().sampler),
                 leftPanelWidthDp = props.getProperty("leftPanelWidthDp", SavedGenerationSettings().leftPanelWidthDp.toString()).toIntOrNull()
                     ?: SavedGenerationSettings().leftPanelWidthDp,
+                ideogramJsonPrompt = props.getProperty("ideogramJsonPrompt", SavedGenerationSettings().ideogramJsonPrompt),
             )
         }.getOrElse { SavedGenerationSettings() }
     }
@@ -54,6 +57,7 @@ class GenerationSettingsStore {
         props.setProperty("seed", settings.seed)
         props.setProperty("sampler", settings.sampler)
         props.setProperty("leftPanelWidthDp", settings.leftPanelWidthDp.toString())
+        props.setProperty("ideogramJsonPrompt", settings.ideogramJsonPrompt)
         settingsFile.outputStream().use { props.store(it, "Diffusion Desk Generation Settings") }
     }
 }

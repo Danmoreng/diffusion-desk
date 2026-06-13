@@ -1679,7 +1679,7 @@ void handle_generate_image(const httplib::Request& req, httplib::Response& res, 
             if (gen_params.clip_on_cpu) {
                 set_progress_phase("Encoding Prompt (CLIP CPU)...");
             } else {
-                set_progress_phase("Sampling...");
+                set_progress_phase("Encoding Prompt...");
             }
             log_vram_status("Sampling Start");
             float vram_before = get_current_process_vram_usage_gb();
