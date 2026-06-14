@@ -2,6 +2,7 @@ package com.diffusiondesk.desktop.screens
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -616,121 +617,51 @@ private fun ImagePresetEditorPage(
                 )
             }
 
-            EditorSection("Model Components") {
-                ModelPathField(
-                    label = "UNet / Main Model (required)",
-                    value = state.form.diffusionModel,
-                    options = mainModelOptions,
-                    onValueChange = { onFormChange(state.form.copy(diffusionModel = it)) },
-                    placeholder = "stable-diffusion/model.gguf or D:\\models\\model.gguf",
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                ModelPathField(
-                    label = "Unconditional Diffusion Model (optional)",
-                    value = state.form.uncondDiffusionModel,
-                    options = mainModelOptions,
-                    onValueChange = { onFormChange(state.form.copy(uncondDiffusionModel = it)) },
-                    placeholder = "stable-diffusion/ideogram4_uncond-Q8_0.gguf",
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                TwoColumnRow {
-                    ModelPathField(
-                        label = "VAE (optional)",
-                        value = state.form.vae,
-                        options = vaeOptions,
-                        onValueChange = { onFormChange(state.form.copy(vae = it)) },
-                        placeholder = "vae/ae.safetensors",
-                        modifier = Modifier.weight(1f),
-                    )
-                    ModelPathField(
-                        label = "T5 / Text Encoder 2 (optional)",
-                        value = state.form.t5xxl,
-                        options = textEncoderOptions,
-                        onValueChange = { onFormChange(state.form.copy(t5xxl = it)) },
-                        placeholder = "text-encoder/t5.gguf",
-                        modifier = Modifier.weight(1f),
-                    )
+            BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+                if (maxWidth >= 980.dp) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(DeskSectionSpacing),
+                        verticalAlignment = Alignment.Top,
+                    ) {
+                        ModelComponentsSection(
+                            form = state.form,
+                            mainModelOptions = mainModelOptions,
+                            vaeOptions = vaeOptions,
+                            textEncoderOptions = textEncoderOptions,
+                            llmOptions = llmOptions,
+                            onFormChange = onFormChange,
+                            modifier = Modifier.weight(1.15f),
+                        )
+                        DefaultGenerationParametersSection(
+                            form = state.form,
+                            samplerOptions = samplerOptions,
+                            onFormChange = onFormChange,
+                            modifier = Modifier.weight(0.85f),
+                        )
+                    }
+                } else {
+                    Column(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(DeskSectionSpacing),
+                    ) {
+                        ModelComponentsSection(
+                            form = state.form,
+                            mainModelOptions = mainModelOptions,
+                            vaeOptions = vaeOptions,
+                            textEncoderOptions = textEncoderOptions,
+                            llmOptions = llmOptions,
+                            onFormChange = onFormChange,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                        DefaultGenerationParametersSection(
+                            form = state.form,
+                            samplerOptions = samplerOptions,
+                            onFormChange = onFormChange,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
                 }
-                TwoColumnRow {
-                    ModelPathField(
-                        label = "LLM Text Encoder 3 (optional)",
-                        value = state.form.llm,
-                        options = llmOptions,
-                        onValueChange = { onFormChange(state.form.copy(llm = it)) },
-                        placeholder = "text-encoder/qwen.gguf",
-                        modifier = Modifier.weight(1f),
-                    )
-                    ModelPathField(
-                        label = "CLIP L (optional)",
-                        value = state.form.clipL,
-                        options = textEncoderOptions,
-                        onValueChange = { onFormChange(state.form.copy(clipL = it)) },
-                        placeholder = "clip/clip_l.gguf",
-                        modifier = Modifier.weight(1f),
-                    )
-                }
-                ModelPathField(
-                    label = "CLIP G (optional)",
-                    value = state.form.clipG,
-                    options = textEncoderOptions,
-                    onValueChange = { onFormChange(state.form.copy(clipG = it)) },
-                    placeholder = "clip/clip_g.gguf",
-                    modifier = Modifier.fillMaxWidth(),
-                )
-            }
-
-            EditorSection("Default Generation Parameters") {
-                PromptModeField(
-                    value = state.form.promptMode,
-                    onValueChange = { onFormChange(state.form.copy(promptMode = it)) },
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                TwoColumnRow {
-                    LabeledField(
-                        label = "Width",
-                        value = state.form.defaultWidth,
-                        onValueChange = { onFormChange(state.form.copy(defaultWidth = it)) },
-                        placeholder = "1024",
-                        modifier = Modifier.weight(1f),
-                    )
-                    LabeledField(
-                        label = "Height",
-                        value = state.form.defaultHeight,
-                        onValueChange = { onFormChange(state.form.copy(defaultHeight = it)) },
-                        placeholder = "1024",
-                        modifier = Modifier.weight(1f),
-                    )
-                }
-                TwoColumnRow {
-                    LabeledField(
-                        label = "Steps",
-                        value = state.form.defaultSteps,
-                        onValueChange = { onFormChange(state.form.copy(defaultSteps = it)) },
-                        placeholder = "4",
-                        modifier = Modifier.weight(1f),
-                    )
-                    LabeledField(
-                        label = "CFG Scale",
-                        value = state.form.defaultCfgScale,
-                        onValueChange = { onFormChange(state.form.copy(defaultCfgScale = it)) },
-                        placeholder = "1.0",
-                        modifier = Modifier.weight(1f),
-                    )
-                }
-                SamplerField(
-                    value = state.form.defaultSampler,
-                    options = samplerOptions,
-                    onValueChange = { onFormChange(state.form.copy(defaultSampler = it)) },
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                LabeledField(
-                    label = "Default Negative Prompt",
-                    value = state.form.defaultNegativePrompt,
-                    onValueChange = { onFormChange(state.form.copy(defaultNegativePrompt = it)) },
-                    placeholder = "deformed, blurry, low quality, watermark",
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = false,
-                )
             }
 
             EditorSection("Performance & Memory") {
@@ -798,6 +729,142 @@ private fun ImagePresetEditorPage(
     }
 }
 
+@Composable
+private fun ModelComponentsSection(
+    form: ImagePresetForm,
+    mainModelOptions: List<String>,
+    vaeOptions: List<String>,
+    textEncoderOptions: List<String>,
+    llmOptions: List<String>,
+    onFormChange: (ImagePresetForm) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    EditorSection("Model Components", modifier = modifier) {
+        ModelPathField(
+            label = "UNet / Main Model (required)",
+            value = form.diffusionModel,
+            options = mainModelOptions,
+            onValueChange = { onFormChange(form.copy(diffusionModel = it)) },
+            placeholder = "stable-diffusion/model.gguf or D:\\models\\model.gguf",
+            modifier = Modifier.fillMaxWidth(),
+        )
+        ModelPathField(
+            label = "Unconditional Diffusion Model (optional)",
+            value = form.uncondDiffusionModel,
+            options = mainModelOptions,
+            onValueChange = { onFormChange(form.copy(uncondDiffusionModel = it)) },
+            placeholder = "stable-diffusion/ideogram4_uncond-Q8_0.gguf",
+            modifier = Modifier.fillMaxWidth(),
+        )
+        TwoColumnRow {
+            ModelPathField(
+                label = "VAE (optional)",
+                value = form.vae,
+                options = vaeOptions,
+                onValueChange = { onFormChange(form.copy(vae = it)) },
+                placeholder = "vae/ae.safetensors",
+                modifier = Modifier.weight(1f),
+            )
+            ModelPathField(
+                label = "T5 / Text Encoder 2 (optional)",
+                value = form.t5xxl,
+                options = textEncoderOptions,
+                onValueChange = { onFormChange(form.copy(t5xxl = it)) },
+                placeholder = "text-encoder/t5.gguf",
+                modifier = Modifier.weight(1f),
+            )
+        }
+        TwoColumnRow {
+            ModelPathField(
+                label = "LLM Text Encoder 3 (optional)",
+                value = form.llm,
+                options = llmOptions,
+                onValueChange = { onFormChange(form.copy(llm = it)) },
+                placeholder = "text-encoder/qwen.gguf",
+                modifier = Modifier.weight(1f),
+            )
+            ModelPathField(
+                label = "CLIP L (optional)",
+                value = form.clipL,
+                options = textEncoderOptions,
+                onValueChange = { onFormChange(form.copy(clipL = it)) },
+                placeholder = "clip/clip_l.gguf",
+                modifier = Modifier.weight(1f),
+            )
+        }
+        ModelPathField(
+            label = "CLIP G (optional)",
+            value = form.clipG,
+            options = textEncoderOptions,
+            onValueChange = { onFormChange(form.copy(clipG = it)) },
+            placeholder = "clip/clip_g.gguf",
+            modifier = Modifier.fillMaxWidth(),
+        )
+    }
+}
+
+@Composable
+private fun DefaultGenerationParametersSection(
+    form: ImagePresetForm,
+    samplerOptions: List<String>,
+    onFormChange: (ImagePresetForm) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    EditorSection("Default Generation Parameters", modifier = modifier) {
+        PromptModeField(
+            value = form.promptMode,
+            onValueChange = { onFormChange(form.copy(promptMode = it)) },
+            modifier = Modifier.fillMaxWidth(),
+        )
+        TwoColumnRow {
+            LabeledField(
+                label = "Width",
+                value = form.defaultWidth,
+                onValueChange = { onFormChange(form.copy(defaultWidth = it)) },
+                placeholder = "1024",
+                modifier = Modifier.weight(1f),
+            )
+            LabeledField(
+                label = "Height",
+                value = form.defaultHeight,
+                onValueChange = { onFormChange(form.copy(defaultHeight = it)) },
+                placeholder = "1024",
+                modifier = Modifier.weight(1f),
+            )
+        }
+        TwoColumnRow {
+            LabeledField(
+                label = "Steps",
+                value = form.defaultSteps,
+                onValueChange = { onFormChange(form.copy(defaultSteps = it)) },
+                placeholder = "4",
+                modifier = Modifier.weight(1f),
+            )
+            LabeledField(
+                label = "CFG Scale",
+                value = form.defaultCfgScale,
+                onValueChange = { onFormChange(form.copy(defaultCfgScale = it)) },
+                placeholder = "1.0",
+                modifier = Modifier.weight(1f),
+            )
+        }
+        SamplerField(
+            value = form.defaultSampler,
+            options = samplerOptions,
+            onValueChange = { onFormChange(form.copy(defaultSampler = it)) },
+            modifier = Modifier.fillMaxWidth(),
+        )
+        LabeledField(
+            label = "Default Negative Prompt",
+            value = form.defaultNegativePrompt,
+            onValueChange = { onFormChange(form.copy(defaultNegativePrompt = it)) },
+            placeholder = "deformed, blurry, low quality, watermark",
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = false,
+        )
+    }
+}
+
 private fun modelOptionsFor(models: List<ModelSummary>, vararg types: String): List<String> {
     val acceptedTypes = types.toSet()
     return models
@@ -813,9 +880,10 @@ private fun modelOptionsFor(models: List<ModelSummary>, vararg types: String): L
 @Composable
 private fun EditorSection(
     title: String,
+    modifier: Modifier = Modifier,
     content: @Composable ColumnScope.() -> Unit,
 ) {
-    DeskSection(title = title) {
+    DeskSection(title = title, modifier = modifier) {
         content()
     }
 }
