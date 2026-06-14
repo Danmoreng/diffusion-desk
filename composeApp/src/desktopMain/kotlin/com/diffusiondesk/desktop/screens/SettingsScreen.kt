@@ -20,7 +20,6 @@ import com.diffusiondesk.desktop.core.BackendStatus
 import com.diffusiondesk.desktop.core.BackendUiState
 import com.diffusiondesk.desktop.viewmodel.SettingsUiState
 import org.jetbrains.jewel.ui.component.Checkbox
-import org.jetbrains.jewel.ui.component.DefaultButton as Button
 import org.jetbrains.jewel.ui.component.Text
 
 @Composable
@@ -252,21 +251,21 @@ private fun DesktopSettingsSection(
                 onValueChange = onListenPortChange,
                 modifier = Modifier.widthIn(min = 160.dp),
             )
-            Button(onClick = onUseCurrentRepo) {
+            DeskButton(onClick = onUseCurrentRepo) {
                 Text("Use Detected Repo")
             }
-            Button(onClick = onSaveLocal) {
+            DeskButton(onClick = onSaveLocal) {
                 Text("Save Local")
             }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(DeskLayoutGap)) {
-            Button(
+            DeskButton(
                 onClick = onApplyToBackend,
                 enabled = !state.isBusy && backendState.status == BackendStatus.Ready,
             ) {
                 Text("Apply Config")
             }
-            Button(
+            DeskButton(
                 onClick = onReloadFromBackend,
                 enabled = !state.isBusy && backendState.status == BackendStatus.Ready,
             ) {
@@ -351,7 +350,7 @@ private fun PathSettingRow(
                 onValueChange = onValueChange,
                 modifier = Modifier.weight(1f),
             )
-            Button(onClick = onSave) {
+            DeskButton(onClick = onSave) {
                 Text(buttonText)
             }
         }

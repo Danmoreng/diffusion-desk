@@ -69,7 +69,6 @@ import java.io.File
 import java.util.Locale
 import kotlin.math.roundToInt
 import org.jetbrains.jewel.ui.component.Slider
-import org.jetbrains.jewel.ui.component.DefaultButton as Button
 import org.jetbrains.jewel.ui.component.Text
 
 @Composable
@@ -102,7 +101,7 @@ fun UpscaleScreen(
                 verticalArrangement = Arrangement.spacedBy(DeskPanelSpacing),
             ) {
                 UpscaleSectionTitle("Image")
-                Button(
+                DeskButton(
                     onClick = { chooseImageFile()?.let(onSelectImage) },
                     modifier = Modifier.fillMaxWidth().height(44.dp),
                 ) {
@@ -114,7 +113,7 @@ fun UpscaleScreen(
 
                 UpscaleSectionTitle("ESRGAN model")
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Button(
+                    DeskButton(
                         onClick = onReloadModels,
                         enabled = !state.isLoadingModels && backendState.status == BackendStatus.Ready,
                         modifier = Modifier.weight(1f).height(40.dp),
@@ -149,7 +148,7 @@ fun UpscaleScreen(
                 } ?: "-"
                 UpscaleHint("Target size: $target")
 
-                Button(
+                DeskButton(
                     onClick = onUpscale,
                     enabled = state.canUpscale && backendState.status == BackendStatus.Ready,
                     modifier = Modifier.fillMaxWidth().height(52.dp),

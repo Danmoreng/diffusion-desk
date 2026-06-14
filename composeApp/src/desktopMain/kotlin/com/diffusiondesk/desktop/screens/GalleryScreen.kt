@@ -78,7 +78,6 @@ import kotlin.math.roundToInt
 import javax.imageio.ImageIO
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import org.jetbrains.jewel.ui.component.DefaultButton as Button
 import org.jetbrains.jewel.ui.component.Text
 
 private val GalleryTileDateFormatter: DateTimeFormatter =
@@ -569,7 +568,7 @@ private fun GalleryDetails(
             )
 
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                Button(
+                DeskButton(
                     onClick = { onReuseImage(image) },
                     modifier = Modifier.weight(1f),
                 ) {
@@ -582,7 +581,7 @@ private fun GalleryDetails(
                         Text("Reuse")
                     }
                 }
-                Button(
+                DeskButton(
                     onClick = { onUpscaleImage(image) },
                     modifier = Modifier.weight(1f),
                 ) {
@@ -660,7 +659,7 @@ private fun GalleryDetails(
                         placeholder = "Add tag",
                         modifier = Modifier.weight(1f),
                     )
-                    Button(
+                    DeskButton(
                         onClick = onAddKeyword,
                         enabled = keywordDraft.isNotBlank(),
                     ) {

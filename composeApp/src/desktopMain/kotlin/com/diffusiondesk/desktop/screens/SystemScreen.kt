@@ -38,7 +38,6 @@ import com.diffusiondesk.desktop.core.LlmWorkerState
 import com.diffusiondesk.desktop.core.LlmWorkerStatus
 import com.diffusiondesk.desktop.viewmodel.SettingsUiState
 import org.jetbrains.jewel.ui.component.Checkbox
-import org.jetbrains.jewel.ui.component.DefaultButton as Button
 import org.jetbrains.jewel.ui.component.Text
 
 private enum class SystemTab(val label: String) {
@@ -230,19 +229,19 @@ private fun ImageWorkerOverview(
             StatusBadge(backendState.status)
         }
         Row(horizontalArrangement = Arrangement.spacedBy(DeskLayoutGap)) {
-            Button(
+            DeskButton(
                 onClick = onStartBackend,
                 enabled = !state.isBusy && backendState.status != BackendStatus.Ready,
             ) {
                 Text("Start")
             }
-            Button(
+            DeskButton(
                 onClick = onStopBackend,
                 enabled = !state.isBusy && backendState.status != BackendStatus.Stopped,
             ) {
                 Text("Stop")
             }
-            Button(
+            DeskButton(
                 onClick = onUnloadImageModel,
                 enabled = !state.isBusy && backendState.status == BackendStatus.Ready,
             ) {
@@ -274,16 +273,16 @@ private fun LlmWorkersOverview(
 
     SystemSectionCard(title = "LLM Workers") {
         Row(horizontalArrangement = Arrangement.spacedBy(DeskLayoutGap)) {
-            Button(onClick = onReloadLlmPresets) {
+            DeskButton(onClick = onReloadLlmPresets) {
                 Text("Reload Presets")
             }
-            Button(
+            DeskButton(
                 onClick = onTagNextImage,
                 enabled = !state.isBusy && state.llmRoles.taggingPresetId.isNotBlank(),
             ) {
                 Text("Tag Next Image")
             }
-            Button(
+            DeskButton(
                 onClick = onStopAllLlmWorkers,
                 enabled = state.llmWorkers.any { it.status != LlmWorkerStatus.Stopped && it.status != LlmWorkerStatus.Error },
             ) {
@@ -343,20 +342,20 @@ private fun LlmRoleOverviewRow(
                 onValueChange = { role.onPresetChange(idForName(it)) },
                 modifier = Modifier.weight(1f),
             )
-            Button(
+            DeskButton(
                 onClick = { onLoadLlmRole(role.roleKey) },
                 enabled = !state.isBusy && role.presetId.isNotBlank() && worker?.status !in setOf(LlmWorkerStatus.Starting, LlmWorkerStatus.Loading, LlmWorkerStatus.Busy),
             ) {
                 Text("Load")
             }
-            Button(
+            DeskButton(
                 onClick = { onUnloadLlmPreset(role.presetId) },
                 enabled = worker?.status == LlmWorkerStatus.Ready,
             ) {
                 Text("Unload")
             }
             if (worker != null) {
-                Button(
+                DeskButton(
                     onClick = { onStopLlmWorker(worker.id) },
                     enabled = worker.status != LlmWorkerStatus.Stopped && worker.status != LlmWorkerStatus.Error,
                 ) {
@@ -432,13 +431,13 @@ private fun LlmWorkerDiagnosticsCard(
             StatusLine("Parsed args", worker.parsedArgs.joinToString(" "))
         }
         Row(horizontalArrangement = Arrangement.spacedBy(DeskLayoutGap)) {
-            Button(
+            DeskButton(
                 onClick = { onUnloadLlmPreset(worker.presetId) },
                 enabled = worker.status == LlmWorkerStatus.Ready,
             ) {
                 Text("Unload Model")
             }
-            Button(
+            DeskButton(
                 onClick = { onStopLlmWorker(worker.id) },
                 enabled = worker.status != LlmWorkerStatus.Stopped && worker.status != LlmWorkerStatus.Error,
             ) {
