@@ -57,7 +57,6 @@ import com.diffusiondesk.desktop.viewmodel.LibraryMode
 import com.diffusiondesk.desktop.viewmodel.LibraryUiState
 import com.diffusiondesk.desktop.viewmodel.LlmPresetForm
 import org.jetbrains.jewel.ui.component.Checkbox
-import org.jetbrains.jewel.ui.component.DefaultButton as Button
 import org.jetbrains.jewel.ui.component.Text
 
 @Composable
@@ -145,10 +144,10 @@ private fun ImagePresetLibrary(
             onShowImagePresets = onShowImagePresets,
             onShowLlmPresets = onShowLlmPresets,
             actions = {
-                Button(onClick = onReloadPresets) {
+                DeskButton(onClick = onReloadPresets) {
                     Text("Refresh")
                 }
-                Button(onClick = onCreatePreset) {
+                DeskButton(onClick = onCreatePreset) {
                     Row(horizontalArrangement = Arrangement.spacedBy(DeskCompactControlSpacing), verticalAlignment = Alignment.CenterVertically) {
                         Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(DeskIconSize))
                         Text("New Preset")
@@ -222,7 +221,7 @@ private fun EmptyLibrary(onCreatePreset: () -> Unit) {
     ) {
         Text("No image presets yet.", color = MaterialTheme.colorScheme.onSurfaceVariant)
         Spacer(Modifier.height(DeskLayoutGap))
-        Button(onClick = onCreatePreset) {
+        DeskButton(onClick = onCreatePreset) {
             Text("Create Image Preset")
         }
     }
@@ -277,7 +276,7 @@ private fun ImagePresetCard(
                         content = MaterialTheme.colorScheme.primary,
                     )
                 } else {
-                    Button(
+                    DeskButton(
                         onClick = onLoad,
                         enabled = canLoad,
                     ) {
@@ -351,10 +350,10 @@ private fun LlmPresetLibrary(
             onShowImagePresets = onShowImagePresets,
             onShowLlmPresets = onShowLlmPresets,
             actions = {
-                Button(onClick = onReloadPresets) {
+                DeskButton(onClick = onReloadPresets) {
                     Text("Refresh")
                 }
-                Button(onClick = onCreateLlmPreset) {
+                DeskButton(onClick = onCreateLlmPreset) {
                     Row(horizontalArrangement = Arrangement.spacedBy(DeskCompactControlSpacing), verticalAlignment = Alignment.CenterVertically) {
                         Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(DeskIconSize))
                         Text("New LLM")
@@ -372,7 +371,7 @@ private fun LlmPresetLibrary(
                 ) {
                     Text("No LLM presets yet.", color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Spacer(Modifier.height(DeskLayoutGap))
-                    Button(onClick = onCreateLlmPreset) {
+                    DeskButton(onClick = onCreateLlmPreset) {
                         Text("Create LLM Preset")
                     }
                 }
@@ -490,10 +489,10 @@ private fun LlmPresetEditorPage(
                 }
             }
             Row(horizontalArrangement = Arrangement.spacedBy(DeskControlSpacing)) {
-                Button(onClick = onCancelEditor) {
+                DeskButton(onClick = onCancelEditor) {
                     Text("Cancel")
                 }
-                Button(onClick = onSavePreset) {
+                DeskButton(onClick = onSavePreset) {
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
                         Icon(Icons.Default.Save, contentDescription = null, modifier = Modifier.size(16.dp))
                         Text("Save Preset")
@@ -630,10 +629,10 @@ private fun ImagePresetEditorPage(
                 }
             }
             Row(horizontalArrangement = Arrangement.spacedBy(DeskControlSpacing)) {
-                Button(onClick = onCancelEditor) {
+                DeskButton(onClick = onCancelEditor) {
                     Text("Cancel")
                 }
-                Button(onClick = onSavePreset) {
+                DeskButton(onClick = onSavePreset) {
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
                         Icon(Icons.Default.Save, contentDescription = null, modifier = Modifier.size(16.dp))
                         Text("Save Preset")

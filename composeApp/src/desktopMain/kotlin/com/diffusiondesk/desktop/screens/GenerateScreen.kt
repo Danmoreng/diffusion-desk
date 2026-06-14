@@ -126,7 +126,6 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 import kotlin.math.roundToInt
-import org.jetbrains.jewel.ui.component.DefaultButton as Button
 import org.jetbrains.jewel.ui.component.IconButton
 import org.jetbrains.jewel.ui.component.Slider
 import org.jetbrains.jewel.ui.component.Text
@@ -828,7 +827,7 @@ private fun CompositionGenerationHeader(
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         if (!hasComposition && !state.ideogram.isGeneratingJson) {
-            Button(
+            DeskButton(
                 onClick = onGenerateComposition,
                 enabled = state.prompt.isNotBlank() && !state.ideogram.isGeneratingJson,
                 modifier = Modifier.fillMaxWidth().height(40.dp),
@@ -2577,7 +2576,7 @@ internal fun ActionBar(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(DeskGroupSpacing),
             ) {
-                Button(
+                DeskButton(
                     onClick = onGenerate,
                     enabled = generateEnabled,
                     modifier = Modifier
@@ -2595,7 +2594,7 @@ internal fun ActionBar(
                     )
                 }
                 if (state.isGenerating) {
-                    Button(
+                    DeskButton(
                         onClick = onCancelGeneration,
                         enabled = !state.isCancelling,
                         modifier = Modifier.height(52.dp).width(if (compact) 132.dp else 148.dp),
@@ -2754,7 +2753,7 @@ private fun PresetActionControl(
                 )
             }
         }
-        AnchoredDropdownMenu(
+        DeskAnchoredDropdownMenu(
             expanded = expanded,
             onDismissRequest = { expanded = false },
             options = state.presets.map { it.name },
@@ -3068,66 +3067,20 @@ private fun PromptHistoryButton(
 }
 
 @Composable
-private fun CompactDropdownField(
-    label: String,
-    value: String,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    CompactFieldFrame(
-        label = label,
-        modifier = modifier.clickable(onClick = onClick),
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                text = value,
-                modifier = Modifier.weight(1f),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurface,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Icon(
-                imageVector = Icons.Default.ArrowDropDown,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(20.dp),
-            )
-        }
-    }
-}
-
-@Composable
 private fun SamplerMenu(
     value: String,
     options: List<String>,
     onChange: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    var expanded by remember { mutableStateOf(false) }
-    var anchorSize by remember { mutableStateOf(IntSize.Zero) }
-    Box(modifier = modifier.onGloballyPositioned { anchorSize = it.size }) {
-        CompactDropdownField(
-            label = "Sampler",
-            value = value,
-            onClick = { expanded = true },
-            modifier = Modifier.fillMaxWidth(),
-        )
-        AnchoredDropdownMenu(
-            expanded = expanded,
-            onDismissRequest = { expanded = false },
-            options = options,
-            anchorSize = anchorSize,
-            minWidth = 180.dp,
-            onSelect = { option ->
-                onChange(option)
-                expanded = false
-            },
-        )
-    }
+    DeskCompactDropdownField(
+        label = "Sampler",
+        value = value,
+        options = options,
+        onValueChange = onChange,
+        modifier = modifier,
+        minMenuWidth = 180.dp,
+    )
 }
 
 @Composable
@@ -3149,79 +3102,17 @@ private fun AspectRatioMenu(
         "10:16" to (10 to 16),
         "21:9" to (21 to 9),
     )
-    var expanded by remember { mutableStateOf(false) }
-    var anchorSize by remember { mutableStateOf(IntSize.Zero) }
-    Box(modifier = modifier.onGloballyPositioned { anchorSize = it.size }) {
-        CompactDropdownField(
-            label = "AR",
-            value = aspectRatioLabel(width, height),
-            onClick = { expanded = true },
-            modifier = Modifier.fillMaxWidth(),
-        )
-        AnchoredDropdownMenu(
-            expanded = expanded,
-            onDismissRequest = { expanded = false },
-            options = ratios.map { it.first },
-            anchorSize = anchorSize,
-            minWidth = 120.dp,
-            onSelect = { selected ->
-                val ratio = ratios.first { it.first == selected }.second
-                onApplyAspectRatio(ratio.first, ratio.second)
-                expanded = false
-            },
-        )
-    }
-}
-
-@Composable
-private fun AnchoredDropdownMenu(
-    expanded: Boolean,
-    onDismissRequest: () -> Unit,
-    options: List<String>,
-    anchorSize: IntSize,
-    minWidth: Dp,
-    onSelect: (String) -> Unit,
-) {
-    if (!expanded) return
-    val density = LocalDensity.current
-    val menuWidth = with(density) {
-        if (anchorSize.width > 0) anchorSize.width.toDp() else minWidth
-    }
-    val gapPx = with(density) { 4.dp.roundToPx() }
-
-    Popup(
-        popupPositionProvider = DropdownPositionProvider(gapPx),
-        onDismissRequest = onDismissRequest,
-        properties = PopupProperties(focusable = true),
-    ) {
-        Surface(
-            modifier = Modifier.width(menuWidth),
-            shape = RoundedCornerShape(6.dp),
-            color = MaterialTheme.colorScheme.surface,
-            shadowElevation = 8.dp,
-        ) {
-            Column(
-                modifier = Modifier.padding(vertical = 4.dp),
-            ) {
-                options.forEach { option ->
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(32.dp)
-                            .clickable { onSelect(option) }
-                            .padding(horizontal = 12.dp),
-                        contentAlignment = Alignment.CenterStart,
-                    ) {
-                        Text(
-                            text = option,
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurface,
-                        )
-                    }
-                }
-            }
-        }
-    }
+    DeskCompactDropdownField(
+        label = "AR",
+        value = aspectRatioLabel(width, height),
+        options = ratios.map { it.first },
+        onValueChange = { selected ->
+            val ratio = ratios.first { it.first == selected }.second
+            onApplyAspectRatio(ratio.first, ratio.second)
+        },
+        modifier = modifier,
+        minMenuWidth = 120.dp,
+    )
 }
 
 private class DropdownPositionProvider(

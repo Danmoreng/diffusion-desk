@@ -17,11 +17,11 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDropDown
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
@@ -50,22 +50,27 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupPositionProvider
 import androidx.compose.ui.window.PopupProperties
+import org.jetbrains.jewel.ui.component.CircularProgressIndicator
+import org.jetbrains.jewel.ui.component.DefaultButton
+import org.jetbrains.jewel.ui.component.IconButton
+import org.jetbrains.jewel.ui.component.OutlinedButton
+import org.jetbrains.jewel.ui.component.OutlinedSlimButton
 import org.jetbrains.jewel.ui.component.Text
 
-internal val DeskLayoutGap = 8.dp
+internal val DeskLayoutGap = 6.dp
 internal val DeskScreenPadding = DeskLayoutGap
-internal val DeskPanelPadding = 14.dp
+internal val DeskPanelPadding = 12.dp
 internal val DeskPanelSpacing = DeskLayoutGap
 internal val DeskSectionSpacing = DeskLayoutGap
 internal val DeskControlSpacing = DeskLayoutGap
-internal val DeskCompactControlSpacing = 6.dp
+internal val DeskCompactControlSpacing = 4.dp
 internal val DeskGroupSpacing = DeskLayoutGap
 internal val DeskTabSpacing = DeskLayoutGap
 internal val DeskTabHorizontalPadding = 10.dp
 internal val DeskIconSize = 16.dp
-internal val DeskPanelCornerRadius = 8.dp
+internal val DeskPanelCornerRadius = 10.dp
 internal val DeskControlCornerRadius = 6.dp
-internal const val DeskSubtleSurfaceAlpha = 0.45f
+internal const val DeskSubtleSurfaceAlpha = 0.52f
 internal const val DeskSelectedContainerAlpha = 0.16f
 
 internal data class DeskTabItem(
@@ -76,8 +81,49 @@ internal data class DeskTabItem(
 )
 
 @Composable
-internal fun DeskPanel(
+internal fun DeskButton(
+    onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    content: @Composable () -> Unit,
+) {
+    DefaultButton(
+        onClick = onClick,
+        modifier = modifier,
+        enabled = enabled,
+        content = content,
+    )
+}
+
+@Composable
+internal fun DeskOutlinedButton(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    slim: Boolean = false,
+    content: @Composable () -> Unit,
+) {
+    if (slim) {
+        OutlinedSlimButton(
+            onClick = onClick,
+            modifier = modifier,
+            enabled = enabled,
+            content = content,
+        )
+    } else {
+        OutlinedButton(
+            onClick = onClick,
+            modifier = modifier,
+            enabled = enabled,
+            content = content,
+        )
+    }
+}
+
+@Composable
+internal fun DeskIsland(
+    modifier: Modifier = Modifier,
+    padding: Dp = DeskPanelPadding,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     val shape = RoundedCornerShape(DeskPanelCornerRadius)
@@ -85,8 +131,19 @@ internal fun DeskPanel(
         modifier = modifier
             .clip(shape)
             .background(MaterialTheme.colorScheme.surface)
-            .padding(DeskPanelPadding),
+            .padding(padding),
         verticalArrangement = Arrangement.spacedBy(DeskPanelSpacing),
+        content = content,
+    )
+}
+
+@Composable
+internal fun DeskPanel(
+    modifier: Modifier = Modifier,
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    DeskIsland(
+        modifier = modifier,
         content = content,
     )
 }
@@ -105,7 +162,6 @@ internal fun DeskTabHeader(
             .fillMaxWidth()
             .clip(shape)
             .background(MaterialTheme.colorScheme.surface)
-            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, shape)
             .padding(horizontal = horizontalPadding, vertical = verticalPadding),
         horizontalArrangement = Arrangement.spacedBy(DeskTabSpacing),
         verticalAlignment = Alignment.CenterVertically,
@@ -250,6 +306,59 @@ internal fun DeskDropdownField(
 }
 
 @Composable
+internal fun DeskCompactDropdownField(
+    label: String,
+    value: String,
+    options: List<String>,
+    onValueChange: (String) -> Unit,
+    modifier: Modifier = Modifier,
+    minMenuWidth: Dp = 160.dp,
+) {
+    var expanded by remember { mutableStateOf(false) }
+    var anchorSize by remember { mutableStateOf(IntSize.Zero) }
+
+    Box(
+        modifier = modifier.onGloballyPositioned { anchorSize = it.size },
+    ) {
+        DeskInlineInputFrame(
+            label = label,
+            modifier = Modifier.clickable(enabled = options.isNotEmpty()) { expanded = true },
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = value,
+                    modifier = Modifier.weight(1f),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Icon(
+                    imageVector = Icons.Default.ArrowDropDown,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(18.dp),
+                )
+            }
+        }
+        DeskAnchoredDropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false },
+            options = options,
+            anchorSize = anchorSize,
+            minWidth = minMenuWidth,
+            onSelect = { option ->
+                onValueChange(option)
+                expanded = false
+            },
+        )
+    }
+}
+
+@Composable
 internal fun DeskSearchableTextDropdownField(
     label: String,
     value: String,
@@ -356,27 +465,22 @@ internal fun DeskIconButton(
     loading: Boolean = false,
     tooltip: String = contentDescription,
 ) {
-    val shape = RoundedCornerShape(5.dp)
     val tint = when {
         !enabled -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f)
         destructive -> MaterialTheme.colorScheme.error
         else -> MaterialTheme.colorScheme.onSurfaceVariant
     }
     DeskTooltip(text = tooltip) {
-        Box(
+        IconButton(
+            onClick = onClick,
             modifier = modifier
                 .size(32.dp)
-                .clip(shape)
-                .border(1.dp, MaterialTheme.colorScheme.outlineVariant, shape)
-                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = if (enabled) 0.7f else 0.35f))
-                .then(if (enabled && !loading) Modifier.clickable(onClick = onClick) else Modifier),
-            contentAlignment = Alignment.Center,
+                .clip(RoundedCornerShape(5.dp)),
+            enabled = enabled && !loading,
         ) {
             if (loading) {
                 CircularProgressIndicator(
                     modifier = Modifier.size(16.dp),
-                    strokeWidth = 2.dp,
-                    color = tint,
                 )
             } else {
                 Icon(
@@ -468,6 +572,49 @@ private fun DeskInputFrame(
 }
 
 @Composable
+internal fun DeskInlineInputFrame(
+    label: String,
+    modifier: Modifier = Modifier,
+    labelMinWidth: Dp = 50.dp,
+    content: @Composable () -> Unit,
+) {
+    val shape = RoundedCornerShape(DeskControlCornerRadius)
+    Row(
+        modifier = modifier
+            .height(36.dp)
+            .clip(shape)
+            .background(MaterialTheme.colorScheme.surface)
+            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, shape),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxHeight()
+                .widthIn(min = labelMinWidth)
+                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = DeskSubtleSurfaceAlpha)),
+            contentAlignment = Alignment.CenterStart,
+        ) {
+            Text(
+                text = label,
+                modifier = Modifier.padding(start = 9.dp, end = 9.dp),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        Box(
+            modifier = Modifier
+                .weight(1f)
+                .padding(start = 9.dp, end = 7.dp),
+            contentAlignment = Alignment.CenterStart,
+        ) {
+            content()
+        }
+    }
+}
+
+@Composable
 private fun DeskDropdownPopup(
     expanded: Boolean,
     anchorSize: IntSize,
@@ -495,6 +642,59 @@ private fun DeskDropdownPopup(
                 .clip(RoundedCornerShape(6.dp))
                 .background(MaterialTheme.colorScheme.surface)
                 .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(6.dp))
+                .padding(vertical = 4.dp),
+        ) {
+            options.forEach { option ->
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(30.dp)
+                        .clickable { onSelect(option) }
+                        .padding(horizontal = 10.dp),
+                    contentAlignment = Alignment.CenterStart,
+                ) {
+                    Text(
+                        text = option,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+internal fun DeskAnchoredDropdownMenu(
+    expanded: Boolean,
+    onDismissRequest: () -> Unit,
+    options: List<String>,
+    anchorSize: IntSize,
+    minWidth: Dp,
+    focusable: Boolean = true,
+    onSelect: (String) -> Unit,
+) {
+    if (!expanded) return
+    val menuWidth = if (anchorSize.width > 0) {
+        with(androidx.compose.ui.platform.LocalDensity.current) { anchorSize.width.toDp() }
+    } else {
+        minWidth
+    }
+    val gapPx = with(androidx.compose.ui.platform.LocalDensity.current) { 4.dp.roundToPx() }
+
+    Popup(
+        popupPositionProvider = DeskDropdownPositionProvider(gapPx),
+        onDismissRequest = onDismissRequest,
+        properties = PopupProperties(focusable = focusable),
+    ) {
+        Column(
+            modifier = Modifier
+                .width(menuWidth)
+                .clip(RoundedCornerShape(DeskControlCornerRadius))
+                .background(MaterialTheme.colorScheme.surface)
+                .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(DeskControlCornerRadius))
                 .padding(vertical = 4.dp),
         ) {
             options.forEach { option ->
