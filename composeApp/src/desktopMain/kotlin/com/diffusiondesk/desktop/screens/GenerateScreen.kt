@@ -89,6 +89,7 @@ import androidx.compose.ui.input.pointer.PointerIcon
 import androidx.compose.ui.input.pointer.pointerHoverIcon
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.PointerEventType
+import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.onPointerEvent
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -105,6 +106,7 @@ import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupPositionProvider
 import androidx.compose.ui.window.PopupProperties
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.zIndex
 import com.diffusiondesk.desktop.core.BackendStatus
 import com.diffusiondesk.desktop.core.BackendUiState
 import com.diffusiondesk.desktop.core.GeneratedImage
@@ -725,6 +727,7 @@ private fun PromptTabContent(
                         )
                         IdeogramElementEditor(
                             elements = ideogramElementPreviews(state.ideogram.jsonPrompt),
+                            elementIds = state.compositionElementIds,
                             selectedIndex = state.selectedCompositionElementIndex,
                             activeImproveAction = state.activeCompositionImproveAction,
                             onElementSelected = onCompositionElementSelected,
@@ -1245,6 +1248,7 @@ private fun CompositionEditField(
 @Composable
 private fun IdeogramElementEditor(
     elements: List<IdeogramCompositionElement>,
+    elementIds: List<String>,
     selectedIndex: Int,
     activeImproveAction: String?,
     onElementSelected: (Int) -> Unit,
@@ -1273,6 +1277,7 @@ private fun IdeogramElementEditor(
             textValue = element.text.orEmpty(),
             desc = element.description,
             bbox = element.bbox,
+            elementColor = compositionElementColor(index, elementIds.getOrNull(index)),
             colors = element.colorPalette,
             selected = index == selectedIndex,
             onClick = { onElementSelected(index) },
@@ -1301,6 +1306,7 @@ private fun IdeogramElementEditor(
 @Composable
 private fun IdeogramCompositionCanvas(
     elements: List<IdeogramCompositionElement>,
+    elementIds: List<String>,
     width: Int,
     height: Int,
     selectedIndex: Int,
@@ -1338,6 +1344,54 @@ private fun IdeogramCompositionCanvas(
         val canvasHeightPx = fittedCanvas.height.coerceAtLeast(1f)
         val canvasWidth = with(density) { canvasWidthPx.toDp() }
         val canvasHeight = with(density) { canvasHeightPx.toDp() }
+        val canvasElements = elements.mapIndexedNotNull { index, element ->
+            val rectPx = ideogramBboxToCanvasRect(element.bbox, canvasWidthPx, canvasHeightPx) ?: return@mapIndexedNotNull null
+            val rectDp = ideogramBboxToCanvasRect(element.bbox, canvasWidth.value, canvasHeight.value) ?: return@mapIndexedNotNull null
+            CompositionCanvasElement(index, element, rectPx, rectDp, compositionElementColor(index, elementIds.getOrNull(index)))
+        }
+        val handleHitSizePx = with(density) { 32.dp.toPx() }
+        val repeatClickDistancePx = with(density) { 8.dp.toPx() }
+        var lastSelectionClick by remember { mutableStateOf<CompositionSelectionClick?>(null) }
+        fun selectedResizeHandleContains(offset: Offset): Boolean {
+            val selected = canvasElements.firstOrNull { it.index == selectedIndex } ?: return false
+            if (!selected.rectPx.contains(offset)) return false
+            val localOffset = Offset(
+                x = offset.x - selected.rectPx.left,
+                y = offset.y - selected.rectPx.top,
+            )
+            return isResizeHandleHit(localOffset, selected.rectPx.width, selected.rectPx.height, handleHitSizePx)
+        }
+        fun selectElementAt(offset: Offset): Int? {
+            if (selectedResizeHandleContains(offset)) {
+                lastSelectionClick = null
+                return null
+            }
+            val hits = canvasElements
+                .filter { it.rectPx.contains(offset) }
+                .sortedWith(
+                    compareBy<CompositionCanvasElement> { it.rectPx.width * it.rectPx.height }
+                        .thenBy { it.index },
+                )
+            if (hits.isEmpty()) {
+                lastSelectionClick = null
+                return null
+            }
+
+            val hitIndexes = hits.map { it.index }
+            val lastClick = lastSelectionClick
+            val isRepeatClick = lastClick != null &&
+                lastClick.hitIndexes == hitIndexes &&
+                lastClick.offset.distanceSquaredTo(offset) <= repeatClickDistancePx * repeatClickDistancePx
+
+            val nextIndex = if (isRepeatClick) {
+                val currentHitPosition = hitIndexes.indexOf(selectedIndex)
+                if (currentHitPosition >= 0) hitIndexes[(currentHitPosition + 1) % hitIndexes.size] else hitIndexes.first()
+            } else {
+                hitIndexes.first()
+            }
+            lastSelectionClick = CompositionSelectionClick(offset, hitIndexes)
+            return nextIndex
+        }
 
         ContextMenuArea(
             items = {
@@ -1359,7 +1413,33 @@ private fun IdeogramCompositionCanvas(
                     .height(canvasHeight)
                     .clip(RoundedCornerShape(8.dp))
                     .background(MaterialTheme.colorScheme.background.copy(alpha = 0.8f))
-                    .border(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                    .border(1.dp, MaterialTheme.colorScheme.outlineVariant)
+                    .pointerInput(canvasElements, selectedIndex, image == null || showOverlay) {
+                        if (image == null || showOverlay) {
+                            awaitPointerEventScope {
+                                var trackingClick = false
+                                var start = Offset.Zero
+                                var isDrag = false
+                                while (true) {
+                                    val event = awaitPointerEvent(PointerEventPass.Initial)
+                                    val change = event.changes.firstOrNull() ?: continue
+                                    if (!trackingClick && change.pressed && !change.previousPressed) {
+                                        trackingClick = true
+                                        start = change.position
+                                        isDrag = false
+                                    } else if (trackingClick) {
+                                        if (change.position.distanceSquaredTo(start) > viewConfiguration.touchSlop * viewConfiguration.touchSlop) {
+                                            isDrag = true
+                                        }
+                                        if (!change.pressed) {
+                                            if (!isDrag) selectElementAt(start)?.let(latestOnElementSelected)
+                                            trackingClick = false
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
             ) {
                 if (image != null) {
                     Image(
@@ -1370,48 +1450,56 @@ private fun IdeogramCompositionCanvas(
                     )
                 }
 
-                if (image == null || showOverlay) elements.forEachIndexed { index, element ->
-                    val elementRect = ideogramBboxToCanvasRect(element.bbox, canvasWidth.value, canvasHeight.value)
-                    if (elementRect != null) {
+                if (image == null || showOverlay) {
+                    canvasElements.sortedBy { if (it.index == selectedIndex) 1 else 0 }.forEach { canvasElement ->
+                        val index = canvasElement.index
+                        val element = canvasElement.element
+                        val elementRect = canvasElement.rectDp
                         val top = elementRect.top.dp
                         val left = elementRect.left.dp
                         val bottom = elementRect.bottom.dp
                         val right = elementRect.right.dp
-                        val boxColor = if (element.type == "text") MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.primary
+                        val boxColor = canvasElement.color
                         val isSelected = index == selectedIndex
                         Box(
                             modifier = Modifier
                                 .offset(left, top)
                                 .width((right - left).coerceAtLeast(8.dp))
                                 .height((bottom - top).coerceAtLeast(8.dp))
-                                .border(if (isSelected) 3.dp else 2.dp, boxColor, RoundedCornerShape(2.dp))
-                                .background(boxColor.copy(alpha = 0.10f))
-                                .clickable { latestOnElementSelected(index) }
-                                .pointerInput(index, canvasWidthPx, canvasHeightPx) {
-                                    var startBbox = emptyList<Int>()
-                                    var dragX = 0f
-                                    var dragY = 0f
-                                    detectDragGestures(
-                                        onDragStart = {
-                                            onBboxEditStart()
-                                            latestOnElementSelected(index)
-                                            startBbox = latestElements.getOrNull(index)?.bbox.orEmpty()
-                                            dragX = 0f
-                                            dragY = 0f
-                                        },
-                                        onDrag = { _, dragAmount ->
-                                            dragX += dragAmount.x
-                                            dragY += dragAmount.y
-                                            val deltaX = canvasDeltaToIdeogram(dragX, canvasWidthPx)
-                                            val deltaY = canvasDeltaToIdeogram(dragY, canvasHeightPx)
-                                            moveCompositionBbox(startBbox, deltaX, deltaY)?.let { nextBbox ->
-                                                latestOnElementBboxChange(index, nextBbox)
-                                            }
-                                        },
-                                        onDragEnd = onBboxEditEnd,
-                                        onDragCancel = onBboxEditCancel,
-                                    )
-                                }
+                                .zIndex(if (isSelected) 2f else 1f)
+                                .border(if (isSelected) 4.dp else 2.dp, boxColor, RoundedCornerShape(2.dp))
+                                .background(boxColor.copy(alpha = if (isSelected) 0.16f else 0.08f))
+                                .then(
+                                    if (isSelected) {
+                                        Modifier.pointerInput(index, canvasWidthPx, canvasHeightPx) {
+                                            var startBbox = emptyList<Int>()
+                                            var dragX = 0f
+                                            var dragY = 0f
+                                            detectDragGestures(
+                                                onDragStart = {
+                                                    onBboxEditStart()
+                                                    latestOnElementSelected(index)
+                                                    startBbox = latestElements.getOrNull(index)?.bbox.orEmpty()
+                                                    dragX = 0f
+                                                    dragY = 0f
+                                                },
+                                                onDrag = { _, dragAmount ->
+                                                    dragX += dragAmount.x
+                                                    dragY += dragAmount.y
+                                                    val deltaX = canvasDeltaToIdeogram(dragX, canvasWidthPx)
+                                                    val deltaY = canvasDeltaToIdeogram(dragY, canvasHeightPx)
+                                                    moveCompositionBbox(startBbox, deltaX, deltaY)?.let { nextBbox ->
+                                                        latestOnElementBboxChange(index, nextBbox)
+                                                    }
+                                                },
+                                                onDragEnd = onBboxEditEnd,
+                                                onDragCancel = onBboxEditCancel,
+                                            )
+                                        }
+                                    } else {
+                                        Modifier
+                                    },
+                                )
                                 .padding(4.dp),
                         ) {
                             Text(
@@ -1424,6 +1512,7 @@ private fun IdeogramCompositionCanvas(
                             if (isSelected) {
                                 CompositionResizeHandle.values().forEach { handle ->
                                     CompositionResizeHandleBox(
+                                        ownerKey = index,
                                         handle = handle,
                                         color = boxColor,
                                         startBbox = { latestElements.getOrNull(index)?.bbox.orEmpty() },
@@ -1449,8 +1538,58 @@ private fun IdeogramCompositionCanvas(
     }
 }
 
+private data class CompositionCanvasElement(
+    val index: Int,
+    val element: IdeogramCompositionElement,
+    val rectPx: CanvasRect,
+    val rectDp: CanvasRect,
+    val color: Color,
+)
+
+private data class CompositionSelectionClick(
+    val offset: Offset,
+    val hitIndexes: List<Int>,
+)
+
+private fun CanvasRect.contains(offset: Offset): Boolean =
+    offset.x >= left && offset.x <= right && offset.y >= top && offset.y <= bottom
+
+private fun Offset.distanceSquaredTo(other: Offset): Float {
+    val dx = x - other.x
+    val dy = y - other.y
+    return dx * dx + dy * dy
+}
+
+private fun isResizeHandleHit(offset: Offset, width: Float, height: Float, handleSize: Float): Boolean {
+    val nearLeft = offset.x <= handleSize
+    val nearRight = offset.x >= width - handleSize
+    val nearTop = offset.y <= handleSize
+    val nearBottom = offset.y >= height - handleSize
+    return (nearLeft || nearRight) && (nearTop || nearBottom)
+}
+
+private fun compositionElementColor(index: Int, elementId: String?): Color {
+    val colors = listOf(
+        Color(0xFF2D7FF9),
+        Color(0xFFE05D5D),
+        Color(0xFF2EA36B),
+        Color(0xFFB36BDB),
+        Color(0xFFD89025),
+        Color(0xFF0097A7),
+        Color(0xFFC04D8B),
+        Color(0xFF6A7FDB),
+        Color(0xFF8B8F22),
+        Color(0xFFDD6F2A),
+    )
+    val colorKey = elementId?.hashCode() ?: index
+    return colors[colorKey.floorMod(colors.size)]
+}
+
+private fun Int.floorMod(modulus: Int): Int = ((this % modulus) + modulus) % modulus
+
 @Composable
 private fun BoxScope.CompositionResizeHandleBox(
+    ownerKey: Int,
     handle: CompositionResizeHandle,
     color: Color,
     startBbox: () -> List<Int>,
@@ -1473,7 +1612,7 @@ private fun BoxScope.CompositionResizeHandleBox(
             .clip(RoundedCornerShape(2.dp))
             .background(MaterialTheme.colorScheme.surface)
             .border(2.dp, color, RoundedCornerShape(2.dp))
-            .pointerInput(handle) {
+            .pointerInput(ownerKey, handle) {
                 var capturedBbox = emptyList<Int>()
                 var dragX = 0f
                 var dragY = 0f
@@ -1505,6 +1644,7 @@ private fun ElementPreviewRow(
     textValue: String,
     desc: String,
     bbox: List<Int>,
+    elementColor: Color,
     colors: List<String>,
     selected: Boolean,
     onClick: () -> Unit,
@@ -1541,8 +1681,8 @@ private fun ElementPreviewRow(
             .clip(shape)
             .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = DeskSubtleSurfaceAlpha))
             .border(
-                1.dp,
-                if (selected) MaterialTheme.colorScheme.primary else Color.Transparent,
+                if (selected) 2.dp else 1.dp,
+                if (selected) elementColor else elementColor.copy(alpha = 0.55f),
                 shape,
             )
             .padding(horizontal = DeskControlSpacing, vertical = 6.dp),
@@ -1566,11 +1706,18 @@ private fun ElementPreviewRow(
                 modifier = Modifier.size(17.dp),
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+            Box(
+                modifier = Modifier
+                    .size(12.dp)
+                    .clip(RoundedCornerShape(3.dp))
+                    .background(elementColor.copy(alpha = if (selected) 0.95f else 0.75f))
+                    .border(1.dp, MaterialTheme.colorScheme.surface.copy(alpha = 0.7f), RoundedCornerShape(3.dp)),
+            )
             Text(
                 text = "$index / $type",
                 style = MaterialTheme.typography.labelMedium,
                 fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.primary,
+                color = if (selected) elementColor else MaterialTheme.colorScheme.onSurface,
             )
             Text(
                 text = if (type == "text" && textValue.isNotBlank()) "“$textValue”" else desc,
@@ -2402,6 +2549,7 @@ private fun CompositionPreviewHost(
         } else {
             IdeogramCompositionCanvas(
                 elements = elements,
+                elementIds = state.compositionElementIds,
                 width = state.width.toIntOrNull() ?: 1024,
                 height = state.height.toIntOrNull() ?: 1024,
                 selectedIndex = state.selectedCompositionElementIndex,

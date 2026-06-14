@@ -384,6 +384,57 @@ private fun normalizeIdeogramBackground(background: JsonElement?): String? {
 internal fun ideogramElementPreviews(value: String): List<IdeogramCompositionElement> =
     parseIdeogramCompositionDocument(value).getOrNull()?.elements.orEmpty()
 
+private fun ensureCompositionElementIds(value: String, currentIds: List<String>): List<String> {
+    val count = ideogramElementPreviews(value).size
+    return currentIds.take(count) + List((count - currentIds.size).coerceAtLeast(0)) { newCompositionElementId() }
+}
+
+private fun reconcileCompositionElementIds(
+    previousJson: String,
+    nextJson: String,
+    previousIds: List<String>,
+): List<String> {
+    val previousElements = ideogramElementPreviews(previousJson)
+    val nextElements = ideogramElementPreviews(nextJson)
+    if (nextElements.isEmpty()) return emptyList()
+    if (previousElements.isEmpty()) return ensureCompositionElementIds(nextJson, previousIds)
+
+    val idsBySignature = linkedMapOf<String, ArrayDeque<String>>()
+    previousElements.forEachIndexed { index, element ->
+        idsBySignature.getOrPut(element.identitySignature()) { ArrayDeque() }
+            .add(previousIds.getOrNull(index) ?: newCompositionElementId())
+    }
+
+    val usedIds = mutableSetOf<String>()
+    return nextElements.mapIndexed { index, element ->
+        val matchedId = idsBySignature[element.identitySignature()]?.firstUnusedOrNull(usedIds)
+        val indexedId = previousIds.getOrNull(index)?.takeUnless { it in usedIds }
+        (matchedId ?: indexedId ?: newCompositionElementId()).also { usedIds += it }
+    }
+}
+
+private fun IdeogramCompositionElement.identitySignature(): String =
+    listOf(type, text.orEmpty(), description, bbox.joinToString(","), colorPalette.joinToString(",")).joinToString("|")
+
+private fun ArrayDeque<String>.firstUnusedOrNull(usedIds: Set<String>): String? {
+    while (isNotEmpty()) {
+        val candidate = removeFirst()
+        if (candidate !in usedIds) return candidate
+    }
+    return null
+}
+
+private fun newCompositionElementId(): String = "element-${UUID.randomUUID()}"
+
+private fun GenerationUiState.selectCompositionIndex(index: Int): GenerationUiState {
+    val nextIds = ensureCompositionElementIds(ideogram.jsonPrompt, compositionElementIds)
+    val lastIndex = ideogramElementPreviews(ideogram.jsonPrompt).lastIndex
+    return copy(
+        compositionElementIds = nextIds,
+        selectedCompositionElementId = nextIds.getOrNull(index.coerceIn(0, lastIndex.coerceAtLeast(0))),
+    )
+}
+
 private fun validatePalette(element: JsonElement, maxColors: Int, label: String): String? {
     val values = element.jsonArrayOrNull()
         ?: return "$label must be an array."
@@ -492,10 +543,17 @@ data class GenerationUiState(
     val activeCompositionImproveAction: String? = null,
     val useImageAsCompositionReference: Boolean = true,
     val ideogram: IdeogramUiState = IdeogramUiState(),
-    val selectedCompositionElementIndex: Int = 0,
+    val compositionElementIds: List<String> = emptyList(),
+    val selectedCompositionElementId: String? = null,
     val message: String = "",
     val error: String? = null,
 ) {
+    val selectedCompositionElementIndex: Int
+        get() = selectedCompositionElementId
+            ?.let { compositionElementIds.indexOf(it) }
+            ?.takeIf { it >= 0 }
+            ?: 0
+
     val queueCount: Int get() = history.count { it.status == GenerationStatus.Pending }
     val canGoBack: Boolean get() = historyIndex > 0
     val canGoForward: Boolean get() = historyIndex >= 0 && historyIndex < history.lastIndex
@@ -536,7 +594,8 @@ internal fun GenerationUiState.startNewCompositionDraft(): GenerationUiState = c
     negativePrompt = "",
     activeCompositionImproveAction = null,
     ideogram = IdeogramUiState(selectedTab = IdeogramStructureTab.Preview),
-    selectedCompositionElementIndex = 0,
+    compositionElementIds = emptyList(),
+    selectedCompositionElementId = null,
 )
 
 private fun canonicalIdeogramPromptOrNull(value: String): String? =
@@ -683,7 +742,11 @@ class GenerationViewModel(
     fun updateSampler(value: String) = update { copy(sampler = value) }
     fun selectCompositionElement(index: Int) = update {
         val lastIndex = ideogramElementPreviews(ideogram.jsonPrompt).lastIndex
-        copy(selectedCompositionElementIndex = index.coerceIn(0, lastIndex.coerceAtLeast(0)))
+        val nextIds = ensureCompositionElementIds(ideogram.jsonPrompt, compositionElementIds)
+        copy(
+            compositionElementIds = nextIds,
+            selectedCompositionElementId = nextIds.getOrNull(index.coerceIn(0, lastIndex.coerceAtLeast(0))),
+        )
     }
     fun updateLeftPanelWidth(value: Int) = update { copy(leftPanelWidthDp = value.coerceIn(MIN_LEFT_PANEL_WIDTH_DP, MAX_LEFT_PANEL_WIDTH_DP)) }
     fun toggleEndless() = update { copy(isEndless = !isEndless) }
@@ -693,12 +756,15 @@ class GenerationViewModel(
 
     fun updateIdeogramJsonPrompt(value: String) = update {
         val validation = validateIdeogramJson(value)
+        val nextIds = reconcileCompositionElementIds(ideogram.jsonPrompt, value, compositionElementIds)
         copy(
             ideogram = ideogram.copy(
                 jsonPrompt = value,
                 jsonStatus = validation.first,
                 jsonError = validation.second,
             ),
+            compositionElementIds = nextIds,
+            selectedCompositionElementId = selectedCompositionElementId?.takeIf { it in nextIds } ?: nextIds.firstOrNull(),
         )
     }
 
@@ -761,8 +827,7 @@ class GenerationViewModel(
         val value = compositionEditStartJson ?: return
         compositionEditStartJson = null
         update {
-            val validation = validateIdeogramJson(value)
-            copy(ideogram = ideogram.copy(jsonPrompt = value, jsonStatus = validation.first, jsonError = validation.second))
+            updateCompositionJson(value)
         }
     }
 
@@ -838,10 +903,10 @@ class GenerationViewModel(
         when (mutation) {
             is CompositionMutation.AddElement,
             is CompositionMutation.AddGeneratedElement,
-            is CompositionMutation.AddElementAndHighLevel -> nextState.copy(selectedCompositionElementIndex = changed.elements.lastIndex.coerceAtLeast(0))
+            is CompositionMutation.AddElementAndHighLevel -> nextState.selectCompositionIndex(changed.elements.lastIndex.coerceAtLeast(0))
             is CompositionMutation.RemoveElement,
-            is CompositionMutation.RemoveElementAndUpdateHighLevel -> nextState.copy(
-                selectedCompositionElementIndex = selectedCompositionElementIndex.coerceIn(0, changed.elements.lastIndex.coerceAtLeast(0)),
+            is CompositionMutation.RemoveElementAndUpdateHighLevel -> nextState.selectCompositionIndex(
+                selectedCompositionElementIndex.coerceIn(0, changed.elements.lastIndex.coerceAtLeast(0)),
             )
             else -> nextState
         }
@@ -849,12 +914,18 @@ class GenerationViewModel(
 
     private fun GenerationUiState.updateCompositionJson(value: String): GenerationUiState {
         val validation = validateIdeogramJson(value)
-        return copy(ideogram = ideogram.copy(jsonPrompt = value, jsonStatus = validation.first, jsonError = validation.second))
+        val nextIds = reconcileCompositionElementIds(ideogram.jsonPrompt, value, compositionElementIds)
+        return copy(
+            ideogram = ideogram.copy(jsonPrompt = value, jsonStatus = validation.first, jsonError = validation.second),
+            compositionElementIds = nextIds,
+            selectedCompositionElementId = selectedCompositionElementId?.takeIf { it in nextIds } ?: nextIds.firstOrNull(),
+        )
     }
 
     private fun GenerationUiState.commitCompositionJson(value: String): GenerationUiState {
         val validation = validateIdeogramJson(value)
         val history = commitCompositionHistory(ideogram.history, ideogram.historyIndex, value)
+        val nextIds = reconcileCompositionElementIds(ideogram.jsonPrompt, value, compositionElementIds)
         return copy(
             ideogram = ideogram.copy(
                 jsonPrompt = value,
@@ -863,16 +934,15 @@ class GenerationViewModel(
                 history = history.entries,
                 historyIndex = history.index,
             ),
-            selectedCompositionElementIndex = selectedCompositionElementIndex.coerceIn(
-                0,
-                ideogramElementPreviews(value).lastIndex.coerceAtLeast(0),
-            ),
+            compositionElementIds = nextIds,
+            selectedCompositionElementId = selectedCompositionElementId?.takeIf { it in nextIds } ?: nextIds.firstOrNull(),
         )
     }
 
     private fun GenerationUiState.restoreCompositionHistory(index: Int): GenerationUiState {
         val value = ideogram.history.getOrNull(index) ?: return this
         val validation = validateIdeogramJson(value)
+        val nextIds = reconcileCompositionElementIds(ideogram.jsonPrompt, value, compositionElementIds)
         return copy(
             ideogram = ideogram.copy(
                 jsonPrompt = value,
@@ -880,10 +950,8 @@ class GenerationViewModel(
                 jsonError = validation.second,
                 historyIndex = index,
             ),
-            selectedCompositionElementIndex = selectedCompositionElementIndex.coerceIn(
-                0,
-                ideogramElementPreviews(value).lastIndex.coerceAtLeast(0),
-            ),
+            compositionElementIds = nextIds,
+            selectedCompositionElementId = selectedCompositionElementId?.takeIf { it in nextIds } ?: nextIds.firstOrNull(),
         )
     }
 
@@ -971,8 +1039,8 @@ class GenerationViewModel(
                 onProgress = { progress ->
                     stagedIdeogramDraft = progress.draft
                     update {
-                        copy(ideogram = ideogram.copy(
-                            jsonPrompt = progress.draft.previewJson(),
+                        val nextState = updateCompositionJson(progress.draft.previewJson())
+                        nextState.copy(ideogram = nextState.ideogram.copy(
                             jsonStatus = if (progress.elementIndex != null) {
                                 "${progress.step.label}: ${progress.elementIndex}/${progress.elementCount}"
                             } else "${progress.step.label} complete.",
@@ -1128,6 +1196,11 @@ class GenerationViewModel(
             null
         }
         update {
+            val nextIds = if (params.promptMode == ImagePromptMode.Json) {
+                reconcileCompositionElementIds(ideogram.jsonPrompt, params.prompt, compositionElementIds)
+            } else {
+                compositionElementIds
+            }
             copy(
                 prompt = if (params.promptMode == ImagePromptMode.Text) params.prompt.ifBlank { prompt } else prompt,
                 negativePrompt = params.negativePrompt,
@@ -1143,6 +1216,8 @@ class GenerationViewModel(
                 } else {
                     ideogram
                 },
+                compositionElementIds = nextIds,
+                selectedCompositionElementId = if (params.promptMode == ImagePromptMode.Json) nextIds.firstOrNull() else selectedCompositionElementId,
                 selectedPresetId = matchingCompositionPreset?.id ?: selectedPresetId,
                 width = params.width?.toString() ?: width,
                 height = params.height?.toString() ?: height,
@@ -1460,6 +1535,11 @@ class GenerationViewModel(
         val item = _uiState.value.history.getOrNull(index) ?: return
         val validation = if (item.promptMode == ImagePromptMode.Text) null else validateIdeogramJson(item.params.prompt)
         update {
+            val nextIds = if (item.promptMode == ImagePromptMode.Text) {
+                compositionElementIds
+            } else {
+                reconcileCompositionElementIds(ideogram.jsonPrompt, item.params.prompt, compositionElementIds)
+            }
             val nextIdeogram = if (item.promptMode == ImagePromptMode.Text) {
                 ideogram
             } else {
@@ -1476,6 +1556,12 @@ class GenerationViewModel(
                 prompt = if (item.promptMode == ImagePromptMode.Text) item.params.prompt else prompt,
                 negativePrompt = if (item.promptMode == ImagePromptMode.Text) item.params.negativePrompt else negativePrompt,
                 ideogram = nextIdeogram,
+                compositionElementIds = nextIds,
+                selectedCompositionElementId = if (item.promptMode == ImagePromptMode.Text) {
+                    selectedCompositionElementId
+                } else {
+                    selectedCompositionElementId?.takeIf { it in nextIds } ?: nextIds.firstOrNull()
+                },
                 width = item.params.width.toString(),
                 height = item.params.height.toString(),
                 steps = item.params.steps.toString(),
@@ -1995,6 +2081,7 @@ class GenerationViewModel(
 
     private fun SavedGenerationSettings.toUiState(): GenerationUiState {
         val validation = ideogramJsonPrompt.takeIf(String::isNotBlank)?.let(::validateIdeogramJson)
+        val elementIds = ensureCompositionElementIds(ideogramJsonPrompt, emptyList())
         return GenerationUiState(
             prompt = prompt,
             promptHistory = listOf(prompt),
@@ -2018,6 +2105,8 @@ class GenerationViewModel(
                 jsonError = validation?.second,
                 history = ideogramJsonPrompt.takeIf(String::isNotBlank)?.let(::listOf).orEmpty(),
             ),
+            compositionElementIds = elementIds,
+            selectedCompositionElementId = elementIds.firstOrNull(),
         )
     }
 
