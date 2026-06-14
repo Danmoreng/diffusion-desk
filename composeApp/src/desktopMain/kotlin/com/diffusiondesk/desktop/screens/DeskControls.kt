@@ -24,11 +24,14 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.ChevronLeft
+import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Switch
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -39,6 +42,7 @@ import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerMoveFilter
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
@@ -848,6 +852,200 @@ internal fun DeskCompactIconButton(
             contentDescription = contentDescription,
             tint = tint,
             modifier = Modifier.size(18.dp),
+        )
+    }
+}
+
+@Composable
+internal fun DeskToolbarIconButton(
+    icon: ImageVector,
+    contentDescription: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    selected: Boolean = false,
+) {
+    val shape = RoundedCornerShape(DeskControlCornerRadius)
+    val tint = when {
+        !enabled -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
+        selected -> MaterialTheme.colorScheme.primary
+        else -> MaterialTheme.colorScheme.onSurfaceVariant
+    }
+    val background = when {
+        selected -> MaterialTheme.colorScheme.primary.copy(alpha = DeskSelectedContainerAlpha)
+        enabled -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = DeskSubtleSurfaceAlpha)
+        else -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
+    }
+
+    DeskTooltip(text = contentDescription) {
+        Box(
+            modifier = modifier
+                .size(width = 40.dp, height = 40.dp)
+                .clip(shape)
+                .background(background)
+                .then(if (enabled) Modifier.clickable(onClick = onClick) else Modifier),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = contentDescription,
+                tint = tint,
+                modifier = Modifier.size(20.dp),
+            )
+        }
+    }
+}
+
+@Composable
+internal fun DeskHistoryStepper(
+    label: String,
+    onPrevious: () -> Unit,
+    previousEnabled: Boolean,
+    onNext: () -> Unit,
+    nextEnabled: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier = modifier
+            .height(40.dp)
+            .clip(RoundedCornerShape(DeskControlCornerRadius)),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        DeskToolbarIconButton(
+            icon = Icons.Default.ChevronLeft,
+            contentDescription = "Previous",
+            onClick = onPrevious,
+            enabled = previousEnabled,
+            modifier = Modifier.size(width = 36.dp, height = 40.dp),
+        )
+        Box(
+            modifier = Modifier
+                .widthIn(min = 76.dp)
+                .fillMaxHeight()
+                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = DeskSubtleSurfaceAlpha)),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                text = label,
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        DeskToolbarIconButton(
+            icon = Icons.Default.ChevronRight,
+            contentDescription = "Next",
+            onClick = onNext,
+            enabled = nextEnabled,
+            modifier = Modifier.size(width = 36.dp, height = 40.dp),
+        )
+    }
+}
+
+@Composable
+internal fun DeskStatusDropdownField(
+    value: String,
+    options: List<String>,
+    onValueChange: (String) -> Unit,
+    modifier: Modifier = Modifier,
+    tone: DeskStatusTone = DeskStatusTone.Neutral,
+    detail: String = "",
+    enabled: Boolean = true,
+    minMenuWidth: Dp = 220.dp,
+) {
+    var expanded by remember { mutableStateOf(false) }
+    var anchorSize by remember { mutableStateOf(IntSize.Zero) }
+
+    Box(
+        modifier = modifier
+            .height(40.dp)
+            .onGloballyPositioned { anchorSize = it.size },
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .fillMaxHeight()
+                .clip(RoundedCornerShape(DeskControlCornerRadius))
+                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = DeskSubtleSurfaceAlpha))
+                .then(if (enabled && options.isNotEmpty()) Modifier.clickable { expanded = true } else Modifier)
+                .padding(horizontal = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            DeskStatusDot(tone)
+            Text(
+                text = value,
+                modifier = Modifier.weight(1f),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurface,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            if (detail.isNotBlank()) {
+                Text(
+                    text = detail,
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                )
+            }
+            Icon(
+                imageVector = Icons.Default.ArrowDropDown,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(18.dp),
+            )
+        }
+        DeskAnchoredDropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false },
+            options = options,
+            anchorSize = anchorSize,
+            minWidth = minMenuWidth,
+            onSelect = {
+                onValueChange(it)
+                expanded = false
+            },
+        )
+    }
+}
+
+@Composable
+internal fun DeskInlineToggle(
+    label: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier = modifier
+            .height(28.dp)
+            .clip(RoundedCornerShape(DeskControlCornerRadius))
+            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = DeskSubtleSurfaceAlpha))
+            .clickable { onCheckedChange(!checked) }
+            .padding(start = 8.dp, end = 2.dp),
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        Switch(
+            checked = checked,
+            onCheckedChange = null,
+            modifier = Modifier
+                .size(width = 36.dp, height = 24.dp)
+                .graphicsLayer {
+                    scaleX = 0.7f
+                    scaleY = 0.7f
+                },
         )
     }
 }
