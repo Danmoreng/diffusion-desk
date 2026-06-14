@@ -281,27 +281,11 @@ private fun SectionCard(
     subtitle: String,
     content: @Composable () -> Unit,
 ) {
-    DeskPanel(
-        modifier = Modifier.fillMaxWidth(),
+    DeskSection(
+        title = title,
+        subtitle = subtitle,
     ) {
-        Column(
-            modifier = Modifier.fillMaxWidth(),
-            verticalArrangement = Arrangement.spacedBy(DeskControlSpacing),
-        ) {
-            Text(
-                text = title,
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.SemiBold,
-            )
-            if (subtitle.isNotBlank()) {
-                Text(
-                    text = subtitle,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-            content()
-        }
+        content()
     }
 }
 

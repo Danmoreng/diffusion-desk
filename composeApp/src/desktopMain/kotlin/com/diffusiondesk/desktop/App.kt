@@ -1,10 +1,8 @@
 package com.diffusiondesk.desktop
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.Collections
@@ -26,17 +24,15 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.diffusiondesk.desktop.core.ImagePromptMode
 import com.diffusiondesk.desktop.screens.AssistantPanel
 import com.diffusiondesk.desktop.screens.GalleryScreen
 import com.diffusiondesk.desktop.screens.GenerateScreen
 import com.diffusiondesk.desktop.screens.LibraryScreen
 import com.diffusiondesk.desktop.screens.DeskCompactControlSpacing
+import com.diffusiondesk.desktop.screens.DeskNavigationItem
 import com.diffusiondesk.desktop.screens.NotificationStack
 import com.diffusiondesk.desktop.screens.SettingsScreen
 import com.diffusiondesk.desktop.screens.SystemScreen
@@ -323,8 +319,9 @@ private fun NavigationSidebar(
             verticalArrangement = Arrangement.spacedBy(DeskCompactControlSpacing),
         ) {
             Screen.entries.forEach { screen ->
-                SidebarItem(
-                    screen = screen,
+                DeskNavigationItem(
+                    label = screen.label,
+                    icon = screen.icon,
                     selected = currentScreen == screen,
                     onClick = { onSelect(screen) },
                 )
@@ -333,7 +330,7 @@ private fun NavigationSidebar(
 
         Spacer(Modifier.weight(1f))
 
-        SidebarActionItem(
+        DeskNavigationItem(
             label = "Assistant",
             icon = Icons.Default.SmartToy,
             selected = assistantOpen,
@@ -350,76 +347,6 @@ private fun NavigationSidebar(
         }
 
         Spacer(Modifier.height(16.dp))
-    }
-}
-
-@Composable
-private fun SidebarActionItem(
-    label: String,
-    icon: ImageVector,
-    selected: Boolean,
-    onClick: () -> Unit,
-) {
-    val selectedColor = if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.16f) else MaterialTheme.colorScheme.surface
-    val contentColor = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-    Column(
-        modifier = Modifier
-            .width(58.dp)
-            .clip(RoundedCornerShape(8.dp))
-            .clickable(onClick = onClick)
-            .background(selectedColor)
-            .padding(vertical = 8.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(4.dp),
-    ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = label,
-            tint = contentColor,
-            modifier = Modifier.size(20.dp),
-        )
-        Text(
-            text = label,
-            color = contentColor,
-            fontSize = 10.sp,
-            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
-            maxLines = 1,
-        )
-    }
-}
-
-@Composable
-private fun SidebarItem(
-    screen: Screen,
-    selected: Boolean,
-    onClick: () -> Unit,
-) {
-    val selectedColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.16f)
-    val contentColor = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-
-    Column(
-        modifier = Modifier
-            .width(58.dp)
-            .clip(RoundedCornerShape(8.dp))
-            .clickable(onClick = onClick)
-            .background(if (selected) selectedColor else MaterialTheme.colorScheme.surface)
-            .padding(vertical = 8.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(4.dp),
-    ) {
-        Icon(
-            imageVector = screen.icon,
-            contentDescription = screen.label,
-            tint = contentColor,
-            modifier = Modifier.size(20.dp),
-        )
-        Text(
-            text = screen.label,
-            color = contentColor,
-            fontSize = 10.sp,
-            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
-            maxLines = 1,
-        )
     }
 }
 

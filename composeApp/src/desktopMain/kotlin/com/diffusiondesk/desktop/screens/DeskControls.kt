@@ -18,10 +18,14 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
@@ -47,6 +51,7 @@ import androidx.compose.ui.unit.IntRect
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupPositionProvider
 import androidx.compose.ui.window.PopupProperties
@@ -56,6 +61,8 @@ import org.jetbrains.jewel.ui.component.IconButton
 import org.jetbrains.jewel.ui.component.OutlinedButton
 import org.jetbrains.jewel.ui.component.OutlinedSlimButton
 import org.jetbrains.jewel.ui.component.Text
+import java.util.Locale
+import kotlin.math.roundToInt
 
 internal val DeskLayoutGap = 6.dp
 internal val DeskScreenPadding = DeskLayoutGap
@@ -72,6 +79,16 @@ internal val DeskPanelCornerRadius = 10.dp
 internal val DeskControlCornerRadius = 6.dp
 internal const val DeskSubtleSurfaceAlpha = 0.52f
 internal const val DeskSelectedContainerAlpha = 0.16f
+internal const val DeskStatusContainerAlpha = 0.14f
+internal const val DeskStatusBorderAlpha = 0.45f
+
+internal enum class DeskStatusTone {
+    Neutral,
+    Info,
+    Success,
+    Warning,
+    Error,
+}
 
 internal data class DeskTabItem(
     val selected: Boolean,
@@ -79,6 +96,17 @@ internal data class DeskTabItem(
     val label: String,
     val onClick: () -> Unit,
 )
+
+@Composable
+internal fun deskStatusColor(tone: DeskStatusTone): Color {
+    return when (tone) {
+        DeskStatusTone.Neutral -> MaterialTheme.colorScheme.onSurfaceVariant
+        DeskStatusTone.Info -> MaterialTheme.colorScheme.primary
+        DeskStatusTone.Success -> Color(0xFF6AAB73)
+        DeskStatusTone.Warning -> Color(0xFFCF8E6D)
+        DeskStatusTone.Error -> MaterialTheme.colorScheme.error
+    }
+}
 
 @Composable
 internal fun DeskButton(
@@ -146,6 +174,176 @@ internal fun DeskPanel(
         modifier = modifier,
         content = content,
     )
+}
+
+@Composable
+internal fun DeskSection(
+    title: String,
+    modifier: Modifier = Modifier,
+    subtitle: String = "",
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    DeskPanel(modifier = modifier.fillMaxWidth()) {
+        Text(
+            text = title,
+            style = MaterialTheme.typography.titleLarge,
+            fontWeight = FontWeight.SemiBold,
+            color = MaterialTheme.colorScheme.onSurface,
+        )
+        if (subtitle.isNotBlank()) {
+            Text(
+                text = subtitle,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        content()
+    }
+}
+
+@Composable
+internal fun DeskStatusDot(
+    tone: DeskStatusTone,
+    modifier: Modifier = Modifier,
+) {
+    Box(
+        modifier = modifier
+            .size(9.dp)
+            .background(deskStatusColor(tone), CircleShape),
+    )
+}
+
+@Composable
+internal fun DeskStatusBadge(
+    text: String,
+    tone: DeskStatusTone,
+    modifier: Modifier = Modifier,
+) {
+    val color = deskStatusColor(tone)
+    Box(
+        modifier = modifier
+            .clip(RoundedCornerShape(999.dp))
+            .background(color.copy(alpha = DeskStatusContainerAlpha))
+            .border(1.dp, color.copy(alpha = DeskStatusBorderAlpha), RoundedCornerShape(999.dp))
+            .padding(horizontal = 9.dp, vertical = 4.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = text,
+            style = MaterialTheme.typography.labelSmall,
+            color = color,
+            fontWeight = FontWeight.SemiBold,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+}
+
+@Composable
+internal fun DeskSummaryTile(
+    label: String,
+    value: String,
+    tone: DeskStatusTone,
+    modifier: Modifier = Modifier,
+) {
+    val color = deskStatusColor(tone)
+    Column(
+        modifier = modifier
+            .clip(RoundedCornerShape(DeskControlCornerRadius))
+            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = DeskSubtleSurfaceAlpha))
+            .padding(DeskLayoutGap),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(value, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, color = color)
+    }
+}
+
+@Composable
+internal fun DeskChip(
+    text: String,
+    modifier: Modifier = Modifier,
+    selected: Boolean = false,
+    tone: DeskStatusTone = if (selected) DeskStatusTone.Info else DeskStatusTone.Neutral,
+    onClick: (() -> Unit)? = null,
+    onRemove: (() -> Unit)? = null,
+) {
+    val color = if (selected) MaterialTheme.colorScheme.primary else deskStatusColor(tone)
+    Row(
+        modifier = modifier
+            .clip(RoundedCornerShape(999.dp))
+            .background(
+                if (selected) {
+                    MaterialTheme.colorScheme.primary.copy(alpha = DeskSelectedContainerAlpha)
+                } else {
+                    MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f)
+                },
+            )
+            .border(
+                1.dp,
+                if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant,
+                RoundedCornerShape(999.dp),
+            )
+            .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
+            .padding(start = 10.dp, end = if (onRemove == null) 10.dp else 6.dp, top = 5.dp, bottom = 5.dp),
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = text,
+            style = MaterialTheme.typography.labelMedium,
+            color = color,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        if (onRemove != null) {
+            Icon(
+                imageVector = Icons.Default.Close,
+                contentDescription = "Remove $text",
+                tint = color,
+                modifier = Modifier
+                    .size(15.dp)
+                    .clickable(onClick = onRemove),
+            )
+        }
+    }
+}
+
+@Composable
+internal fun DeskNavigationItem(
+    label: String,
+    icon: ImageVector,
+    selected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val selectedColor = if (selected) MaterialTheme.colorScheme.primary.copy(alpha = DeskSelectedContainerAlpha) else Color.Transparent
+    val contentColor = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+    Column(
+        modifier = modifier
+            .width(58.dp)
+            .clip(RoundedCornerShape(DeskPanelCornerRadius))
+            .background(selectedColor)
+            .clickable(onClick = onClick)
+            .padding(vertical = 8.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(DeskCompactControlSpacing),
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = label,
+            tint = contentColor,
+            modifier = Modifier.size(20.dp),
+        )
+        Text(
+            text = label,
+            color = contentColor,
+            fontSize = 10.sp,
+            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
 }
 
 @Composable
@@ -355,6 +553,136 @@ internal fun DeskCompactDropdownField(
                 expanded = false
             },
         )
+    }
+}
+
+@Composable
+internal fun DeskCompactTextField(
+    label: String,
+    value: String,
+    onValueChange: (String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    DeskInlineInputFrame(
+        label = label,
+        modifier = modifier,
+    ) {
+        BasicTextField(
+            value = value,
+            onValueChange = onValueChange,
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true,
+            textStyle = MaterialTheme.typography.bodyMedium.copy(color = MaterialTheme.colorScheme.onSurface),
+            cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+        )
+    }
+}
+
+@Composable
+internal fun DeskCompactNumberField(
+    label: String,
+    value: String,
+    onValueChange: (String) -> Unit,
+    modifier: Modifier = Modifier,
+    step: Double,
+    minValue: Double? = null,
+    maxValue: Double? = null,
+    decimalPlaces: Int = 0,
+) {
+    DeskInlineInputFrame(
+        label = label,
+        modifier = modifier,
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            BasicTextField(
+                value = value,
+                onValueChange = onValueChange,
+                modifier = Modifier
+                    .weight(1f)
+                    .widthIn(min = 30.dp)
+                    .padding(end = 3.dp),
+                singleLine = true,
+                textStyle = MaterialTheme.typography.bodyMedium.copy(color = MaterialTheme.colorScheme.onSurface),
+                cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+            )
+            DeskNumberStepper(
+                onIncrement = {
+                    onValueChange(stepNumberValue(value, step, minValue, maxValue, decimalPlaces))
+                },
+                onDecrement = {
+                    onValueChange(stepNumberValue(value, -step, minValue, maxValue, decimalPlaces))
+                },
+            )
+        }
+    }
+}
+
+@Composable
+private fun DeskNumberStepper(
+    onIncrement: () -> Unit,
+    onDecrement: () -> Unit,
+) {
+    Column(
+        modifier = Modifier
+            .width(20.dp)
+            .fillMaxHeight(),
+    ) {
+        DeskNumberStepperButton(
+            icon = Icons.Default.KeyboardArrowUp,
+            contentDescription = "Increase value",
+            onClick = onIncrement,
+            modifier = Modifier.weight(1f),
+        )
+        DeskNumberStepperButton(
+            icon = Icons.Default.KeyboardArrowDown,
+            contentDescription = "Decrease value",
+            onClick = onDecrement,
+            modifier = Modifier.weight(1f),
+        )
+    }
+}
+
+@Composable
+private fun DeskNumberStepperButton(
+    icon: ImageVector,
+    contentDescription: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = contentDescription,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.size(14.dp),
+        )
+    }
+}
+
+private fun stepNumberValue(
+    value: String,
+    delta: Double,
+    minValue: Double?,
+    maxValue: Double?,
+    decimalPlaces: Int,
+): String {
+    val current = value.toDoubleOrNull() ?: 0.0
+    val stepped = (current + delta)
+        .let { if (minValue == null) it else it.coerceAtLeast(minValue) }
+        .let { if (maxValue == null) it else it.coerceAtMost(maxValue) }
+
+    return if (decimalPlaces > 0) {
+        "%.${decimalPlaces}f".format(Locale.US, stepped)
+    } else {
+        stepped.roundToInt().toString()
     }
 }
 

@@ -24,7 +24,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -60,7 +59,7 @@ private fun NotificationCard(
     notification: AppNotification,
     onDismiss: () -> Unit,
 ) {
-    val color = notificationColor(notification.type)
+    val color = deskStatusColor(notificationTone(notification.type))
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -119,12 +118,12 @@ private fun NotificationCard(
 }
 
 @Composable
-private fun notificationColor(type: AppNotificationType): Color {
+private fun notificationTone(type: AppNotificationType): DeskStatusTone {
     return when (type) {
-        AppNotificationType.Info -> MaterialTheme.colorScheme.primary
-        AppNotificationType.Success -> Color(0xFF2E7D32)
-        AppNotificationType.Warning -> Color(0xFFFFA000)
-        AppNotificationType.Error -> MaterialTheme.colorScheme.error
+        AppNotificationType.Info -> DeskStatusTone.Info
+        AppNotificationType.Success -> DeskStatusTone.Success
+        AppNotificationType.Warning -> DeskStatusTone.Warning
+        AppNotificationType.Error -> DeskStatusTone.Error
     }
 }
 
