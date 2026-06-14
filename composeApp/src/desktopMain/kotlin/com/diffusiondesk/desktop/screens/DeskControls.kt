@@ -76,6 +76,7 @@ internal val DeskGroupSpacing = DeskLayoutGap
 internal val DeskTabSpacing = DeskLayoutGap
 internal val DeskTabHorizontalPadding = 10.dp
 internal val DeskIconSize = 16.dp
+internal val DeskCompactControlHeight = 36.dp
 internal val DeskPanelCornerRadius = 10.dp
 internal val DeskControlCornerRadius = 6.dp
 internal const val DeskSubtleSurfaceAlpha = 0.52f
@@ -835,7 +836,7 @@ internal fun DeskCompactIconButton(
     val tint = if (enabled) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f)
     Box(
         modifier = modifier
-            .size(42.dp)
+            .size(width = DeskCompactControlHeight, height = DeskCompactControlHeight)
             .clip(shape)
             .border(1.dp, MaterialTheme.colorScheme.outlineVariant, shape)
             .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = if (enabled) 1f else 0.45f))
@@ -846,7 +847,7 @@ internal fun DeskCompactIconButton(
             imageVector = icon,
             contentDescription = contentDescription,
             tint = tint,
-            modifier = Modifier.size(20.dp),
+            modifier = Modifier.size(18.dp),
         )
     }
 }
@@ -1033,7 +1034,7 @@ internal fun DeskInlineInputFrame(
     val shape = RoundedCornerShape(DeskControlCornerRadius)
     Row(
         modifier = modifier
-            .height(36.dp)
+            .height(DeskCompactControlHeight)
             .clip(shape)
             .background(MaterialTheme.colorScheme.surface)
             .border(1.dp, MaterialTheme.colorScheme.outlineVariant, shape),
