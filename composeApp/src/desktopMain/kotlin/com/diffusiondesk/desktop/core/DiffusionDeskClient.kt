@@ -11,6 +11,7 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.doubleOrNull
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonArray
@@ -93,7 +94,16 @@ data class LlmHealth(
 
 data class LlmChatMessage(
     val role: String,
-    val content: String,
+    val content: String = "",
+    val imageDataUri: String? = null,
+    val toolCalls: List<LlmToolCall> = emptyList(),
+    val toolCallId: String? = null,
+)
+
+data class LlmToolCall(
+    val id: String,
+    val name: String,
+    val arguments: String,
 )
 
 data class LlmChatCompletion(
@@ -107,6 +117,7 @@ data class LlmChatCompletion(
     val predictedTokensPerSecond: Double?,
     val elapsedMs: Long,
     val rawResponsePreview: String,
+    val toolCalls: List<LlmToolCall> = emptyList(),
 )
 
 sealed class GenerationJobEvent {
@@ -408,6 +419,8 @@ class DiffusionDeskClient(
         reasoningBudgetTokens: Int? = null,
         cachePrompt: Boolean? = null,
         slotId: Int? = null,
+        tools: JsonArray? = null,
+        parallelToolCalls: Boolean? = null,
         timeout: Duration = Duration.ofMinutes(3),
     ): Result<String> = withContext(Dispatchers.IO) {
         chatCompletionDetailed(
@@ -422,6 +435,8 @@ class DiffusionDeskClient(
             reasoningBudgetTokens = reasoningBudgetTokens,
             cachePrompt = cachePrompt,
             slotId = slotId,
+            tools = tools,
+            parallelToolCalls = parallelToolCalls,
             timeout = timeout,
         ).mapCatching { completion ->
             completion.content.ifBlank {
@@ -442,6 +457,8 @@ class DiffusionDeskClient(
         reasoningBudgetTokens: Int? = null,
         cachePrompt: Boolean? = null,
         slotId: Int? = null,
+        tools: JsonArray? = null,
+        parallelToolCalls: Boolean? = null,
         timeout: Duration = Duration.ofMinutes(3),
     ): Result<LlmChatCompletion> = withContext(Dispatchers.IO) {
         val callId = llmDebugLog?.start(
@@ -458,7 +475,52 @@ class DiffusionDeskClient(
                         messages.map { message ->
                             buildJsonObject {
                                 put("role", JsonPrimitive(message.role))
-                                put("content", JsonPrimitive(message.content))
+                                val imageDataUri = message.imageDataUri
+                                if (imageDataUri.isNullOrBlank()) {
+                                    put("content", JsonPrimitive(message.content))
+                                } else {
+                                    put(
+                                        "content",
+                                        JsonArray(
+                                            listOf(
+                                                buildJsonObject {
+                                                    put("type", JsonPrimitive("text"))
+                                                    put("text", JsonPrimitive(message.content))
+                                                },
+                                                buildJsonObject {
+                                                    put("type", JsonPrimitive("image_url"))
+                                                    put(
+                                                        "image_url",
+                                                        buildJsonObject {
+                                                            put("url", JsonPrimitive(imageDataUri))
+                                                        },
+                                                    )
+                                                },
+                                            ),
+                                        ),
+                                    )
+                                }
+                                message.toolCallId?.let { put("tool_call_id", JsonPrimitive(it)) }
+                                if (message.toolCalls.isNotEmpty()) {
+                                    put(
+                                        "tool_calls",
+                                        JsonArray(
+                                            message.toolCalls.map { toolCall ->
+                                                buildJsonObject {
+                                                    put("id", JsonPrimitive(toolCall.id))
+                                                    put("type", JsonPrimitive("function"))
+                                                    put(
+                                                        "function",
+                                                        buildJsonObject {
+                                                            put("name", JsonPrimitive(toolCall.name))
+                                                            put("arguments", JsonPrimitive(toolCall.arguments))
+                                                        },
+                                                    )
+                                                }
+                                            },
+                                        ),
+                                    )
+                                }
                             }
                         },
                     ),
@@ -470,6 +532,8 @@ class DiffusionDeskClient(
                 reasoningBudgetTokens?.let { put("thinking_budget_tokens", JsonPrimitive(it)) }
                 cachePrompt?.let { put("cache_prompt", JsonPrimitive(it)) }
                 slotId?.let { put("id_slot", JsonPrimitive(it)) }
+                tools?.let { put("tools", it) }
+                parallelToolCalls?.let { put("parallel_tool_calls", JsonPrimitive(it)) }
                 enableThinking?.let {
                     put(
                         "chat_template_kwargs",
@@ -510,7 +574,29 @@ class DiffusionDeskClient(
         systemPrompt: String,
         userPrompt: String,
         imageDataUri: String,
+        useImageTagSchema: Boolean = true,
+        maxTokens: Int? = null,
     ): Result<String> = withContext(Dispatchers.IO) {
+        visionChatCompletionDetailed(
+            baseUrl = baseUrl,
+            model = model,
+            systemPrompt = systemPrompt,
+            userPrompt = userPrompt,
+            imageDataUri = imageDataUri,
+            useImageTagSchema = useImageTagSchema,
+            maxTokens = maxTokens,
+        ).mapCatching { it.content }
+    }
+
+    suspend fun visionChatCompletionDetailed(
+        baseUrl: String,
+        model: String,
+        systemPrompt: String,
+        userPrompt: String,
+        imageDataUri: String,
+        useImageTagSchema: Boolean = true,
+        maxTokens: Int? = null,
+    ): Result<LlmChatCompletion> = withContext(Dispatchers.IO) {
         val callId = llmDebugLog?.start(model, systemPrompt, "$userPrompt\n\n[Image reference attached]")
         runCatching {
             val payload = buildJsonObject {
@@ -550,7 +636,10 @@ class DiffusionDeskClient(
                     ),
                 )
                 put("temperature", JsonPrimitive(0.0))
-                put("response_format", imageTagsResponseFormat())
+                if (useImageTagSchema) {
+                    put("response_format", imageTagsResponseFormat())
+                }
+                maxTokens?.let { put("max_tokens", JsonPrimitive(it)) }
                 put("stream", JsonPrimitive(false))
             }
 
@@ -560,10 +649,12 @@ class DiffusionDeskClient(
                 .timeout(Duration.ofMinutes(3))
                 .build()
 
+            val startNanos = System.nanoTime()
             val response = httpClient.send(request, HttpResponse.BodyHandlers.ofString())
+            val elapsedMs = (System.nanoTime() - startNanos) / 1_000_000
             check(response.statusCode() in 200..299) { response.body().ifBlank { "Vision chat completion failed with ${response.statusCode()}" } }
-            parseChatContent(json.parseToJsonElement(response.body()).jsonObject)
-        }.also { result -> recordLlmResult(callId, result) }
+            parseChatCompletion(json.parseToJsonElement(response.body()).jsonObject, response.body().compactPreview(), elapsedMs)
+        }.also { result -> recordDetailedLlmResult(callId, result) }
     }
 
     suspend fun compositionChatCompletion(
@@ -993,7 +1084,27 @@ class DiffusionDeskClient(
                 ?: timings?.tokensPerSecond("predicted_n", "predicted_ms"),
             elapsedMs = elapsedMs,
             rawResponsePreview = rawPreview,
+            toolCalls = message?.get("tool_calls")?.jsonArray?.mapIndexedNotNull { index, element ->
+                val obj = element.jsonObject
+                val function = obj["function"]?.jsonObject
+                val name = function?.get("name")?.jsonPrimitive?.contentOrNull
+                    ?: obj["name"]?.jsonPrimitive?.contentOrNull
+                    ?: return@mapIndexedNotNull null
+                val arguments = function?.get("arguments")?.let(::parseToolArguments)
+                    ?: obj["arguments"]?.let(::parseToolArguments)
+                    ?: "{}"
+                LlmToolCall(
+                    id = obj["id"]?.jsonPrimitive?.contentOrNull ?: "call_$index",
+                    name = name,
+                    arguments = arguments,
+                )
+            }.orEmpty(),
         )
+    }
+
+    private fun parseToolArguments(value: JsonElement): String = when (value) {
+        is JsonPrimitive -> value.content
+        else -> value.toString()
     }
 
     private fun parseChatContentValue(value: JsonElement): String = when {

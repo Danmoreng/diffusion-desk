@@ -64,6 +64,7 @@ class AppController {
         settingsStore = settingsStore,
         llmPresetStore = llmPresetStore,
         llmRoleService = llmRoleService,
+        latestImageProvider = generationViewModel::latestAssistantImageAttachment,
         runTool = generationViewModel::runAssistantTool,
     )
     val libraryViewModel = LibraryViewModel(scope, presetStore, llmPresetStore, backendManager, client)

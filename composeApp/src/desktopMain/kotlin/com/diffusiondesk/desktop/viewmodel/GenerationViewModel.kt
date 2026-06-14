@@ -43,6 +43,10 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import java.awt.RenderingHints
+import java.awt.image.BufferedImage
+import java.io.ByteArrayOutputStream
+import java.util.Base64
 import java.util.UUID
 import kotlin.math.roundToInt
 
@@ -894,7 +898,7 @@ class GenerationViewModel(
         }
     }
 
-    fun runAssistantTool(request: AssistantToolRequest): AssistantToolResult {
+    suspend fun runAssistantTool(request: AssistantToolRequest): AssistantToolResult {
         val state = _uiState.value
         if (state.ideogram.isGeneratingJson || state.activeCompositionImproveAction != null) {
             return AssistantToolResult(false, "Another composition action is already running.")
@@ -933,52 +937,61 @@ class GenerationViewModel(
                 AssistantToolResult(true, "Negative prompt cleared.")
             }
             "generate_structured_prompt" -> {
+                if (state.prompt.isBlank()) {
+                    return AssistantToolResult(false, "Prompt is required before structured composition generation. Set a prompt first.")
+                }
+                if (state.ideogram.document != null && !request.replaceExistingComposition) {
+                    return AssistantToolResult(
+                        false,
+                        "A structured composition already exists. Do not regenerate it for incremental edits because that overwrites existing elements. Use set_prompt for the normal prompt, then improve_high_level, improve_style, improve_composition, improve_background, improve_selected_element, add_object, add_text, palette tools, or element tools. Call generate_structured_prompt again only with replace_existing=true if the user is switching to a completely different image concept.",
+                    )
+                }
                 generateIdeogramJsonPrompt()
-                AssistantToolResult(true, "Started structured prompt generation.")
+                AssistantToolResult(true, "Structured prompt generation has started and is still running in the app. Do not claim it is finished until the UI completes it.")
             }
             "improve_high_level" -> requireComposition() ?: run {
                 runCompositionAction(CompositionAction.ImproveField(CompositionImproveTarget.HighLevelDescription))
-                AssistantToolResult(true, "Started high-level description improvement.")
+                AssistantToolResult(true, "High-level description improvement has started and is still running in the app.")
             }
             "improve_style" -> requireComposition() ?: run {
                 runCompositionAction(CompositionAction.ImproveStyle)
-                AssistantToolResult(true, "Started style improvement.")
+                AssistantToolResult(true, "Style improvement has started and is still running in the app.")
             }
             "improve_composition" -> requireComposition() ?: run {
                 runCompositionAction(CompositionAction.ImproveComposition)
-                AssistantToolResult(true, "Started composition improvement.")
+                AssistantToolResult(true, "Composition improvement has started and is still running in the app.")
             }
             "improve_background" -> requireComposition() ?: run {
                 runCompositionAction(CompositionAction.ImproveField(CompositionImproveTarget.Background))
-                AssistantToolResult(true, "Started background improvement.")
+                AssistantToolResult(true, "Background improvement has started and is still running in the app.")
             }
             "improve_selected_element" -> requireComposition() ?: selectedIndex()?.let { index ->
                 runCompositionAction(CompositionAction.ImproveField(CompositionImproveTarget.ElementDescription(index)))
-                AssistantToolResult(true, "Started selected element improvement.")
+                AssistantToolResult(true, "Selected element improvement has started and is still running in the app.")
             } ?: AssistantToolResult(false, "Select an element first.")
             "suggest_global_palette" -> requireComposition() ?: run {
                 runCompositionAction(CompositionAction.SuggestPalette(PaletteTarget.Global))
-                AssistantToolResult(true, "Started global palette suggestion.")
+                AssistantToolResult(true, "Global palette suggestion has started and is still running in the app.")
             }
             "suggest_selected_element_palette" -> requireComposition() ?: selectedIndex()?.let { index ->
                 runCompositionAction(CompositionAction.SuggestPalette(PaletteTarget.Element(index)))
-                AssistantToolResult(true, "Started selected element palette suggestion.")
+                AssistantToolResult(true, "Selected element palette suggestion has started and is still running in the app.")
             } ?: AssistantToolResult(false, "Select an element first.")
             "regenerate_selected_element" -> requireComposition() ?: selectedIndex()?.let { index ->
                 runCompositionAction(CompositionAction.RegenerateElement(index))
-                AssistantToolResult(true, "Started selected element variant.")
+                AssistantToolResult(true, "Selected element variant generation has started and is still running in the app.")
             } ?: AssistantToolResult(false, "Select an element first.")
             "add_object" -> requireComposition() ?: request.description.takeIf(String::isNotBlank)?.let { description ->
                 runCompositionAction(CompositionAction.AddElement("obj", description))
-                AssistantToolResult(true, "Started adding object.")
+                AssistantToolResult(true, "Adding the object has started and is still running in the app.")
             } ?: AssistantToolResult(false, "Describe the object to add.")
             "add_text" -> requireComposition() ?: request.description.takeIf(String::isNotBlank)?.let { description ->
                 runCompositionAction(CompositionAction.AddElement("text", description))
-                AssistantToolResult(true, "Started adding text.")
+                AssistantToolResult(true, "Adding the text element has started and is still running in the app.")
             } ?: AssistantToolResult(false, "Describe the text element to add.")
             "delete_selected_element" -> requireComposition() ?: selectedIndex()?.let { index ->
                 runCompositionAction(CompositionAction.DeleteElement(index))
-                AssistantToolResult(true, "Started deleting selected element.")
+                AssistantToolResult(true, "Deleting the selected element has started and is still running in the app.")
             } ?: AssistantToolResult(false, "Select an element first.")
             "set_image_size" -> {
                 val width = request.width ?: return AssistantToolResult(false, "Width is required.")
@@ -1061,6 +1074,17 @@ class GenerationViewModel(
             }
             else -> AssistantToolResult(false, "Unknown assistant tool: ${request.tool}")
         }
+    }
+
+    fun latestAssistantImageAttachment(): AssistantImageAttachment? {
+        val image = _uiState.value.images.firstOrNull() ?: return null
+        return AssistantImageAttachment(
+            name = "latest generated image",
+            dataUri = image.toAssistantImageDataUri(),
+            thumbnailDataUri = image.bufferedImage.toAssistantThumbnailDataUri(),
+            width = image.bufferedImage.width,
+            height = image.bufferedImage.height,
+        )
     }
 
     private fun applyCompositionMutation(mutation: CompositionMutation, recordHistory: Boolean) = update {
@@ -2318,3 +2342,30 @@ class GenerationViewModel(
 
 internal fun <T> selectCompositionReferenceImage(image: T?, enabled: Boolean, resolutionModified: Boolean): T? =
     image.takeIf { enabled && !resolutionModified }
+
+private fun GeneratedImage.toAssistantImageDataUri(): String {
+    val mime = when {
+        sourceUrl.endsWith(".jpg", ignoreCase = true) || sourceUrl.endsWith(".jpeg", ignoreCase = true) -> "image/jpeg"
+        sourceUrl.endsWith(".webp", ignoreCase = true) -> "image/webp"
+        else -> "image/png"
+    }
+    return "data:$mime;base64,${Base64.getEncoder().encodeToString(bytes)}"
+}
+
+private fun BufferedImage.toAssistantThumbnailDataUri(maxWidth: Int = 360, maxHeight: Int = 180): String {
+    val scale = minOf(maxWidth.toDouble() / width, maxHeight.toDouble() / height, 1.0)
+    val thumbnailWidth = (width * scale).toInt().coerceAtLeast(1)
+    val thumbnailHeight = (height * scale).toInt().coerceAtLeast(1)
+    val thumbnail = BufferedImage(thumbnailWidth, thumbnailHeight, BufferedImage.TYPE_INT_ARGB)
+    val graphics = thumbnail.createGraphics()
+    try {
+        graphics.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR)
+        graphics.setRenderingHint(RenderingHints.KEY_RENDERING, RenderingHints.VALUE_RENDER_QUALITY)
+        graphics.drawImage(this, 0, 0, thumbnailWidth, thumbnailHeight, null)
+    } finally {
+        graphics.dispose()
+    }
+    val output = ByteArrayOutputStream()
+    javax.imageio.ImageIO.write(thumbnail, "png", output)
+    return "data:image/png;base64,${Base64.getEncoder().encodeToString(output.toByteArray())}"
+}

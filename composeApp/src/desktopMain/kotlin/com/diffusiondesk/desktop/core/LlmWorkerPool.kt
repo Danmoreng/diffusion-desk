@@ -8,6 +8,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import java.io.File
 import java.net.InetSocketAddress
 import java.net.ServerSocket
@@ -65,21 +67,53 @@ class LlmWorkerPool(
     val state: StateFlow<List<LlmWorkerState>> = _state.asStateFlow()
 
     private val workers = mutableMapOf<String, ManagedWorker>()
+    private val ensureLocks = mutableMapOf<String, Mutex>()
     private val closing = AtomicBoolean(false)
 
     suspend fun ensureWorkerForPreset(settings: DesktopSettings, preset: LlmPreset): Result<LlmWorkerHandle> {
+        val parsedArgs = parsedArgsFor(preset)
+        val signature = signatureFor(preset, parsedArgs)
+        val ensureLock = synchronized(ensureLocks) {
+            ensureLocks.getOrPut(signature) { Mutex() }
+        }
+        return ensureLock.withLock {
+            ensureWorkerForPresetLocked(settings, preset, parsedArgs, signature)
+        }
+    }
+
+    private suspend fun ensureWorkerForPresetLocked(
+        settings: DesktopSettings,
+        preset: LlmPreset,
+        parsedArgs: List<String>,
+        signature: String,
+    ): Result<LlmWorkerHandle> {
         return runCatching {
             check(!closing.get()) { "LLM worker pool is closing." }
-            val parsedArgs = parsedArgsFor(preset)
-            val signature = signatureFor(preset, parsedArgs)
             workers[signature]?.takeIf { it.process.isAlive }?.let { existing ->
                 val existingState = _state.value.firstOrNull { it.id == signature }
-                if (existingState?.status == LlmWorkerStatus.Ready) {
-                    return@runCatching LlmWorkerHandle(signature, baseUrl(existing.port), existing.preset)
-                }
-                if (existingState?.status == LlmWorkerStatus.ReadyNoModel) {
-                    loadExistingWorker(signature, existing, parsedArgs)
-                    return@runCatching LlmWorkerHandle(signature, baseUrl(existing.port), existing.preset)
+                when (existingState?.status) {
+                    LlmWorkerStatus.Ready -> {
+                        return@runCatching LlmWorkerHandle(signature, baseUrl(existing.port), existing.preset)
+                    }
+                    LlmWorkerStatus.ReadyNoModel -> {
+                        loadExistingWorker(signature, existing, parsedArgs)
+                        return@runCatching LlmWorkerHandle(signature, baseUrl(existing.port), existing.preset)
+                    }
+                    LlmWorkerStatus.Starting -> {
+                        val url = baseUrl(existing.port)
+                        waitForHealth(signature, existing.process, url)
+                        updateFromHealth(signature, url, status = LlmWorkerStatus.ReadyNoModel, message = "LLM worker ready.")
+                        loadExistingWorker(signature, existing, parsedArgs)
+                        return@runCatching LlmWorkerHandle(signature, url, existing.preset)
+                    }
+                    LlmWorkerStatus.Loading,
+                    LlmWorkerStatus.Busy -> {
+                        waitForReadyModel(signature, existing.process)
+                        return@runCatching LlmWorkerHandle(signature, baseUrl(existing.port), existing.preset)
+                    }
+                    LlmWorkerStatus.Stopped,
+                    LlmWorkerStatus.Error,
+                    null -> Unit
                 }
             }
 
@@ -244,6 +278,25 @@ class LlmWorkerPool(
             delay(1000)
         }
         error("LLM worker did not become ready in time.")
+    }
+
+    private suspend fun waitForReadyModel(id: String, process: Process) {
+        repeat(300) { attempt ->
+            if (!process.isAlive) {
+                error("LLM worker exited before the model became ready.")
+            }
+            val state = _state.value.firstOrNull { it.id == id }
+            when (state?.status) {
+                LlmWorkerStatus.Ready -> return
+                LlmWorkerStatus.Error -> error(state.message.ifBlank { "LLM worker entered an error state." })
+                LlmWorkerStatus.Stopped -> error("LLM worker stopped before the model became ready.")
+                else -> updateWorker(id) {
+                    copy(message = message.ifBlank { "Waiting for LLM model to become ready... (${attempt + 1}/300)" })
+                }
+            }
+            delay(1000)
+        }
+        error("LLM model did not become ready in time.")
     }
 
     private suspend fun loadExistingWorker(id: String, worker: ManagedWorker, parsedArgs: List<String>) {

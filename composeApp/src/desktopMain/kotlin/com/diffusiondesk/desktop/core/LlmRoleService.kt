@@ -3,10 +3,11 @@ package com.diffusiondesk.desktop.core
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
-import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import java.time.Duration
@@ -40,11 +41,17 @@ data class AssistantToolPlan(
     val cfgScale: Double? = null,
     val seed: Int? = null,
     val sampler: String = "",
+    val replaceExistingComposition: Boolean = false,
 )
 
 data class AssistantToolBatch(
     val calls: List<AssistantToolPlan>,
     val reply: String = "",
+)
+
+data class AssistantAgentTurn(
+    val result: AssistantChatResult,
+    val batch: AssistantToolBatch,
 )
 
 class LlmRoleService(
@@ -73,6 +80,9 @@ class LlmRoleService(
         runCatching {
             val preset = presets.firstOrNull { it.id == roles.assistantPresetId }
                 ?: error("Select an assistant LLM preset first.")
+            require(messages.none { !it.imageDataUri.isNullOrBlank() } || preset.mmprojPath.isNotBlank()) {
+                "The selected assistant LLM preset does not support images. Choose a vision-capable preset with an mmproj file."
+            }
             val advancedArgs = preset.effectiveAdvancedArgs().getOrThrow()
             val contextLimit = inferLlmContextLimit(advancedArgs)
             val maxTokens = assistantMaxTokens(messages, contextLimit.tokens)
@@ -97,57 +107,43 @@ class LlmRoleService(
         }
     }
 
-    suspend fun planAssistantTool(
+    suspend fun chatWithAssistantAgentDetailed(
         settings: DesktopSettings,
         presets: List<LlmPreset>,
         roles: LlmRoleSettings,
-        userMessage: String,
-        appContext: String,
-    ): Result<AssistantToolPlan> = planAssistantTools(settings, presets, roles, userMessage, appContext)
-        .mapCatching { it.calls.firstOrNull() ?: AssistantToolPlan("none") }
-
-    suspend fun planAssistantTools(
-        settings: DesktopSettings,
-        presets: List<LlmPreset>,
-        roles: LlmRoleSettings,
-        userMessage: String,
-        appContext: String,
-        toolFeedback: List<String> = emptyList(),
-    ): Result<AssistantToolBatch> = withContext(Dispatchers.IO) {
+        messages: List<LlmChatMessage>,
+    ): Result<AssistantAgentTurn> = withContext(Dispatchers.IO) {
         runCatching {
             val preset = presets.firstOrNull { it.id == roles.assistantPresetId }
                 ?: error("Select an assistant LLM preset first.")
+            val advancedArgs = preset.effectiveAdvancedArgs().getOrThrow()
+            val contextLimit = inferLlmContextLimit(advancedArgs)
+            val maxTokens = assistantMaxTokens(messages, contextLimit.tokens)
             val worker = llmWorkerPool.ensureWorkerForPreset(settings, preset).getOrThrow()
-            val response = client.chatCompletion(
+            val completion = client.chatCompletionDetailed(
                 baseUrl = worker.baseUrl,
                 model = preset.modelPath,
-                messages = listOf(
-                    LlmChatMessage(
-                        role = "system",
-                        content = ASSISTANT_TOOL_PLANNER_PROMPT,
-                    ),
-                    LlmChatMessage(
-                        role = "user",
-                        content = buildString {
-                            appendLine("User message: $userMessage")
-                            appendLine()
-                            appendLine("Current app context:")
-                            append(appContext)
-                            if (toolFeedback.isNotEmpty()) {
-                                appendLine()
-                                appendLine("Previous tool results/errors:")
-                                toolFeedback.forEach { appendLine("- $it") }
-                            }
-                        },
-                    ),
-                ),
-                maxTokens = 1024,
-                temperature = 0.0,
-                jsonResponse = true,
+                messages = messages,
+                maxTokens = maxTokens,
+                temperature = 0.2,
                 enableThinking = false,
-                timeout = Duration.ofMinutes(2),
+                tools = assistantToolDefinitions(),
+                parallelToolCalls = true,
+                timeout = Duration.ofMinutes(5),
             ).getOrThrow()
-            parseAssistantToolBatch(response)
+            val result = AssistantChatResult(
+                completion = completion,
+                presetName = preset.name,
+                baseUrl = worker.baseUrl,
+                advancedArgs = advancedArgs,
+                contextLimit = contextLimit,
+                maxTokens = maxTokens,
+            )
+            val batch = AssistantToolBatch(
+                calls = completion.toolCalls.map { it.toAssistantToolPlan() },
+                reply = completion.content,
+            )
+            AssistantAgentTurn(result = result, batch = batch)
         }
     }
 
@@ -178,6 +174,7 @@ class LlmRoleService(
             ).getOrThrow()
         }
     }
+
 
     suspend fun completeIdeogramCompositionAction(
         settings: DesktopSettings,
@@ -274,22 +271,12 @@ private fun assistantMaxTokens(messages: List<LlmChatMessage>, contextLimit: Int
     return available.coerceIn(512, AssistantDefaultMaxTokens)
 }
 
-private fun parseAssistantToolBatch(response: String): AssistantToolBatch {
-    val root = assistantToolJson.parseToJsonElement(response).jsonObject
-    val calls = root["tool_calls"]?.jsonArray
-        ?.mapNotNull { element -> parseAssistantToolPlan(element.jsonObject).takeUnless { it.tool == "none" } }
-        ?: listOf(parseAssistantToolPlan(root)).filter { it.tool != "none" }
-    return AssistantToolBatch(calls = calls, reply = root.string("reply"))
-}
-
-private fun parseAssistantToolPlan(root: JsonObject): AssistantToolPlan {
-    val tool = root.string("tool").ifBlank { "none" }
-    val description = root.string("description")
-    val reply = root.string("reply")
+private fun LlmToolCall.toAssistantToolPlan(): AssistantToolPlan {
+    val root = runCatching { assistantToolJson.parseToJsonElement(arguments).jsonObject }
+        .getOrDefault(JsonObject(emptyMap()))
     return AssistantToolPlan(
-        tool = tool,
-        description = description,
-        reply = reply,
+        tool = name,
+        description = root.string("description"),
         prompt = root.string("prompt"),
         negativePrompt = root.string("negative_prompt"),
         width = root.int("width"),
@@ -298,7 +285,135 @@ private fun parseAssistantToolPlan(root: JsonObject): AssistantToolPlan {
         cfgScale = root.double("cfg_scale"),
         seed = root.int("seed"),
         sampler = root.string("sampler"),
+        replaceExistingComposition = root.boolean("replace_existing"),
     )
+}
+
+private fun assistantToolDefinitions(): JsonArray = JsonArray(
+    listOf(
+        functionTool(
+            name = "set_prompt",
+            description = "Replace the normal Prompt field.",
+            properties = mapOf("prompt" to stringSchema("The complete image prompt to put into the Prompt field.")),
+            required = listOf("prompt"),
+        ),
+        functionTool("enhance_prompt", "Improve the current normal Prompt field using the app's prompt enhancer."),
+        functionTool(
+            name = "set_negative_prompt",
+            description = "Replace the Negative Prompt field.",
+            properties = mapOf("negative_prompt" to stringSchema("The negative prompt text.")),
+            required = listOf("negative_prompt"),
+        ),
+        functionTool("clear_negative_prompt", "Clear the Negative Prompt field."),
+        functionTool("inspect_latest_image", "Inspect the latest generated image in the assistant chat."),
+        functionTool(
+            name = "generate_structured_prompt",
+            description = "Create a full structured Ideogram prompt from the current normal prompt. Use only when no structured composition exists yet, or when the user is clearly switching to a completely different image concept. Do not use this for incremental edits to an existing composition; use improve_* or element tools instead.",
+            properties = mapOf("replace_existing" to booleanSchema("Set true only when the user is intentionally replacing an existing structured composition with a completely different image concept.")),
+        ),
+        functionTool("improve_high_level", "Improve the high-level description field."),
+        functionTool("improve_style", "Improve the style fields."),
+        functionTool("improve_composition", "Improve background and element placements."),
+        functionTool("improve_background", "Improve only the background field."),
+        functionTool("improve_selected_element", "Improve the currently selected element description."),
+        functionTool("suggest_global_palette", "Suggest the global style palette."),
+        functionTool("suggest_selected_element_palette", "Suggest palette for the selected element."),
+        functionTool("regenerate_selected_element", "Create a variant of the selected element."),
+        functionTool(
+            name = "add_object",
+            description = "Add one object element to the structured composition.",
+            properties = mapOf("description" to stringSchema("The object to add.")),
+            required = listOf("description"),
+        ),
+        functionTool(
+            name = "add_text",
+            description = "Add one text element to the structured composition.",
+            properties = mapOf("description" to stringSchema("The text element to add, including literal text.")),
+            required = listOf("description"),
+        ),
+        functionTool("delete_selected_element", "Delete the currently selected element."),
+        functionTool(
+            name = "set_image_size",
+            description = "Set exact image width and height.",
+            properties = mapOf(
+                "width" to integerSchema("Image width in pixels."),
+                "height" to integerSchema("Image height in pixels."),
+            ),
+            required = listOf("width", "height"),
+        ),
+        functionTool("set_portrait", "Make the current image size portrait/tall."),
+        functionTool("set_landscape", "Make the current image size landscape/wide."),
+        functionTool("set_square", "Make the current image size square."),
+        functionTool(
+            name = "set_steps",
+            description = "Set sampling steps.",
+            properties = mapOf("steps" to integerSchema("Sampling steps.")),
+            required = listOf("steps"),
+        ),
+        functionTool(
+            name = "set_cfg_scale",
+            description = "Set CFG scale.",
+            properties = mapOf("cfg_scale" to numberSchema("CFG scale.")),
+            required = listOf("cfg_scale"),
+        ),
+        functionTool(
+            name = "set_seed",
+            description = "Set seed.",
+            properties = mapOf("seed" to integerSchema("Seed value.")),
+            required = listOf("seed"),
+        ),
+        functionTool("randomize_seed", "Set seed to random."),
+        functionTool(
+            name = "set_sampler",
+            description = "Set sampler.",
+            properties = mapOf("sampler" to stringSchema("Sampler name.")),
+            required = listOf("sampler"),
+        ),
+    ),
+)
+
+private fun functionTool(
+    name: String,
+    description: String,
+    properties: Map<String, JsonObject> = emptyMap(),
+    required: List<String> = emptyList(),
+): JsonObject = buildJsonObject {
+    put("type", JsonPrimitive("function"))
+    put(
+        "function",
+        buildJsonObject {
+            put("name", JsonPrimitive(name))
+            put("description", JsonPrimitive(description))
+            put(
+                "parameters",
+                buildJsonObject {
+                    put("type", JsonPrimitive("object"))
+                    put("properties", JsonObject(properties))
+                    put("required", JsonArray(required.map { JsonPrimitive(it) }))
+                },
+            )
+        },
+    )
+}
+
+private fun stringSchema(description: String): JsonObject = buildJsonObject {
+    put("type", JsonPrimitive("string"))
+    put("description", JsonPrimitive(description))
+}
+
+private fun integerSchema(description: String): JsonObject = buildJsonObject {
+    put("type", JsonPrimitive("integer"))
+    put("description", JsonPrimitive(description))
+}
+
+private fun numberSchema(description: String): JsonObject = buildJsonObject {
+    put("type", JsonPrimitive("number"))
+    put("description", JsonPrimitive(description))
+}
+
+private fun booleanSchema(description: String): JsonObject = buildJsonObject {
+    put("type", JsonPrimitive("boolean"))
+    put("description", JsonPrimitive(description))
 }
 
 private fun JsonObject.string(key: String): String =
@@ -310,52 +425,7 @@ private fun JsonObject.int(key: String): Int? =
 private fun JsonObject.double(key: String): Double? =
     (get(key) as? JsonPrimitive)?.contentOrNull?.trim()?.toDoubleOrNull()
 
+private fun JsonObject.boolean(key: String): Boolean =
+    (get(key) as? JsonPrimitive)?.contentOrNull?.trim()?.toBooleanStrictOrNull() ?: false
+
 private val assistantToolJson = Json { ignoreUnknownKeys = true }
-
-private const val ASSISTANT_TOOL_PLANNER_PROMPT = """
-You route the user's message to one existing Diffusion Desk UI action when appropriate.
-Return only JSON with keys: tool_calls, reply.
-tool_calls must be an array of objects with keys: tool, description, prompt, negative_prompt, width, height, steps, cfg_scale, seed, sampler.
-Use null for numeric keys that do not apply and "" for unused strings.
-
-Use an empty tool_calls array when the user is asking a question, wants explanation, or no existing action fits.
-You may return multiple tool calls when the user asks for multiple changes. Order matters.
-If a previous tool failed, use the error to choose a corrected next tool or return no tool calls with a short reply explaining what is needed.
-If a composition tool fails because no valid structured composition exists, call generate_structured_prompt next.
-Use description only for add_object or add_text. Keep it concise and include the user's requested visual content.
-Use prompt only for set_prompt. Use negative_prompt only for set_negative_prompt.
-Use reply as one short user-facing sentence in English.
-
-Available tools:
-- set_prompt: replace the normal Prompt field. Requires prompt.
-- enhance_prompt: improve the current normal Prompt field using the app's prompt enhancer.
-- set_negative_prompt: replace the Negative Prompt field. Requires negative_prompt.
-- clear_negative_prompt: clear the Negative Prompt field.
-- generate_structured_prompt: create a full structured Ideogram prompt from the current normal prompt.
-- improve_high_level: improve the high-level description field.
-- improve_style: improve the style fields.
-- improve_composition: improve background and element placements.
-- improve_background: improve only the background field.
-- improve_selected_element: improve the currently selected element description.
-- suggest_global_palette: suggest the global style palette.
-- suggest_selected_element_palette: suggest palette for the selected element.
-- regenerate_selected_element: create a variant of the selected element.
-- add_object: add one object element. Requires description.
-- add_text: add one text element. Requires description including the literal text if requested.
-- delete_selected_element: delete the currently selected element.
-- set_image_size: set exact width and height. Requires width and height.
-- set_portrait: make the current image size portrait/tall.
-- set_landscape: make the current image size landscape/wide.
-- set_square: make the current image size square.
-- set_steps: set sampling steps. Requires steps.
-- set_cfg_scale: set CFG scale. Requires cfg_scale.
-- set_seed: set seed. Requires seed.
-- randomize_seed: set seed to random.
-- set_sampler: set sampler. Requires sampler.
-
-Examples:
-{"tool_calls":[{"tool":"set_prompt","description":"","prompt":"minimalist vector art wallpaper, dark mode aesthetic, glowing cyan lines","negative_prompt":"","width":null,"height":null,"steps":null,"cfg_scale":null,"seed":null,"sampler":""}],"reply":"I updated the prompt."}
-{"tool_calls":[{"tool":"add_object","description":"a small ceramic cup beside the strawberries","prompt":"","negative_prompt":"","width":null,"height":null,"steps":null,"cfg_scale":null,"seed":null,"sampler":""},{"tool":"set_landscape","description":"","prompt":"","negative_prompt":"","width":null,"height":null,"steps":null,"cfg_scale":null,"seed":null,"sampler":""}],"reply":"I added the object and switched to landscape."}
-{"tool_calls":[{"tool":"set_image_size","description":"","prompt":"","negative_prompt":"","width":1024,"height":1536,"steps":null,"cfg_scale":null,"seed":null,"sampler":""}],"reply":"I set the image size to 1024 x 1536."}
-{"tool_calls":[],"reply":""}
-"""
