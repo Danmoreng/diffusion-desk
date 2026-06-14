@@ -5,6 +5,7 @@ kotlin = "2.3.20"
 coroutines = "1.8.1"
 serialization = "1.7.3"
 jewel = "0.37.0-262.4852.51"
+intellij-platform-icons = "261.25134.147"
 sqlite-jdbc = "3.49.1.0"
 
 [libraries]
@@ -13,6 +14,7 @@ kotlinx-coroutines-core = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-c
 kotlinx-coroutines-swing = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-swing", version.ref = "coroutines" }
 kotlinx-serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json", version.ref = "serialization" }
 jewel-int-ui-standalone = { module = "org.jetbrains.jewel:jewel-int-ui-standalone", version.ref = "jewel" }
+intellij-platform-icons = { module = "com.jetbrains.intellij.platform:icons", version.ref = "intellij-platform-icons" }
 sqlite-jdbc = { module = "org.xerial:sqlite-jdbc", version.ref = "sqlite-jdbc" }
 
 [plugins]
