@@ -94,6 +94,7 @@ fun App(
                 )
 
                 if (assistantOpen) {
+                    Spacer(Modifier.width(DeskCompactControlSpacing))
                     AssistantPanel(
                         state = assistantState,
                         context = assistantContext,
@@ -101,6 +102,11 @@ fun App(
                         onCancel = controller.assistantViewModel::cancel,
                         onClear = controller.assistantViewModel::clearHistory,
                         onClose = { assistantOpen = false },
+                        onAttachImage = controller.assistantViewModel::attachImage,
+                        onClearAttachedImage = controller.assistantViewModel::clearAttachedImage,
+                        onInspectLatestImage = {
+                            controller.assistantViewModel.sendMessage("Inspect the latest generated image.", assistantContext)
+                        },
                     )
                 }
 
@@ -268,7 +274,7 @@ fun App(
                         notifications = notifications,
                         onDismiss = controller.notificationCenter::dismiss,
                         modifier = Modifier
-                            .align(Alignment.BottomEnd)
+                            .align(Alignment.TopEnd)
                             .padding(16.dp),
                     )
                 }
