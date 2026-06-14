@@ -13,6 +13,7 @@ import androidx.compose.material.icons.filled.Inventory2
 import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.Memory
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.SmartToy
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -29,6 +30,8 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.diffusiondesk.desktop.core.ImagePromptMode
+import com.diffusiondesk.desktop.screens.AssistantPanel
 import com.diffusiondesk.desktop.screens.GalleryScreen
 import com.diffusiondesk.desktop.screens.GenerateScreen
 import com.diffusiondesk.desktop.screens.LibraryScreen
@@ -37,6 +40,9 @@ import com.diffusiondesk.desktop.screens.NotificationStack
 import com.diffusiondesk.desktop.screens.SettingsScreen
 import com.diffusiondesk.desktop.screens.SystemScreen
 import com.diffusiondesk.desktop.theme.DiffusionDeskTheme
+import com.diffusiondesk.desktop.viewmodel.AssistantContextSnapshot
+import com.diffusiondesk.desktop.viewmodel.GenerationUiState
+import com.diffusiondesk.desktop.viewmodel.IdeogramCompositionElement
 import org.jetbrains.jewel.ui.component.IconButton
 import org.jetbrains.jewel.ui.component.Text
 
@@ -56,6 +62,7 @@ fun App(
     val settingsState by controller.settingsViewModel.uiState.collectAsState()
     val backendState by controller.settingsViewModel.backendState.collectAsState()
     val generationState by controller.generationViewModel.uiState.collectAsState()
+    val assistantState by controller.assistantViewModel.uiState.collectAsState()
     val libraryState by controller.libraryViewModel.uiState.collectAsState()
     val galleryState by controller.galleryViewModel.uiState.collectAsState()
     val notifications by controller.notificationCenter.notifications.collectAsState()
@@ -65,6 +72,10 @@ fun App(
         "light" -> false
         "dark" -> true
         else -> systemDarkTheme
+    }
+    var assistantOpen by remember { mutableStateOf(false) }
+    val assistantContext = remember(generationState, currentScreen) {
+        generationState.toAssistantContext(currentScreen.label)
     }
 
     DiffusionDeskTheme(darkTheme = darkTheme) {
@@ -76,9 +87,22 @@ fun App(
                 NavigationSidebar(
                     currentScreen = currentScreen,
                     darkTheme = darkTheme,
+                    assistantOpen = assistantOpen,
                     onSelect = { currentScreen = it },
+                    onToggleAssistant = { assistantOpen = !assistantOpen },
                     onToggleTheme = controller.settingsViewModel::toggleThemeMode,
                 )
+
+                if (assistantOpen) {
+                    AssistantPanel(
+                        state = assistantState,
+                        context = assistantContext,
+                        onSend = controller.assistantViewModel::sendMessage,
+                        onCancel = controller.assistantViewModel::cancel,
+                        onClear = controller.assistantViewModel::clearHistory,
+                        onClose = { assistantOpen = false },
+                    )
+                }
 
                 Box(modifier = Modifier.fillMaxSize()) {
                     when (currentScreen) {
@@ -257,7 +281,9 @@ fun App(
 private fun NavigationSidebar(
     currentScreen: Screen,
     darkTheme: Boolean,
+    assistantOpen: Boolean,
     onSelect: (Screen) -> Unit,
+    onToggleAssistant: () -> Unit,
     onToggleTheme: () -> Unit,
 ) {
     Column(
@@ -283,6 +309,15 @@ private fun NavigationSidebar(
 
         Spacer(Modifier.weight(1f))
 
+        SidebarActionItem(
+            label = "Assistant",
+            icon = Icons.Default.SmartToy,
+            selected = assistantOpen,
+            onClick = onToggleAssistant,
+        )
+
+        Spacer(Modifier.height(DeskCompactControlSpacing))
+
         IconButton(onClick = onToggleTheme) {
             Icon(
                 imageVector = if (darkTheme) Icons.Default.LightMode else Icons.Default.DarkMode,
@@ -291,6 +326,41 @@ private fun NavigationSidebar(
         }
 
         Spacer(Modifier.height(16.dp))
+    }
+}
+
+@Composable
+private fun SidebarActionItem(
+    label: String,
+    icon: ImageVector,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
+    val selectedColor = if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.16f) else MaterialTheme.colorScheme.surface
+    val contentColor = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+    Column(
+        modifier = Modifier
+            .width(58.dp)
+            .clip(RoundedCornerShape(8.dp))
+            .clickable(onClick = onClick)
+            .background(selectedColor)
+            .padding(vertical = 8.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = label,
+            tint = contentColor,
+            modifier = Modifier.size(20.dp),
+        )
+        Text(
+            text = label,
+            color = contentColor,
+            fontSize = 10.sp,
+            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+            maxLines = 1,
+        )
     }
 }
 
@@ -328,3 +398,42 @@ private fun SidebarItem(
         )
     }
 }
+
+private fun GenerationUiState.toAssistantContext(screen: String): AssistantContextSnapshot {
+    val preset = presets.firstOrNull { it.id == selectedPresetId }
+    val promptMode = preset?.promptMode ?: ImagePromptMode.Text
+    val document = ideogram.document
+    val selectedElement = document?.elements?.getOrNull(selectedCompositionElementIndex)
+    return AssistantContextSnapshot(
+        screen = screen,
+        promptMode = promptMode.displayName,
+        prompt = if (promptMode == ImagePromptMode.Json) ideogram.jsonPrompt else prompt,
+        negativePrompt = negativePrompt,
+        width = width,
+        height = height,
+        steps = steps,
+        cfgScale = cfgScale,
+        sampler = sampler,
+        seed = seed,
+        selectedPreset = preset?.name.orEmpty(),
+        compositionSummary = document?.let {
+            buildString {
+                append("high_level_description: ${it.highLevelDescription}\n")
+                append("background: ${it.background}\n")
+                append("elements:\n")
+                it.elements.forEachIndexed { index, element ->
+                    append("${index + 1}. ${element.assistantLabel()}\n")
+                }
+            }
+        }.orEmpty(),
+        selectedCompositionElement = selectedElement?.assistantLabel().orEmpty(),
+    )
+}
+
+private fun IdeogramCompositionElement.assistantLabel(): String =
+    buildString {
+        append(type)
+        if (text?.isNotBlank() == true) append(" text=\"").append(text).append("\"")
+        if (description.isNotBlank()) append(" desc=\"").append(description.take(180)).append("\"")
+        if (bbox.size == 4) append(" bbox=").append(bbox.joinToString(prefix = "[", postfix = "]"))
+    }

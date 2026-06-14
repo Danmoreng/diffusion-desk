@@ -21,6 +21,7 @@ import com.diffusiondesk.desktop.core.LlmWorkerPool
 import com.diffusiondesk.desktop.core.SavedGenerationSettings
 import com.diffusiondesk.desktop.composition.CompositionAction
 import com.diffusiondesk.desktop.composition.CompositionActionExecutor
+import com.diffusiondesk.desktop.composition.PaletteTarget
 import com.diffusiondesk.desktop.composition.StagedIdeogramDraft
 import com.diffusiondesk.desktop.composition.StagedIdeogramGenerator
 import com.diffusiondesk.desktop.composition.StagedIdeogramStep
@@ -890,6 +891,175 @@ class GenerationViewModel(
                     )
                 }
             }
+        }
+    }
+
+    fun runAssistantTool(request: AssistantToolRequest): AssistantToolResult {
+        val state = _uiState.value
+        if (state.ideogram.isGeneratingJson || state.activeCompositionImproveAction != null) {
+            return AssistantToolResult(false, "Another composition action is already running.")
+        }
+
+        fun selectedIndex(): Int? = state.selectedCompositionElementIndex
+        fun requireComposition(): AssistantToolResult? =
+            if (state.ideogram.document == null) {
+                AssistantToolResult(false, "Create or load a valid structured composition first.")
+            } else {
+                null
+            }
+
+        return when (request.tool) {
+            "set_prompt" -> {
+                val prompt = request.prompt.trim()
+                if (prompt.isBlank()) return AssistantToolResult(false, "Prompt is required.")
+                updatePrompt(prompt)
+                commitPrompt()
+                update { copy(message = "Prompt updated.", error = null) }
+                AssistantToolResult(true, "Prompt updated.")
+            }
+            "enhance_prompt" -> {
+                if (state.prompt.isBlank()) return AssistantToolResult(false, "Prompt is empty.")
+                enhancePrompt()
+                AssistantToolResult(true, "Started prompt enhancement.")
+            }
+            "set_negative_prompt" -> {
+                updateNegativePrompt(request.negativePrompt)
+                update { copy(message = "Negative prompt updated.", error = null) }
+                AssistantToolResult(true, "Negative prompt updated.")
+            }
+            "clear_negative_prompt" -> {
+                updateNegativePrompt("")
+                update { copy(message = "Negative prompt cleared.", error = null) }
+                AssistantToolResult(true, "Negative prompt cleared.")
+            }
+            "generate_structured_prompt" -> {
+                generateIdeogramJsonPrompt()
+                AssistantToolResult(true, "Started structured prompt generation.")
+            }
+            "improve_high_level" -> requireComposition() ?: run {
+                runCompositionAction(CompositionAction.ImproveField(CompositionImproveTarget.HighLevelDescription))
+                AssistantToolResult(true, "Started high-level description improvement.")
+            }
+            "improve_style" -> requireComposition() ?: run {
+                runCompositionAction(CompositionAction.ImproveStyle)
+                AssistantToolResult(true, "Started style improvement.")
+            }
+            "improve_composition" -> requireComposition() ?: run {
+                runCompositionAction(CompositionAction.ImproveComposition)
+                AssistantToolResult(true, "Started composition improvement.")
+            }
+            "improve_background" -> requireComposition() ?: run {
+                runCompositionAction(CompositionAction.ImproveField(CompositionImproveTarget.Background))
+                AssistantToolResult(true, "Started background improvement.")
+            }
+            "improve_selected_element" -> requireComposition() ?: selectedIndex()?.let { index ->
+                runCompositionAction(CompositionAction.ImproveField(CompositionImproveTarget.ElementDescription(index)))
+                AssistantToolResult(true, "Started selected element improvement.")
+            } ?: AssistantToolResult(false, "Select an element first.")
+            "suggest_global_palette" -> requireComposition() ?: run {
+                runCompositionAction(CompositionAction.SuggestPalette(PaletteTarget.Global))
+                AssistantToolResult(true, "Started global palette suggestion.")
+            }
+            "suggest_selected_element_palette" -> requireComposition() ?: selectedIndex()?.let { index ->
+                runCompositionAction(CompositionAction.SuggestPalette(PaletteTarget.Element(index)))
+                AssistantToolResult(true, "Started selected element palette suggestion.")
+            } ?: AssistantToolResult(false, "Select an element first.")
+            "regenerate_selected_element" -> requireComposition() ?: selectedIndex()?.let { index ->
+                runCompositionAction(CompositionAction.RegenerateElement(index))
+                AssistantToolResult(true, "Started selected element variant.")
+            } ?: AssistantToolResult(false, "Select an element first.")
+            "add_object" -> requireComposition() ?: request.description.takeIf(String::isNotBlank)?.let { description ->
+                runCompositionAction(CompositionAction.AddElement("obj", description))
+                AssistantToolResult(true, "Started adding object.")
+            } ?: AssistantToolResult(false, "Describe the object to add.")
+            "add_text" -> requireComposition() ?: request.description.takeIf(String::isNotBlank)?.let { description ->
+                runCompositionAction(CompositionAction.AddElement("text", description))
+                AssistantToolResult(true, "Started adding text.")
+            } ?: AssistantToolResult(false, "Describe the text element to add.")
+            "delete_selected_element" -> requireComposition() ?: selectedIndex()?.let { index ->
+                runCompositionAction(CompositionAction.DeleteElement(index))
+                AssistantToolResult(true, "Started deleting selected element.")
+            } ?: AssistantToolResult(false, "Select an element first.")
+            "set_image_size" -> {
+                val width = request.width ?: return AssistantToolResult(false, "Width is required.")
+                val height = request.height ?: return AssistantToolResult(false, "Height is required.")
+                val size = sanitizeResolution(width, height)
+                update {
+                    copy(
+                        width = size.first.toString(),
+                        height = size.second.toString(),
+                        message = "Set image size to ${size.first} x ${size.second}.",
+                        error = null,
+                    )
+                }
+                AssistantToolResult(true, "Set image size to ${size.first} x ${size.second}.")
+            }
+            "set_portrait" -> {
+                val width = state.width.toIntOrNull() ?: 768
+                val height = state.height.toIntOrNull() ?: 1024
+                val shortSide = minOf(width, height)
+                val longSide = maxOf(width, height)
+                update {
+                    copy(
+                        width = shortSide.toString(),
+                        height = longSide.toString(),
+                        message = "Set image size to portrait ${shortSide} x ${longSide}.",
+                        error = null,
+                    )
+                }
+                AssistantToolResult(true, "Set image size to portrait ${shortSide} x ${longSide}.")
+            }
+            "set_landscape" -> {
+                val width = state.width.toIntOrNull() ?: 1024
+                val height = state.height.toIntOrNull() ?: 768
+                val shortSide = minOf(width, height)
+                val longSide = maxOf(width, height)
+                update {
+                    copy(
+                        width = longSide.toString(),
+                        height = shortSide.toString(),
+                        message = "Set image size to landscape ${longSide} x ${shortSide}.",
+                        error = null,
+                    )
+                }
+                AssistantToolResult(true, "Set image size to landscape ${longSide} x ${shortSide}.")
+            }
+            "set_square" -> {
+                val width = state.width.toIntOrNull() ?: 1024
+                val height = state.height.toIntOrNull() ?: 1024
+                val side = snapResolution(((width + height) / 2).coerceIn(MIN_RESOLUTION, MAX_RESOLUTION))
+                update {
+                    copy(width = side.toString(), height = side.toString(), message = "Set image size to ${side} x $side.", error = null)
+                }
+                AssistantToolResult(true, "Set image size to ${side} x $side.")
+            }
+            "set_steps" -> {
+                val steps = request.steps ?: return AssistantToolResult(false, "Steps value is required.")
+                update { copy(steps = steps.coerceIn(1, 200).toString(), message = "Set steps to ${steps.coerceIn(1, 200)}.", error = null) }
+                AssistantToolResult(true, "Set steps to ${steps.coerceIn(1, 200)}.")
+            }
+            "set_cfg_scale" -> {
+                val cfg = request.cfgScale ?: return AssistantToolResult(false, "CFG scale is required.")
+                val normalized = cfg.coerceIn(0.0, 30.0)
+                update { copy(cfgScale = normalized.toString(), message = "Set CFG scale to $normalized.", error = null) }
+                AssistantToolResult(true, "Set CFG scale to $normalized.")
+            }
+            "set_seed" -> {
+                val seed = request.seed ?: return AssistantToolResult(false, "Seed is required.")
+                update { copy(seed = seed.toString(), message = "Set seed to $seed.", error = null) }
+                AssistantToolResult(true, "Set seed to $seed.")
+            }
+            "randomize_seed" -> {
+                randomizeSeed()
+                AssistantToolResult(true, "Set seed to random.")
+            }
+            "set_sampler" -> {
+                val sampler = request.sampler.trim()
+                if (sampler.isBlank()) return AssistantToolResult(false, "Sampler is required.")
+                update { copy(sampler = sampler, message = "Set sampler to $sampler.", error = null) }
+                AssistantToolResult(true, "Set sampler to $sampler.")
+            }
+            else -> AssistantToolResult(false, "Unknown assistant tool: ${request.tool}")
         }
     }
 
@@ -2073,6 +2243,13 @@ class GenerationViewModel(
         val state = _uiState.value
         return state.presets.firstOrNull { it.id == state.selectedPresetId }
     }
+
+    private fun sanitizeResolution(width: Int, height: Int): Pair<Int, Int> =
+        snapResolution(width) to snapResolution(height)
+
+    private fun snapResolution(value: Int): Int =
+        ((value + RESOLUTION_STEP / 2) / RESOLUTION_STEP * RESOLUTION_STEP)
+            .coerceIn(MIN_RESOLUTION, MAX_RESOLUTION)
 
     private fun update(transform: GenerationUiState.() -> GenerationUiState) {
         _uiState.value = _uiState.value.transform()
