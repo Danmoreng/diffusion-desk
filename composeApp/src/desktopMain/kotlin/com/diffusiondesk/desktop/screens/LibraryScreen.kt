@@ -1,6 +1,5 @@
 package com.diffusiondesk.desktop.screens
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -19,12 +18,10 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
@@ -39,8 +36,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -56,7 +51,6 @@ import com.diffusiondesk.desktop.viewmodel.ImagePresetForm
 import com.diffusiondesk.desktop.viewmodel.LibraryMode
 import com.diffusiondesk.desktop.viewmodel.LibraryUiState
 import com.diffusiondesk.desktop.viewmodel.LlmPresetForm
-import org.jetbrains.jewel.ui.component.Checkbox
 import org.jetbrains.jewel.ui.component.Text
 
 @Composable
@@ -214,17 +208,12 @@ private fun LibraryTabHeader(
 
 @Composable
 private fun EmptyLibrary(onCreatePreset: () -> Unit) {
-    Column(
+    DeskEmptyState(
+        title = "No image presets yet.",
+        actionText = "Create Image Preset",
+        onAction = onCreatePreset,
         modifier = Modifier.fillMaxSize(),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center,
-    ) {
-        Text("No image presets yet.", color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Spacer(Modifier.height(DeskLayoutGap))
-        DeskButton(onClick = onCreatePreset) {
-            Text("Create Image Preset")
-        }
-    }
+    )
 }
 
 @Composable
@@ -269,12 +258,7 @@ private fun ImagePresetCard(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 if (selected) {
-                    StatusButton(
-                        icon = Icons.Default.Check,
-                        text = "Selected",
-                        container = MaterialTheme.colorScheme.primary.copy(alpha = 0.18f),
-                        content = MaterialTheme.colorScheme.primary,
-                    )
+                    DeskStatusBadge(text = "Selected", tone = DeskStatusTone.Info)
                 } else {
                     DeskButton(
                         onClick = onLoad,
@@ -364,17 +348,12 @@ private fun LlmPresetLibrary(
 
         Box(modifier = Modifier.weight(1f)) {
             if (state.llmPresets.isEmpty()) {
-                Column(
+                DeskEmptyState(
+                    title = "No LLM presets yet.",
+                    actionText = "Create LLM Preset",
+                    onAction = onCreateLlmPreset,
                     modifier = Modifier.fillMaxSize(),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.Center,
-                ) {
-                    Text("No LLM presets yet.", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Spacer(Modifier.height(DeskLayoutGap))
-                    DeskButton(onClick = onCreateLlmPreset) {
-                        Text("Create LLM Preset")
-                    }
-                }
+                )
             } else {
                 FlowRow(
                     modifier = Modifier
@@ -562,26 +541,6 @@ private fun LlmPresetEditorPage(
         }
 
         StatusMessages(state.message, state.error)
-    }
-}
-
-@Composable
-private fun StatusButton(
-    icon: ImageVector,
-    text: String,
-    container: Color,
-    content: Color,
-) {
-    Row(
-        modifier = Modifier
-            .clip(RoundedCornerShape(6.dp))
-            .background(container)
-            .padding(horizontal = 10.dp, vertical = 7.dp),
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Icon(icon, contentDescription = null, modifier = Modifier.size(15.dp), tint = content)
-        Text(text, color = content, fontWeight = FontWeight.SemiBold)
     }
 }
 
@@ -948,24 +907,12 @@ private fun ToggleLine(
     title: String,
     subtitle: String,
 ) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(DeskLayoutGap),
-        verticalAlignment = Alignment.Top,
-    ) {
-        Checkbox(
-            checked = checked,
-            onCheckedChange = onCheckedChange,
-        )
-        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Text(title, color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.SemiBold)
-            Text(
-                text = subtitle,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-    }
+    DeskCheckboxRow(
+        checked = checked,
+        onCheckedChange = onCheckedChange,
+        title = title,
+        subtitle = subtitle,
+    )
 }
 
 @Composable

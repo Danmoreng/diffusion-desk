@@ -4,16 +4,13 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.Collections
 import androidx.compose.material.icons.filled.CropFree
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Inventory2
-import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.Memory
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.SmartToy
-import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
@@ -41,7 +38,6 @@ import com.diffusiondesk.desktop.theme.DiffusionDeskTheme
 import com.diffusiondesk.desktop.viewmodel.AssistantContextSnapshot
 import com.diffusiondesk.desktop.viewmodel.GenerationUiState
 import com.diffusiondesk.desktop.viewmodel.IdeogramCompositionElement
-import org.jetbrains.jewel.ui.component.IconButton
 import org.jetbrains.jewel.ui.component.Text
 
 private enum class Screen(val label: String, val icon: ImageVector, val subtitle: String) {
@@ -86,11 +82,9 @@ fun App(
             Row(modifier = Modifier.fillMaxSize()) {
                 NavigationSidebar(
                     currentScreen = currentScreen,
-                    darkTheme = darkTheme,
                     assistantOpen = assistantOpen,
                     onSelect = { currentScreen = it },
                     onToggleAssistant = { assistantOpen = !assistantOpen },
-                    onToggleTheme = controller.settingsViewModel::toggleThemeMode,
                 )
 
                 if (assistantOpen) {
@@ -300,11 +294,9 @@ fun App(
 @Composable
 private fun NavigationSidebar(
     currentScreen: Screen,
-    darkTheme: Boolean,
     assistantOpen: Boolean,
     onSelect: (Screen) -> Unit,
     onToggleAssistant: () -> Unit,
-    onToggleTheme: () -> Unit,
 ) {
     Column(
         modifier = Modifier
@@ -338,15 +330,6 @@ private fun NavigationSidebar(
         )
 
         Spacer(Modifier.height(DeskCompactControlSpacing))
-
-        IconButton(onClick = onToggleTheme) {
-            Icon(
-                imageVector = if (darkTheme) Icons.Default.LightMode else Icons.Default.DarkMode,
-                contentDescription = "Toggle theme",
-            )
-        }
-
-        Spacer(Modifier.height(16.dp))
     }
 }
 
