@@ -856,20 +856,8 @@ private fun EditorSection(
     title: String,
     content: @Composable ColumnScope.() -> Unit,
 ) {
-    DeskPanel(
-        modifier = Modifier.fillMaxWidth(),
-    ) {
-        Column(
-            verticalArrangement = Arrangement.spacedBy(DeskControlSpacing),
-        ) {
-            Text(
-                text = title,
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.onSurface,
-            )
-            content()
-        }
+    DeskSection(title = title) {
+        content()
     }
 }
 

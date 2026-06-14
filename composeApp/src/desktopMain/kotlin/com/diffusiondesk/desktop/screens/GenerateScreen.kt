@@ -2090,8 +2090,8 @@ internal fun GenerationParameterControls(
         }
     }
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        CompactNumberField("Steps", state.steps, onStepsChange, Modifier.weight(0.8f).widthIn(min = 104.dp), step = 1.0, minValue = 1.0)
-        CompactNumberField("Seed", state.seed, onSeedChange, Modifier.weight(1.1f).widthIn(min = 126.dp), step = 1.0)
+        DeskCompactNumberField("Steps", state.steps, onStepsChange, Modifier.weight(0.8f).widthIn(min = 104.dp), step = 1.0, minValue = 1.0)
+        DeskCompactNumberField("Seed", state.seed, onSeedChange, Modifier.weight(1.1f).widthIn(min = 126.dp), step = 1.0)
         CompactIconButton(
             icon = Icons.Default.Casino,
             contentDescription = "Random seed",
@@ -2105,13 +2105,13 @@ internal fun GenerationParameterControls(
         )
     }
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        CompactNumberField("Width", state.width, onWidthChange, Modifier.weight(1f).widthIn(min = 126.dp), step = 16.0, minValue = 64.0)
+        DeskCompactNumberField("Width", state.width, onWidthChange, Modifier.weight(1f).widthIn(min = 126.dp), step = 16.0, minValue = 64.0)
         CompactIconButton(
             icon = Icons.Default.SwapHoriz,
             contentDescription = "Swap dimensions",
             onClick = onSwapDimensions,
         )
-        CompactNumberField("Height", state.height, onHeightChange, Modifier.weight(1f).widthIn(min = 126.dp), step = 16.0, minValue = 64.0)
+        DeskCompactNumberField("Height", state.height, onHeightChange, Modifier.weight(1f).widthIn(min = 126.dp), step = 16.0, minValue = 64.0)
         AspectRatioMenu(
             width = state.width,
             height = state.height,
@@ -2124,7 +2124,7 @@ internal fun GenerationParameterControls(
         onScaleResolution = onScaleResolution,
     )
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        CompactNumberField("CFG", state.cfgScale, onCfgScaleChange, Modifier.weight(1f).widthIn(min = 118.dp), step = 0.1, minValue = 0.0, decimalPlaces = 1)
+        DeskCompactNumberField("CFG", state.cfgScale, onCfgScaleChange, Modifier.weight(1f).widthIn(min = 118.dp), step = 0.1, minValue = 0.0, decimalPlaces = 1)
         SamplerMenu(
             value = state.sampler,
             options = samplerOptions,
@@ -2695,11 +2695,11 @@ private fun PresetActionControl(
     modifier: Modifier = Modifier,
 ) {
     val selectedPreset = state.presets.firstOrNull { it.id == state.selectedPresetId }
-    val dotColor = when {
-        state.presetLoadFailed -> MaterialTheme.colorScheme.error
-        state.isLoadingPreset || state.isLoadingPresets -> Color(0xFFFFA000)
-        backendState.status == BackendStatus.Ready && selectedPreset?.id == state.loadedPresetId -> Color(0xFF2EAD4A)
-        else -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f)
+    val dotTone = when {
+        state.presetLoadFailed -> DeskStatusTone.Error
+        state.isLoadingPreset || state.isLoadingPresets -> DeskStatusTone.Warning
+        backendState.status == BackendStatus.Ready && selectedPreset?.id == state.loadedPresetId -> DeskStatusTone.Success
+        else -> DeskStatusTone.Neutral
     }
     var expanded by remember { mutableStateOf(false) }
     var anchorSize by remember { mutableStateOf(IntSize.Zero) }
@@ -2723,11 +2723,7 @@ private fun PresetActionControl(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                Box(
-                    modifier = Modifier
-                        .size(9.dp)
-                        .background(dotColor, CircleShape),
-                )
+                DeskStatusDot(dotTone)
                 Text(
                     text = selectedPreset?.name ?: "No preset",
                     modifier = Modifier.weight(1f),
@@ -2795,179 +2791,6 @@ private fun HistoryNavButton(
             tint = tint,
             modifier = Modifier.size(22.dp),
         )
-    }
-}
-
-@Composable
-private fun CompactTextField(
-    label: String,
-    value: String,
-    onChange: (String) -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    CompactFieldFrame(
-        label = label,
-        modifier = modifier,
-    ) {
-        BasicTextField(
-            value = value,
-            onValueChange = onChange,
-            modifier = Modifier.fillMaxWidth(),
-            singleLine = true,
-            textStyle = MaterialTheme.typography.bodyMedium.copy(color = MaterialTheme.colorScheme.onSurface),
-            cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
-        )
-    }
-}
-
-@Composable
-private fun CompactNumberField(
-    label: String,
-    value: String,
-    onChange: (String) -> Unit,
-    modifier: Modifier = Modifier,
-    step: Double,
-    minValue: Double? = null,
-    maxValue: Double? = null,
-    decimalPlaces: Int = 0,
-) {
-    CompactFieldFrame(
-        label = label,
-        modifier = modifier,
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            BasicTextField(
-                value = value,
-                onValueChange = onChange,
-                modifier = Modifier
-                    .weight(1f)
-                    .widthIn(min = 30.dp)
-                    .padding(end = 3.dp),
-                singleLine = true,
-                textStyle = MaterialTheme.typography.bodyMedium.copy(color = MaterialTheme.colorScheme.onSurface),
-                cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
-            )
-            NumberStepper(
-                onIncrement = {
-                    onChange(stepNumberValue(value, step, minValue, maxValue, decimalPlaces))
-                },
-                onDecrement = {
-                    onChange(stepNumberValue(value, -step, minValue, maxValue, decimalPlaces))
-                },
-            )
-        }
-    }
-}
-
-@Composable
-private fun NumberStepper(
-    onIncrement: () -> Unit,
-    onDecrement: () -> Unit,
-) {
-    Column(
-        modifier = Modifier
-            .width(20.dp)
-            .fillMaxHeight(),
-    ) {
-        NumberStepperButton(
-            icon = Icons.Default.KeyboardArrowUp,
-            contentDescription = "Increase value",
-            onClick = onIncrement,
-            modifier = Modifier.weight(1f),
-        )
-        NumberStepperButton(
-            icon = Icons.Default.KeyboardArrowDown,
-            contentDescription = "Decrease value",
-            onClick = onDecrement,
-            modifier = Modifier.weight(1f),
-        )
-    }
-}
-
-@Composable
-private fun NumberStepperButton(
-    icon: ImageVector,
-    contentDescription: String,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    Box(
-        modifier = modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick),
-        contentAlignment = Alignment.Center,
-    ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = contentDescription,
-            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.size(14.dp),
-        )
-    }
-}
-
-private fun stepNumberValue(
-    value: String,
-    delta: Double,
-    minValue: Double?,
-    maxValue: Double?,
-    decimalPlaces: Int,
-): String {
-    val current = value.toDoubleOrNull() ?: 0.0
-    val stepped = (current + delta)
-        .let { if (minValue == null) it else it.coerceAtLeast(minValue) }
-        .let { if (maxValue == null) it else it.coerceAtMost(maxValue) }
-
-    return if (decimalPlaces > 0) {
-        "%.${decimalPlaces}f".format(Locale.US, stepped)
-    } else {
-        stepped.roundToInt().toString()
-    }
-}
-
-@Composable
-private fun CompactFieldFrame(
-    label: String,
-    modifier: Modifier = Modifier,
-    labelMinWidth: Dp = 50.dp,
-    content: @Composable () -> Unit,
-) {
-    val shape = RoundedCornerShape(5.dp)
-    Row(
-        modifier = modifier
-            .height(42.dp)
-            .clip(shape)
-            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, shape)
-            .background(MaterialTheme.colorScheme.surface),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Box(
-            modifier = Modifier
-                .fillMaxHeight()
-                .widthIn(min = labelMinWidth)
-                .background(MaterialTheme.colorScheme.surfaceVariant),
-            contentAlignment = Alignment.CenterStart,
-        ) {
-            Text(
-                text = label,
-                modifier = Modifier.padding(start = 10.dp, end = 10.dp),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-        }
-        Box(
-            modifier = Modifier
-                .weight(1f)
-                .padding(start = 10.dp, end = 8.dp),
-            contentAlignment = Alignment.CenterStart,
-        ) {
-            content()
-        }
     }
 }
 

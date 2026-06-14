@@ -475,18 +475,8 @@ private fun SystemSectionCard(
     title: String,
     content: @Composable () -> Unit,
 ) {
-    DeskPanel(modifier = Modifier.fillMaxWidth()) {
-        Column(
-            modifier = Modifier.fillMaxWidth(),
-            verticalArrangement = Arrangement.spacedBy(DeskControlSpacing),
-        ) {
-            Text(
-                text = title,
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.SemiBold,
-            )
-            content()
-        }
+    DeskSection(title = title) {
+        content()
     }
 }
 
@@ -497,36 +487,12 @@ private fun SummaryTile(
     status: Any,
     modifier: Modifier = Modifier,
 ) {
-    val color = statusColor(status)
-    Column(
-        modifier = modifier
-            .clip(RoundedCornerShape(6.dp))
-            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(6.dp))
-            .padding(DeskLayoutGap),
-        verticalArrangement = Arrangement.spacedBy(4.dp),
-    ) {
-        Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Text(value, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, color = color)
-    }
+    DeskSummaryTile(label = label, value = value, tone = statusTone(status), modifier = modifier)
 }
 
 @Composable
 private fun StatusBadge(status: Any) {
-    val color = statusColor(status)
-    Box(
-        modifier = Modifier
-            .clip(RoundedCornerShape(999.dp))
-            .background(color.copy(alpha = 0.14f))
-            .border(1.dp, color.copy(alpha = 0.45f), RoundedCornerShape(999.dp))
-            .padding(horizontal = 9.dp, vertical = 4.dp),
-    ) {
-        Text(
-            text = status.toString(),
-            style = MaterialTheme.typography.labelSmall,
-            color = color,
-            fontWeight = FontWeight.SemiBold,
-        )
-    }
+    DeskStatusBadge(text = status.toString(), tone = statusTone(status))
 }
 
 @Composable
@@ -549,11 +515,11 @@ private fun activeLlmWorkerCount(state: SettingsUiState): Int {
 }
 
 @Composable
-private fun statusColor(status: Any): Color {
+private fun statusTone(status: Any): DeskStatusTone {
     return when (status) {
-        BackendStatus.Ready, LlmWorkerStatus.Ready, LlmWorkerStatus.ReadyNoModel -> MaterialTheme.colorScheme.primary
-        BackendStatus.Starting, LlmWorkerStatus.Starting, LlmWorkerStatus.Loading, LlmWorkerStatus.Busy -> Color(0xFFFFA000)
-        BackendStatus.Error, LlmWorkerStatus.Error -> MaterialTheme.colorScheme.error
-        else -> MaterialTheme.colorScheme.onSurfaceVariant
+        BackendStatus.Ready, LlmWorkerStatus.Ready, LlmWorkerStatus.ReadyNoModel -> DeskStatusTone.Info
+        BackendStatus.Starting, LlmWorkerStatus.Starting, LlmWorkerStatus.Loading, LlmWorkerStatus.Busy -> DeskStatusTone.Warning
+        BackendStatus.Error, LlmWorkerStatus.Error -> DeskStatusTone.Error
+        else -> DeskStatusTone.Neutral
     }
 }
