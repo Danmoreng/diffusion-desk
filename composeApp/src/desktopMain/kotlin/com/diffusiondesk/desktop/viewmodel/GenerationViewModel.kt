@@ -6,6 +6,7 @@ import com.diffusiondesk.desktop.core.DesktopSettings
 import com.diffusiondesk.desktop.core.DesktopSettingsStore
 import com.diffusiondesk.desktop.core.DiffusionDeskClient
 import com.diffusiondesk.desktop.core.GalleryRepository
+import com.diffusiondesk.desktop.core.GalleryLora
 import com.diffusiondesk.desktop.core.GeneratedImage
 import com.diffusiondesk.desktop.core.GenerationJobEvent
 import com.diffusiondesk.desktop.core.GenerationRequest
@@ -18,6 +19,7 @@ import com.diffusiondesk.desktop.core.ImageTaggingService
 import com.diffusiondesk.desktop.core.LlmPresetStore
 import com.diffusiondesk.desktop.core.LlmRoleService
 import com.diffusiondesk.desktop.core.LlmWorkerPool
+import com.diffusiondesk.desktop.core.ModelMetadata
 import com.diffusiondesk.desktop.core.SavedGenerationSettings
 import com.diffusiondesk.desktop.composition.CompositionAction
 import com.diffusiondesk.desktop.composition.CompositionActionExecutor
@@ -89,6 +91,25 @@ data class GenerationParams(
     val seed: Int,
     val sampler: String,
     val saveImage: Boolean = true,
+    val activeLoras: List<ActiveLoraSelection> = emptyList(),
+    val includeLoraTriggerWords: Boolean = true,
+)
+
+data class LoraModelUiState(
+    val id: String,
+    val name: String,
+    val cleanName: String,
+    val tagPath: String,
+    val triggerWord: String = "",
+    val previewPath: String = "",
+)
+
+data class ActiveLoraSelection(
+    val id: String,
+    val cleanName: String,
+    val tagPath: String,
+    val triggerWord: String = "",
+    val weight: Double = 1.0,
 )
 
 data class GenerationHistoryItem(
@@ -523,6 +544,11 @@ data class GenerationUiState(
     val seed: String = "-1",
     val sampler: String = "euler_a",
     val samplerOptions: List<String> = DEFAULT_SAMPLERS,
+    val loraModels: List<LoraModelUiState> = emptyList(),
+    val isLoadingLoras: Boolean = false,
+    val loraSearchQuery: String = "",
+    val loraPanelExpanded: Boolean = false,
+    val activeLoras: List<ActiveLoraSelection> = emptyList(),
     val leftPanelWidthDp: Int = 560,
     val presets: List<ImagePreset> = emptyList(),
     val isLoadingPresets: Boolean = false,
@@ -565,6 +591,7 @@ data class GenerationUiState(
     val currentHistoryItem: GenerationHistoryItem? get() = history.getOrNull(historyIndex)
     val canUndoPrompt: Boolean get() = promptHistoryIndex > 0
     val canRedoPrompt: Boolean get() = promptHistoryIndex < promptHistory.lastIndex
+    val activeLoraCount: Int get() = activeLoras.size
     val isCurrentDraftResolutionModified: Boolean get() {
         val item = currentHistoryItem ?: return false
         val widthValue = width.toIntOrNull() ?: return true
@@ -586,6 +613,7 @@ data class GenerationUiState(
             seedValue != item.params.seed ||
             sampler != item.params.sampler
         ) return true
+        if (activeLoras.normalizedLoraSignature() != item.params.activeLoras.normalizedLoraSignature()) return true
 
         return when (item.promptMode) {
             ImagePromptMode.Text -> prompt != item.params.prompt || negativePrompt != item.params.negativePrompt
@@ -605,6 +633,62 @@ internal fun GenerationUiState.startNewCompositionDraft(): GenerationUiState = c
 
 private fun canonicalIdeogramPromptOrNull(value: String): String? =
     parseIdeogramCompositionDocument(value).getOrNull()?.serializeForBackend()
+
+private fun cleanLoraName(value: String): String {
+    val fileName = value.substringAfterLast('/').substringAfterLast('\\')
+    return fileName.substringBeforeLast('.', fileName).ifBlank { value }
+}
+
+private fun loraTagPath(modelId: String, modelName: String): String {
+    val normalized = modelId.replace('\\', '/')
+    return normalized
+        .removePrefix("lora/")
+        .ifBlank { modelName }
+}
+
+private fun List<ActiveLoraSelection>.normalizedLoraSignature(): List<Pair<String, Double>> =
+    sortedBy { it.id }.map { it.id to (it.weight * 100.0).roundToInt() / 100.0 }
+
+private fun List<ActiveLoraSelection>.loraTags(): String =
+    joinToString(" ") { lora ->
+        "<lora:${lora.tagPath}:${"%.2f".format(java.util.Locale.US, lora.weight)}>"
+    }
+
+private fun String.withoutLoraTags(): String =
+    replace(ANY_LORA_TAG_REGEX, "")
+        .replace(Regex("\\s{2,}"), " ")
+        .trim()
+
+private fun String.withVisibleLoraTags(activeLoras: List<ActiveLoraSelection>): String {
+    val promptWithoutTags = withoutLoraTags()
+    val tags = activeLoras.loraTags()
+    return listOf(promptWithoutTags, tags).filter(String::isNotBlank).joinToString(" ").trim()
+}
+
+private fun String.withLoraTriggerWords(activeLoras: List<ActiveLoraSelection>): String =
+    activeLoras.fold(this) { prompt, lora ->
+        val trigger = lora.triggerWord.trim()
+        if (trigger.isBlank() || prompt.contains(trigger, ignoreCase = true)) {
+            prompt
+        } else {
+            listOf(trigger, prompt).filter(String::isNotBlank).joinToString(", ")
+        }
+    }
+
+private fun String.withLoras(
+    activeLoras: List<ActiveLoraSelection>,
+    includeTriggerWords: Boolean,
+): String {
+    if (activeLoras.isEmpty()) return this
+    val promptWithTags = withVisibleLoraTags(activeLoras)
+    return if (includeTriggerWords) {
+        promptWithTags.withLoraTriggerWords(activeLoras)
+    } else {
+        promptWithTags
+    }
+}
+
+private val ANY_LORA_TAG_REGEX = Regex("""<lora:[^>]+>""", RegexOption.IGNORE_CASE)
 
 class GenerationViewModel(
     private val scope: CoroutineScope,
@@ -642,16 +726,22 @@ class GenerationViewModel(
     init {
         reloadPresets()
         scope.launch {
+            var loadedReadyBaseUrl: String? = null
             backendManager.state.collectLatest { state ->
                 if (state.status == BackendStatus.Ready) {
                     update { copy(message = "Image worker ready.") }
-                    loadSamplerOptions(state.baseUrl)
+                    if (state.baseUrl != loadedReadyBaseUrl) {
+                        loadedReadyBaseUrl = state.baseUrl
+                        loadSamplerOptions(state.baseUrl)
+                        loadLoras(state.baseUrl, force = true)
+                    }
                     if (!hasAutoLoadedPreset) {
                         hasAutoLoadedPreset = true
                         loadSelectedPreset()
                     }
                 } else {
                     hasAutoLoadedPreset = false
+                    loadedReadyBaseUrl = null
                     update {
                         copy(
                             loadedPresetId = "",
@@ -745,6 +835,72 @@ class GenerationViewModel(
     fun updateCfgScale(value: String) = update { copy(cfgScale = value) }
     fun updateSeed(value: String) = update { copy(seed = value) }
     fun updateSampler(value: String) = update { copy(sampler = value) }
+    fun updateLoraSearchQuery(value: String) = update { copy(loraSearchQuery = value) }
+    fun toggleLoraPanel() = update { copy(loraPanelExpanded = !loraPanelExpanded) }
+    fun reloadLoras() {
+        val baseUrl = backendManager.state.value.baseUrl
+        if (backendManager.state.value.status == BackendStatus.Ready) {
+            scope.launch { loadLoras(baseUrl, force = true) }
+        }
+    }
+
+    fun toggleLora(modelId: String) = update {
+        val model = loraModels.firstOrNull { it.id == modelId } ?: return@update this
+        val isActive = activeLoras.any { it.id == modelId || it.tagPath == model.tagPath }
+        val nextActive = if (isActive) {
+            activeLoras.filterNot { it.id == modelId || it.tagPath == model.tagPath }
+        } else {
+            activeLoras + ActiveLoraSelection(
+                id = model.id,
+                cleanName = model.cleanName,
+                tagPath = model.tagPath,
+                triggerWord = model.triggerWord,
+                weight = 1.0,
+            )
+        }
+        copy(
+            activeLoras = nextActive,
+            prompt = prompt.withVisibleLoraTags(nextActive),
+            loraPanelExpanded = loraPanelExpanded || !isActive,
+            error = null,
+        )
+    }
+
+    fun updateLoraWeight(modelId: String, value: Double) = update {
+        val nextActive = activeLoras.map { selection ->
+            if (selection.id == modelId) selection.copy(weight = value.coerceIn(0.0, 2.0)) else selection
+        }
+        copy(
+            activeLoras = nextActive,
+            prompt = prompt.withVisibleLoraTags(nextActive),
+        )
+    }
+
+    private fun activeLoraSelectionForGalleryLora(lora: GalleryLora): ActiveLoraSelection {
+        val normalizedPath = lora.path.replace('\\', '/')
+        val model = _uiState.value.loraModels.firstOrNull { model ->
+            model.tagPath.equals(normalizedPath, ignoreCase = true) ||
+                model.id.equals(normalizedPath, ignoreCase = true) ||
+                model.id.equals("lora/$normalizedPath", ignoreCase = true)
+        }
+        return if (model != null) {
+            ActiveLoraSelection(
+                id = model.id,
+                cleanName = model.cleanName,
+                tagPath = model.tagPath,
+                triggerWord = model.triggerWord,
+                weight = lora.weight,
+            )
+        } else {
+            ActiveLoraSelection(
+                id = normalizedPath,
+                cleanName = cleanLoraName(normalizedPath),
+                tagPath = normalizedPath,
+                weight = lora.weight,
+            )
+        }
+    }
+
     fun selectCompositionElement(index: Int) = update {
         val lastIndex = ideogramElementPreviews(ideogram.jsonPrompt).lastIndex
         val nextIds = ensureCompositionElementIds(ideogram.jsonPrompt, compositionElementIds)
@@ -1511,13 +1667,18 @@ class GenerationViewModel(
             null
         }
         update {
+            val nextActiveLoras = params.loras.map(::activeLoraSelectionForGalleryLora)
             val nextIds = if (params.promptMode == ImagePromptMode.Json) {
                 reconcileCompositionElementIds(ideogram.jsonPrompt, params.prompt, compositionElementIds)
             } else {
                 compositionElementIds
             }
             copy(
-                prompt = if (params.promptMode == ImagePromptMode.Text) params.prompt.ifBlank { prompt } else prompt,
+                prompt = if (params.promptMode == ImagePromptMode.Text) {
+                    params.prompt.ifBlank { prompt }.withVisibleLoraTags(nextActiveLoras)
+                } else {
+                    prompt
+                },
                 negativePrompt = params.negativePrompt,
                 ideogram = if (params.promptMode == ImagePromptMode.Json) {
                     ideogram.copy(
@@ -1540,6 +1701,7 @@ class GenerationViewModel(
                 cfgScale = params.cfgScale?.toString() ?: cfgScale,
                 sampler = resolveSamplerOption(params.sampler, samplerOptions) ?: sampler,
                 seed = params.seed?.toString() ?: seed,
+                activeLoras = nextActiveLoras,
                 resultUrls = emptyList(),
                 images = emptyList(),
                 usedSeed = "",
@@ -1606,6 +1768,65 @@ class GenerationViewModel(
                             sampler = resolveSamplerOption(sampler, options) ?: options.first(),
                         )
                     }
+                }
+            }
+    }
+
+    private suspend fun loadLoras(baseUrl: String, force: Boolean = false) {
+        if (_uiState.value.isLoadingLoras) return
+        if (!force && _uiState.value.loraModels.isNotEmpty()) return
+        update { copy(isLoadingLoras = true) }
+        val metadataById = client.fetchModelMetadata(baseUrl)
+            .getOrDefault(emptyList())
+            .associateBy(ModelMetadata::id)
+
+        client.fetchModels(baseUrl)
+            .onSuccess { models ->
+                val loras = models
+                    .filter { it.type.equals("lora", ignoreCase = true) }
+                    .map { model ->
+                        val metadata = metadataById[model.id]
+                        LoraModelUiState(
+                            id = model.id,
+                            name = model.name.ifBlank { model.id },
+                            cleanName = cleanLoraName(model.name.ifBlank { model.id }),
+                            tagPath = loraTagPath(model.id, model.name.ifBlank { model.id }),
+                            triggerWord = metadata?.triggerWord.orEmpty(),
+                            previewPath = metadata?.previewPath.orEmpty(),
+                        )
+                    }
+                    .sortedBy { it.cleanName.lowercase() }
+                update {
+                    val byId = loras.associateBy { it.id }
+                    val byTagPath = loras.associateBy { it.tagPath }
+                    val nextActiveLoras = activeLoras.map { active ->
+                        (byId[active.id] ?: byTagPath[active.tagPath])?.let { model ->
+                            active.copy(
+                                id = model.id,
+                                cleanName = model.cleanName,
+                                tagPath = model.tagPath,
+                                triggerWord = model.triggerWord,
+                            )
+                        } ?: active
+                    }
+                    copy(
+                        loraModels = loras,
+                        activeLoras = nextActiveLoras,
+                        prompt = if (activeLoras.isEmpty() && nextActiveLoras.isEmpty()) {
+                            prompt
+                        } else {
+                            prompt.withVisibleLoraTags(nextActiveLoras)
+                        },
+                        isLoadingLoras = false,
+                    )
+                }
+            }
+            .onFailure { error ->
+                update {
+                    copy(
+                        isLoadingLoras = false,
+                        error = error.message ?: "Failed to load LoRA models.",
+                    )
                 }
             }
     }
@@ -1883,6 +2104,7 @@ class GenerationViewModel(
                 cfgScale = item.params.cfgScale.toString(),
                 seed = item.params.seed.toString(),
                 sampler = item.params.sampler,
+                activeLoras = item.params.activeLoras,
                 resultUrls = item.imageUrls,
                 usedSeed = item.usedSeed?.toString().orEmpty(),
                 images = item.images,
@@ -2075,12 +2297,14 @@ class GenerationViewModel(
             cfgScale = state.cfgScale.toDoubleOrNull() ?: error("CFG scale must be numeric."),
             seed = state.seed.toIntOrNull() ?: error("Seed must be numeric."),
             sampler = state.sampler.trim(),
+            activeLoras = state.activeLoras,
+            includeLoraTriggerWords = promptOverride == null,
         )
     }
 
     private fun GenerationParams.toRequest() = GenerationRequest(
         modelId = "",
-        prompt = prompt,
+        prompt = prompt.withLoras(activeLoras, includeLoraTriggerWords),
         negativePrompt = negativePrompt,
         width = width,
         height = height,

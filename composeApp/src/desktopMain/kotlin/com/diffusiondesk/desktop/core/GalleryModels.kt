@@ -22,6 +22,7 @@ data class GalleryImage(
     val createdAt: Long,
     val modifiedAt: Long,
     val metadataText: String,
+    val loras: List<GalleryLora>,
     val favorite: Boolean,
     val rating: Int,
     val keywords: List<String>,
@@ -31,6 +32,17 @@ data class GalleryImage(
     val displayName: String get() = file.name
     val dimensions: String get() = if (width != null && height != null) "${width}x${height}" else ""
     val aspectRatio: Float get() = if (width != null && height != null && height > 0) width.toFloat() / height.toFloat() else 1f
+}
+
+data class GalleryLora(
+    val path: String,
+    val weight: Double,
+) {
+    val displayName: String
+        get() {
+            val fileName = path.substringAfterLast('/').substringAfterLast('\\')
+            return fileName.substringBeforeLast('.', fileName)
+        }
 }
 
 data class GalleryReusableParams(
@@ -45,6 +57,7 @@ data class GalleryReusableParams(
     val seed: Long?,
     val modelId: String,
     val presetId: String,
+    val loras: List<GalleryLora> = emptyList(),
 )
 
 fun inferGalleryPromptMode(prompt: String, modelId: String, presetId: String): ImagePromptMode {
@@ -75,4 +88,5 @@ data class ParsedImageMetadata(
     val modelId: String = "",
     val generationTime: Double? = null,
     val metadataText: String = "",
+    val loras: List<GalleryLora> = emptyList(),
 )

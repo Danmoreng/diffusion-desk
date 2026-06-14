@@ -147,7 +147,7 @@ diffusion_desk::json parse_image_params(const std::string& txt) {
 
 std::string get_image_params(const SDContextParams& ctx_params, const SDGenerationParams& gen_params, int64_t seed, double generation_time) {
     std::stringstream ss;
-    ss << gen_params.prompt << "\n";
+    ss << (gen_params.prompt_with_lora.empty() ? gen_params.prompt : gen_params.prompt_with_lora) << "\n";
     if (!gen_params.negative_prompt.empty()) {
         ss << "Negative prompt: " << gen_params.negative_prompt << "\n";
     }
