@@ -14,6 +14,7 @@ import com.diffusiondesk.desktop.core.LlmRoleService
 import com.diffusiondesk.desktop.core.LlmWorkerPool
 import com.diffusiondesk.desktop.core.NotificationCenter
 import com.diffusiondesk.desktop.composition.CompositionActionExecutor
+import com.diffusiondesk.desktop.viewmodel.AssistantViewModel
 import com.diffusiondesk.desktop.viewmodel.GalleryViewModel
 import com.diffusiondesk.desktop.viewmodel.GenerationViewModel
 import com.diffusiondesk.desktop.viewmodel.LibraryViewModel
@@ -57,6 +58,13 @@ class AppController {
         llmRoleService,
         llmWorkerPool,
         compositionActionExecutor,
+    )
+    val assistantViewModel = AssistantViewModel(
+        scope = scope,
+        settingsStore = settingsStore,
+        llmPresetStore = llmPresetStore,
+        llmRoleService = llmRoleService,
+        runTool = generationViewModel::runAssistantTool,
     )
     val libraryViewModel = LibraryViewModel(scope, presetStore, llmPresetStore, backendManager, client)
     val galleryViewModel = GalleryViewModel(scope, galleryRepository, settingsStore, llmPresetStore, imageTaggingService)

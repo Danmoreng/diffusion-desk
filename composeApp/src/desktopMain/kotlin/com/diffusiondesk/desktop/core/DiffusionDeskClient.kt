@@ -96,6 +96,19 @@ data class LlmChatMessage(
     val content: String,
 )
 
+data class LlmChatCompletion(
+    val content: String,
+    val reasoningContent: String,
+    val finishReason: String,
+    val promptTokens: Int?,
+    val completionTokens: Int?,
+    val totalTokens: Int?,
+    val promptTokensPerSecond: Double?,
+    val predictedTokensPerSecond: Double?,
+    val elapsedMs: Long,
+    val rawResponsePreview: String,
+)
+
 sealed class GenerationJobEvent {
     data class Queued(val jobId: String, val queuePosition: Int) : GenerationJobEvent()
     data class Started(val jobId: String) : GenerationJobEvent()
@@ -397,6 +410,40 @@ class DiffusionDeskClient(
         slotId: Int? = null,
         timeout: Duration = Duration.ofMinutes(3),
     ): Result<String> = withContext(Dispatchers.IO) {
+        chatCompletionDetailed(
+            baseUrl = baseUrl,
+            model = model,
+            messages = messages,
+            maxTokens = maxTokens,
+            temperature = temperature,
+            jsonResponse = jsonResponse,
+            reasoningFormat = reasoningFormat,
+            enableThinking = enableThinking,
+            reasoningBudgetTokens = reasoningBudgetTokens,
+            cachePrompt = cachePrompt,
+            slotId = slotId,
+            timeout = timeout,
+        ).mapCatching { completion ->
+            completion.content.ifBlank {
+                error("Chat completion returned empty content. Raw response: ${completion.rawResponsePreview}")
+            }
+        }
+    }
+
+    suspend fun chatCompletionDetailed(
+        baseUrl: String,
+        model: String,
+        messages: List<LlmChatMessage>,
+        maxTokens: Int? = null,
+        temperature: Double? = null,
+        jsonResponse: Boolean = false,
+        reasoningFormat: String? = null,
+        enableThinking: Boolean? = null,
+        reasoningBudgetTokens: Int? = null,
+        cachePrompt: Boolean? = null,
+        slotId: Int? = null,
+        timeout: Duration = Duration.ofMinutes(3),
+    ): Result<LlmChatCompletion> = withContext(Dispatchers.IO) {
         val callId = llmDebugLog?.start(
             model = model,
             systemPrompt = messages.filter { it.role == "system" }.joinToString("\n\n") { it.content },
@@ -447,14 +494,14 @@ class DiffusionDeskClient(
                 .timeout(timeout)
                 .build()
 
+            val startNanos = System.nanoTime()
             val response = httpClient.send(request, HttpResponse.BodyHandlers.ofString())
+            val elapsedMs = (System.nanoTime() - startNanos) / 1_000_000
             check(response.statusCode() in 200..299) { response.body().ifBlank { "Chat completion failed with ${response.statusCode()}" } }
 
             val root = json.parseToJsonElement(response.body()).jsonObject
-            parseChatContent(root).ifBlank {
-                error("Chat completion returned empty content. Raw response: ${response.body().compactPreview()}")
-            }
-        }.also { result -> recordLlmResult(callId, result) }
+            parseChatCompletion(root, response.body().compactPreview(), elapsedMs)
+        }.also { result -> recordDetailedLlmResult(callId, result) }
     }
 
     suspend fun visionChatCompletion(
@@ -907,14 +954,46 @@ class DiffusionDeskClient(
     }
 
     private fun parseChatContent(root: kotlinx.serialization.json.JsonObject): String {
-        val message = root["choices"]
+        return parseChatCompletion(root, rawPreview = "", elapsedMs = 0L).content
+    }
+
+    private fun parseChatCompletion(
+        root: kotlinx.serialization.json.JsonObject,
+        rawPreview: String,
+        elapsedMs: Long,
+    ): LlmChatCompletion {
+        val choice = root["choices"]
             ?.jsonArray
             ?.firstOrNull()
             ?.jsonObject
+        val message = choice
             ?.get("message")
             ?.jsonObject
-            ?: return ""
-        return message["content"]?.let(::parseChatContentValue).orEmpty()
+        val usage = root["usage"]?.jsonObject
+        val timings = root["timings"]?.jsonObject
+        val promptTokens = usage?.firstInt("prompt_tokens", "prompt_n", "n_prompt_tokens")
+            ?: timings?.firstInt("prompt_n", "prompt_tokens")
+        val completionTokens = usage?.firstInt("completion_tokens", "predicted_n", "n_predicted_tokens")
+            ?: timings?.firstInt("predicted_n", "completion_tokens")
+
+        return LlmChatCompletion(
+            content = message?.get("content")?.let(::parseChatContentValue).orEmpty(),
+            reasoningContent = message?.get("reasoning_content")?.let(::parseChatContentValue).orEmpty(),
+            finishReason = choice?.get("finish_reason")?.jsonPrimitive?.content.orEmpty(),
+            promptTokens = promptTokens,
+            completionTokens = completionTokens,
+            totalTokens = usage?.firstInt("total_tokens") ?: listOfNotNull(promptTokens, completionTokens)
+                .takeIf { it.size == 2 }
+                ?.sum(),
+            promptTokensPerSecond = usage?.firstDouble("prompt_tokens_per_second", "prompt_per_second")
+                ?: timings?.firstDouble("prompt_per_second", "prompt_tokens_per_second")
+                ?: timings?.tokensPerSecond("prompt_n", "prompt_ms"),
+            predictedTokensPerSecond = usage?.firstDouble("completion_tokens_per_second", "predicted_per_second")
+                ?: timings?.firstDouble("predicted_per_second", "completion_tokens_per_second")
+                ?: timings?.tokensPerSecond("predicted_n", "predicted_ms"),
+            elapsedMs = elapsedMs,
+            rawResponsePreview = rawPreview,
+        )
     }
 
     private fun parseChatContentValue(value: JsonElement): String = when {
@@ -926,6 +1005,29 @@ class DiffusionDeskClient(
                 ?: ""
         }
         else -> ""
+    }
+
+    private fun kotlinx.serialization.json.JsonObject.firstInt(vararg keys: String): Int? {
+        return keys.firstNotNullOfOrNull { key -> get(key)?.jsonPrimitive?.intOrNull }
+    }
+
+    private fun kotlinx.serialization.json.JsonObject.firstDouble(vararg keys: String): Double? {
+        return keys.firstNotNullOfOrNull { key -> get(key)?.jsonPrimitive?.doubleOrNull }
+    }
+
+    private fun kotlinx.serialization.json.JsonObject.tokensPerSecond(tokenKey: String, millisKey: String): Double? {
+        val tokens = firstDouble(tokenKey) ?: return null
+        val millis = firstDouble(millisKey)?.takeIf { it > 0.0 } ?: return null
+        return tokens / (millis / 1000.0)
+    }
+
+    private fun recordDetailedLlmResult(callId: Long?, result: Result<LlmChatCompletion>) {
+        if (callId == null) return
+        result.onSuccess { completion ->
+            llmDebugLog?.complete(callId, completion.content.ifBlank { "[empty content]" })
+        }.onFailure { error ->
+            llmDebugLog?.fail(callId, error)
+        }
     }
 
     private fun String.compactPreview(maxLength: Int = 800): String {
