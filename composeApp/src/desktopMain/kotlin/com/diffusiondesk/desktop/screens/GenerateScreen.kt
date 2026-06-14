@@ -1,6 +1,5 @@
 package com.diffusiondesk.desktop.screens
 
-import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -464,7 +463,7 @@ private fun GenerationPanel(
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Label("Parameters")
-                        SubtleTextButton(
+                        DeskSubtleTextButton(
                             icon = Icons.Default.RestartAlt,
                             text = "Reset to defaults",
                             onClick = onResetToPresetDefaults,
@@ -770,19 +769,19 @@ private fun TextPromptPanel(
         ) {
             Label("Prompt")
             Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                SubtleTextButton(
+                DeskSubtleTextButton(
                     icon = Icons.Default.AutoFixHigh,
                     text = if (state.isEnhancingPrompt) "Enhancing..." else "Enhance",
                     onClick = onEnhancePrompt,
                     enabled = inputsEnabled && state.prompt.isNotBlank() && !state.isEnhancingPrompt,
                 )
-                PromptHistoryButton(
+                DeskMiniIconButton(
                     icon = Icons.AutoMirrored.Filled.Undo,
                     contentDescription = "Previous prompt",
                     onClick = onUndoPrompt,
                     enabled = inputsEnabled && state.canUndoPrompt,
                 )
-                PromptHistoryButton(
+                DeskMiniIconButton(
                     icon = Icons.AutoMirrored.Filled.Redo,
                     contentDescription = "Next prompt",
                     onClick = onRedoPrompt,
@@ -843,7 +842,7 @@ private fun CompositionGenerationHeader(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.End,
             ) {
-                SubtleTextButton(
+                DeskSubtleTextButton(
                     icon = Icons.Default.RestartAlt,
                     text = "Start over",
                     onClick = onStartOver,
@@ -867,7 +866,7 @@ private fun CompositionGenerationHeader(
                     modifier = Modifier.weight(1f),
                 )
                 if (state.ideogram.failedStagedStep != null) {
-                    SubtleTextButton(
+                    DeskSubtleTextButton(
                         icon = Icons.Default.Refresh,
                         text = "Retry step",
                         onClick = onRetry,
@@ -906,13 +905,13 @@ private fun CompositionDocumentEditor(
         ) {
             Label("Overview")
             Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                PromptHistoryButton(
+                DeskMiniIconButton(
                     icon = Icons.AutoMirrored.Filled.Undo,
                     contentDescription = "Undo composition change",
                     onClick = onUndo,
                     enabled = state.ideogram.canUndo,
                 )
-                PromptHistoryButton(
+                DeskMiniIconButton(
                     icon = Icons.AutoMirrored.Filled.Redo,
                     contentDescription = "Redo composition change",
                     onClick = onRedo,
@@ -937,7 +936,7 @@ private fun CompositionDocumentEditor(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Label("Style")
-            SubtleTextButton(
+            DeskSubtleTextButton(
                 icon = Icons.Default.AutoFixHigh,
                 text = if (state.activeCompositionImproveAction == CompositionAction.ImproveStyle.actionId) "Improving..." else "Improve style",
                 onClick = { onRunAction(CompositionAction.ImproveStyle) },
@@ -976,7 +975,7 @@ private fun CompositionDocumentEditor(
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            SubtleTextButton(
+            DeskSubtleTextButton(
                 icon = Icons.Default.SwapHoriz,
                 text = if (usesPhoto) "Use art style" else "Use photo",
                 onClick = {
@@ -1026,7 +1025,7 @@ private fun CompositionDocumentEditor(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Label("Composition")
-            SubtleTextButton(
+            DeskSubtleTextButton(
                 icon = Icons.Default.AutoFixHigh,
                 text = if (state.activeCompositionImproveAction == CompositionAction.ImproveComposition.actionId) "Improving..." else "Improve composition",
                 onClick = { onRunAction(CompositionAction.ImproveComposition) },
@@ -1112,7 +1111,7 @@ private fun CompositionDocumentEditor(
         ) {
             Label("Elements")
             Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                SubtleTextButton(
+                DeskSubtleTextButton(
                     icon = Icons.Default.Add,
                     text = if (state.activeCompositionImproveAction == CompositionAction.AddElement("obj", newElementDescription).actionId) "Adding..." else "Add object",
                     onClick = { onRunAction(CompositionAction.AddElement("obj", newElementDescription)) },
@@ -1121,7 +1120,7 @@ private fun CompositionDocumentEditor(
                         .onPointerEvent(PointerEventType.Enter) { onHighlightHighLevelDescriptionChange(true) }
                         .onPointerEvent(PointerEventType.Exit) { onHighlightHighLevelDescriptionChange(false) },
                 )
-                SubtleTextButton(
+                DeskSubtleTextButton(
                     icon = Icons.Default.Add,
                     text = if (state.activeCompositionImproveAction == CompositionAction.AddElement("text", newElementDescription).actionId) "Adding..." else "Add text",
                     onClick = { onRunAction(CompositionAction.AddElement("text", newElementDescription)) },
@@ -1195,7 +1194,7 @@ private fun CompositionEditField(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             if (onImprove != null) {
-                SubtleTextButton(
+                DeskSubtleTextButton(
                     icon = Icons.Default.AutoFixHigh,
                     text = if (isImproving) "Improving..." else "Improve",
                     onClick = onImprove,
@@ -1765,13 +1764,13 @@ private fun ElementPreviewRow(
                 horizontalArrangement = Arrangement.spacedBy(4.dp),
                 verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
-                SubtleTextButton(
+                DeskSubtleTextButton(
                     icon = Icons.Default.AutoFixHigh,
                     text = if (isImprovingDescription) "Improving..." else "Improve",
                     onClick = onImproveDescription,
                     enabled = improveDescriptionEnabled && desc.isNotBlank(),
                 )
-                SubtleTextButton(
+                DeskSubtleTextButton(
                     icon = Icons.Default.Refresh,
                     text = if (isRegenerating) "Creating..." else "Variant",
                     onClick = onRegenerate,
@@ -1786,23 +1785,23 @@ private fun ElementPreviewRow(
                             onHighlightHighLevelDescriptionChange(false)
                         },
                 )
-                SubtleTextButton(
+                DeskSubtleTextButton(
                     icon = Icons.Default.Palette,
                     text = if (isSuggestingPalette) "Choosing..." else "Colors",
                     onClick = onSuggestPalette,
                     enabled = suggestPaletteEnabled,
                 )
-                SubtleTextButton(
+                DeskSubtleTextButton(
                     icon = Icons.Default.SwapHoriz,
                     text = if (type == "text") "To object" else "To text",
                     onClick = { onTypeChange(if (type == "text") "obj" else "text") },
                 )
-                SubtleTextButton(
+                DeskSubtleTextButton(
                     icon = Icons.Default.CropFree,
                     text = if (bbox.size == 4) "No bounds" else "Add bounds",
                     onClick = { onBboxChange(if (bbox.size == 4) null else listOf(250, 250, 750, 750)) },
                 )
-                SubtleTextButton(
+                DeskSubtleTextButton(
                     icon = Icons.Default.DeleteOutline,
                     text = if (isDeleting) "Deleting..." else "Delete",
                     onClick = onDelete,
@@ -1905,7 +1904,7 @@ private fun PaletteEditor(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             if (onSuggest != null) {
-                SubtleTextButton(
+                DeskSubtleTextButton(
                     icon = Icons.Default.AutoFixHigh,
                     text = if (isSuggesting) "Suggesting..." else "Suggest",
                     onClick = onSuggest,
@@ -2007,7 +2006,7 @@ private fun EditablePaletteSwatch(
                             ),
                             cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
                         )
-                        SubtleTextButton(
+                        DeskSubtleTextButton(
                             icon = Icons.Default.Delete,
                             text = "Remove color",
                             onClick = {
@@ -2082,7 +2081,7 @@ internal fun GenerationParameterControls(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Label("Parameters")
-            SubtleTextButton(
+            DeskSubtleTextButton(
                 icon = Icons.Default.RestartAlt,
                 text = "Reset to defaults",
                 onClick = onResetToPresetDefaults,
@@ -2092,12 +2091,12 @@ internal fun GenerationParameterControls(
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         DeskCompactNumberField("Steps", state.steps, onStepsChange, Modifier.weight(0.8f).widthIn(min = 104.dp), step = 1.0, minValue = 1.0)
         DeskCompactNumberField("Seed", state.seed, onSeedChange, Modifier.weight(1.1f).widthIn(min = 126.dp), step = 1.0)
-        CompactIconButton(
+        DeskCompactIconButton(
             icon = Icons.Default.Casino,
             contentDescription = "Random seed",
             onClick = onRandomizeSeed,
         )
-        CompactIconButton(
+        DeskCompactIconButton(
             icon = Icons.Default.Recycling,
             contentDescription = "Reuse last seed",
             onClick = onReuseLastSeed,
@@ -2106,7 +2105,7 @@ internal fun GenerationParameterControls(
     }
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         DeskCompactNumberField("Width", state.width, onWidthChange, Modifier.weight(1f).widthIn(min = 126.dp), step = 16.0, minValue = 64.0)
-        CompactIconButton(
+        DeskCompactIconButton(
             icon = Icons.Default.SwapHoriz,
             contentDescription = "Swap dimensions",
             onClick = onSwapDimensions,
@@ -2292,7 +2291,7 @@ private fun CompactGenerationProgress(
                 fontWeight = FontWeight.Bold,
             )
         }
-        GenerationProgressTrack(
+        DeskProgressTrack(
             progress = overallProgress,
             modifier = Modifier
                 .fillMaxWidth()
@@ -2387,7 +2386,7 @@ private fun CompactCompositionProgress(
                 fontWeight = FontWeight.Bold,
             )
         }
-        GenerationProgressTrack(
+        DeskProgressTrack(
             progress = composition.progress,
             modifier = Modifier.fillMaxWidth().height(5.dp),
         )
@@ -2509,31 +2508,6 @@ private fun PreviewToggle(
                     scaleX = 0.7f
                     scaleY = 0.7f
                 },
-        )
-    }
-}
-
-@Composable
-private fun GenerationProgressTrack(
-    progress: Float,
-    modifier: Modifier = Modifier,
-) {
-    val animatedProgress by animateFloatAsState(
-        targetValue = progress.coerceIn(0f, 1f),
-        label = "generation-progress",
-    )
-    val shape = RoundedCornerShape(999.dp)
-    Box(
-        modifier = modifier
-            .clip(shape)
-            .background(MaterialTheme.colorScheme.surfaceVariant),
-    ) {
-        Box(
-            modifier = Modifier
-                .fillMaxHeight()
-                .fillMaxWidth(animatedProgress.coerceIn(0f, 1f))
-                .clip(shape)
-                .background(MaterialTheme.colorScheme.primary),
         )
     }
 }
@@ -2790,101 +2764,6 @@ private fun HistoryNavButton(
             contentDescription = contentDescription,
             tint = tint,
             modifier = Modifier.size(22.dp),
-        )
-    }
-}
-
-@Composable
-internal fun SubtleTextButton(
-    icon: ImageVector,
-    text: String,
-    onClick: () -> Unit,
-    enabled: Boolean = true,
-    modifier: Modifier = Modifier,
-) {
-    val shape = RoundedCornerShape(5.dp)
-    val tint = if (enabled) {
-        MaterialTheme.colorScheme.onSurfaceVariant
-    } else {
-        MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f)
-    }
-    Row(
-        modifier = modifier
-            .clip(shape)
-            .then(if (enabled) Modifier.clickable(onClick = onClick) else Modifier)
-            .padding(horizontal = 8.dp, vertical = 4.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(5.dp),
-    ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = null,
-            tint = tint,
-            modifier = Modifier.size(14.dp),
-        )
-        Text(
-            text = text,
-            style = MaterialTheme.typography.bodySmall,
-            color = tint,
-        )
-    }
-}
-
-@Composable
-private fun CompactIconButton(
-    icon: ImageVector,
-    contentDescription: String,
-    onClick: () -> Unit,
-    enabled: Boolean = true,
-) {
-    val shape = RoundedCornerShape(5.dp)
-    val tint = if (enabled) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f)
-    Box(
-        modifier = Modifier
-            .size(42.dp)
-            .clip(shape)
-            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, shape)
-            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = if (enabled) 1f else 0.45f))
-            .then(if (enabled) Modifier.clickable(onClick = onClick) else Modifier),
-        contentAlignment = Alignment.Center,
-    ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = contentDescription,
-            tint = tint,
-            modifier = Modifier.size(20.dp),
-        )
-    }
-}
-
-@Composable
-private fun PromptHistoryButton(
-    icon: ImageVector,
-    contentDescription: String,
-    onClick: () -> Unit,
-    enabled: Boolean,
-) {
-    val shape = RoundedCornerShape(5.dp)
-    val tint = if (enabled) {
-        MaterialTheme.colorScheme.onSurfaceVariant
-    } else {
-        MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.38f)
-    }
-
-    Box(
-        modifier = Modifier
-            .size(width = 28.dp, height = 24.dp)
-            .clip(shape)
-            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, shape)
-            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = if (enabled) 0.75f else 0.35f))
-            .then(if (enabled) Modifier.clickable(onClick = onClick) else Modifier),
-        contentAlignment = Alignment.Center,
-    ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = contentDescription,
-            tint = tint,
-            modifier = Modifier.size(15.dp),
         )
     }
 }
