@@ -112,7 +112,8 @@ class GenerationDraftStateTest {
                 jsonStatus = "Composition ready.",
                 history = listOf("old composition"),
             ),
-            selectedCompositionElementIndex = 2,
+            compositionElementIds = listOf("a", "b", "c"),
+            selectedCompositionElementId = "c",
         )
 
         val reset = state.startNewCompositionDraft()
