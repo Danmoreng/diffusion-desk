@@ -35,10 +35,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Redo
 import androidx.compose.material.icons.automirrored.filled.Undo
-import androidx.compose.material.icons.filled.ChevronLeft
-import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Casino
-import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.AutoFixHigh
 import androidx.compose.material.icons.filled.Dashboard
 import androidx.compose.material.icons.filled.KeyboardArrowDown
@@ -61,7 +58,6 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Switch
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -79,7 +75,6 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.input.pointer.PointerIcon
@@ -125,7 +120,6 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 import kotlin.math.roundToInt
-import org.jetbrains.jewel.ui.component.IconButton
 import org.jetbrains.jewel.ui.component.Slider
 import org.jetbrains.jewel.ui.component.Text
 
@@ -2449,12 +2443,12 @@ private fun CompositionPreviewHost(
                 horizontalArrangement = Arrangement.spacedBy(4.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                PreviewToggle(
+                DeskInlineToggle(
                     label = "Use image for LLM improvements",
                     checked = state.useImageAsCompositionReference,
                     onCheckedChange = onUseImageAsCompositionReferenceChange,
                 )
-                PreviewToggle(
+                DeskInlineToggle(
                     label = "Composition",
                     checked = showCompositionOverlay,
                     onCheckedChange = onShowCompositionOverlayChange,
@@ -2481,38 +2475,6 @@ private fun CompositionPreviewHost(
 }
 
 @Composable
-private fun PreviewToggle(
-    label: String,
-    checked: Boolean,
-    onCheckedChange: (Boolean) -> Unit,
-) {
-    Row(
-        modifier = Modifier
-            .height(28.dp)
-            .clickable { onCheckedChange(!checked) }
-            .padding(start = 8.dp, end = 2.dp),
-        horizontalArrangement = Arrangement.spacedBy(4.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(
-            text = label,
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        Switch(
-            checked = checked,
-            onCheckedChange = null,
-            modifier = Modifier
-                .size(width = 36.dp, height = 24.dp)
-                .graphicsLayer {
-                    scaleX = 0.7f
-                    scaleY = 0.7f
-                },
-        )
-    }
-}
-
-@Composable
 internal fun ActionBar(
     state: GenerationUiState,
     backendState: BackendUiState,
@@ -2528,7 +2490,7 @@ internal fun ActionBar(
     Surface(
         modifier = Modifier
             .fillMaxWidth()
-            .height(78.dp)
+            .height(66.dp)
             .padding(
                 start = DeskScreenPadding,
                 top = if (isTop) DeskScreenPadding else 0.dp,
@@ -2546,7 +2508,7 @@ internal fun ActionBar(
             Row(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(horizontal = 22.dp),
+                    .padding(horizontal = 14.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(DeskGroupSpacing),
             ) {
@@ -2554,8 +2516,8 @@ internal fun ActionBar(
                     onClick = onGenerate,
                     enabled = generateEnabled,
                     modifier = Modifier
-                        .height(52.dp)
-                        .width(if (compact) 200.dp else 240.dp),
+                        .height(44.dp)
+                        .width(if (compact) 176.dp else 216.dp),
                 ) {
                     ButtonContent(
                         icon = Icons.Default.PlayArrow,
@@ -2571,7 +2533,7 @@ internal fun ActionBar(
                     DeskButton(
                         onClick = onCancelGeneration,
                         enabled = !state.isCancelling,
-                        modifier = Modifier.height(52.dp).width(if (compact) 132.dp else 148.dp),
+                        modifier = Modifier.height(44.dp).width(if (compact) 118.dp else 136.dp),
                     ) {
                         ButtonContent(
                             icon = Icons.Default.Stop,
@@ -2580,60 +2542,25 @@ internal fun ActionBar(
                     }
                 }
 
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(0.dp),
-                ) {
-                    HistoryNavButton(
-                        icon = Icons.Default.ChevronLeft,
-                        contentDescription = "Previous generation",
-                        onClick = onGoBack,
-                        enabled = state.canGoBack,
-                    )
-                    Surface(
-                        modifier = Modifier.height(44.dp),
-                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = DeskSubtleSurfaceAlpha),
-                        shape = RoundedCornerShape(0.dp),
-                    ) {
-                        Box(
-                            modifier = Modifier.width(84.dp),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            Text(
-                                text = if (state.history.isEmpty()) "0 / 0" else "${state.historyIndex + 1} / ${state.history.size}",
-                                style = MaterialTheme.typography.bodyMedium,
-                                fontWeight = FontWeight.SemiBold,
-                            )
-                        }
-                    }
-                    HistoryNavButton(
-                        icon = Icons.Default.ChevronRight,
-                        contentDescription = "Next generation",
-                        onClick = onGoForward,
-                        enabled = state.canGoForward,
-                    )
-                }
+                DeskHistoryStepper(
+                    label = if (state.history.isEmpty()) "0 / 0" else "${state.historyIndex + 1} / ${state.history.size}",
+                    onPrevious = onGoBack,
+                    previousEnabled = state.canGoBack,
+                    onNext = onGoForward,
+                    nextEnabled = state.canGoForward,
+                )
 
-                IconButton(
+                DeskToolbarIconButton(
+                    icon = Icons.Default.Repeat,
+                    contentDescription = "Endless generation",
                     onClick = onToggleEndless,
-                    modifier = Modifier
-                        .size(44.dp)
-                        .background(
-                            color = if (state.isEndless) MaterialTheme.colorScheme.primary.copy(alpha = 0.18f) else MaterialTheme.colorScheme.surfaceVariant,
-                            shape = RoundedCornerShape(8.dp),
-                        ),
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Repeat,
-                        contentDescription = "Endless generation",
-                        tint = if (state.isEndless) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
+                    selected = state.isEndless,
+                )
 
                 Spacer(
                     modifier = Modifier
                         .width(1.dp)
-                        .height(44.dp)
+                        .height(40.dp)
                         .background(MaterialTheme.colorScheme.outlineVariant),
                 )
 
@@ -2641,7 +2568,7 @@ internal fun ActionBar(
                     state = state,
                     backendState = backendState,
                     onPresetSelected = onPresetSelected,
-                    modifier = Modifier.width(if (compact) 220.dp else 300.dp),
+                    modifier = Modifier.width(if (compact) 210.dp else 280.dp),
                 )
 
                 Spacer(Modifier.weight(1f))
@@ -2649,11 +2576,11 @@ internal fun ActionBar(
                 when {
                     state.isGenerating -> CompactGenerationProgress(
                         state = state,
-                        modifier = Modifier.width(if (compact) 220.dp else 300.dp),
+                        modifier = Modifier.width(if (compact) 210.dp else 280.dp),
                     )
                     state.ideogram.isGeneratingJson -> CompactCompositionProgress(
                         state = state,
-                        modifier = Modifier.width(if (compact) 220.dp else 300.dp),
+                        modifier = Modifier.width(if (compact) 210.dp else 280.dp),
                     )
                 }
             }
@@ -2675,97 +2602,19 @@ private fun PresetActionControl(
         backendState.status == BackendStatus.Ready && selectedPreset?.id == state.loadedPresetId -> DeskStatusTone.Success
         else -> DeskStatusTone.Neutral
     }
-    var expanded by remember { mutableStateOf(false) }
-    var anchorSize by remember { mutableStateOf(IntSize.Zero) }
-
-    Box(
-        modifier = modifier
-            .height(44.dp)
-            .onGloballyPositioned { anchorSize = it.size },
-    ) {
-        Surface(
-            modifier = Modifier
-                .fillMaxSize()
-                .clickable(enabled = state.presets.isNotEmpty()) { expanded = true },
-            shape = RoundedCornerShape(8.dp),
-            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = DeskSubtleSurfaceAlpha),
-        ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(horizontal = 10.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                DeskStatusDot(dotTone)
-                Text(
-                    text = selectedPreset?.name ?: "No preset",
-                    modifier = Modifier.weight(1f),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    fontWeight = FontWeight.SemiBold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                if (selectedPreset != null) {
-                    Text(
-                        text = selectedPreset.promptMode.displayName,
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.primary,
-                        fontWeight = FontWeight.SemiBold,
-                    )
-                }
-                Icon(
-                    imageVector = Icons.Default.ArrowDropDown,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(20.dp),
-                )
+    DeskStatusDropdownField(
+        value = selectedPreset?.name ?: "No preset",
+        detail = selectedPreset?.promptMode?.displayName.orEmpty(),
+        tone = dotTone,
+        options = state.presets.map { it.name },
+        onValueChange = { name ->
+            state.presets.firstOrNull { it.name == name }?.let { preset ->
+                onPresetSelected(preset.id)
             }
-        }
-        DeskAnchoredDropdownMenu(
-            expanded = expanded,
-            onDismissRequest = { expanded = false },
-            options = state.presets.map { it.name },
-            anchorSize = anchorSize,
-            minWidth = 220.dp,
-            onSelect = { name ->
-                state.presets.firstOrNull { it.name == name }?.let { preset ->
-                    onPresetSelected(preset.id)
-                }
-                expanded = false
-            },
-        )
-    }
-}
-
-@Composable
-private fun HistoryNavButton(
-    icon: ImageVector,
-    contentDescription: String,
-    onClick: () -> Unit,
-    enabled: Boolean,
-) {
-    val tint = if (enabled) {
-        MaterialTheme.colorScheme.onSurfaceVariant
-    } else {
-        MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
-    }
-
-    Box(
-        modifier = Modifier
-            .size(width = 44.dp, height = 44.dp)
-            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = if (enabled) 0.45f else 0.25f))
-            .then(if (enabled) Modifier.clickable(onClick = onClick) else Modifier),
-        contentAlignment = Alignment.Center,
-    ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = contentDescription,
-            tint = tint,
-            modifier = Modifier.size(22.dp),
-        )
-    }
+        },
+        enabled = state.presets.isNotEmpty(),
+        modifier = modifier
+    )
 }
 
 @Composable
