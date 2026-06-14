@@ -995,8 +995,17 @@ class GenerationViewModel(
                 val jsonValue = request.jsonValue.trim()
                 if (path.isBlank()) return AssistantToolResult(false, "Path is required.")
                 if (jsonValue.isBlank()) return AssistantToolResult(false, "json_value is required.")
-                applyCompositionMutation(CompositionMutation.UpdateAdditionalField(path, jsonValue))
-                AssistantToolResult(true, "JSON field updated at $path.")
+                applyCompositionMutationForAssistant(CompositionMutation.UpdateAdditionalField(path, jsonValue))
+                    .fold(
+                        onSuccess = { AssistantToolResult(true, "JSON field updated at $path.") },
+                        onFailure = { error ->
+                            AssistantToolResult(
+                                false,
+                                "Could not update JSON field at $path: ${error.message ?: "Composition update failed."} " +
+                                    "Remember that json_value must be valid JSON, so plain strings need quotes, for example \"new text\".",
+                            )
+                        },
+                    )
             }
             "improve_high_level" -> requireComposition() ?: run {
                 runCompositionAction(CompositionAction.ImproveField(CompositionImproveTarget.HighLevelDescription))
@@ -1190,6 +1199,32 @@ class GenerationViewModel(
             )
             else -> nextState
         }
+    }
+
+    private fun applyCompositionMutationForAssistant(mutation: CompositionMutation, recordHistory: Boolean = true): Result<Unit> {
+        val state = _uiState.value
+        val document = state.ideogram.document ?: run {
+            update { copy(ideogram = ideogram.copy(jsonError = "JSON is invalid.")) }
+            return Result.failure(IllegalStateException("JSON is invalid."))
+        }
+        val changed = document.applyMutation(mutation).getOrElse { error ->
+            update { copy(ideogram = ideogram.copy(jsonError = error.message ?: "Composition update failed.")) }
+            return Result.failure(error)
+        }
+        val nextState = if (recordHistory) state.commitCompositionJson(changed.serialize()) else state.updateCompositionJson(changed.serialize())
+        update {
+            when (mutation) {
+                is CompositionMutation.AddElement,
+                is CompositionMutation.AddGeneratedElement,
+                is CompositionMutation.AddElementAndHighLevel -> nextState.selectCompositionIndex(changed.elements.lastIndex.coerceAtLeast(0))
+                is CompositionMutation.RemoveElement,
+                is CompositionMutation.RemoveElementAndUpdateHighLevel -> nextState.selectCompositionIndex(
+                    state.selectedCompositionElementIndex.coerceIn(0, changed.elements.lastIndex.coerceAtLeast(0)),
+                )
+                else -> nextState
+            }
+        }
+        return Result.success(Unit)
     }
 
     private fun GenerationUiState.updateCompositionJson(value: String): GenerationUiState {
