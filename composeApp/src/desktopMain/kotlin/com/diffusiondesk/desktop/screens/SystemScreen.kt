@@ -37,7 +37,6 @@ import com.diffusiondesk.desktop.core.BackendUiState
 import com.diffusiondesk.desktop.core.LlmWorkerState
 import com.diffusiondesk.desktop.core.LlmWorkerStatus
 import com.diffusiondesk.desktop.viewmodel.SettingsUiState
-import org.jetbrains.jewel.ui.component.Checkbox
 import org.jetbrains.jewel.ui.component.Text
 
 private enum class SystemTab(val label: String) {
@@ -289,16 +288,11 @@ private fun LlmWorkersOverview(
                 Text("Stop All")
             }
         }
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            Checkbox(
-                checked = state.autostartLlmWorkers,
-                onCheckedChange = onAutostartLlmWorkersChange,
-            )
-            Text("Autostart configured LLM roles")
-        }
+        DeskCheckboxRow(
+            checked = state.autostartLlmWorkers,
+            onCheckedChange = onAutostartLlmWorkersChange,
+            title = "Autostart configured LLM roles",
+        )
 
         roles.forEach { role ->
             LlmRoleOverviewRow(

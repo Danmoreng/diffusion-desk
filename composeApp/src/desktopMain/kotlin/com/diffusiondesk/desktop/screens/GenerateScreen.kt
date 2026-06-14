@@ -683,7 +683,6 @@ private fun PromptTabContent(
                 state = state,
                 onGenerateComposition = onGenerateStructuredJson,
                 onRetry = onRetryStagedJson,
-                onStartOver = onStartOverComposition,
             )
             if (state.ideogram.document != null) {
                 Box(modifier = Modifier.fillMaxWidth()) {
@@ -697,6 +696,7 @@ private fun PromptTabContent(
                             state = state,
                             onMutation = onCompositionMutation,
                             onRunAction = onRunCompositionAction,
+                            onStartOver = onStartOverComposition,
                             onUndo = onUndoComposition,
                             onRedo = onRedoComposition,
                             highlightStyleFields = highlightStyleFields,
@@ -812,7 +812,6 @@ private fun CompositionGenerationHeader(
     state: GenerationUiState,
     onGenerateComposition: () -> Unit,
     onRetry: () -> Unit,
-    onStartOver: () -> Unit,
 ) {
     val hasComposition = state.ideogram.document != null
     Column(
@@ -828,18 +827,6 @@ private fun CompositionGenerationHeader(
                 ButtonContent(
                     icon = Icons.Default.AutoFixHigh,
                     text = "Generate composition",
-                )
-            }
-        }
-        if (hasComposition && !state.ideogram.isGeneratingJson) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.End,
-            ) {
-                DeskSubtleTextButton(
-                    icon = Icons.Default.RestartAlt,
-                    text = "Start over",
-                    onClick = onStartOver,
                 )
             }
         }
@@ -878,6 +865,7 @@ private fun CompositionDocumentEditor(
     state: GenerationUiState,
     onMutation: (CompositionMutation) -> Unit,
     onRunAction: (CompositionAction) -> Unit,
+    onStartOver: () -> Unit,
     onUndo: () -> Unit,
     onRedo: () -> Unit,
     highlightStyleFields: Boolean,
@@ -899,6 +887,12 @@ private fun CompositionDocumentEditor(
         ) {
             Label("Overview")
             Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                DeskSubtleTextButton(
+                    icon = Icons.Default.RestartAlt,
+                    text = "Start over",
+                    onClick = onStartOver,
+                    enabled = !state.ideogram.isGeneratingJson,
+                )
                 DeskMiniIconButton(
                     icon = Icons.AutoMirrored.Filled.Undo,
                     contentDescription = "Undo composition change",

@@ -19,7 +19,6 @@ import androidx.compose.ui.unit.dp
 import com.diffusiondesk.desktop.core.BackendStatus
 import com.diffusiondesk.desktop.core.BackendUiState
 import com.diffusiondesk.desktop.viewmodel.SettingsUiState
-import org.jetbrains.jewel.ui.component.Checkbox
 import org.jetbrains.jewel.ui.component.Text
 
 @Composable
@@ -151,33 +150,17 @@ private fun GeneralSettingsSection(
             options = listOf("Bottom", "Top"),
             onValueChange = { onActionBarPositionChange(it.lowercase()) },
         )
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            Checkbox(
-                checked = state.saveImagesAutomatically,
-                onCheckedChange = onSaveImagesAutomaticallyChange,
-            )
-            Text("Save Images Automatically")
-        }
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            Checkbox(
-                checked = state.showLlmDebugConsole,
-                onCheckedChange = onShowLlmDebugConsoleChange,
-            )
-            Column {
-                Text("Show LLM Debug Console")
-                Text(
-                    text = "Displays complete system prompts, user prompts, and model responses in Generate.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-        }
+        DeskCheckboxRow(
+            checked = state.saveImagesAutomatically,
+            onCheckedChange = onSaveImagesAutomaticallyChange,
+            title = "Save Images Automatically",
+        )
+        DeskCheckboxRow(
+            checked = state.showLlmDebugConsole,
+            onCheckedChange = onShowLlmDebugConsoleChange,
+            title = "Show LLM Debug Console",
+            subtitle = "Displays complete system prompts, user prompts, and model responses in Generate.",
+        )
         SettingsDropdownRow(
             label = "Streaming VRAM Budget",
             value = if (state.vramBudgetMode == "manual") "Manual" else "Auto",
@@ -326,7 +309,7 @@ private fun PathSettingRow(
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.Bottom,
-            horizontalArrangement = Arrangement.spacedBy(0.dp),
+            horizontalArrangement = Arrangement.spacedBy(DeskControlSpacing),
         ) {
             DeskTextField(
                 label = "",
