@@ -77,6 +77,13 @@ data class GeneratedImage(
     val sourceUrl: String,
 )
 
+data class UpscaleResult(
+    val imageUrl: String,
+    val width: Int,
+    val height: Int,
+    val name: String,
+)
+
 data class GenerationJobSubmission(
     val id: String,
     val status: String,
@@ -845,6 +852,53 @@ class DiffusionDeskClient(
             GenerationJobSubmission(
                 id = root["id"]?.jsonPrimitive?.content ?: error("Generation job response did not include an id."),
                 status = root["status"]?.jsonPrimitive?.content.orEmpty(),
+            )
+        }
+    }
+
+    suspend fun loadUpscaleModel(baseUrl: String, modelId: String): Result<Unit> = withContext(Dispatchers.IO) {
+        runCatching {
+            val payload = buildJsonObject {
+                put("model_id", JsonPrimitive(modelId))
+            }
+            val request = requestBuilder("$baseUrl/v1/upscale/load")
+                .header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString(payload.toString()))
+                .timeout(Duration.ofMinutes(2))
+                .build()
+
+            val response = httpClient.send(request, HttpResponse.BodyHandlers.ofString())
+            check(response.statusCode() in 200..299) { response.body().ifBlank { "Upscale model load failed with ${response.statusCode()}" } }
+        }
+    }
+
+    suspend fun upscaleImage(
+        baseUrl: String,
+        imageBase64: String,
+        upscaleFactor: Int,
+        saveImage: Boolean = true,
+    ): Result<UpscaleResult> = withContext(Dispatchers.IO) {
+        runCatching {
+            val payload = buildJsonObject {
+                put("image", JsonPrimitive(imageBase64))
+                put("upscale_factor", JsonPrimitive(upscaleFactor))
+                put("save_image", JsonPrimitive(saveImage))
+            }
+            val request = requestBuilder("$baseUrl/v1/images/upscale")
+                .header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString(payload.toString()))
+                .timeout(Duration.ofMinutes(10))
+                .build()
+
+            val response = httpClient.send(request, HttpResponse.BodyHandlers.ofString())
+            check(response.statusCode() in 200..299) { response.body().ifBlank { "Upscale failed with ${response.statusCode()}" } }
+
+            val root = json.parseToJsonElement(response.body()).jsonObject
+            UpscaleResult(
+                imageUrl = root["url"]?.jsonPrimitive?.content ?: error("Upscale response did not include a URL."),
+                width = root["width"]?.jsonPrimitive?.intOrNull ?: 0,
+                height = root["height"]?.jsonPrimitive?.intOrNull ?: 0,
+                name = root["name"]?.jsonPrimitive?.content.orEmpty(),
             )
         }
     }

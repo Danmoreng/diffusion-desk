@@ -6,7 +6,6 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -42,6 +41,14 @@ data class AssistantToolPlan(
     val seed: Int? = null,
     val sampler: String = "",
     val replaceExistingComposition: Boolean = false,
+    val field: String = "",
+    val value: String = "",
+    val path: String = "",
+    val jsonValue: String = "",
+    val yMin: Int? = null,
+    val xMin: Int? = null,
+    val yMax: Int? = null,
+    val xMax: Int? = null,
 )
 
 data class AssistantToolBatch(
@@ -112,6 +119,7 @@ class LlmRoleService(
         presets: List<LlmPreset>,
         roles: LlmRoleSettings,
         messages: List<LlmChatMessage>,
+        tools: JsonArray,
     ): Result<AssistantAgentTurn> = withContext(Dispatchers.IO) {
         runCatching {
             val preset = presets.firstOrNull { it.id == roles.assistantPresetId }
@@ -127,7 +135,7 @@ class LlmRoleService(
                 maxTokens = maxTokens,
                 temperature = 0.2,
                 enableThinking = false,
-                tools = assistantToolDefinitions(),
+                tools = tools,
                 parallelToolCalls = true,
                 timeout = Duration.ofMinutes(5),
             ).getOrThrow()
@@ -286,134 +294,15 @@ private fun LlmToolCall.toAssistantToolPlan(): AssistantToolPlan {
         seed = root.int("seed"),
         sampler = root.string("sampler"),
         replaceExistingComposition = root.boolean("replace_existing"),
+        field = root.string("field"),
+        value = root.string("value"),
+        path = root.string("path"),
+        jsonValue = root.string("json_value"),
+        yMin = root.int("y_min"),
+        xMin = root.int("x_min"),
+        yMax = root.int("y_max"),
+        xMax = root.int("x_max"),
     )
-}
-
-private fun assistantToolDefinitions(): JsonArray = JsonArray(
-    listOf(
-        functionTool(
-            name = "set_prompt",
-            description = "Replace the normal Prompt field.",
-            properties = mapOf("prompt" to stringSchema("The complete image prompt to put into the Prompt field.")),
-            required = listOf("prompt"),
-        ),
-        functionTool("enhance_prompt", "Improve the current normal Prompt field using the app's prompt enhancer."),
-        functionTool(
-            name = "set_negative_prompt",
-            description = "Replace the Negative Prompt field.",
-            properties = mapOf("negative_prompt" to stringSchema("The negative prompt text.")),
-            required = listOf("negative_prompt"),
-        ),
-        functionTool("clear_negative_prompt", "Clear the Negative Prompt field."),
-        functionTool("inspect_latest_image", "Inspect the latest generated image in the assistant chat."),
-        functionTool(
-            name = "generate_structured_prompt",
-            description = "Create a full structured Ideogram prompt from the current normal prompt. Use only when no structured composition exists yet, or when the user is clearly switching to a completely different image concept. Do not use this for incremental edits to an existing composition; use improve_* or element tools instead.",
-            properties = mapOf("replace_existing" to booleanSchema("Set true only when the user is intentionally replacing an existing structured composition with a completely different image concept.")),
-        ),
-        functionTool("improve_high_level", "Improve the high-level description field."),
-        functionTool("improve_style", "Improve the style fields."),
-        functionTool("improve_composition", "Improve background and element placements."),
-        functionTool("improve_background", "Improve only the background field."),
-        functionTool("improve_selected_element", "Improve the currently selected element description."),
-        functionTool("suggest_global_palette", "Suggest the global style palette."),
-        functionTool("suggest_selected_element_palette", "Suggest palette for the selected element."),
-        functionTool("regenerate_selected_element", "Create a variant of the selected element."),
-        functionTool(
-            name = "add_object",
-            description = "Add one object element to the structured composition.",
-            properties = mapOf("description" to stringSchema("The object to add.")),
-            required = listOf("description"),
-        ),
-        functionTool(
-            name = "add_text",
-            description = "Add one text element to the structured composition.",
-            properties = mapOf("description" to stringSchema("The text element to add, including literal text.")),
-            required = listOf("description"),
-        ),
-        functionTool("delete_selected_element", "Delete the currently selected element."),
-        functionTool(
-            name = "set_image_size",
-            description = "Set exact image width and height.",
-            properties = mapOf(
-                "width" to integerSchema("Image width in pixels."),
-                "height" to integerSchema("Image height in pixels."),
-            ),
-            required = listOf("width", "height"),
-        ),
-        functionTool("set_portrait", "Make the current image size portrait/tall."),
-        functionTool("set_landscape", "Make the current image size landscape/wide."),
-        functionTool("set_square", "Make the current image size square."),
-        functionTool(
-            name = "set_steps",
-            description = "Set sampling steps.",
-            properties = mapOf("steps" to integerSchema("Sampling steps.")),
-            required = listOf("steps"),
-        ),
-        functionTool(
-            name = "set_cfg_scale",
-            description = "Set CFG scale.",
-            properties = mapOf("cfg_scale" to numberSchema("CFG scale.")),
-            required = listOf("cfg_scale"),
-        ),
-        functionTool(
-            name = "set_seed",
-            description = "Set seed.",
-            properties = mapOf("seed" to integerSchema("Seed value.")),
-            required = listOf("seed"),
-        ),
-        functionTool("randomize_seed", "Set seed to random."),
-        functionTool(
-            name = "set_sampler",
-            description = "Set sampler.",
-            properties = mapOf("sampler" to stringSchema("Sampler name.")),
-            required = listOf("sampler"),
-        ),
-    ),
-)
-
-private fun functionTool(
-    name: String,
-    description: String,
-    properties: Map<String, JsonObject> = emptyMap(),
-    required: List<String> = emptyList(),
-): JsonObject = buildJsonObject {
-    put("type", JsonPrimitive("function"))
-    put(
-        "function",
-        buildJsonObject {
-            put("name", JsonPrimitive(name))
-            put("description", JsonPrimitive(description))
-            put(
-                "parameters",
-                buildJsonObject {
-                    put("type", JsonPrimitive("object"))
-                    put("properties", JsonObject(properties))
-                    put("required", JsonArray(required.map { JsonPrimitive(it) }))
-                },
-            )
-        },
-    )
-}
-
-private fun stringSchema(description: String): JsonObject = buildJsonObject {
-    put("type", JsonPrimitive("string"))
-    put("description", JsonPrimitive(description))
-}
-
-private fun integerSchema(description: String): JsonObject = buildJsonObject {
-    put("type", JsonPrimitive("integer"))
-    put("description", JsonPrimitive(description))
-}
-
-private fun numberSchema(description: String): JsonObject = buildJsonObject {
-    put("type", JsonPrimitive("number"))
-    put("description", JsonPrimitive(description))
-}
-
-private fun booleanSchema(description: String): JsonObject = buildJsonObject {
-    put("type", JsonPrimitive("boolean"))
-    put("description", JsonPrimitive(description))
 }
 
 private fun JsonObject.string(key: String): String =

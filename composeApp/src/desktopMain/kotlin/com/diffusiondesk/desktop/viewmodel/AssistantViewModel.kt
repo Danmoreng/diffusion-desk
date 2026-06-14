@@ -2,7 +2,9 @@ package com.diffusiondesk.desktop.viewmodel
 
 import com.diffusiondesk.desktop.core.DesktopSettingsStore
 import com.diffusiondesk.desktop.core.AssistantChatResult
+import com.diffusiondesk.desktop.core.AssistantToolContext
 import com.diffusiondesk.desktop.core.AssistantToolPlan
+import com.diffusiondesk.desktop.core.AssistantToolRegistry
 import com.diffusiondesk.desktop.core.LlmChatMessage
 import com.diffusiondesk.desktop.core.LlmPresetStore
 import com.diffusiondesk.desktop.core.LlmRoleService
@@ -67,6 +69,8 @@ data class AssistantContextSnapshot(
     val selectedPreset: String,
     val compositionSummary: String,
     val selectedCompositionElement: String,
+    val hasStructuredComposition: Boolean = false,
+    val hasSelectedCompositionElement: Boolean = false,
 )
 
 data class AssistantUiState(
@@ -115,6 +119,14 @@ data class AssistantToolRequest(
     val seed: Int? = null,
     val sampler: String = "",
     val replaceExistingComposition: Boolean = false,
+    val field: String = "",
+    val value: String = "",
+    val path: String = "",
+    val jsonValue: String = "",
+    val yMin: Int? = null,
+    val xMin: Int? = null,
+    val yMax: Int? = null,
+    val xMax: Int? = null,
 )
 
 data class AssistantToolResult(
@@ -158,6 +170,7 @@ class AssistantViewModel(
             }
 
             val requestMessages = buildAssistantAgentMessages(_uiState.value.messages, context)
+            val tools = AssistantToolRegistry.toolsFor(context.toToolContext())
             val settings = settingsStore.load()
             val presets = llmPresetStore.load()
             val roles = llmPresetStore.loadRoles()
@@ -183,6 +196,7 @@ class AssistantViewModel(
                 presets = presets,
                 roles = roles,
                 requestMessages = requestMessages,
+                tools = tools,
             )
             if (toolRun.handled) {
                 toolRun.assistantResult?.let { result ->
@@ -282,6 +296,7 @@ class AssistantViewModel(
         presets: List<com.diffusiondesk.desktop.core.LlmPreset>,
         roles: com.diffusiondesk.desktop.core.LlmRoleSettings,
         requestMessages: List<LlmChatMessage>,
+        tools: kotlinx.serialization.json.JsonArray,
     ): ToolLoopResult {
         val agentMessages = requestMessages.toMutableList()
         var handled = false
@@ -297,6 +312,7 @@ class AssistantViewModel(
                 presets = presets,
                 roles = roles,
                 messages = agentMessages,
+                tools = tools,
             ).getOrNull() ?: return@repeat
             lastAssistantResult = turn.result
             val batch = turn.batch
@@ -496,6 +512,14 @@ private fun AssistantToolPlan.toToolRequest(): AssistantToolRequest =
         seed = seed,
         sampler = sampler,
         replaceExistingComposition = replaceExistingComposition,
+        field = field,
+        value = value,
+        path = path,
+        jsonValue = jsonValue,
+        yMin = yMin,
+        xMin = xMin,
+        yMax = yMax,
+        xMax = xMax,
     )
 
 private fun List<LlmChatMessage>.estimatedTokenCount(): Int {
@@ -596,6 +620,8 @@ internal fun buildAssistantAgentMessages(
                 appendLine("seed: ${context.seed}")
                 appendLine("selected_composition_element: ${context.selectedCompositionElement}")
                 appendLine("composition_summary: ${context.compositionSummary}")
+                appendLine("has_structured_composition: ${context.hasStructuredComposition}")
+                appendLine("has_selected_composition_element: ${context.hasSelectedCompositionElement}")
                 val lastImage = messages.lastOrNull { it.imageAttachment != null }?.imageAttachment
                 appendLine("attached_or_recent_reference_image: ${lastImage?.sizeLabel() ?: "none"}")
                 appendLine("When creating or editing structured composition, preserve the target_canvas aspect ratio unless the user explicitly asks to change it.")
@@ -603,6 +629,13 @@ internal fun buildAssistantAgentMessages(
         ),
     ) + mappedHistory
 }
+
+private fun AssistantContextSnapshot.toToolContext(): AssistantToolContext =
+    AssistantToolContext(
+        promptMode = promptMode,
+        hasStructuredComposition = hasStructuredComposition,
+        hasSelectedCompositionElement = hasSelectedCompositionElement,
+    )
 
 private fun AssistantContextSnapshot.targetAspectLabel(): String {
     val widthValue = width.toIntOrNull()
@@ -666,8 +699,16 @@ private fun AssistantToolRequest.displayLabel(): String = buildString {
         description.takeIf(String::isNotBlank)?.let { "description=\"$it\"" },
         prompt.takeIf(String::isNotBlank)?.let { "prompt=\"$it\"" },
         negativePrompt.takeIf(String::isNotBlank)?.let { "negative_prompt=\"$it\"" },
+        field.takeIf(String::isNotBlank)?.let { "field=$it" },
+        value.takeIf(String::isNotBlank)?.let { "value=\"$it\"" },
+        path.takeIf(String::isNotBlank)?.let { "path=$it" },
+        jsonValue.takeIf(String::isNotBlank)?.let { "json_value=$it" },
         width?.let { "width=$it" },
         height?.let { "height=$it" },
+        yMin?.let { "y_min=$it" },
+        xMin?.let { "x_min=$it" },
+        yMax?.let { "y_max=$it" },
+        xMax?.let { "x_max=$it" },
         steps?.let { "steps=$it" },
         cfgScale?.let { "cfg=$it" },
         seed?.let { "seed=$it" },
@@ -684,8 +725,16 @@ private fun AssistantToolRequest.inputJson(): String {
         jsonField("description", description).takeIf { description.isNotBlank() },
         jsonField("prompt", prompt).takeIf { prompt.isNotBlank() },
         jsonField("negative_prompt", negativePrompt).takeIf { negativePrompt.isNotBlank() },
+        jsonField("field", field).takeIf { field.isNotBlank() },
+        jsonField("value", value).takeIf { value.isNotBlank() },
+        jsonField("path", path).takeIf { path.isNotBlank() },
+        jsonField("json_value", jsonValue).takeIf { jsonValue.isNotBlank() },
         width?.let { jsonField("width", it.toString(), quoted = false) },
         height?.let { jsonField("height", it.toString(), quoted = false) },
+        yMin?.let { jsonField("y_min", it.toString(), quoted = false) },
+        xMin?.let { jsonField("x_min", it.toString(), quoted = false) },
+        yMax?.let { jsonField("y_max", it.toString(), quoted = false) },
+        xMax?.let { jsonField("x_max", it.toString(), quoted = false) },
         steps?.let { jsonField("steps", it.toString(), quoted = false) },
         cfgScale?.let { jsonField("cfg_scale", it.toString(), quoted = false) },
         seed?.let { jsonField("seed", it.toString(), quoted = false) },

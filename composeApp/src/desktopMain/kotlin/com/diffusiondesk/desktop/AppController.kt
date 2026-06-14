@@ -19,6 +19,7 @@ import com.diffusiondesk.desktop.viewmodel.GalleryViewModel
 import com.diffusiondesk.desktop.viewmodel.GenerationViewModel
 import com.diffusiondesk.desktop.viewmodel.LibraryViewModel
 import com.diffusiondesk.desktop.viewmodel.SettingsViewModel
+import com.diffusiondesk.desktop.viewmodel.UpscaleViewModel
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -69,6 +70,7 @@ class AppController {
     )
     val libraryViewModel = LibraryViewModel(scope, presetStore, llmPresetStore, backendManager, client)
     val galleryViewModel = GalleryViewModel(scope, galleryRepository, settingsStore, llmPresetStore, imageTaggingService)
+    val upscaleViewModel = UpscaleViewModel(scope, backendManager, client, settingsStore)
     private val closed = AtomicBoolean(false)
     private val shutdownHook = Thread({ close() }, "diffusion-desk-shutdown")
 

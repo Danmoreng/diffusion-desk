@@ -1,8 +1,6 @@
 package com.diffusiondesk.desktop.screens
 
 import androidx.compose.foundation.Image
-import androidx.compose.foundation.ContextMenuArea
-import androidx.compose.foundation.ContextMenuItem
 import androidx.compose.foundation.ScrollbarStyle
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -36,6 +34,7 @@ import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.CropFree
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.ImageSearch
@@ -71,13 +70,6 @@ import androidx.compose.ui.unit.dp
 import com.diffusiondesk.desktop.core.GalleryImage
 import com.diffusiondesk.desktop.viewmodel.GalleryUiState
 import java.awt.Cursor
-import java.awt.FileDialog
-import java.awt.Desktop
-import java.awt.EventQueue
-import java.awt.Frame
-import java.awt.Toolkit
-import java.awt.datatransfer.DataFlavor
-import java.awt.datatransfer.Transferable
 import java.io.File
 import java.time.Instant
 import java.time.ZoneId
@@ -111,6 +103,7 @@ fun GalleryScreen(
     previewPanelWidthDp: Int,
     onPreviewPanelWidthChange: (Int) -> Unit,
     onReuseImage: (GalleryImage) -> Unit,
+    onUpscaleImage: (GalleryImage) -> Unit,
 ) {
     var imagePendingDeletion by remember { mutableStateOf<GalleryImage?>(null) }
 
@@ -212,6 +205,7 @@ fun GalleryScreen(
                 onTagSelectedImage = onTagSelectedImage,
                 onDeleteImage = { imagePendingDeletion = it },
                 onReuseImage = onReuseImage,
+                onUpscaleImage = onUpscaleImage,
                 modifier = Modifier
                     .width(previewWidth)
                     .fillMaxHeight(),
@@ -547,6 +541,7 @@ private fun GalleryDetails(
     onTagSelectedImage: () -> Unit,
     onDeleteImage: (GalleryImage) -> Unit,
     onReuseImage: (GalleryImage) -> Unit,
+    onUpscaleImage: (GalleryImage) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     DeskPanel(modifier = modifier) {
@@ -587,10 +582,23 @@ private fun GalleryDetails(
                         Text("Reuse")
                     }
                 }
+                Button(
+                    onClick = { onUpscaleImage(image) },
+                    modifier = Modifier.weight(1f),
+                ) {
+                    Row(
+                        horizontalArrangement = Arrangement.Center,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(Icons.Default.CropFree, contentDescription = null, modifier = Modifier.size(17.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text("Upscale")
+                    }
+                }
                 DeskIconButton(
                     icon = Icons.Default.FolderOpen,
                     contentDescription = "Show image in folder",
-                    onClick = { showInFolder(image.file) },
+                    onClick = { showImageInExplorer(image.file) },
                 )
                 DeskIconButton(
                     icon = Icons.Default.ImageSearch,
@@ -680,18 +688,7 @@ private fun GalleryImagePreview(
         }
     }
 
-    ContextMenuArea(
-        items = {
-            buildList {
-                if (file.exists()) {
-                    add(ContextMenuItem("Copy Image") { runAfterPopupClick { file.copyImageToClipboard() } })
-                    add(ContextMenuItem("Save Image As...") { runAfterPopupClick { file.saveImageAs() } })
-                    add(ContextMenuItem("Open Image") { runAfterPopupClick { openFile(file) } })
-                    add(ContextMenuItem("Show in Explorer") { runAfterPopupClick { showInFolder(file) } })
-                }
-            }
-        },
-    ) {
+    ImageContextMenuArea(images = listOf(file.toImageContextMenuData())) {
         Box(
             modifier = modifier.background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
             contentAlignment = Alignment.Center,
@@ -734,10 +731,6 @@ private fun formatGalleryTileDate(epochMillis: Long): String {
     return runCatching {
         GalleryTileDateFormatter.format(Instant.ofEpochMilli(epochMillis))
     }.getOrDefault("")
-}
-
-private fun runAfterPopupClick(action: () -> Unit) {
-    EventQueue.invokeLater(action)
 }
 
 @Composable
@@ -797,50 +790,6 @@ private fun RemovableKeywordChip(
     }
 }
 
-private fun showInFolder(file: File) {
-    if (System.getProperty("os.name").startsWith("Windows", ignoreCase = true)) {
-        ProcessBuilder("explorer.exe", "/select,", file.absolutePath).start()
-    } else if (Desktop.isDesktopSupported()) {
-        Desktop.getDesktop().open(file.parentFile)
-    }
-}
-
-private fun openFile(file: File) {
-    if (Desktop.isDesktopSupported()) {
-        Desktop.getDesktop().open(file)
-    }
-}
-
-private fun File.copyImageToClipboard() {
-    val image = ImageIO.read(this) ?: return
-    Toolkit.getDefaultToolkit().systemClipboard.setContents(GalleryImageTransferable(image), null)
-}
-
-private fun File.saveImageAs() {
-    val extension = extension.ifBlank { "png" }
-    val dialog = FileDialog(activeFrame(), "Save Image", FileDialog.SAVE).apply {
-        file = name
-        isVisible = true
-    }
-    val selectedFile = dialog.file ?: return
-    val directory = dialog.directory ?: return
-    val target = File(directory, selectedFile).withImageExtension(extension)
-    copyTo(target, overwrite = true)
-}
-
-private fun File.withImageExtension(extension: String): File {
-    return if (name.substringAfterLast('.', missingDelimiterValue = "").isBlank()) {
-        File(parentFile, "$name.$extension")
-    } else {
-        this
-    }
-}
-
-private fun activeFrame(): Frame? {
-    return Frame.getFrames().firstOrNull { it.isActive }
-        ?: Frame.getFrames().firstOrNull { it.isVisible }
-}
-
 @Composable
 private fun DeleteImageDialog(
     image: GalleryImage,
@@ -880,19 +829,4 @@ private fun DeleteImageDialog(
             }
         },
     )
-}
-
-private class GalleryImageTransferable(
-    private val image: java.awt.Image,
-) : Transferable {
-    override fun getTransferDataFlavors(): Array<DataFlavor> = arrayOf(DataFlavor.imageFlavor)
-
-    override fun isDataFlavorSupported(flavor: DataFlavor): Boolean = flavor == DataFlavor.imageFlavor
-
-    override fun getTransferData(flavor: DataFlavor): Any {
-        if (!isDataFlavorSupported(flavor)) {
-            throw UnsupportedOperationException("Unsupported clipboard flavor: $flavor")
-        }
-        return image
-    }
 }

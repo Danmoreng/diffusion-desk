@@ -1,7 +1,13 @@
 package com.diffusiondesk.desktop.viewmodel
 
+import com.diffusiondesk.desktop.core.AssistantToolContext
+import com.diffusiondesk.desktop.core.AssistantToolRegistry
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
@@ -85,4 +91,51 @@ class AssistantViewModelTest {
         assertEquals("data:image/png;base64,newest", chat.last().imageDataUri)
         assertTrue(chat.first().content.contains("attached_or_recent_reference_image: newest.png, 160 x 90 (16:9, landscape)"))
     }
+
+    @Test
+    fun toolRegistryFiltersToolsByPromptModeAndCompositionState() {
+        val textTools = AssistantToolRegistry.toolsFor(
+            AssistantToolContext(
+                promptMode = "Text",
+                hasStructuredComposition = false,
+                hasSelectedCompositionElement = false,
+            ),
+        ).toolNames()
+        assertTrue("set_prompt" in textTools)
+        assertFalse("generate_structured_prompt" in textTools)
+        assertFalse("update_high_level_description" in textTools)
+
+        val initialJsonTools = AssistantToolRegistry.toolsFor(
+            AssistantToolContext(
+                promptMode = "JSON",
+                hasStructuredComposition = false,
+                hasSelectedCompositionElement = false,
+            ),
+        ).toolNames()
+        assertTrue("generate_structured_prompt" in initialJsonTools)
+        assertFalse("replace_structured_prompt" in initialJsonTools)
+        assertFalse("update_selected_element_description" in initialJsonTools)
+
+        val existingCompositionTools = AssistantToolRegistry.toolsFor(
+            AssistantToolContext(
+                promptMode = "JSON",
+                hasStructuredComposition = true,
+                hasSelectedCompositionElement = true,
+            ),
+        ).toolNames()
+        assertFalse("generate_structured_prompt" in existingCompositionTools)
+        assertTrue("replace_structured_prompt" in existingCompositionTools)
+        assertTrue("update_high_level_description" in existingCompositionTools)
+        assertTrue("update_selected_element_description" in existingCompositionTools)
+        assertTrue("update_generation_settings" in existingCompositionTools)
+    }
 }
+
+private fun JsonArray.toolNames(): Set<String> =
+    mapNotNull { tool ->
+        tool.jsonObject["function"]
+            ?.jsonObject
+            ?.get("name")
+            ?.jsonPrimitive
+            ?.content
+    }.toSet()
