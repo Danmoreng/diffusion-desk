@@ -2,8 +2,6 @@ package com.diffusiondesk.desktop.screens
 
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.Image
-import androidx.compose.foundation.ContextMenuArea
-import androidx.compose.foundation.ContextMenuItem
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -123,16 +121,7 @@ import com.diffusiondesk.desktop.viewmodel.IdeogramStyleField
 import com.diffusiondesk.desktop.viewmodel.IdeogramStructureTab
 import com.diffusiondesk.desktop.viewmodel.ideogramElementPreviews
 import java.awt.Cursor
-import java.awt.Desktop
-import java.awt.FileDialog
-import java.awt.Frame
-import java.awt.Toolkit
-import java.awt.datatransfer.DataFlavor
-import java.awt.datatransfer.Transferable
 import java.io.File
-import java.net.URI
-import java.net.URLDecoder
-import java.nio.charset.StandardCharsets
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
@@ -1324,9 +1313,6 @@ private fun IdeogramCompositionCanvas(
     val latestElements by rememberUpdatedState(elements)
     val latestOnElementBboxChange by rememberUpdatedState(onElementBboxChange)
     val latestOnElementSelected by rememberUpdatedState(onElementSelected)
-    val localFile = remember(image?.sourceUrl, outputDir) {
-        image?.resolveOutputFile(outputDir)
-    }
 
     BoxWithConstraints(
         modifier = modifier,
@@ -1393,19 +1379,10 @@ private fun IdeogramCompositionCanvas(
             return nextIndex
         }
 
-        ContextMenuArea(
-            items = {
-                buildList {
-                    if (image != null) {
-                        add(ContextMenuItem("Copy Image") { image.copyToClipboard() })
-                        add(ContextMenuItem("Save Image As...") { image.saveAs(0) })
-                        if (localFile != null && localFile.exists()) {
-                            add(ContextMenuItem("Open Image") { openFile(localFile) })
-                            add(ContextMenuItem("Show in Explorer") { showInExplorer(localFile) })
-                        }
-                    }
-                }
-            },
+        ImageContextMenuArea(
+            images = image?.let {
+                listOf(it.toImageContextMenuData(outputDir, fallbackFileName = "generated-image-1.png"))
+            } ?: emptyList(),
         ) {
             Box(
                 modifier = Modifier
@@ -2242,10 +2219,6 @@ private fun GeneratedImageTile(
     val density = LocalDensity.current
     val naturalWidth = with(density) { bitmap.width.toDp() }
     val naturalHeight = with(density) { bitmap.height.toDp() }
-    val localFile = remember(image.sourceUrl, outputDir) {
-        image.resolveOutputFile(outputDir)
-    }
-
     var displayWidth = naturalWidth.coerceAtMost(maxWidth)
     var displayHeight = displayWidth / aspectRatio
     if (displayHeight > maxHeight) {
@@ -2257,17 +2230,8 @@ private fun GeneratedImageTile(
         displayWidth = naturalHeight * aspectRatio
     }
 
-    ContextMenuArea(
-        items = {
-            buildList {
-                add(ContextMenuItem("Copy Image") { image.copyToClipboard() })
-                add(ContextMenuItem("Save Image As...") { image.saveAs(index) })
-                if (localFile != null && localFile.exists()) {
-                    add(ContextMenuItem("Open Image") { openFile(localFile) })
-                    add(ContextMenuItem("Show in Explorer") { showInExplorer(localFile) })
-                }
-            }
-        },
+    ImageContextMenuArea(
+        images = listOf(image.toImageContextMenuData(outputDir, fallbackFileName = "generated-image-${index + 1}.png")),
     ) {
         Box(
             modifier = Modifier
@@ -2287,58 +2251,6 @@ private fun GeneratedImageTile(
     }
 }
 
-private fun GeneratedImage.copyToClipboard() {
-    Toolkit.getDefaultToolkit().systemClipboard.setContents(ImageTransferable(bufferedImage), null)
-}
-
-private fun GeneratedImage.saveAs(index: Int) {
-    val extension = imageExtension().ifBlank { "png" }
-    val dialog = FileDialog(activeFrame(), "Save Image", FileDialog.SAVE).apply {
-        file = sourceFileName() ?: "generated-image-${index + 1}.$extension"
-        isVisible = true
-    }
-    val selectedFile = dialog.file ?: return
-    val directory = dialog.directory ?: return
-    val target = File(directory, selectedFile).withImageExtension(extension)
-    target.writeBytes(bytes)
-}
-
-private fun GeneratedImage.resolveOutputFile(outputDir: String): File? {
-    if (outputDir.isBlank()) return null
-    val path = runCatching { URI(sourceUrl).path }.getOrNull() ?: return null
-    val marker = "/outputs/"
-    val markerIndex = path.indexOf(marker)
-    if (markerIndex < 0) return null
-
-    val relativePath = URLDecoder.decode(
-        path.substring(markerIndex + marker.length),
-        StandardCharsets.UTF_8,
-    )
-    val outputRoot = File(outputDir).canonicalFile
-    val file = File(outputRoot, relativePath.replace('/', File.separatorChar)).canonicalFile
-    return file.takeIf {
-        it.path == outputRoot.path || it.path.startsWith(outputRoot.path + File.separator)
-    }
-}
-
-private fun GeneratedImage.sourceFileName(): String? {
-    val path = runCatching { URI(sourceUrl).path }.getOrNull() ?: return null
-    return URLDecoder.decode(path.substringAfterLast('/'), StandardCharsets.UTF_8)
-        .takeIf { it.isNotBlank() }
-}
-
-private fun GeneratedImage.imageExtension(): String {
-    return sourceFileName()
-        ?.substringAfterLast('.', missingDelimiterValue = "")
-        ?.lowercase(Locale.US)
-        ?.takeIf { it in setOf("png", "jpg", "jpeg", "webp", "bmp", "gif") }
-        ?: "png"
-}
-
-private fun File.withImageExtension(extension: String): File {
-    return if (name.contains('.')) this else File(parentFile, "$name.$extension")
-}
-
 private fun formatProgressDuration(seconds: Double): String {
     if (seconds < 60.0) {
         return "${"%.1f".format(Locale.US, seconds.coerceAtLeast(0.0))}s"
@@ -2348,40 +2260,6 @@ private fun formatProgressDuration(seconds: Double): String {
     val minutes = roundedSeconds / 60
     val remainingSeconds = roundedSeconds % 60
     return "${minutes}m ${remainingSeconds.toString().padStart(2, '0')}s"
-}
-
-private fun activeFrame(): Frame? {
-    return Frame.getFrames().firstOrNull { it.isActive }
-        ?: Frame.getFrames().firstOrNull { it.isVisible }
-}
-
-private fun openFile(file: File) {
-    if (Desktop.isDesktopSupported()) {
-        Desktop.getDesktop().open(file)
-    }
-}
-
-private fun showInExplorer(file: File) {
-    if (System.getProperty("os.name").startsWith("Windows", ignoreCase = true)) {
-        ProcessBuilder("explorer.exe", "/select,", file.absolutePath).start()
-    } else if (Desktop.isDesktopSupported()) {
-        Desktop.getDesktop().open(file.parentFile)
-    }
-}
-
-private class ImageTransferable(
-    private val image: java.awt.Image,
-) : Transferable {
-    override fun getTransferDataFlavors(): Array<DataFlavor> = arrayOf(DataFlavor.imageFlavor)
-
-    override fun isDataFlavorSupported(flavor: DataFlavor): Boolean = flavor == DataFlavor.imageFlavor
-
-    override fun getTransferData(flavor: DataFlavor): Any {
-        if (!isDataFlavorSupported(flavor)) {
-            throw UnsupportedOperationException("Unsupported clipboard flavor: $flavor")
-        }
-        return image
-    }
 }
 
 @Composable

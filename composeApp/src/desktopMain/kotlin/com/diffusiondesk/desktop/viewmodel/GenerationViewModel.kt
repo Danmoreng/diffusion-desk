@@ -949,6 +949,55 @@ class GenerationViewModel(
                 generateIdeogramJsonPrompt()
                 AssistantToolResult(true, "Structured prompt generation has started and is still running in the app. Do not claim it is finished until the UI completes it.")
             }
+            "replace_structured_prompt" -> {
+                if (state.prompt.isBlank()) {
+                    return AssistantToolResult(false, "Prompt is required before replacing structured composition. Set a prompt first.")
+                }
+                generateIdeogramJsonPrompt()
+                AssistantToolResult(true, "Structured prompt replacement has started and is still running in the app because the user requested a different image concept.")
+            }
+            "update_high_level_description" -> requireComposition() ?: request.value.takeIf(String::isNotBlank)?.let { value ->
+                applyCompositionMutation(CompositionMutation.UpdateHighLevelDescription(value))
+                AssistantToolResult(true, "High-level description updated.")
+            } ?: AssistantToolResult(false, "Value is required.")
+            "update_style_field" -> requireComposition() ?: run {
+                val field = request.field.toIdeogramStyleField()
+                    ?: return AssistantToolResult(false, "Style field must be one of aesthetics, lighting, medium, photo, or art_style.")
+                val value = request.value.trim()
+                if (value.isBlank()) return AssistantToolResult(false, "Value is required.")
+                applyCompositionMutation(CompositionMutation.UpdateStyleField(field, value))
+                AssistantToolResult(true, "Style field ${field.jsonKey} updated.")
+            }
+            "update_composition_background" -> requireComposition() ?: request.value.takeIf(String::isNotBlank)?.let { value ->
+                applyCompositionMutation(CompositionMutation.UpdateBackground(value))
+                AssistantToolResult(true, "Composition background updated.")
+            } ?: AssistantToolResult(false, "Value is required.")
+            "update_selected_element_description" -> requireComposition() ?: selectedIndex()?.let { index ->
+                val value = request.value.trim()
+                if (value.isBlank()) return AssistantToolResult(false, "Value is required.")
+                applyCompositionMutation(CompositionMutation.UpdateElementDescription(index, value))
+                AssistantToolResult(true, "Selected element description updated.")
+            } ?: AssistantToolResult(false, "Select an element first.")
+            "update_selected_element_text" -> requireComposition() ?: selectedIndex()?.let { index ->
+                val value = request.value.trim()
+                if (value.isBlank()) return AssistantToolResult(false, "Value is required.")
+                applyCompositionMutation(CompositionMutation.UpdateElementText(index, value))
+                AssistantToolResult(true, "Selected element text updated.")
+            } ?: AssistantToolResult(false, "Select an element first.")
+            "update_selected_element_bbox" -> requireComposition() ?: selectedIndex()?.let { index ->
+                val bbox = listOfNotNull(request.yMin, request.xMin, request.yMax, request.xMax)
+                if (bbox.size != 4) return AssistantToolResult(false, "y_min, x_min, y_max, and x_max are required.")
+                applyCompositionMutation(CompositionMutation.UpdateElementBbox(index, bbox))
+                AssistantToolResult(true, "Selected element bounding box updated.")
+            } ?: AssistantToolResult(false, "Select an element first.")
+            "update_json_field" -> requireComposition() ?: run {
+                val path = request.path.trim()
+                val jsonValue = request.jsonValue.trim()
+                if (path.isBlank()) return AssistantToolResult(false, "Path is required.")
+                if (jsonValue.isBlank()) return AssistantToolResult(false, "json_value is required.")
+                applyCompositionMutation(CompositionMutation.UpdateAdditionalField(path, jsonValue))
+                AssistantToolResult(true, "JSON field updated at $path.")
+            }
             "improve_high_level" -> requireComposition() ?: run {
                 runCompositionAction(CompositionAction.ImproveField(CompositionImproveTarget.HighLevelDescription))
                 AssistantToolResult(true, "High-level description improvement has started and is still running in the app.")
@@ -1071,6 +1120,43 @@ class GenerationViewModel(
                 if (sampler.isBlank()) return AssistantToolResult(false, "Sampler is required.")
                 update { copy(sampler = sampler, message = "Set sampler to $sampler.", error = null) }
                 AssistantToolResult(true, "Set sampler to $sampler.")
+            }
+            "update_generation_settings" -> {
+                val messages = mutableListOf<String>()
+                request.width?.let { requestedWidth ->
+                    val requestedHeight = request.height ?: state.height.toIntOrNull() ?: 1024
+                    val size = sanitizeResolution(requestedWidth, requestedHeight)
+                    update { copy(width = size.first.toString(), height = size.second.toString(), error = null) }
+                    messages += "size ${size.first} x ${size.second}"
+                } ?: request.height?.let { requestedHeight ->
+                    val requestedWidth = state.width.toIntOrNull() ?: 1024
+                    val size = sanitizeResolution(requestedWidth, requestedHeight)
+                    update { copy(width = size.first.toString(), height = size.second.toString(), error = null) }
+                    messages += "size ${size.first} x ${size.second}"
+                }
+                request.steps?.let {
+                    val value = it.coerceIn(1, 200)
+                    update { copy(steps = value.toString(), error = null) }
+                    messages += "steps $value"
+                }
+                request.cfgScale?.let {
+                    val value = it.coerceIn(0.0, 30.0)
+                    update { copy(cfgScale = value.toString(), error = null) }
+                    messages += "CFG $value"
+                }
+                request.seed?.let {
+                    update { copy(seed = it.toString(), error = null) }
+                    messages += "seed $it"
+                }
+                request.sampler.trim().takeIf(String::isNotBlank)?.let {
+                    update { copy(sampler = it, error = null) }
+                    messages += "sampler $it"
+                }
+                if (messages.isEmpty()) {
+                    return AssistantToolResult(false, "At least one generation setting is required.")
+                }
+                update { copy(message = "Updated generation settings: ${messages.joinToString(", ")}.", error = null) }
+                AssistantToolResult(true, "Updated generation settings: ${messages.joinToString(", ")}.")
             }
             else -> AssistantToolResult(false, "Unknown assistant tool: ${request.tool}")
         }
@@ -2351,6 +2437,16 @@ private fun GeneratedImage.toAssistantImageDataUri(): String {
     }
     return "data:$mime;base64,${Base64.getEncoder().encodeToString(bytes)}"
 }
+
+private fun String.toIdeogramStyleField(): IdeogramStyleField? =
+    when (trim().lowercase()) {
+        "aesthetics" -> IdeogramStyleField.Aesthetics
+        "lighting" -> IdeogramStyleField.Lighting
+        "medium" -> IdeogramStyleField.Medium
+        "photo" -> IdeogramStyleField.Photo
+        "art_style", "artstyle", "art style" -> IdeogramStyleField.ArtStyle
+        else -> null
+    }
 
 private fun BufferedImage.toAssistantThumbnailDataUri(maxWidth: Int = 360, maxHeight: Int = 180): String {
     val scale = minOf(maxWidth.toDouble() / width, maxHeight.toDouble() / height, 1.0)

@@ -8,6 +8,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.Collections
+import androidx.compose.material.icons.filled.CropFree
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Inventory2
 import androidx.compose.material.icons.filled.LightMode
@@ -39,6 +40,7 @@ import com.diffusiondesk.desktop.screens.DeskCompactControlSpacing
 import com.diffusiondesk.desktop.screens.NotificationStack
 import com.diffusiondesk.desktop.screens.SettingsScreen
 import com.diffusiondesk.desktop.screens.SystemScreen
+import com.diffusiondesk.desktop.screens.UpscaleScreen
 import com.diffusiondesk.desktop.theme.DiffusionDeskTheme
 import com.diffusiondesk.desktop.viewmodel.AssistantContextSnapshot
 import com.diffusiondesk.desktop.viewmodel.GenerationUiState
@@ -49,6 +51,7 @@ import org.jetbrains.jewel.ui.component.Text
 private enum class Screen(val label: String, val icon: ImageVector, val subtitle: String) {
     Generate("Generate", Icons.Default.Image, "Preset-driven image generation with the local SD worker."),
     Gallery("Gallery", Icons.Default.Collections, "Browse generated images and reuse embedded parameters."),
+    Upscale("Upscale", Icons.Default.CropFree, "Classical ESRGAN image upscaling."),
     Library("Presets", Icons.Default.Inventory2, "Manage JSON-backed image generation presets."),
     System("System", Icons.Default.Memory, "Worker status, runtime controls, and diagnostics."),
     Settings("Settings", Icons.Default.Settings, "Local paths and static app configuration."),
@@ -65,6 +68,7 @@ fun App(
     val assistantState by controller.assistantViewModel.uiState.collectAsState()
     val libraryState by controller.libraryViewModel.uiState.collectAsState()
     val galleryState by controller.galleryViewModel.uiState.collectAsState()
+    val upscaleState by controller.upscaleViewModel.uiState.collectAsState()
     val notifications by controller.notificationCenter.notifications.collectAsState()
     val llmDebugEntries by controller.llmDebugLog.entries.collectAsState()
     val systemDarkTheme = isSystemInDarkTheme()
@@ -189,6 +193,20 @@ fun App(
                                 controller.generationViewModel.reuseGalleryParams(controller.galleryViewModel.reusableParams(image))
                                 currentScreen = Screen.Generate
                             },
+                            onUpscaleImage = { image ->
+                                controller.upscaleViewModel.useGalleryImage(image)
+                                currentScreen = Screen.Upscale
+                            },
+                        )
+                        Screen.Upscale -> UpscaleScreen(
+                            state = upscaleState,
+                            backendState = backendState,
+                            outputDir = settingsState.outputDir,
+                            onSelectImage = controller.upscaleViewModel::loadFile,
+                            onReloadModels = controller.upscaleViewModel::reloadModels,
+                            onSelectModel = controller.upscaleViewModel::selectModel,
+                            onFactorChange = controller.upscaleViewModel::updateFactor,
+                            onUpscale = controller.upscaleViewModel::upscale,
                         )
                         Screen.Library -> LibraryScreen(
                             state = libraryState,
@@ -433,6 +451,8 @@ private fun GenerationUiState.toAssistantContext(screen: String): AssistantConte
             }
         }.orEmpty(),
         selectedCompositionElement = selectedElement?.assistantLabel().orEmpty(),
+        hasStructuredComposition = document != null,
+        hasSelectedCompositionElement = selectedElement != null,
     )
 }
 
