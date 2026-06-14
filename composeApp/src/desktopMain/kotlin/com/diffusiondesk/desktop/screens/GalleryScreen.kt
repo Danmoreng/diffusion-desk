@@ -636,6 +636,23 @@ private fun GalleryDetails(
                 }.joinToString("  |  "),
             )
 
+            if (image.loras.isNotEmpty()) {
+                Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                    DeskLabel("LoRAs")
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        image.loras.forEach { lora ->
+                            DeskStatusBadge(
+                                text = "${lora.displayName} ${"%.2f".format(java.util.Locale.US, lora.weight)}",
+                                tone = DeskStatusTone.Info,
+                            )
+                        }
+                    }
+                }
+            }
+
             Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
                 DeskLabel("Tags")
                 if (image.keywords.isNotEmpty()) {

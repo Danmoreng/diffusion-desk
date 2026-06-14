@@ -120,6 +120,7 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 import kotlin.math.roundToInt
+import org.jetbrains.jewel.ui.component.Checkbox
 import org.jetbrains.jewel.ui.component.Slider
 import org.jetbrains.jewel.ui.component.Text
 
@@ -158,6 +159,11 @@ fun GenerateScreen(
     onCfgScaleChange: (String) -> Unit,
     onSeedChange: (String) -> Unit,
     onSamplerChange: (String) -> Unit,
+    onLoraSearchChange: (String) -> Unit,
+    onToggleLoraPanel: () -> Unit,
+    onReloadLoras: () -> Unit,
+    onToggleLora: (String) -> Unit,
+    onLoraWeightChange: (String, Double) -> Unit,
     onRandomizeSeed: () -> Unit,
     onReuseLastSeed: () -> Unit,
     onSwapDimensions: () -> Unit,
@@ -251,6 +257,11 @@ fun GenerateScreen(
                     onCfgScaleChange = onCfgScaleChange,
                     onSeedChange = onSeedChange,
                     onSamplerChange = onSamplerChange,
+                    onLoraSearchChange = onLoraSearchChange,
+                    onToggleLoraPanel = onToggleLoraPanel,
+                    onReloadLoras = onReloadLoras,
+                    onToggleLora = onToggleLora,
+                    onLoraWeightChange = onLoraWeightChange,
                     onRandomizeSeed = onRandomizeSeed,
                     onReuseLastSeed = onReuseLastSeed,
                     onSwapDimensions = onSwapDimensions,
@@ -394,6 +405,11 @@ private fun GenerationPanel(
     onCfgScaleChange: (String) -> Unit,
     onSeedChange: (String) -> Unit,
     onSamplerChange: (String) -> Unit,
+    onLoraSearchChange: (String) -> Unit,
+    onToggleLoraPanel: () -> Unit,
+    onReloadLoras: () -> Unit,
+    onToggleLora: (String) -> Unit,
+    onLoraWeightChange: (String, Double) -> Unit,
     onRandomizeSeed: () -> Unit,
     onReuseLastSeed: () -> Unit,
     onSwapDimensions: () -> Unit,
@@ -448,6 +464,15 @@ private fun GenerationPanel(
                     onCompositionPaletteChange = onCompositionPaletteChange,
                     onCompositionElementSelected = onCompositionElementSelected,
                     onEnhancePrompt = onEnhancePrompt,
+                )
+
+                LoraPanel(
+                    state = state,
+                    onSearchChange = onLoraSearchChange,
+                    onToggleExpanded = onToggleLoraPanel,
+                    onReload = onReloadLoras,
+                    onToggleLora = onToggleLora,
+                    onWeightChange = onLoraWeightChange,
                 )
 
                 if (state.ideogram.selectedTab == IdeogramStructureTab.Text) {
@@ -802,6 +827,175 @@ private fun TextPromptPanel(
                 modifier = Modifier
                     .fillMaxWidth()
                     .heightIn(min = 74.dp),
+            )
+        }
+    }
+}
+
+@Composable
+private fun LoraPanel(
+    state: GenerationUiState,
+    onSearchChange: (String) -> Unit,
+    onToggleExpanded: () -> Unit,
+    onReload: () -> Unit,
+    onToggleLora: (String) -> Unit,
+    onWeightChange: (String, Double) -> Unit,
+) {
+    val query = state.loraSearchQuery.trim()
+    val filtered = state.loraModels.filter { lora ->
+        query.isBlank() ||
+            lora.cleanName.contains(query, ignoreCase = true) ||
+            lora.triggerWord.contains(query, ignoreCase = true)
+    }
+    val visible = filtered.take(8)
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(DeskControlCornerRadius))
+            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = DeskSubtleSurfaceAlpha))
+            .padding(DeskLayoutGap),
+        verticalArrangement = Arrangement.spacedBy(DeskLayoutGap),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable(onClick = onToggleExpanded),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(DeskCompactControlSpacing),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(
+                    imageVector = if (state.loraPanelExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(18.dp),
+                )
+                Label("LoRAs")
+                if (state.activeLoraCount > 0) {
+                    DeskStatusBadge("${state.activeLoraCount} active", DeskStatusTone.Info)
+                }
+            }
+            DeskSubtleTextButton(
+                icon = Icons.Default.Refresh,
+                text = if (state.isLoadingLoras) "Loading..." else "Refresh",
+                onClick = onReload,
+                enabled = !state.isLoadingLoras,
+            )
+        }
+
+        if (state.loraPanelExpanded) {
+            DeskTextField(
+                label = "",
+                value = state.loraSearchQuery,
+                onValueChange = onSearchChange,
+                placeholder = "Search LoRAs...",
+                modifier = Modifier.fillMaxWidth(),
+            )
+
+            when {
+                state.isLoadingLoras -> Text(
+                    text = "Loading LoRAs...",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                state.loraModels.isEmpty() -> Text(
+                    text = "No LoRA models found in the lora model folder.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                filtered.isEmpty() -> Text(
+                    text = "No LoRAs match the current search.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                else -> {
+                    visible.forEach { lora ->
+                        val active = state.activeLoras.firstOrNull { it.id == lora.id }
+                        LoraRow(
+                            name = lora.cleanName,
+                            triggerWord = lora.triggerWord,
+                            checked = active != null,
+                            weight = active?.weight ?: 1.0,
+                            onToggle = { onToggleLora(lora.id) },
+                            onWeightChange = { onWeightChange(lora.id, it) },
+                        )
+                    }
+                    if (filtered.size > visible.size) {
+                        Text(
+                            text = "${filtered.size - visible.size} more LoRAs hidden by the compact list.",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun LoraRow(
+    name: String,
+    triggerWord: String,
+    checked: Boolean,
+    weight: Double,
+    onToggle: () -> Unit,
+    onWeightChange: (Double) -> Unit,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(DeskControlCornerRadius))
+            .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.65f))
+            .padding(DeskLayoutGap),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(DeskLayoutGap),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Checkbox(
+                checked = checked,
+                onCheckedChange = { onToggle() },
+            )
+            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(
+                    text = name,
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                if (triggerWord.isNotBlank()) {
+                    Text(
+                        text = "Trigger: $triggerWord",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
+            if (checked) {
+                Text(
+                    text = "%.2f".format(Locale.US, weight),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                    fontWeight = FontWeight.SemiBold,
+                )
+            }
+        }
+        if (checked) {
+            Slider(
+                value = weight.toFloat(),
+                onValueChange = { onWeightChange(it.toDouble()) },
+                valueRange = 0f..2f,
+                steps = 0,
             )
         }
     }

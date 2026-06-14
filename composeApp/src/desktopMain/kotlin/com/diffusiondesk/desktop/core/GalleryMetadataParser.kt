@@ -48,7 +48,9 @@ object GalleryMetadataParser {
         val stepsIndex = lines.indexOfFirst { it.trimStart().startsWith("Steps:", ignoreCase = true) }
         val negativeIndex = lines.indexOfFirst { it.trimStart().startsWith("Negative prompt:", ignoreCase = true) }
         val promptEnd = listOf(negativeIndex, stepsIndex).filter { it >= 0 }.minOrNull() ?: lines.size
-        val prompt = lines.take(promptEnd).joinToString("\n").trim()
+        val rawPrompt = lines.take(promptEnd).joinToString("\n").trim()
+        val loras = extractLoras(rawPrompt)
+        val prompt = stripLoraTags(rawPrompt)
 
         val negativePrompt = if (negativeIndex >= 0) {
             val end = if (stepsIndex > negativeIndex) stepsIndex else lines.size
@@ -77,6 +79,7 @@ object GalleryMetadataParser {
             modelId = params["model"].orEmpty(),
             generationTime = params["time"]?.removeSuffix("s")?.trim()?.toDoubleOrNull(),
             metadataText = normalized,
+            loras = loras,
         )
     }
 
@@ -213,8 +216,31 @@ object GalleryMetadataParser {
             modelId = modelId.ifBlank { other.modelId },
             generationTime = generationTime ?: other.generationTime,
             metadataText = metadataText.ifBlank { other.metadataText },
+            loras = if (loras.isNotEmpty()) loras else other.loras,
         )
     }
+
+    private fun extractLoras(prompt: String): List<GalleryLora> {
+        return LORA_TAG_REGEX.findAll(prompt)
+            .map { match ->
+                GalleryLora(
+                    path = match.groupValues[1].trim(),
+                    weight = match.groupValues[2].toDoubleOrNull() ?: 1.0,
+                )
+            }
+            .toList()
+    }
+
+    private fun stripLoraTags(prompt: String): String {
+        return prompt
+            .replace(LORA_TAG_REGEX, "")
+            .replace(Regex("""[ \t]{2,}"""), " ")
+            .lines()
+            .joinToString("\n") { it.trim() }
+            .trim()
+    }
+
+    private val LORA_TAG_REGEX = Regex("""<lora:([^:>]+):([^>]+)>""", RegexOption.IGNORE_CASE)
 
     private fun Map<String, String>.firstValue(vararg names: String): String? {
         for (name in names) {

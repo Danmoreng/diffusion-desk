@@ -43,6 +43,12 @@ data class ModelSummary(
     val loaded: Boolean,
 )
 
+data class ModelMetadata(
+    val id: String,
+    val triggerWord: String = "",
+    val previewPath: String = "",
+)
+
 data class ProgressSnapshot(
     val step: Int,
     val steps: Int,
@@ -271,6 +277,28 @@ class DiffusionDeskClient(
                 phase = root["phase"]?.jsonPrimitive?.content.orEmpty(),
                 message = root["message"]?.jsonPrimitive?.content.orEmpty(),
             )
+        }
+    }
+
+    suspend fun fetchModelMetadata(baseUrl: String): Result<List<ModelMetadata>> = withContext(Dispatchers.IO) {
+        runCatching {
+            val request = requestBuilder("$baseUrl/v1/models/metadata")
+                .GET()
+                .timeout(Duration.ofSeconds(10))
+                .build()
+
+            val response = httpClient.send(request, HttpResponse.BodyHandlers.ofString())
+            check(response.statusCode() in 200..299) { "Model metadata request failed with ${response.statusCode()}" }
+
+            json.parseToJsonElement(response.body()).jsonArray.map { item ->
+                val root = item.jsonObject
+                val metadata = root["metadata"]?.jsonObject
+                ModelMetadata(
+                    id = root["id"]?.jsonPrimitive?.content.orEmpty(),
+                    triggerWord = metadata?.get("trigger_word")?.jsonPrimitive?.contentOrNull.orEmpty(),
+                    previewPath = metadata?.get("preview_path")?.jsonPrimitive?.contentOrNull.orEmpty(),
+                )
+            }
         }
     }
 

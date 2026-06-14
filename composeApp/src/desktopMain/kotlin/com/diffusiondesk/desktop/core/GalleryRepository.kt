@@ -315,6 +315,7 @@ class GalleryRepository(
             seed = image.seed,
             modelId = image.modelId,
             presetId = image.presetId,
+            loras = image.loras,
         )
     }
 
@@ -580,6 +581,7 @@ class GalleryRepository(
             createdAt = getLong("created_at"),
             modifiedAt = getLong("modified_at"),
             metadataText = getString("metadata_text").orEmpty(),
+            loras = GalleryMetadataParser.parseGenerationText(getString("metadata_text").orEmpty()).loras,
             favorite = getInt("favorite") != 0,
             rating = getInt("rating"),
             keywords = getString("keywords")
