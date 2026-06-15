@@ -179,6 +179,7 @@ fun GenerateScreen(
     onGoForward: () -> Unit,
     onLeftPanelWidthChange: (Int) -> Unit,
     actionBarPosition: String,
+    modelDir: String,
     outputDir: String,
     showLlmDebugConsole: Boolean,
     llmDebugEntries: List<LlmDebugEntry>,
@@ -262,6 +263,7 @@ fun GenerateScreen(
                     onReloadLoras = onReloadLoras,
                     onToggleLora = onToggleLora,
                     onLoraWeightChange = onLoraWeightChange,
+                    modelDir = modelDir,
                     onRandomizeSeed = onRandomizeSeed,
                     onReuseLastSeed = onReuseLastSeed,
                     onSwapDimensions = onSwapDimensions,
@@ -410,6 +412,7 @@ private fun GenerationPanel(
     onReloadLoras: () -> Unit,
     onToggleLora: (String) -> Unit,
     onLoraWeightChange: (String, Double) -> Unit,
+    modelDir: String,
     onRandomizeSeed: () -> Unit,
     onReuseLastSeed: () -> Unit,
     onSwapDimensions: () -> Unit,
@@ -473,6 +476,7 @@ private fun GenerationPanel(
                     onReload = onReloadLoras,
                     onToggleLora = onToggleLora,
                     onWeightChange = onLoraWeightChange,
+                    modelDir = modelDir,
                 )
 
                 if (state.ideogram.selectedTab == IdeogramStructureTab.Text) {
@@ -840,8 +844,10 @@ private fun LoraPanel(
     onReload: () -> Unit,
     onToggleLora: (String) -> Unit,
     onWeightChange: (String, Double) -> Unit,
+    modelDir: String,
 ) {
     val query = state.loraSearchQuery.trim()
+    val loraFolder = File(modelDir.trim().ifBlank { "models" }, "lora").absolutePath
     val filtered = state.loraModels.filter { lora ->
         query.isBlank() ||
             lora.cleanName.contains(query, ignoreCase = true) ||
@@ -903,7 +909,7 @@ private fun LoraPanel(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 state.loraModels.isEmpty() -> Text(
-                    text = "No LoRA models found in the lora model folder.",
+                    text = "No LoRAs found in $loraFolder. Place .safetensors, .gguf, .ckpt, or .pth files there, then refresh.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )

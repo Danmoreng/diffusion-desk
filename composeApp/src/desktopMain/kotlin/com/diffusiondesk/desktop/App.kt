@@ -162,6 +162,7 @@ fun App(
                             onGoForward = controller.generationViewModel::goForward,
                             onLeftPanelWidthChange = controller.generationViewModel::updateLeftPanelWidth,
                             actionBarPosition = settingsState.actionBarPosition,
+                            modelDir = settingsState.modelDir,
                             outputDir = settingsState.outputDir,
                             showLlmDebugConsole = settingsState.showLlmDebugConsole,
                             llmDebugEntries = llmDebugEntries,
@@ -281,6 +282,10 @@ fun App(
                             onSaveLocal = controller.settingsViewModel::saveLocalSettings,
                             onApplyToBackend = controller.settingsViewModel::applySettingsToBackend,
                             onReloadFromBackend = controller.settingsViewModel::loadConfigFromBackend,
+                            onRefreshModelFolders = {
+                                controller.generationViewModel.reloadLoras()
+                                controller.upscaleViewModel.reloadModels()
+                            },
                         )
                     }
                     NotificationStack(
