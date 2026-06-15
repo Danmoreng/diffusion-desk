@@ -99,6 +99,26 @@ System screen when you want prompt enhancement, composition generation, or
 image tagging. Multimodal GGUF models can use an `mmproj` projector to inspect
 the generated image or a selected composition region.
 
+### Model Folder Structure
+
+Diffusion Desk scans the configured model directory using the common
+Automatic1111/Forge-style folder layout. Place models in these subfolders:
+
+```text
+models/
+  lora/              LoRA files (.safetensors, .gguf, .ckpt, .pth)
+  esrgan/            Upscaler models
+  vae/               VAE files
+  text-encoder/      Text encoder files
+  llm/               Local LLM GGUF files
+  stable-diffusion/  Stable Diffusion checkpoints
+  diffusion_models/  Diffusion model components
+  unet/              UNet model components
+```
+
+The Settings screen shows the resolved LoRA and upscaler folders for the
+current model directory and can create missing folders for you.
+
 ## Ideogram Composition
 
 For image presets using structured Ideogram 4 prompts, the Generate screen

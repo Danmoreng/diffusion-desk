@@ -8,10 +8,18 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.FolderOpen
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
@@ -19,6 +27,8 @@ import androidx.compose.ui.unit.dp
 import com.diffusiondesk.desktop.core.BackendStatus
 import com.diffusiondesk.desktop.core.BackendUiState
 import com.diffusiondesk.desktop.viewmodel.SettingsUiState
+import java.awt.Desktop
+import java.io.File
 import org.jetbrains.jewel.ui.component.Text
 
 @Composable
@@ -39,6 +49,7 @@ fun SettingsScreen(
     onSaveLocal: () -> Unit,
     onApplyToBackend: () -> Unit,
     onReloadFromBackend: () -> Unit,
+    onRefreshModelFolders: () -> Unit,
 ) {
     BoxWithConstraints(
         modifier = Modifier
@@ -68,6 +79,7 @@ fun SettingsScreen(
                         onModelDirChange = onModelDirChange,
                         onSaveLocal = onSaveLocal,
                         onApplyToBackend = onApplyToBackend,
+                        onRefreshModelFolders = onRefreshModelFolders,
                     )
                 }
 
@@ -104,6 +116,7 @@ fun SettingsScreen(
                     onModelDirChange = onModelDirChange,
                     onSaveLocal = onSaveLocal,
                     onApplyToBackend = onApplyToBackend,
+                    onRefreshModelFolders = onRefreshModelFolders,
                 )
                 DesktopSettingsSection(
                     state = state,
@@ -133,6 +146,7 @@ private fun GeneralSettingsSection(
     onModelDirChange: (String) -> Unit,
     onSaveLocal: () -> Unit,
     onApplyToBackend: () -> Unit,
+    onRefreshModelFolders: () -> Unit,
 ) {
     SectionCard(
         title = "General",
@@ -202,6 +216,10 @@ private fun GeneralSettingsSection(
                 onSaveLocal()
                 onApplyToBackend()
             },
+        )
+        ExpectedModelFolders(
+            modelDir = state.modelDir,
+            onRefresh = onRefreshModelFolders,
         )
     }
 }
@@ -326,6 +344,93 @@ private fun PathSettingRow(
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
+    }
+}
+
+@Composable
+private fun ExpectedModelFolders(
+    modelDir: String,
+    onRefresh: () -> Unit,
+) {
+    val root = modelDir.trim().ifBlank { "models" }
+    Column(verticalArrangement = Arrangement.spacedBy(DeskLayoutGap)) {
+        DeskLabel("Expected Model Folders")
+        ExpectedModelFolderRow(
+            label = "LoRAs",
+            folder = File(root, "lora"),
+            onRefresh = onRefresh,
+        )
+        ExpectedModelFolderRow(
+            label = "Upscalers",
+            folder = File(root, "esrgan"),
+            onRefresh = onRefresh,
+        )
+    }
+}
+
+@Composable
+private fun ExpectedModelFolderRow(
+    label: String,
+    folder: File,
+    onRefresh: () -> Unit,
+) {
+    var exists by remember(folder.absolutePath) { mutableStateOf(folder.isDirectory) }
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = label,
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Text(
+                    text = folder.absolutePath,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(DeskCompactControlSpacing)) {
+                DeskSubtleTextButton(
+                    icon = Icons.Default.Add,
+                    text = "Create",
+                    onClick = {
+                        folder.mkdirs()
+                        exists = folder.isDirectory
+                        onRefresh()
+                    },
+                    enabled = !exists,
+                )
+                DeskSubtleTextButton(
+                    icon = Icons.Default.FolderOpen,
+                    text = "Open",
+                    onClick = { openFolder(folder) },
+                    enabled = exists,
+                )
+                DeskSubtleTextButton(
+                    icon = Icons.Default.Refresh,
+                    text = "Refresh",
+                    onClick = {
+                        exists = folder.isDirectory
+                        onRefresh()
+                    },
+                )
+            }
+        }
+    }
+}
+
+private fun openFolder(folder: File) {
+    runCatching {
+        if (Desktop.isDesktopSupported()) {
+            Desktop.getDesktop().open(folder)
+        }
     }
 }
 
