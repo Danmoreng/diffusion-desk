@@ -42,6 +42,9 @@ data class UpscaleUiState(
     val source: UpscaleSourceImage? = null,
     val result: GeneratedImage? = null,
     val factor: Double = 2.0,
+    val upscaleStage: String = "",
+    val upscaleDetail: String = "",
+    val upscaleProgress: Float = 0f,
     val isLoadingModels: Boolean = false,
     val isUpscaling: Boolean = false,
     val message: String = "",
@@ -159,21 +162,51 @@ class UpscaleViewModel(
         }
 
         scope.launch {
-            update { copy(isUpscaling = true, result = null, message = "Loading upscale model...", error = null) }
+            update {
+                copy(
+                    isUpscaling = true,
+                    result = null,
+                    upscaleStage = "Loading ESRGAN model",
+                    upscaleDetail = selectedModel?.name ?: modelId,
+                    upscaleProgress = 0.12f,
+                    message = "Loading upscale model...",
+                    error = null,
+                )
+            }
             client.loadUpscaleModel(baseUrl, modelId)
                 .mapCatching {
-                    update { copy(message = "Upscaling ${source.name} ${"%.2f".format(java.util.Locale.US, factor)}x...") }
+                    update {
+                        copy(
+                            upscaleStage = "Running neural upscale",
+                            upscaleDetail = "${source.width} x ${source.height} source, ${"%.2f".format(java.util.Locale.US, factor)}x target",
+                            upscaleProgress = 0.38f,
+                            message = "Upscaling ${source.name} ${"%.2f".format(java.util.Locale.US, factor)}x...",
+                        )
+                    }
                     val imageBase64 = Base64.getEncoder().encodeToString(source.bytes)
-                    client.upscaleImage(baseUrl, imageBase64, backendFactor, saveImage = true).getOrThrow()
+                    client.upscaleImage(baseUrl, imageBase64, backendFactor, saveImage = false).getOrThrow()
                 }
                 .mapCatching { result ->
+                    update {
+                        copy(
+                            upscaleStage = "Preparing final image",
+                            upscaleDetail = "Fetching intermediate output from the image worker.",
+                            upscaleProgress = 0.74f,
+                        )
+                    }
                     val image = client.fetchGeneratedImage(baseUrl, result.imageUrl).getOrThrow()
-                    if (image.bufferedImage.width == targetWidth && image.bufferedImage.height == targetHeight) {
-                        image
-                    } else {
-                        withContext(Dispatchers.IO) {
-                            image.resizeAndSave(targetWidth, targetHeight, settingsStore.load().outputDir)
+                    withContext(Dispatchers.IO) {
+                        update {
+                            copy(
+                                upscaleStage = "Resizing and saving",
+                                upscaleDetail = "Writing final ${targetWidth} x ${targetHeight} image.",
+                                upscaleProgress = 0.88f,
+                            )
                         }
+                        val outputDir = settingsStore.load().outputDir
+                        val finalImage = image.resizeAndSave(targetWidth, targetHeight, outputDir)
+                        deleteTempUpscaleResult(outputDir, result.name)
+                        finalImage
                     }
                 }
                 .onSuccess { image ->
@@ -181,6 +214,9 @@ class UpscaleViewModel(
                         copy(
                             result = image,
                             isUpscaling = false,
+                            upscaleStage = "",
+                            upscaleDetail = "",
+                            upscaleProgress = 1f,
                             message = "Upscale complete: ${image.bufferedImage.width} x ${image.bufferedImage.height}.",
                             error = null,
                         )
@@ -190,6 +226,9 @@ class UpscaleViewModel(
                     update {
                         copy(
                             isUpscaling = false,
+                            upscaleStage = "",
+                            upscaleDetail = "",
+                            upscaleProgress = 0f,
                             error = error.message ?: "Upscale failed.",
                         )
                     }
@@ -234,6 +273,17 @@ class UpscaleViewModel(
             bytes = bytes,
             sourceUrl = file.toURI().toString(),
         )
+    }
+
+    private fun deleteTempUpscaleResult(outputDir: String, fileName: String) {
+        if (fileName.isBlank()) return
+        runCatching {
+            val outputRoot = File(outputDir.ifBlank { System.getProperty("user.home") }).canonicalFile
+            val tempFile = File(File(outputRoot, "temp"), fileName).canonicalFile
+            if (tempFile.parentFile == File(outputRoot, "temp").canonicalFile && tempFile.isFile) {
+                tempFile.delete()
+            }
+        }
     }
 
     private fun BufferedImage.resizeTo(targetWidth: Int, targetHeight: Int): BufferedImage {

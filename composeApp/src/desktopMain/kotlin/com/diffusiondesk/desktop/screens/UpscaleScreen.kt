@@ -4,7 +4,6 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -26,7 +25,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CropFree
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -59,7 +57,6 @@ import androidx.compose.ui.unit.dp
 import com.diffusiondesk.desktop.core.BackendStatus
 import com.diffusiondesk.desktop.core.BackendUiState
 import com.diffusiondesk.desktop.core.GeneratedImage
-import com.diffusiondesk.desktop.core.ModelSummary
 import com.diffusiondesk.desktop.viewmodel.UpscaleSourceImage
 import com.diffusiondesk.desktop.viewmodel.UpscaleUiState
 import java.awt.Cursor
@@ -112,29 +109,43 @@ fun UpscaleScreen(
                 } ?: UpscaleHint("Choose a source image or send one here from the Gallery.")
 
                 UpscaleSectionTitle("ESRGAN model")
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                    DeskButton(
-                        onClick = onReloadModels,
-                        enabled = !state.isLoadingModels && backendState.status == BackendStatus.Ready,
-                        modifier = Modifier.weight(1f).height(40.dp),
-                    ) {
-                        UpscaleButtonContent(Icons.Default.Refresh, "Reload models")
-                    }
-                }
-                if (state.isLoadingModels) {
-                    UpscaleHint("Loading ESRGAN models...")
-                } else if (state.upscaleModels.isEmpty()) {
-                    UpscaleHint("No ESRGAN models found in the models/esrgan folder.")
-                } else {
-                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        state.upscaleModels.forEach { model ->
-                            UpscaleModelRow(
-                                model = model,
-                                selected = model.id == state.selectedModelId,
-                                onClick = { onSelectModel(model.id) },
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    when {
+                        state.isLoadingModels -> UpscaleHint(
+                            text = "Loading ESRGAN models...",
+                            modifier = Modifier.weight(1f),
+                        )
+                        state.upscaleModels.isEmpty() -> UpscaleHint(
+                            text = "No ESRGAN models found in the models/esrgan folder.",
+                            modifier = Modifier.weight(1f),
+                        )
+                        else -> {
+                            val optionsByLabel = state.upscaleModels.associateBy { it.upscaleModelLabel() }
+                            val selectedLabel = state.selectedModel
+                                ?.upscaleModelLabel()
+                                ?: "Choose ESRGAN model"
+                            DeskDropdownField(
+                                label = "",
+                                value = selectedLabel,
+                                options = optionsByLabel.keys.toList(),
+                                onValueChange = { label ->
+                                    optionsByLabel[label]?.let { onSelectModel(it.id) }
+                                },
+                                modifier = Modifier.weight(1f),
                             )
                         }
                     }
+                    DeskIconButton(
+                        icon = Icons.Default.Refresh,
+                        contentDescription = "Reload ESRGAN models",
+                        onClick = onReloadModels,
+                        enabled = backendState.status == BackendStatus.Ready,
+                        loading = state.isLoadingModels,
+                    )
                 }
 
                 UpscaleSectionTitle("Scale")
@@ -155,6 +166,13 @@ fun UpscaleScreen(
                 ) {
                     UpscaleButtonContent(Icons.Default.CropFree, if (state.isUpscaling) "Upscaling..." else "Upscale")
                 }
+                if (state.isUpscaling) {
+                    UpscaleProgressPanel(
+                        stage = state.upscaleStage,
+                        detail = state.upscaleDetail,
+                        progress = state.upscaleProgress,
+                    )
+                }
 
                 state.message.takeIf { it.isNotBlank() }?.let {
                     UpscaleHint(it)
@@ -174,7 +192,6 @@ fun UpscaleScreen(
                 source = state.source,
                 result = state.result,
                 outputDir = outputDir,
-                loading = state.isUpscaling,
                 modifier = Modifier.fillMaxSize(),
             )
         }
@@ -192,9 +209,13 @@ private fun UpscaleSectionTitle(text: String) {
 }
 
 @Composable
-private fun UpscaleHint(text: String) {
+private fun UpscaleHint(
+    text: String,
+    modifier: Modifier = Modifier,
+) {
     Text(
         text = text,
+        modifier = modifier,
         style = MaterialTheme.typography.bodyMedium,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
     )
@@ -210,43 +231,6 @@ private fun UpscaleSourceSummary(source: UpscaleSourceImage) {
             Text(source.name, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text("${source.width} x ${source.height}", color = MaterialTheme.colorScheme.primary)
         }
-    }
-}
-
-@Composable
-private fun UpscaleModelRow(
-    model: ModelSummary,
-    selected: Boolean,
-    onClick: () -> Unit,
-) {
-    val shape = RoundedCornerShape(DeskControlCornerRadius)
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(shape)
-            .background(
-                if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.16f)
-                else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = DeskSubtleSurfaceAlpha),
-            )
-            .border(
-                1.dp,
-                if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant,
-                shape,
-            )
-            .clickable(onClick = onClick)
-            .padding(10.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        Box(
-            modifier = Modifier
-                .size(9.dp)
-                .background(
-                    if (model.loaded || model.active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f),
-                    RoundedCornerShape(999.dp),
-                ),
-        )
-        Text(model.name, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }
 
@@ -296,11 +280,57 @@ private fun UpscaleScaleSlider(
 }
 
 @Composable
+private fun UpscaleProgressPanel(
+    stage: String,
+    detail: String,
+    progress: Float,
+) {
+    Column(
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = stage.ifBlank { "Upscaling image" },
+                style = MaterialTheme.typography.bodySmall,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f),
+            )
+            Text(
+                text = "${(progress.coerceIn(0f, 0.98f) * 100f).roundToInt()}%",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.primary,
+                fontWeight = FontWeight.SemiBold,
+            )
+        }
+        DeskProgressTrack(
+            progress = progress.coerceIn(0f, 0.98f),
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(7.dp),
+            animationLabel = "upscale-progress",
+        )
+        Text(
+            text = detail.ifBlank { "Processing the selected image." },
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+}
+
+@Composable
 private fun UpscaleComparisonPane(
     source: UpscaleSourceImage?,
     result: GeneratedImage?,
     outputDir: String,
-    loading: Boolean,
     modifier: Modifier = Modifier,
 ) {
     var comparePosition by remember { mutableFloatStateOf(0.5f) }
@@ -337,7 +367,6 @@ private fun UpscaleComparisonPane(
                 contentAlignment = Alignment.Center,
             ) {
                 when {
-                    loading -> CircularProgressIndicator()
                     source == null -> UpscaleHint("No image selected.")
                     result == null -> Image(
                         bitmap = source.bitmap,
@@ -451,6 +480,11 @@ private fun ImageComparisonSlider(
             )
         }
     }
+}
+
+private fun com.diffusiondesk.desktop.core.ModelSummary.upscaleModelLabel(): String {
+    val displayName = name.ifBlank { id }
+    return if (id.isBlank() || id == displayName) displayName else "$displayName ($id)"
 }
 
 private fun chooseImageFile(): File? {
