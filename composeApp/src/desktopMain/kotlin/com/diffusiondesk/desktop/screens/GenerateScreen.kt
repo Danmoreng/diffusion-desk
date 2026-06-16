@@ -1,6 +1,7 @@
 package com.diffusiondesk.desktop.screens
 
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -1487,6 +1488,7 @@ private fun IdeogramCompositionCanvas(
     selectedIndex: Int,
     image: GeneratedImage?,
     showOverlay: Boolean,
+    showGrid: Boolean,
     outputDir: String,
     onElementSelected: (Int) -> Unit,
     onBboxEditStart: () -> Unit,
@@ -1614,6 +1616,9 @@ private fun IdeogramCompositionCanvas(
                 }
 
                 if (image == null || showOverlay) {
+                    if (showGrid) {
+                        IdeogramCompositionGrid()
+                    }
                     canvasElements.sortedBy { if (it.index == selectedIndex) 1 else 0 }.forEach { canvasElement ->
                         val index = canvasElement.index
                         val element = canvasElement.element
@@ -1697,6 +1702,34 @@ private fun IdeogramCompositionCanvas(
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun IdeogramCompositionGrid() {
+    val lineColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.22f)
+    val centerLineColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.38f)
+    Canvas(modifier = Modifier.fillMaxSize().zIndex(0.5f)) {
+        val lineWidth = 1.dp.toPx()
+        val centerLineWidth = 1.5.dp.toPx()
+        for (index in 1 until 10) {
+            val fraction = index / 10f
+            val isCenter = index == 5
+            val color = if (isCenter) centerLineColor else lineColor
+            val strokeWidth = if (isCenter) centerLineWidth else lineWidth
+            drawLine(
+                color = color,
+                start = Offset(size.width * fraction, 0f),
+                end = Offset(size.width * fraction, size.height),
+                strokeWidth = strokeWidth,
+            )
+            drawLine(
+                color = color,
+                start = Offset(0f, size.height * fraction),
+                end = Offset(size.width, size.height * fraction),
+                strokeWidth = strokeWidth,
+            )
         }
     }
 }
@@ -2603,6 +2636,7 @@ private fun CompositionPreviewHost(
 ) {
     val image = state.images.firstOrNull().takeUnless { state.isCurrentDraftResolutionModified }
     val elements = ideogramElementPreviews(state.ideogram.jsonPrompt)
+    var showGrid by remember { mutableStateOf(false) }
 
     Box(
         modifier = Modifier.fillMaxSize(),
@@ -2619,6 +2653,7 @@ private fun CompositionPreviewHost(
                 selectedIndex = state.selectedCompositionElementIndex,
                 image = image,
                 showOverlay = showCompositionOverlay,
+                showGrid = showGrid,
                 outputDir = outputDir,
                 onElementSelected = onCompositionElementSelected,
                 onBboxEditStart = onCompositionBboxEditStart,
@@ -2629,7 +2664,7 @@ private fun CompositionPreviewHost(
             )
         }
 
-        if (image != null) {
+        if (image != null || elements.isNotEmpty()) {
             Row(
                 modifier = Modifier
                     .align(Alignment.TopEnd)
@@ -2637,15 +2672,22 @@ private fun CompositionPreviewHost(
                 horizontalArrangement = Arrangement.spacedBy(4.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
+                if (image != null) {
+                    DeskInlineToggle(
+                        label = "Use image for LLM improvements",
+                        checked = state.useImageAsCompositionReference,
+                        onCheckedChange = onUseImageAsCompositionReferenceChange,
+                    )
+                    DeskInlineToggle(
+                        label = "Composition",
+                        checked = showCompositionOverlay,
+                        onCheckedChange = onShowCompositionOverlayChange,
+                    )
+                }
                 DeskInlineToggle(
-                    label = "Use image for LLM improvements",
-                    checked = state.useImageAsCompositionReference,
-                    onCheckedChange = onUseImageAsCompositionReferenceChange,
-                )
-                DeskInlineToggle(
-                    label = "Composition",
-                    checked = showCompositionOverlay,
-                    onCheckedChange = onShowCompositionOverlayChange,
+                    label = "Grid",
+                    checked = showGrid,
+                    onCheckedChange = { showGrid = it },
                 )
             }
         }
