@@ -68,6 +68,8 @@ enum class IdeogramStyleField(val jsonKey: String) {
 }
 
 sealed interface CompositionMutation {
+    data class Batch(val mutations: List<CompositionMutation>) : CompositionMutation
+    data class ReplaceDocument(val value: IdeogramCompositionDocument) : CompositionMutation
     data class UpdateHighLevelDescription(val value: String) : CompositionMutation
     data class UpdateStyleField(val field: IdeogramStyleField, val value: String) : CompositionMutation
     data class UpdateGlobalPalette(val colors: List<String>) : CompositionMutation
@@ -120,11 +122,12 @@ internal fun parseIdeogramCompositionDocument(value: String): Result<IdeogramCom
         background = composition.string("background"),
         elements = elements.mapIndexed { index, element ->
             val obj = element.asObject() ?: error("Element ${index + 1} must be an object.")
+            val text = obj.optionalString("text")
             IdeogramCompositionElement(
-                type = obj.string("type"),
+                type = normalizeIdeogramElementType(obj.optionalString("type"), text),
                 bbox = obj.intList("bbox"),
                 description = obj.string("desc"),
-                text = obj.optionalString("text"),
+                text = text,
                 colorPalette = obj.stringList("color_palette"),
             )
         },
@@ -134,8 +137,21 @@ internal fun parseIdeogramCompositionDocument(value: String): Result<IdeogramCom
 }
 
 internal fun IdeogramCompositionDocument.applyMutation(mutation: CompositionMutation): Result<IdeogramCompositionDocument> = runCatching {
+    when (mutation) {
+        is CompositionMutation.Batch -> {
+            return@runCatching mutation.mutations.fold(this) { current, next ->
+                current.applyMutation(next).getOrThrow()
+            }
+        }
+        is CompositionMutation.ReplaceDocument -> {
+            return@runCatching mutation.value
+        }
+        else -> Unit
+    }
     val root = source.toMutableMap()
     when (mutation) {
+        is CompositionMutation.Batch,
+        is CompositionMutation.ReplaceDocument -> Unit
         is CompositionMutation.UpdateHighLevelDescription -> root["high_level_description"] = JsonPrimitive(mutation.value)
         is CompositionMutation.UpdateStyleField -> {
             val style = root["style_description"]?.asObject()?.toMutableMap() ?: mutableMapOf()
@@ -401,6 +417,8 @@ private fun JsonObject.stringList(key: String): List<String> =
     (get(key) as? JsonArray)?.mapNotNull { (it as? JsonPrimitive)?.content } ?: emptyList()
 private fun JsonObject.intList(key: String): List<Int> =
     (get(key) as? JsonArray)?.mapNotNull { (it as? JsonPrimitive)?.content?.toIntOrNull() } ?: emptyList()
+private fun normalizeIdeogramElementType(rawType: String?, text: String?): String =
+    if (rawType.equals("text", ignoreCase = true) && !text.isNullOrBlank()) "text" else "obj"
 
 private val knownRootFields = setOf("high_level_description", "style_description", "compositional_deconstruction")
 private val knownStyleFields = setOf("aesthetics", "lighting", "medium", "photo", "art_style", "color_palette")

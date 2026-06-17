@@ -38,7 +38,10 @@ import androidx.compose.material.icons.automirrored.filled.Redo
 import androidx.compose.material.icons.automirrored.filled.Undo
 import androidx.compose.material.icons.filled.Casino
 import androidx.compose.material.icons.filled.AutoFixHigh
+import androidx.compose.material.icons.filled.AddBox
+import androidx.compose.material.icons.filled.CenterFocusStrong
 import androidx.compose.material.icons.filled.Dashboard
+import androidx.compose.material.icons.filled.ImageSearch
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Add
@@ -53,6 +56,7 @@ import androidx.compose.material.icons.filled.CropFree
 import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material.icons.filled.Stop
+import androidx.compose.material.icons.filled.TextFields
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -105,6 +109,7 @@ import com.diffusiondesk.desktop.core.BackendUiState
 import com.diffusiondesk.desktop.core.GeneratedImage
 import com.diffusiondesk.desktop.core.ImagePromptMode
 import com.diffusiondesk.desktop.core.LlmDebugEntry
+import com.diffusiondesk.desktop.composition.CaptureImageMode
 import com.diffusiondesk.desktop.composition.CompositionAction
 import com.diffusiondesk.desktop.composition.PaletteTarget
 import com.diffusiondesk.desktop.composition.StagedIdeogramStep
@@ -116,6 +121,8 @@ import com.diffusiondesk.desktop.viewmodel.IdeogramStyleField
 import com.diffusiondesk.desktop.viewmodel.IdeogramStructureTab
 import com.diffusiondesk.desktop.viewmodel.ideogramElementPreviews
 import java.awt.Cursor
+import java.awt.FileDialog
+import java.awt.Frame
 import java.io.File
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -722,32 +729,22 @@ private fun PromptTabContent(
                             .graphicsLayer { alpha = if (state.ideogram.isGeneratingJson) 0.62f else 1f },
                         verticalArrangement = Arrangement.spacedBy(DeskPanelSpacing),
                     ) {
-                        CompositionDocumentEditor(
+                        IdeogramCompositionForm(
                             state = state,
                             onMutation = onCompositionMutation,
                             onRunAction = onRunCompositionAction,
                             onStartOver = onStartOverComposition,
                             onUndo = onUndoComposition,
                             onRedo = onRedoComposition,
+                            onCompositionDescriptionChange = onCompositionDescriptionChange,
+                            onCompositionTextChange = onCompositionTextChange,
+                            onCompositionPaletteChange = onCompositionPaletteChange,
+                            onCompositionElementSelected = onCompositionElementSelected,
                             highlightStyleFields = highlightStyleFields,
                             highlightCompositionFields = highlightCompositionFields,
                             highlightHighLevelDescription = highlightHighLevelDescription,
                             onHighlightStyleFieldsChange = { highlightStyleFields = it },
                             onHighlightCompositionFieldsChange = { highlightCompositionFields = it },
-                            onHighlightHighLevelDescriptionChange = { highlightHighLevelDescription = it },
-                        )
-                        IdeogramElementEditor(
-                            elements = ideogramElementPreviews(state.ideogram.jsonPrompt),
-                            elementIds = state.compositionElementIds,
-                            selectedIndex = state.selectedCompositionElementIndex,
-                            activeImproveAction = state.activeCompositionImproveAction,
-                            onElementSelected = onCompositionElementSelected,
-                            onMutation = onCompositionMutation,
-                            onRunAction = onRunCompositionAction,
-                            onElementDescriptionChange = onCompositionDescriptionChange,
-                            onElementTextChange = onCompositionTextChange,
-                            onElementPaletteChange = onCompositionPaletteChange,
-                            highlightPlacement = highlightCompositionFields,
                             onHighlightHighLevelDescriptionChange = { highlightHighLevelDescription = it },
                         )
                     }
@@ -1061,6 +1058,195 @@ private fun CompositionGenerationHeader(
 }
 
 @Composable
+private fun AnalyzeImagePanel(
+    state: GenerationUiState,
+    onModeChange: (CaptureImageMode) -> Unit,
+    onUploadSelected: (File) -> Unit,
+    onStartCapture: () -> Unit,
+    onApplyCapture: () -> Unit,
+) {
+    val capture = state.ideogramCapture
+    val busy = capture.isBusy
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(DeskControlCornerRadius))
+            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = DeskSubtleSurfaceAlpha))
+            .padding(DeskLayoutGap),
+        verticalArrangement = Arrangement.spacedBy(DeskLayoutGap),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Label("Image analysis")
+            if (busy) DeskStatusBadge(capture.status.ifBlank { "Working..." }, DeskStatusTone.Info)
+        }
+        if (busy || capture.progressLabel.isNotBlank() || capture.progressDetail.isNotBlank()) {
+            CaptureProgressBlock(state)
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(DeskControlSpacing), modifier = Modifier.fillMaxWidth()) {
+            Text(
+                text = capture.activeSourceLabel,
+                modifier = Modifier.weight(1f),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            DeskSubtleTextButton(
+                icon = Icons.Default.Add,
+                text = "Choose",
+                onClick = { chooseCaptureImageFile()?.let(onUploadSelected) },
+                enabled = !busy,
+            )
+        }
+        DeskCompactDropdownField(
+            label = "Apply mode",
+            value = capture.mode.name,
+            options = CaptureImageMode.entries.map { it.name },
+            onValueChange = { value ->
+                CaptureImageMode.entries.firstOrNull { it.name == value }?.let(onModeChange)
+            },
+            modifier = Modifier.fillMaxWidth(),
+            minMenuWidth = 120.dp,
+        )
+        DeskButton(
+            onClick = onStartCapture,
+            enabled = !busy && capture.hasSource,
+            modifier = Modifier.fillMaxWidth().height(38.dp),
+        ) {
+            ButtonContent(Icons.Default.ImageSearch, if (capture.isInspecting) "Inspecting..." else "Analyze image")
+        }
+        capture.error?.let {
+            Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+        }
+        if (state.ideogram.document != null) {
+            DeskButton(
+                onClick = onApplyCapture,
+                enabled = !busy,
+                modifier = Modifier.fillMaxWidth().height(38.dp),
+            ) {
+                ButtonContent(Icons.Default.PlayArrow, "Apply to Generate")
+            }
+        }
+    }
+}
+
+@Composable
+private fun CaptureProgressBlock(state: GenerationUiState) {
+    val capture = state.ideogramCapture
+    val progress = capture.progress.coerceIn(0f, 1f)
+    val percent = (progress * 100f).roundToInt().coerceIn(0, 100)
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(DeskControlCornerRadius))
+            .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.58f))
+            .padding(10.dp),
+        verticalArrangement = Arrangement.spacedBy(7.dp),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = capture.progressLabel.ifBlank {
+                    when {
+                        capture.isInspecting -> "Global composition pass"
+                        capture.isRefining -> "Element detail pass"
+                        else -> "Analysis ready"
+                    }
+                },
+                modifier = Modifier.weight(1f),
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                text = "$percent%",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.primary,
+                fontWeight = FontWeight.Bold,
+            )
+        }
+        DeskProgressTrack(
+            progress = progress.coerceAtLeast(if (capture.isBusy) 0.06f else 0f),
+            modifier = Modifier.fillMaxWidth().height(5.dp),
+        )
+        Text(
+            text = capture.progressDetail.ifBlank { capture.status.ifBlank { "Waiting for the next VLLM step." } },
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 3,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+}
+
+@Composable
+private fun IdeogramCompositionForm(
+    state: GenerationUiState,
+    onMutation: (CompositionMutation) -> Unit,
+    onRunAction: (CompositionAction) -> Unit,
+    onStartOver: () -> Unit,
+    onUndo: () -> Unit,
+    onRedo: () -> Unit,
+    onCompositionDescriptionChange: (Int, String) -> Unit,
+    onCompositionTextChange: (Int, String) -> Unit,
+    onCompositionPaletteChange: (Int, List<String>) -> Unit,
+    onCompositionElementSelected: (Int) -> Unit,
+    highlightStyleFields: Boolean,
+    highlightCompositionFields: Boolean,
+    highlightHighLevelDescription: Boolean,
+    onHighlightStyleFieldsChange: (Boolean) -> Unit,
+    onHighlightCompositionFieldsChange: (Boolean) -> Unit,
+    onHighlightHighLevelDescriptionChange: (Boolean) -> Unit,
+    showDocumentActions: Boolean = true,
+    showAiActions: Boolean = true,
+    showAdditionalFields: Boolean = true,
+    showGenerateElementActions: Boolean = true,
+    showElementAiActions: Boolean = true,
+) {
+    CompositionDocumentEditor(
+        state = state,
+        onMutation = onMutation,
+        onRunAction = onRunAction,
+        onStartOver = onStartOver,
+        onUndo = onUndo,
+        onRedo = onRedo,
+        highlightStyleFields = highlightStyleFields,
+        highlightCompositionFields = highlightCompositionFields,
+        highlightHighLevelDescription = highlightHighLevelDescription,
+        onHighlightStyleFieldsChange = onHighlightStyleFieldsChange,
+        onHighlightCompositionFieldsChange = onHighlightCompositionFieldsChange,
+        onHighlightHighLevelDescriptionChange = onHighlightHighLevelDescriptionChange,
+        showDocumentActions = showDocumentActions,
+        showAiActions = showAiActions,
+        showAdditionalFields = showAdditionalFields,
+        showGenerateElementActions = showGenerateElementActions,
+    )
+    IdeogramElementEditor(
+        elements = ideogramElementPreviews(state.ideogram.jsonPrompt),
+        elementIds = state.compositionElementIds,
+        selectedIndex = state.selectedCompositionElementIndex,
+        activeImproveAction = state.activeCompositionImproveAction,
+        onElementSelected = onCompositionElementSelected,
+        onMutation = onMutation,
+        onRunAction = onRunAction,
+        onElementDescriptionChange = onCompositionDescriptionChange,
+        onElementTextChange = onCompositionTextChange,
+        onElementPaletteChange = onCompositionPaletteChange,
+        highlightPlacement = highlightCompositionFields,
+        onHighlightHighLevelDescriptionChange = onHighlightHighLevelDescriptionChange,
+        showAiActions = showElementAiActions,
+    )
+}
+
+@Composable
 @OptIn(ExperimentalComposeUiApi::class)
 private fun CompositionDocumentEditor(
     state: GenerationUiState,
@@ -1075,6 +1261,10 @@ private fun CompositionDocumentEditor(
     onHighlightStyleFieldsChange: (Boolean) -> Unit,
     onHighlightCompositionFieldsChange: (Boolean) -> Unit,
     onHighlightHighLevelDescriptionChange: (Boolean) -> Unit,
+    showDocumentActions: Boolean,
+    showAiActions: Boolean,
+    showAdditionalFields: Boolean,
+    showGenerateElementActions: Boolean,
 ) {
     val document = state.ideogram.document ?: return
     Column(
@@ -1087,7 +1277,7 @@ private fun CompositionDocumentEditor(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Label("Overview")
-            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            if (showDocumentActions) Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 DeskSubtleTextButton(
                     icon = Icons.Default.RestartAlt,
                     text = "Start over",
@@ -1112,7 +1302,9 @@ private fun CompositionDocumentEditor(
             label = "High-level description",
             value = document.highLevelDescription,
             onCommit = { onMutation(CompositionMutation.UpdateHighLevelDescription(it)) },
-            onImprove = { onRunAction(CompositionAction.ImproveField(CompositionImproveTarget.HighLevelDescription)) },
+            onImprove = if (showAiActions) {
+                { onRunAction(CompositionAction.ImproveField(CompositionImproveTarget.HighLevelDescription)) }
+            } else null,
             isImproving = state.activeCompositionImproveAction == CompositionAction.ImproveField(CompositionImproveTarget.HighLevelDescription).actionId,
             improveEnabled = state.activeCompositionImproveAction == null,
             minHeight = 82.dp,
@@ -1125,7 +1317,7 @@ private fun CompositionDocumentEditor(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Label("Style")
-            DeskSubtleTextButton(
+            if (showAiActions) DeskSubtleTextButton(
                 icon = Icons.Default.AutoFixHigh,
                 text = if (state.activeCompositionImproveAction == CompositionAction.ImproveStyle.actionId) "Improving..." else "Improve style",
                 onClick = { onRunAction(CompositionAction.ImproveStyle) },
@@ -1137,19 +1329,25 @@ private fun CompositionDocumentEditor(
         }
         CompositionEditField("Aesthetics", document.style.aesthetics, {
             onMutation(CompositionMutation.UpdateStyleField(IdeogramStyleField.Aesthetics, it))
-        }, onImprove = { onRunAction(CompositionAction.ImproveField(CompositionImproveTarget.StyleField(IdeogramStyleField.Aesthetics))) },
+        }, onImprove = if (showAiActions) {
+            { onRunAction(CompositionAction.ImproveField(CompositionImproveTarget.StyleField(IdeogramStyleField.Aesthetics))) }
+        } else null,
             isImproving = state.activeCompositionImproveAction == CompositionAction.ImproveField(CompositionImproveTarget.StyleField(IdeogramStyleField.Aesthetics)).actionId,
             improveEnabled = state.activeCompositionImproveAction == null,
             highlighted = highlightStyleFields)
         CompositionEditField("Lighting", document.style.lighting, {
             onMutation(CompositionMutation.UpdateStyleField(IdeogramStyleField.Lighting, it))
-        }, onImprove = { onRunAction(CompositionAction.ImproveField(CompositionImproveTarget.StyleField(IdeogramStyleField.Lighting))) },
+        }, onImprove = if (showAiActions) {
+            { onRunAction(CompositionAction.ImproveField(CompositionImproveTarget.StyleField(IdeogramStyleField.Lighting))) }
+        } else null,
             isImproving = state.activeCompositionImproveAction == CompositionAction.ImproveField(CompositionImproveTarget.StyleField(IdeogramStyleField.Lighting)).actionId,
             improveEnabled = state.activeCompositionImproveAction == null,
             highlighted = highlightStyleFields)
         CompositionEditField("Medium", document.style.medium, {
             onMutation(CompositionMutation.UpdateStyleField(IdeogramStyleField.Medium, it))
-        }, onImprove = { onRunAction(CompositionAction.ImproveField(CompositionImproveTarget.StyleField(IdeogramStyleField.Medium))) },
+        }, onImprove = if (showAiActions) {
+            { onRunAction(CompositionAction.ImproveField(CompositionImproveTarget.StyleField(IdeogramStyleField.Medium))) }
+        } else null,
             isImproving = state.activeCompositionImproveAction == CompositionAction.ImproveField(CompositionImproveTarget.StyleField(IdeogramStyleField.Medium)).actionId,
             improveEnabled = state.activeCompositionImproveAction == null,
             highlighted = highlightStyleFields)
@@ -1190,7 +1388,7 @@ private fun CompositionDocumentEditor(
             },
             onImprove = {
                 onRunAction(CompositionAction.ImproveField(CompositionImproveTarget.StyleField(if (usesPhoto) IdeogramStyleField.Photo else IdeogramStyleField.ArtStyle)))
-            },
+            }.takeIf { showAiActions },
             isImproving = state.activeCompositionImproveAction == CompositionAction.ImproveField(
                 CompositionImproveTarget.StyleField(if (usesPhoto) IdeogramStyleField.Photo else IdeogramStyleField.ArtStyle),
             ).actionId,
@@ -1202,7 +1400,7 @@ private fun CompositionDocumentEditor(
             colors = document.style.colorPalette,
             maxColors = 16,
             onColorsChange = { onMutation(CompositionMutation.UpdateGlobalPalette(it)) },
-            onSuggest = { onRunAction(CompositionAction.SuggestPalette(PaletteTarget.Global)) },
+            onSuggest = if (showAiActions) { { onRunAction(CompositionAction.SuggestPalette(PaletteTarget.Global)) } } else null,
             isSuggesting = state.activeCompositionImproveAction == CompositionAction.SuggestPalette(PaletteTarget.Global).actionId,
             suggestEnabled = state.activeCompositionImproveAction == null,
             highlighted = highlightStyleFields,
@@ -1214,7 +1412,7 @@ private fun CompositionDocumentEditor(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Label("Composition")
-            DeskSubtleTextButton(
+            if (showAiActions) DeskSubtleTextButton(
                 icon = Icons.Default.AutoFixHigh,
                 text = if (state.activeCompositionImproveAction == CompositionAction.ImproveComposition.actionId) "Improving..." else "Improve composition",
                 onClick = { onRunAction(CompositionAction.ImproveComposition) },
@@ -1228,13 +1426,15 @@ private fun CompositionDocumentEditor(
             label = "Background",
             value = document.background,
             onCommit = { onMutation(CompositionMutation.UpdateBackground(it)) },
-            onImprove = { onRunAction(CompositionAction.ImproveField(CompositionImproveTarget.Background)) },
+            onImprove = if (showAiActions) {
+                { onRunAction(CompositionAction.ImproveField(CompositionImproveTarget.Background)) }
+            } else null,
             isImproving = state.activeCompositionImproveAction == CompositionAction.ImproveField(CompositionImproveTarget.Background).actionId,
             improveEnabled = state.activeCompositionImproveAction == null,
             minHeight = 70.dp,
             highlighted = highlightCompositionFields,
         )
-        if (document.additionalFields.isNotEmpty()) {
+        if (showAdditionalFields && document.additionalFields.isNotEmpty()) {
             Label("Additional fields")
             document.additionalFields.forEach { field ->
                 Row(
@@ -1260,6 +1460,7 @@ private fun CompositionDocumentEditor(
                 }
             }
         }
+        if (showAdditionalFields) {
         var newFieldPath by remember { mutableStateOf("") }
         var newFieldValue by remember { mutableStateOf("\"value\"") }
         Row(
@@ -1292,6 +1493,8 @@ private fun CompositionDocumentEditor(
                 tooltip = "Add field",
             )
         }
+        }
+        if (showGenerateElementActions) {
         var newElementDescription by remember { mutableStateOf("") }
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -1326,6 +1529,7 @@ private fun CompositionDocumentEditor(
             onValueChange = { newElementDescription = it },
             modifier = Modifier.fillMaxWidth(),
         )
+        }
     }
 }
 
@@ -1435,6 +1639,7 @@ private fun IdeogramElementEditor(
     onElementPaletteChange: (Int, List<String>) -> Unit,
     highlightPlacement: Boolean,
     onHighlightHighLevelDescriptionChange: (Boolean) -> Unit,
+    showAiActions: Boolean,
 ) {
     LaunchedEffect(elements.size, selectedIndex) {
         if (elements.isNotEmpty() && selectedIndex !in elements.indices) {
@@ -1458,8 +1663,11 @@ private fun IdeogramElementEditor(
             selected = index == selectedIndex,
             onClick = { onElementSelected(index) },
             onTypeChange = { onMutation(CompositionMutation.UpdateElementType(index, it)) },
-            onDelete = { onRunAction(CompositionAction.DeleteElement(index)) },
-            isDeleting = activeImproveAction == CompositionAction.DeleteElement(index).actionId,
+            onDelete = {
+                if (showAiActions) onRunAction(CompositionAction.DeleteElement(index))
+                else onMutation(CompositionMutation.RemoveElement(index))
+            },
+            isDeleting = showAiActions && activeImproveAction == CompositionAction.DeleteElement(index).actionId,
             onBboxChange = { onMutation(CompositionMutation.UpdateElementBbox(index, it)) },
             onDescriptionChange = { onElementDescriptionChange(index, it) },
             onImproveDescription = { onRunAction(CompositionAction.ImproveField(CompositionImproveTarget.ElementDescription(index))) },
@@ -1475,6 +1683,7 @@ private fun IdeogramElementEditor(
             actionEnabled = activeImproveAction == null,
             highlightPlacement = highlightPlacement,
             onHighlightHighLevelDescriptionChange = onHighlightHighLevelDescriptionChange,
+            showAiActions = showAiActions,
         )
     }
 }
@@ -1496,6 +1705,7 @@ private fun IdeogramCompositionCanvas(
     onBboxEditEnd: () -> Unit,
     onBboxEditCancel: () -> Unit,
     modifier: Modifier = Modifier,
+    editingEnabled: Boolean = true,
 ) {
     val density = LocalDensity.current
     val latestElements by rememberUpdatedState(elements)
@@ -1579,8 +1789,8 @@ private fun IdeogramCompositionCanvas(
                     .clip(RoundedCornerShape(8.dp))
                     .background(MaterialTheme.colorScheme.background.copy(alpha = 0.8f))
                     .border(1.dp, MaterialTheme.colorScheme.outlineVariant)
-                    .pointerInput(canvasElements, selectedIndex, image == null || showOverlay) {
-                        if (image == null || showOverlay) {
+                    .pointerInput(canvasElements, selectedIndex, image == null || showOverlay, editingEnabled) {
+                        if (editingEnabled && (image == null || showOverlay)) {
                             awaitPointerEventScope {
                                 var trackingClick = false
                                 var start = Offset.Zero
@@ -1638,7 +1848,7 @@ private fun IdeogramCompositionCanvas(
                                 .border(if (isSelected) 4.dp else 2.dp, boxColor, RoundedCornerShape(2.dp))
                                 .background(boxColor.copy(alpha = if (isSelected) 0.16f else 0.08f))
                                 .then(
-                                    if (isSelected) {
+                                    if (isSelected && editingEnabled) {
                                         Modifier.pointerInput(index, canvasWidthPx, canvasHeightPx) {
                                             var startBbox = emptyList<Int>()
                                             var dragX = 0f
@@ -1677,7 +1887,7 @@ private fun IdeogramCompositionCanvas(
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
                             )
-                            if (isSelected) {
+                            if (isSelected && editingEnabled) {
                                 CompositionResizeHandle.values().forEach { handle ->
                                     CompositionResizeHandleBox(
                                         ownerKey = index,
@@ -1862,6 +2072,7 @@ private fun ElementPreviewRow(
     actionEnabled: Boolean,
     highlightPlacement: Boolean,
     onHighlightHighLevelDescriptionChange: (Boolean) -> Unit,
+    showAiActions: Boolean,
 ) {
     val shape = RoundedCornerShape(DeskControlCornerRadius)
     var highlightRegeneratedFields by remember { mutableStateOf(false) }
@@ -1985,33 +2196,35 @@ private fun ElementPreviewRow(
                 horizontalArrangement = Arrangement.spacedBy(4.dp),
                 verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
-                DeskSubtleTextButton(
-                    icon = Icons.Default.AutoFixHigh,
-                    text = if (isImprovingDescription) "Improving..." else "Improve",
-                    onClick = onImproveDescription,
-                    enabled = improveDescriptionEnabled && desc.isNotBlank(),
-                )
-                DeskSubtleTextButton(
-                    icon = Icons.Default.Refresh,
-                    text = if (isRegenerating) "Creating..." else "Variant",
-                    onClick = onRegenerate,
-                    enabled = actionEnabled,
-                    modifier = Modifier
-                        .onPointerEvent(PointerEventType.Enter) {
-                            highlightRegeneratedFields = true
-                            onHighlightHighLevelDescriptionChange(true)
-                        }
-                        .onPointerEvent(PointerEventType.Exit) {
-                            highlightRegeneratedFields = false
-                            onHighlightHighLevelDescriptionChange(false)
-                        },
-                )
-                DeskSubtleTextButton(
-                    icon = Icons.Default.Palette,
-                    text = if (isSuggestingPalette) "Choosing..." else "Colors",
-                    onClick = onSuggestPalette,
-                    enabled = suggestPaletteEnabled,
-                )
+                if (showAiActions) {
+                    DeskSubtleTextButton(
+                        icon = Icons.Default.AutoFixHigh,
+                        text = if (isImprovingDescription) "Improving..." else "Improve",
+                        onClick = onImproveDescription,
+                        enabled = improveDescriptionEnabled && desc.isNotBlank(),
+                    )
+                    DeskSubtleTextButton(
+                        icon = Icons.Default.Refresh,
+                        text = if (isRegenerating) "Creating..." else "Variant",
+                        onClick = onRegenerate,
+                        enabled = actionEnabled,
+                        modifier = Modifier
+                            .onPointerEvent(PointerEventType.Enter) {
+                                highlightRegeneratedFields = true
+                                onHighlightHighLevelDescriptionChange(true)
+                            }
+                            .onPointerEvent(PointerEventType.Exit) {
+                                highlightRegeneratedFields = false
+                                onHighlightHighLevelDescriptionChange(false)
+                            },
+                    )
+                    DeskSubtleTextButton(
+                        icon = Icons.Default.Palette,
+                        text = if (isSuggestingPalette) "Choosing..." else "Colors",
+                        onClick = onSuggestPalette,
+                        enabled = suggestPaletteEnabled,
+                    )
+                }
                 DeskSubtleTextButton(
                     icon = Icons.Default.SwapHoriz,
                     text = if (type == "text") "To object" else "To text",
@@ -2387,6 +2600,232 @@ internal fun PreviewPanel(
     }
 }
 
+@Composable
+internal fun AnalyzeCompositionScreen(
+    state: GenerationUiState,
+    outputDir: String,
+    showCompositionOverlay: Boolean,
+    onCaptureModeChange: (CaptureImageMode) -> Unit,
+    onCaptureUploadSelected: (File) -> Unit,
+    onStartImageCapture: () -> Unit,
+    onApplyImageCapture: () -> Unit,
+    onAddAnalyzeElementBox: (String) -> Unit,
+    onAnalyzeSelectedElementBox: () -> Unit,
+    onAnalyzeAllElementBoxes: () -> Unit,
+    onCompositionMutation: (CompositionMutation) -> Unit,
+    onRunCompositionAction: (CompositionAction) -> Unit,
+    onStartOverComposition: () -> Unit,
+    onUndoComposition: () -> Unit,
+    onRedoComposition: () -> Unit,
+    onCompositionBboxEditStart: () -> Unit,
+    onCompositionBboxChange: (Int, List<Int>) -> Unit,
+    onCompositionBboxEditEnd: () -> Unit,
+    onCompositionBboxEditCancel: () -> Unit,
+    onCompositionDescriptionChange: (Int, String) -> Unit,
+    onCompositionTextChange: (Int, String) -> Unit,
+    onCompositionPaletteChange: (Int, List<String>) -> Unit,
+    onCompositionElementSelected: (Int) -> Unit,
+) {
+    var highlightStyleFields by remember { mutableStateOf(false) }
+    var highlightCompositionFields by remember { mutableStateOf(false) }
+    var highlightHighLevelDescription by remember { mutableStateOf(false) }
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background)
+            .padding(DeskScreenPadding),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxSize(),
+            horizontalArrangement = Arrangement.spacedBy(DeskLayoutGap),
+        ) {
+            Column(
+            modifier = Modifier
+                .widthIn(min = 420.dp, max = 560.dp)
+                .fillMaxHeight(),
+            verticalArrangement = Arrangement.spacedBy(DeskLayoutGap),
+        ) {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(DeskPanelCornerRadius),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            ) {
+                Column(
+                    modifier = Modifier.padding(DeskPanelPadding),
+                    verticalArrangement = Arrangement.spacedBy(DeskPanelSpacing),
+                ) {
+                    Text(
+                        text = "Analyze Composition",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                    )
+                    AnalyzeImagePanel(
+                        state = state,
+                        onModeChange = onCaptureModeChange,
+                        onUploadSelected = onCaptureUploadSelected,
+                        onStartCapture = onStartImageCapture,
+                        onApplyCapture = onApplyImageCapture,
+                    )
+                }
+            }
+
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f),
+                shape = RoundedCornerShape(DeskPanelCornerRadius),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            ) {
+                CompositionPreviewHost(
+                    state = state,
+                    outputDir = outputDir,
+                    showCompositionOverlay = true,
+                    onShowCompositionOverlayChange = {},
+                    onUseImageAsCompositionReferenceChange = {},
+                    onCompositionElementSelected = onCompositionElementSelected,
+                    onCompositionBboxEditStart = onCompositionBboxEditStart,
+                    onCompositionBboxChange = onCompositionBboxChange,
+                    onCompositionBboxEditEnd = onCompositionBboxEditEnd,
+                    onCompositionBboxEditCancel = onCompositionBboxEditCancel,
+                )
+            }
+        }
+
+        Card(
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxHeight(),
+            shape = RoundedCornerShape(DeskPanelCornerRadius),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .verticalScroll(rememberScrollState())
+                    .padding(DeskPanelPadding),
+                verticalArrangement = Arrangement.spacedBy(DeskPanelSpacing),
+            ) {
+                Text(
+                    text = "Structured Ideogram JSON",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                )
+                if (state.ideogram.document == null) {
+                    Text(
+                        text = "Choose or upload an image, then run Capture image details to create an editable Ideogram composition.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                } else {
+                    AnalyzeElementTools(
+                        state = state,
+                        onAddElementBox = onAddAnalyzeElementBox,
+                        onAnalyzeSelectedElementBox = onAnalyzeSelectedElementBox,
+                        onAnalyzeAllElementBoxes = onAnalyzeAllElementBoxes,
+                    )
+                    IdeogramCompositionForm(
+                        state = state,
+                        onMutation = onCompositionMutation,
+                        onRunAction = onRunCompositionAction,
+                        onStartOver = onStartOverComposition,
+                        onUndo = onUndoComposition,
+                        onRedo = onRedoComposition,
+                        onCompositionDescriptionChange = onCompositionDescriptionChange,
+                        onCompositionTextChange = onCompositionTextChange,
+                        onCompositionPaletteChange = onCompositionPaletteChange,
+                        onCompositionElementSelected = onCompositionElementSelected,
+                        highlightStyleFields = highlightStyleFields,
+                        highlightCompositionFields = highlightCompositionFields,
+                        highlightHighLevelDescription = highlightHighLevelDescription,
+                        onHighlightStyleFieldsChange = { highlightStyleFields = it },
+                        onHighlightCompositionFieldsChange = { highlightCompositionFields = it },
+                        onHighlightHighLevelDescriptionChange = { highlightHighLevelDescription = it },
+                        showDocumentActions = false,
+                        showAiActions = false,
+                        showAdditionalFields = false,
+                        showGenerateElementActions = false,
+                        showElementAiActions = false,
+                    )
+                }
+            }
+        }
+        }
+        if (state.ideogramCapture.isBusy) {
+            Box(
+                modifier = Modifier
+                    .matchParentSize()
+                    .pointerInput(Unit) {
+                        awaitPointerEventScope {
+                            while (true) {
+                                val event = awaitPointerEvent()
+                                event.changes.forEach { it.consume() }
+                            }
+                        }
+                    },
+            )
+        }
+    }
+}
+
+@Composable
+private fun AnalyzeElementTools(
+    state: GenerationUiState,
+    onAddElementBox: (String) -> Unit,
+    onAnalyzeSelectedElementBox: () -> Unit,
+    onAnalyzeAllElementBoxes: () -> Unit,
+) {
+    val document = state.ideogram.document
+    val selectedIndex = state.selectedCompositionElementIndex
+    val selectedElement = document?.elements?.getOrNull(selectedIndex)
+    val canEdit = document != null && !state.ideogramCapture.isBusy
+    val canAnalyze = canEdit &&
+        state.ideogramCapture.sourceImage != null &&
+        selectedElement?.bbox != null
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        FlowRow(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            DeskSubtleTextButton(
+                icon = Icons.Default.AddBox,
+                text = "Add object box",
+                onClick = { onAddElementBox("obj") },
+                enabled = canEdit,
+            )
+            DeskSubtleTextButton(
+                icon = Icons.Default.TextFields,
+                text = "Add text box",
+                onClick = { onAddElementBox("text") },
+                enabled = canEdit,
+            )
+            DeskButton(
+                onClick = onAnalyzeSelectedElementBox,
+                enabled = canAnalyze,
+                modifier = Modifier.height(34.dp),
+            ) {
+                ButtonContent(
+                    icon = Icons.Default.CenterFocusStrong,
+                    text = if (state.ideogramCapture.isRefining) "Analyzing..." else "Analyze selected box",
+                )
+            }
+        }
+        Text(
+            text = when {
+                state.ideogramCapture.sourceImage == null -> "Choose an image source before analyzing a selected box."
+                selectedElement == null -> "Select an element or add a box to analyze it."
+                else -> "Selected element ${selectedIndex + 1}: move or resize its box in the preview, then analyze it."
+            },
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun GeneratedImageGrid(
@@ -2634,7 +3073,8 @@ private fun CompositionPreviewHost(
     onCompositionBboxEditEnd: () -> Unit,
     onCompositionBboxEditCancel: () -> Unit,
 ) {
-    val image = state.images.firstOrNull().takeUnless { state.isCurrentDraftResolutionModified }
+    val image = state.ideogramCapture.sourceImage?.image
+        ?: state.images.firstOrNull().takeUnless { state.isCurrentDraftResolutionModified }
     val elements = ideogramElementPreviews(state.ideogram.jsonPrompt)
     var showGrid by remember { mutableStateOf(false) }
 
@@ -2660,6 +3100,7 @@ private fun CompositionPreviewHost(
                 onElementBboxChange = onCompositionBboxChange,
                 onBboxEditEnd = onCompositionBboxEditEnd,
                 onBboxEditCancel = onCompositionBboxEditCancel,
+                editingEnabled = !state.ideogramCapture.isBusy,
                 modifier = Modifier.fillMaxSize(),
             )
         }
@@ -2925,6 +3366,15 @@ private class DropdownPositionProvider(
 
         return IntOffset(x, y)
     }
+}
+
+private fun chooseCaptureImageFile(): File? {
+    val dialog = FileDialog(null as Frame?, "Choose image for capture", FileDialog.LOAD).apply {
+        isVisible = true
+    }
+    val file = dialog.file ?: return null
+    val directory = dialog.directory ?: return null
+    return File(directory, file)
 }
 
 private fun aspectRatioLabel(widthValue: String, heightValue: String): String {

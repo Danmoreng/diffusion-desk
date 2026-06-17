@@ -7,6 +7,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Collections
 import androidx.compose.material.icons.filled.CropFree
 import androidx.compose.material.icons.filled.Image
+import androidx.compose.material.icons.filled.ImageSearch
 import androidx.compose.material.icons.filled.Inventory2
 import androidx.compose.material.icons.filled.Memory
 import androidx.compose.material.icons.filled.Settings
@@ -25,6 +26,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import com.diffusiondesk.desktop.core.ImagePromptMode
 import com.diffusiondesk.desktop.screens.AssistantPanel
+import com.diffusiondesk.desktop.screens.AnalyzeCompositionScreen
 import com.diffusiondesk.desktop.screens.GalleryScreen
 import com.diffusiondesk.desktop.screens.GenerateScreen
 import com.diffusiondesk.desktop.screens.LibraryScreen
@@ -42,6 +44,7 @@ import org.jetbrains.jewel.ui.component.Text
 
 private enum class Screen(val label: String, val icon: ImageVector, val subtitle: String) {
     Generate("Generate", Icons.Default.Image, "Preset-driven image generation with the local SD worker."),
+    Analyze("Analyze", Icons.Default.ImageSearch, "Translate images into structured Ideogram JSON."),
     Gallery("Gallery", Icons.Default.Collections, "Browse generated images and reuse embedded parameters."),
     Upscale("Upscale", Icons.Default.CropFree, "Classical ESRGAN image upscaling."),
     Library("Presets", Icons.Default.Inventory2, "Manage JSON-backed image generation presets."),
@@ -57,6 +60,7 @@ fun App(
     val settingsState by controller.settingsViewModel.uiState.collectAsState()
     val backendState by controller.settingsViewModel.backendState.collectAsState()
     val generationState by controller.generationViewModel.uiState.collectAsState()
+    val analyzeState by controller.generationViewModel.analyzeUiState.collectAsState()
     val assistantState by controller.assistantViewModel.uiState.collectAsState()
     val libraryState by controller.libraryViewModel.uiState.collectAsState()
     val galleryState by controller.galleryViewModel.uiState.collectAsState()
@@ -168,6 +172,34 @@ fun App(
                             llmDebugEntries = llmDebugEntries,
                             onClearLlmDebugLog = controller.llmDebugLog::clear,
                         )
+                        Screen.Analyze -> AnalyzeCompositionScreen(
+                            state = analyzeState,
+                            outputDir = settingsState.outputDir,
+                            showCompositionOverlay = settingsState.showCompositionOverlay,
+                            onCaptureModeChange = controller.generationViewModel::updateAnalyzeCaptureMode,
+                            onCaptureUploadSelected = controller.generationViewModel::selectAnalyzeUploadedCaptureImage,
+                            onStartImageCapture = controller.generationViewModel::startAnalyzeImageCapture,
+                            onApplyImageCapture = {
+                                controller.generationViewModel.applyAnalyzeCompositionToGenerate()
+                                currentScreen = Screen.Generate
+                            },
+                            onAddAnalyzeElementBox = controller.generationViewModel::addAnalyzeElementBox,
+                            onAnalyzeSelectedElementBox = controller.generationViewModel::analyzeSelectedElementBox,
+                            onAnalyzeAllElementBoxes = controller.generationViewModel::analyzeAllElementBoxes,
+                            onCompositionMutation = controller.generationViewModel::applyAnalyzeCompositionMutation,
+                            onRunCompositionAction = controller.generationViewModel::runAnalyzeCompositionAction,
+                            onStartOverComposition = controller.generationViewModel::startOverAnalyzeComposition,
+                            onUndoComposition = controller.generationViewModel::undoAnalyzeComposition,
+                            onRedoComposition = controller.generationViewModel::redoAnalyzeComposition,
+                            onCompositionBboxEditStart = controller.generationViewModel::beginAnalyzeCompositionBboxEdit,
+                            onCompositionBboxChange = controller.generationViewModel::updateAnalyzeIdeogramElementBbox,
+                            onCompositionBboxEditEnd = controller.generationViewModel::commitAnalyzeCompositionBboxEdit,
+                            onCompositionBboxEditCancel = controller.generationViewModel::cancelAnalyzeCompositionBboxEdit,
+                            onCompositionDescriptionChange = controller.generationViewModel::updateAnalyzeIdeogramElementDescription,
+                            onCompositionTextChange = controller.generationViewModel::updateAnalyzeIdeogramElementText,
+                            onCompositionPaletteChange = controller.generationViewModel::updateAnalyzeIdeogramElementPalette,
+                            onCompositionElementSelected = controller.generationViewModel::selectAnalyzeCompositionElement,
+                        )
                         Screen.Gallery -> GalleryScreen(
                             state = galleryState,
                             outputDir = settingsState.outputDir,
@@ -192,6 +224,10 @@ fun App(
                             onUpscaleImage = { image ->
                                 controller.upscaleViewModel.useGalleryImage(image)
                                 currentScreen = Screen.Upscale
+                            },
+                            onAnalyzeComposition = { image ->
+                                controller.generationViewModel.useGalleryImageForAnalyzeComposition(image)
+                                currentScreen = Screen.Analyze
                             },
                         )
                         Screen.Upscale -> UpscaleScreen(

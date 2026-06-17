@@ -103,6 +103,7 @@ fun GalleryScreen(
     onPreviewPanelWidthChange: (Int) -> Unit,
     onReuseImage: (GalleryImage) -> Unit,
     onUpscaleImage: (GalleryImage) -> Unit,
+    onAnalyzeComposition: (GalleryImage) -> Unit,
 ) {
     var imagePendingDeletion by remember { mutableStateOf<GalleryImage?>(null) }
 
@@ -205,6 +206,7 @@ fun GalleryScreen(
                 onDeleteImage = { imagePendingDeletion = it },
                 onReuseImage = onReuseImage,
                 onUpscaleImage = onUpscaleImage,
+                onAnalyzeComposition = onAnalyzeComposition,
                 modifier = Modifier
                     .width(previewWidth)
                     .fillMaxHeight(),
@@ -541,6 +543,7 @@ private fun GalleryDetails(
     onDeleteImage: (GalleryImage) -> Unit,
     onReuseImage: (GalleryImage) -> Unit,
     onUpscaleImage: (GalleryImage) -> Unit,
+    onAnalyzeComposition: (GalleryImage) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     DeskPanel(modifier = modifier) {
@@ -592,6 +595,19 @@ private fun GalleryDetails(
                         Icon(Icons.Default.CropFree, contentDescription = null, modifier = Modifier.size(17.dp))
                         Spacer(Modifier.width(8.dp))
                         Text("Upscale")
+                    }
+                }
+                DeskButton(
+                    onClick = { onAnalyzeComposition(image) },
+                    modifier = Modifier.weight(1f),
+                ) {
+                    Row(
+                        horizontalArrangement = Arrangement.Center,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(Icons.Default.ImageSearch, contentDescription = null, modifier = Modifier.size(17.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text("Analyze")
                     }
                 }
                 DeskIconButton(
