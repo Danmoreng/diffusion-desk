@@ -5,6 +5,7 @@ import com.diffusiondesk.desktop.core.BackendStatus
 import com.diffusiondesk.desktop.core.DesktopSettings
 import com.diffusiondesk.desktop.core.DesktopSettingsStore
 import com.diffusiondesk.desktop.core.DiffusionDeskClient
+import com.diffusiondesk.desktop.core.GalleryImage
 import com.diffusiondesk.desktop.core.GalleryRepository
 import com.diffusiondesk.desktop.core.GalleryLora
 import com.diffusiondesk.desktop.core.GeneratedImage
@@ -21,12 +22,16 @@ import com.diffusiondesk.desktop.core.LlmRoleService
 import com.diffusiondesk.desktop.core.LlmWorkerPool
 import com.diffusiondesk.desktop.core.ModelMetadata
 import com.diffusiondesk.desktop.core.SavedGenerationSettings
+import com.diffusiondesk.desktop.composition.CaptureImageMode
 import com.diffusiondesk.desktop.composition.CompositionAction
 import com.diffusiondesk.desktop.composition.CompositionActionExecutor
+import com.diffusiondesk.desktop.composition.IdeogramCaptureCandidate
+import com.diffusiondesk.desktop.composition.IdeogramCaptureGlobalResult
 import com.diffusiondesk.desktop.composition.PaletteTarget
 import com.diffusiondesk.desktop.composition.StagedIdeogramDraft
 import com.diffusiondesk.desktop.composition.StagedIdeogramGenerator
 import com.diffusiondesk.desktop.composition.StagedIdeogramStep
+import androidx.compose.ui.graphics.toComposeImageBitmap
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -48,8 +53,10 @@ import kotlinx.serialization.json.jsonPrimitive
 import java.awt.RenderingHints
 import java.awt.image.BufferedImage
 import java.io.ByteArrayOutputStream
+import java.io.File
 import java.util.Base64
 import java.util.UUID
+import javax.imageio.ImageIO
 import kotlin.math.roundToInt
 
 enum class GenerationStatus {
@@ -235,6 +242,35 @@ data class IdeogramUiState(
     val canRedo: Boolean get() = historyIndex < history.lastIndex
 }
 
+data class CaptureSourceImage(
+    val image: GeneratedImage,
+    val label: String,
+    val sourcePath: String = "",
+)
+
+data class IdeogramCaptureUiState(
+    val mode: CaptureImageMode = CaptureImageMode.Merge,
+    val sourceImage: CaptureSourceImage? = null,
+    val uploadedPath: String = "",
+    val isInspecting: Boolean = false,
+    val isRefining: Boolean = false,
+    val isReviewing: Boolean = false,
+    val status: String = "",
+    val progressLabel: String = "",
+    val progressDetail: String = "",
+    val progress: Float = 0f,
+    val error: String? = null,
+    val globalResult: IdeogramCaptureGlobalResult? = null,
+    val candidates: List<IdeogramCaptureCandidate> = emptyList(),
+    val selectedCandidateIndex: Int = 0,
+    val refinedCount: Int = 0,
+) {
+    val activeSourceLabel: String get() = sourceImage?.label ?: "No image selected"
+    val hasSource: Boolean get() = sourceImage != null
+    val isBusy: Boolean get() = isInspecting || isRefining
+    val selectedCandidate: IdeogramCaptureCandidate? get() = candidates.getOrNull(selectedCandidateIndex)
+}
+
 private val ideogramJson = Json {
     ignoreUnknownKeys = true
     isLenient = false
@@ -261,8 +297,8 @@ private fun validateIdeogramJson(value: String): Pair<String, String?> {
     }
 
     root["style_description"]?.jsonObjectOrNull()?.let { style ->
-        val hasPhoto = style.containsKey("photo")
-        val hasArtStyle = style.containsKey("art_style")
+        val hasPhoto = style["photo"]?.jsonPrimitiveOrNull()?.content?.isNotBlank() == true
+        val hasArtStyle = style["art_style"]?.jsonPrimitiveOrNull()?.content?.isNotBlank() == true
         if (hasPhoto == hasArtStyle) {
             return "Style mode issue." to "style_description must contain exactly one of photo or art_style."
         }
@@ -281,11 +317,11 @@ private fun validateIdeogramJson(value: String): Pair<String, String?> {
     elements.forEachIndexed { index, element ->
         val obj = element.jsonObjectOrNull()
             ?: return "Element issue." to "Element ${index + 1} must be an object."
-        val type = obj["type"]?.jsonPrimitiveOrNull()?.content
+        val type = normalizeIdeogramElementType(
+            obj["type"]?.jsonPrimitiveOrNull()?.content,
+            obj["text"]?.jsonPrimitiveOrNull()?.content,
+        )
             ?: return "Element issue." to "Element ${index + 1} is missing type."
-        if (type !in setOf("obj", "text")) {
-            return "Element issue." to "Element ${index + 1} type must be obj or text."
-        }
         if (type == "text" && obj["text"]?.jsonPrimitiveOrNull()?.content?.isNotBlank() != true) {
             return "Text issue." to "Text element ${index + 1} must include literal text."
         }
@@ -336,19 +372,22 @@ private fun sanitizeIdeogramBbox(values: List<Int>): List<Int>? {
 private fun normalizeIdeogramJsonPrompt(value: String): String? {
     val root = runCatching { ideogramJson.parseToJsonElement(value).jsonObject }.getOrNull() ?: return null
     val style = root["style_description"]?.jsonObjectOrNull() ?: return value
-    val hasPhoto = style.containsKey("photo")
-    val hasArtStyle = style.containsKey("art_style")
+    val hasPhoto = style["photo"]?.jsonPrimitiveOrNull()?.content?.isNotBlank() == true
+    val hasArtStyle = style["art_style"]?.jsonPrimitiveOrNull()?.content?.isNotBlank() == true
     val rootMap = root.toMutableMap()
     normalizeIdeogramElementBboxes(root)?.let { composition ->
         rootMap["compositional_deconstruction"] = composition
     }
+    val styleMap = style.toMutableMap()
+    if (!hasPhoto) styleMap.remove("photo")
+    if (!hasArtStyle) styleMap.remove("art_style")
     if (hasPhoto != hasArtStyle) {
+        rootMap["style_description"] = JsonObject(styleMap)
         return ideogramJsonPretty.encodeToString(JsonElement.serializer(), JsonObject(rootMap))
     }
 
     val medium = style["medium"]?.jsonPrimitiveOrNull()?.content.orEmpty()
     val aesthetics = style["aesthetics"]?.jsonPrimitiveOrNull()?.content.orEmpty()
-    val styleMap = style.toMutableMap()
     val photoHint = listOf(medium, aesthetics)
         .joinToString(" ")
         .lowercase()
@@ -383,23 +422,39 @@ private fun normalizeIdeogramElementBboxes(root: JsonObject): JsonObject? {
     }
     val normalizedElements = elements.map { element ->
         val obj = element.jsonObjectOrNull() ?: return@map element
-        val bbox = obj["bbox"]?.jsonArrayOrNull() ?: return@map element
-        val values = bbox.mapNotNull { it.jsonPrimitiveOrNull()?.content?.toIntOrNull() }
-        val sanitized = sanitizeIdeogramBbox(values) ?: return@map element
-        if (sanitized != values) {
+        val elementMap = obj.toMutableMap()
+        val normalizedType = normalizeIdeogramElementType(
+            obj["type"]?.jsonPrimitiveOrNull()?.content,
+            obj["text"]?.jsonPrimitiveOrNull()?.content,
+        ) ?: "obj"
+        if (obj["type"]?.jsonPrimitiveOrNull()?.content != normalizedType) {
+            elementMap["type"] = JsonPrimitive(normalizedType)
             changed = true
-            JsonObject(obj.toMutableMap().also { map ->
-                map["bbox"] = JsonArray(sanitized.map { JsonPrimitive(it) })
-            })
-        } else {
-            element
         }
+        if (normalizedType != "text" && elementMap.remove("text") != null) changed = true
+        val bbox = obj["bbox"]?.jsonArrayOrNull()
+        if (bbox != null) {
+            val values = bbox.mapNotNull { it.jsonPrimitiveOrNull()?.content?.toIntOrNull() }
+            val sanitized = sanitizeIdeogramBbox(values)
+            if (sanitized != null && sanitized != values) {
+                elementMap["bbox"] = JsonArray(sanitized.map { JsonPrimitive(it) })
+                changed = true
+            }
+        }
+        JsonObject(elementMap)
     }
     if (!changed) return null
     return JsonObject(compositionMap.also { map ->
         map["elements"] = JsonArray(normalizedElements)
     })
 }
+
+private fun normalizeIdeogramElementType(rawType: String?, text: String?): String? =
+    when {
+        rawType.isNullOrBlank() -> null
+        rawType.equals("text", ignoreCase = true) && !text.isNullOrBlank() -> "text"
+        else -> "obj"
+    }
 
 private fun normalizeIdeogramBackground(background: JsonElement?): String? {
     val obj = background?.jsonObjectOrNull() ?: return null
@@ -574,6 +629,7 @@ data class GenerationUiState(
     val activeCompositionImproveAction: String? = null,
     val useImageAsCompositionReference: Boolean = true,
     val ideogram: IdeogramUiState = IdeogramUiState(),
+    val ideogramCapture: IdeogramCaptureUiState = IdeogramCaptureUiState(),
     val compositionElementIds: List<String> = emptyList(),
     val selectedCompositionElementId: String? = null,
     val message: String = "",
@@ -626,6 +682,7 @@ internal fun GenerationUiState.startNewCompositionDraft(): GenerationUiState = c
     prompt = "",
     negativePrompt = "",
     activeCompositionImproveAction = null,
+    ideogramCapture = IdeogramCaptureUiState(),
     ideogram = IdeogramUiState(selectedTab = IdeogramStructureTab.Preview),
     compositionElementIds = emptyList(),
     selectedCompositionElementId = null,
@@ -706,6 +763,17 @@ class GenerationViewModel(
 ) {
     private val _uiState = MutableStateFlow(generationSettingsStore.load().toUiState())
     val uiState: StateFlow<GenerationUiState> = _uiState.asStateFlow()
+    private val _analyzeUiState = MutableStateFlow(
+        GenerationUiState(
+            prompt = "",
+            negativePrompt = "",
+            width = "1024",
+            height = "1024",
+            ideogram = IdeogramUiState(selectedTab = IdeogramStructureTab.Preview),
+            ideogramCapture = IdeogramCaptureUiState(),
+        ),
+    )
+    val analyzeUiState: StateFlow<GenerationUiState> = _analyzeUiState.asStateFlow()
 
     private var hasAutoLoadedPreset = false
     private var lastProgressStep = 0
@@ -719,6 +787,7 @@ class GenerationViewModel(
     private var generationCancelRequested = false
     private var pendingAutoTagImageCount = 0
     private var compositionEditStartJson: String? = null
+    private var analyzeCompositionEditStartJson: String? = null
     private var stagedIdeogramDraft: StagedIdeogramDraft? = null
     private var stagedIdeogramSourcePrompt: String? = null
     private val recentStepTimes = ArrayDeque<Double>()
@@ -913,6 +982,537 @@ class GenerationViewModel(
     fun toggleEndless() = update { copy(isEndless = !isEndless) }
     fun updateUseImageAsCompositionReference(value: Boolean) = update {
         copy(useImageAsCompositionReference = value)
+    }
+
+    fun updateAnalyzeCaptureMode(mode: CaptureImageMode) = updateAnalyze {
+        copy(ideogramCapture = ideogramCapture.copy(mode = mode, error = null))
+    }
+
+    fun selectAnalyzeUploadedCaptureImage(file: File) {
+        val result = runCatching {
+            CaptureSourceImage(
+                image = file.toGeneratedImage(),
+                label = file.name,
+                sourcePath = file.absolutePath,
+            )
+        }
+        updateAnalyze {
+            result.fold(
+                onSuccess = { source ->
+                    copy(
+                        ideogramCapture = ideogramCapture.copy(
+                            sourceImage = source,
+                            uploadedPath = file.absolutePath,
+                            error = null,
+                        ),
+                    )
+                },
+                onFailure = { error ->
+                    copy(ideogramCapture = ideogramCapture.copy(error = error.message ?: "Could not load uploaded image."))
+                },
+            )
+        }
+    }
+
+    fun useGalleryImageForAnalyzeComposition(image: GalleryImage) {
+        val result = runCatching {
+            CaptureSourceImage(
+                image = image.file.toGeneratedImage(),
+                label = image.displayName,
+                sourcePath = image.filePath,
+            )
+        }
+        updateAnalyze {
+            result.fold(
+                onSuccess = { source ->
+                    copy(
+                        ideogram = IdeogramUiState(selectedTab = IdeogramStructureTab.Preview),
+                        compositionElementIds = emptyList(),
+                        selectedCompositionElementId = null,
+                        ideogramCapture = IdeogramCaptureUiState(
+                            mode = CaptureImageMode.Replace,
+                            sourceImage = source,
+                            status = "Gallery image ready for composition analysis.",
+                        ),
+                        message = "Gallery image selected for composition analysis.",
+                    )
+                },
+                onFailure = { error ->
+                    copy(ideogramCapture = ideogramCapture.copy(error = error.message ?: "Could not load gallery image."))
+                },
+            )
+        }
+    }
+
+    fun startAnalyzeImageCapture() {
+        scope.launch {
+            val state = _analyzeUiState.value
+            val document = state.ideogram.document ?: emptyCaptureContextDocument(state.prompt)
+            val source = state.ideogramCapture.sourceImage ?: run {
+                updateAnalyze { copy(ideogramCapture = ideogramCapture.copy(error = "Choose an image source before capture.")) }
+                return@launch
+            }
+            updateAnalyze {
+                copy(
+                    ideogramCapture = ideogramCapture.copy(
+                        isInspecting = true,
+                        isReviewing = false,
+                        status = "Inspecting image...",
+                        error = null,
+                        globalResult = null,
+                        candidates = emptyList(),
+                        refinedCount = 0,
+                    ),
+                    error = null,
+                )
+            }
+            val settings = settingsStore.load()
+            val presets = llmPresetStore.load()
+            val roles = llmPresetStore.loadRoles()
+            compositionActionExecutor.inspectImageForCaptureReview(
+                settings = settings,
+                presets = presets,
+                roles = roles,
+                document = document,
+                width = state.width.toIntOrNull() ?: source.image.bufferedImage.width,
+                height = state.height.toIntOrNull() ?: source.image.bufferedImage.height,
+                image = source.image,
+            ).onSuccess { result ->
+                updateAnalyze {
+                    val withDocument = commitCompositionJson(result.document.serialize())
+                    withDocument.copy(
+                        ideogram = withDocument.ideogram.copy(selectedTab = IdeogramStructureTab.Preview),
+                        ideogramCapture = withDocument.ideogramCapture.copy(
+                            isInspecting = false,
+                            isRefining = result.candidates.isNotEmpty(),
+                            isReviewing = true,
+                            status = if (result.candidates.isEmpty()) {
+                                "Finalizing global composition..."
+                            } else {
+                                "Analyzing box 1 / ${result.candidates.size}..."
+                            },
+                            progressLabel = if (result.candidates.isEmpty()) "Final global pass" else "Element detail passes",
+                            progressDetail = if (result.candidates.isEmpty()) {
+                                "No element boxes were detected; refining the high-level prompt and global palette."
+                            } else {
+                                "Global pass complete. Sending crop 1 / ${result.candidates.size} plus global composition context to the VLLM."
+                            },
+                            progress = if (result.candidates.isEmpty()) 0.82f else 0.32f,
+                            globalResult = result,
+                            candidates = result.candidates,
+                            selectedCandidateIndex = 0,
+                            error = null,
+                        ),
+                        selectedCompositionElementId = withDocument.compositionElementIds.firstOrNull(),
+                    )
+                }
+                var refined = 0
+                result.candidates.forEachIndexed { index, candidate ->
+                    val elementCount = result.candidates.size.coerceAtLeast(1)
+                    updateAnalyze {
+                        copy(
+                            selectedCompositionElementId = compositionElementIds.getOrNull(
+                                index.coerceIn(0, compositionElementIds.lastIndex.coerceAtLeast(0)),
+                            ),
+                            ideogramCapture = ideogramCapture.copy(
+                                selectedCandidateIndex = index,
+                                status = "Analyzing box ${index + 1} / ${result.candidates.size}...",
+                                progressLabel = "Element detail pass",
+                                progressDetail = "Crop ${index + 1} / ${result.candidates.size}: bounding box plus padded image crop and global composition context.",
+                                progress = (0.32f + (index.toFloat() / elementCount.toFloat()) * 0.5f).coerceIn(0.32f, 0.82f),
+                            ),
+                        )
+                    }
+                    compositionActionExecutor.refineCaptureCandidate(
+                        settings = settings,
+                        presets = presets,
+                        roles = roles,
+                        globalSummary = result.document.highLevelDescription,
+                        candidate = candidate,
+                        sourceImage = source.image,
+                    ).onSuccess { refinedCandidate ->
+                        refined += 1
+                        updateAnalyze {
+                            val nextCandidates = ideogramCapture.candidates.mapIndexed { candidateIndex, current ->
+                                if (candidateIndex == index) refinedCandidate else current
+                            }
+                            copy(ideogramCapture = ideogramCapture.copy(
+                                candidates = nextCandidates,
+                                refinedCount = refined,
+                            ))
+                        }
+                        applyAnalyzeCompositionMutation(
+                            CompositionMutation.ReplaceElement(
+                                index,
+                                IdeogramCompositionElement(
+                                    type = refinedCandidate.type,
+                                    bbox = refinedCandidate.bbox.ifEmpty { candidate.bbox },
+                                    description = refinedCandidate.description.ifBlank { candidate.description },
+                                    text = refinedCandidate.text ?: candidate.text,
+                                    colorPalette = refinedCandidate.colorPalette,
+                                ),
+                            ),
+                            recordHistory = false,
+                        )
+                    }.onFailure {
+                        updateAnalyze {
+                            val nextCandidates = ideogramCapture.candidates.mapIndexed { candidateIndex, current ->
+                                if (candidateIndex == index) current.copy(refinementStatus = "failed") else current
+                            }
+                            copy(ideogramCapture = ideogramCapture.copy(candidates = nextCandidates))
+                        }
+                    }
+                }
+                val refinedDocument = _analyzeUiState.value.ideogram.document ?: result.document
+                updateAnalyze {
+                    copy(ideogramCapture = ideogramCapture.copy(
+                        isRefining = true,
+                        status = "Finalizing global prompt and palette...",
+                        progressLabel = "Final global pass",
+                        progressDetail = "Sending the full image, refined JSON, and element palettes to curate the high-level prompt and global palette.",
+                        progress = 0.88f,
+                    ))
+                }
+                compositionActionExecutor.finalizeCapturedComposition(
+                    settings = settings,
+                    presets = presets,
+                    roles = roles,
+                    document = refinedDocument,
+                    width = state.width.toIntOrNull() ?: source.image.bufferedImage.width,
+                    height = state.height.toIntOrNull() ?: source.image.bufferedImage.height,
+                    image = source.image,
+                ).onSuccess { finalized ->
+                    updateAnalyze {
+                        val withDocument = commitCompositionJson(finalized.serialize())
+                        withDocument.copy(
+                            ideogram = withDocument.ideogram.copy(selectedTab = IdeogramStructureTab.Preview),
+                            ideogramCapture = withDocument.ideogramCapture.copy(
+                                isRefining = false,
+                                isReviewing = true,
+                                status = "Image analysis complete.",
+                                progressLabel = "Analysis complete",
+                                progressDetail = "Global composition, element crops, high-level prompt, and global palette are ready for review.",
+                                progress = 1f,
+                                refinedCount = refined,
+                                error = null,
+                            ),
+                        )
+                    }
+                }.onFailure { error ->
+                    updateAnalyze {
+                        copy(ideogramCapture = ideogramCapture.copy(
+                            isRefining = false,
+                            isReviewing = true,
+                            status = "Element analysis complete; final global pass failed.",
+                            progressLabel = "Review refined elements",
+                            progressDetail = "The element crops were analyzed, but the final prompt and palette pass failed.",
+                            progress = 1f,
+                            refinedCount = refined,
+                            error = error.message ?: "Final global pass failed.",
+                        ))
+                    }
+                }
+            }.onFailure { error ->
+                updateAnalyze {
+                    copy(
+                        ideogramCapture = ideogramCapture.copy(
+                            isInspecting = false,
+                            isReviewing = false,
+                            status = "",
+                            progressLabel = "",
+                            progressDetail = "",
+                            progress = 0f,
+                            error = error.message ?: "Image capture failed.",
+                        ),
+                    )
+                }
+            }
+        }
+    }
+
+    fun selectAnalyzeCompositionElement(index: Int) = updateAnalyze {
+        val lastIndex = ideogramElementPreviews(ideogram.jsonPrompt).lastIndex
+        val nextIds = ensureCompositionElementIds(ideogram.jsonPrompt, compositionElementIds)
+        copy(
+            compositionElementIds = nextIds,
+            selectedCompositionElementId = nextIds.getOrNull(index.coerceIn(0, lastIndex.coerceAtLeast(0))),
+        )
+    }
+
+    fun updateAnalyzeIdeogramElementBbox(index: Int, bbox: List<Int>) {
+        val sanitized = sanitizeIdeogramBbox(bbox)
+        if (sanitized == null) {
+            updateAnalyze { copy(ideogram = ideogram.copy(jsonError = "Bbox must have four values.")) }
+            return
+        }
+        applyAnalyzeCompositionMutation(CompositionMutation.UpdateElementBbox(index, sanitized), recordHistory = false)
+    }
+
+    fun beginAnalyzeCompositionBboxEdit() {
+        analyzeCompositionEditStartJson = _analyzeUiState.value.ideogram.jsonPrompt
+    }
+
+    fun commitAnalyzeCompositionBboxEdit() {
+        analyzeCompositionEditStartJson = null
+        val value = _analyzeUiState.value.ideogram.jsonPrompt
+        updateAnalyze {
+            if (ideogram.history.getOrNull(ideogram.historyIndex) == value) this
+            else {
+                val history = commitCompositionHistory(ideogram.history, ideogram.historyIndex, value)
+                copy(ideogram = ideogram.copy(history = history.entries, historyIndex = history.index))
+            }
+        }
+    }
+
+    fun cancelAnalyzeCompositionBboxEdit() {
+        val value = analyzeCompositionEditStartJson ?: return
+        analyzeCompositionEditStartJson = null
+        updateAnalyze { updateCompositionJson(value) }
+    }
+
+    fun updateAnalyzeIdeogramElementDescription(index: Int, description: String) =
+        applyAnalyzeCompositionMutation(CompositionMutation.UpdateElementDescription(index, description))
+
+    fun updateAnalyzeIdeogramElementText(index: Int, text: String) =
+        applyAnalyzeCompositionMutation(CompositionMutation.UpdateElementText(index, text))
+
+    fun updateAnalyzeIdeogramElementPalette(index: Int, colors: List<String>) =
+        applyAnalyzeCompositionMutation(CompositionMutation.UpdateElementPalette(index, normalizePalette(colors, 5)))
+
+    fun addAnalyzeElementBox(type: String) {
+        val safeType = type.takeIf { it in setOf("obj", "text") } ?: "obj"
+        val element = IdeogramCompositionElement(
+            type = safeType,
+            bbox = listOf(250, 250, 750, 750),
+            description = "Box to analyze.",
+            text = if (safeType == "text") "Text" else null,
+            colorPalette = emptyList(),
+        )
+        applyAnalyzeCompositionMutation(CompositionMutation.AddGeneratedElement(element))
+    }
+
+    fun analyzeSelectedElementBox() {
+        analyzeAnalyzeElementBoxes(
+            selectedOnly = true,
+            missingSourceMessage = "Choose an image source before analyzing a box.",
+            missingDocumentMessage = "Create a composition before analyzing a box.",
+            missingSelectionMessage = "Select an element with a box first.",
+        )
+    }
+
+    fun analyzeAllElementBoxes() {
+        analyzeAnalyzeElementBoxes(
+            selectedOnly = false,
+            missingSourceMessage = "Choose an image source before analyzing boxes.",
+            missingDocumentMessage = "Create a composition before analyzing boxes.",
+            missingSelectionMessage = "No element boxes to analyze.",
+        )
+    }
+
+    private fun analyzeAnalyzeElementBoxes(
+        selectedOnly: Boolean,
+        missingSourceMessage: String,
+        missingDocumentMessage: String,
+        missingSelectionMessage: String,
+    ) {
+        scope.launch {
+            val state = _analyzeUiState.value
+            val source = state.ideogramCapture.sourceImage ?: run {
+                updateAnalyze { copy(ideogramCapture = ideogramCapture.copy(error = missingSourceMessage)) }
+                return@launch
+            }
+            val document = state.ideogram.document ?: run {
+                updateAnalyze { copy(ideogramCapture = ideogramCapture.copy(error = missingDocumentMessage)) }
+                return@launch
+            }
+            val indexes = if (selectedOnly) {
+                listOf(state.selectedCompositionElementIndex).filter { it in document.elements.indices }
+            } else {
+                document.elements.indices.toList()
+            }
+            if (indexes.isEmpty()) {
+                updateAnalyze { copy(ideogramCapture = ideogramCapture.copy(error = missingSelectionMessage)) }
+                return@launch
+            }
+            updateAnalyze {
+                copy(ideogramCapture = ideogramCapture.copy(
+                    isRefining = true,
+                    status = if (selectedOnly) "Analyzing selected box..." else "Analyzing box 1 / ${indexes.size}...",
+                    progressLabel = if (selectedOnly) "Element detail pass" else "Element detail passes",
+                    progressDetail = if (selectedOnly) {
+                        "Sending the selected crop plus global composition context to the VLLM."
+                    } else {
+                        "Sending crop 1 / ${indexes.size} plus global composition context to the VLLM."
+                    },
+                    progress = 0.1f,
+                    error = null,
+                ))
+            }
+            val settings = settingsStore.load()
+            val presets = llmPresetStore.load()
+            val roles = llmPresetStore.loadRoles()
+            var refinedCount = 0
+            indexes.forEachIndexed { progressIndex, index ->
+                val latestDocument = _analyzeUiState.value.ideogram.document ?: return@forEachIndexed
+                val element = latestDocument.elements.getOrNull(index) ?: return@forEachIndexed
+                val candidate = IdeogramCaptureCandidate(
+                    sourceId = "element-${index + 1}",
+                    origin = "manual",
+                    type = element.type,
+                    bbox = element.bbox,
+                    description = element.description,
+                    text = element.text,
+                    colorPalette = element.colorPalette,
+                    refinementStatus = "pending",
+                )
+                updateAnalyze {
+                    copy(ideogramCapture = ideogramCapture.copy(
+                        status = if (selectedOnly) {
+                            "Analyzing selected box..."
+                        } else {
+                            "Analyzing box ${progressIndex + 1} / ${indexes.size}..."
+                        },
+                        progressLabel = "Element detail pass",
+                        progressDetail = "Crop ${progressIndex + 1} / ${indexes.size}: bounding box plus padded image crop and global composition context.",
+                        progress = (progressIndex.toFloat() / indexes.size.toFloat()).coerceIn(0.05f, 0.95f),
+                    ))
+                }
+                compositionActionExecutor.refineCaptureCandidate(
+                    settings = settings,
+                    presets = presets,
+                    roles = roles,
+                    globalSummary = latestDocument.highLevelDescription,
+                    candidate = candidate,
+                    sourceImage = source.image,
+                ).onSuccess { refined ->
+                    refinedCount += 1
+                    applyAnalyzeCompositionMutation(
+                        CompositionMutation.ReplaceElement(
+                            index,
+                            IdeogramCompositionElement(
+                                type = refined.type,
+                                bbox = refined.bbox.ifEmpty { element.bbox },
+                                description = refined.description.ifBlank { element.description },
+                                text = refined.text ?: element.text,
+                                colorPalette = refined.colorPalette,
+                            ),
+                        ),
+                    )
+                }.onFailure { error ->
+                    updateAnalyze {
+                        copy(ideogramCapture = ideogramCapture.copy(
+                            error = error.message ?: "Box analysis failed.",
+                        ))
+                    }
+                }
+                updateAnalyze {
+                    copy(ideogramCapture = ideogramCapture.copy(
+                        refinedCount = refinedCount,
+                        progress = ((progressIndex + 1).toFloat() / indexes.size.toFloat()).coerceIn(0f, 1f),
+                    ))
+                }
+            }
+            updateAnalyze {
+                copy(ideogramCapture = ideogramCapture.copy(
+                    isRefining = false,
+                    status = if (selectedOnly) "Selected box analyzed." else "Analyzed $refinedCount / ${indexes.size} boxes.",
+                    progressLabel = "Element analysis complete",
+                    progressDetail = if (selectedOnly) {
+                        "The selected JSON element was updated from the VLLM crop analysis."
+                    } else {
+                        "$refinedCount element${if (refinedCount == 1) "" else "s"} were updated from VLLM crop analysis."
+                    },
+                    progress = 1f,
+                    error = null,
+                ))
+            }
+        }
+    }
+
+    fun applyAnalyzeCompositionMutation(mutation: CompositionMutation) = applyAnalyzeCompositionMutation(mutation, recordHistory = true)
+
+    fun undoAnalyzeComposition() = updateAnalyze {
+        if (!ideogram.canUndo) this else restoreCompositionHistory(ideogram.historyIndex - 1)
+    }
+
+    fun redoAnalyzeComposition() = updateAnalyze {
+        if (!ideogram.canRedo) this else restoreCompositionHistory(ideogram.historyIndex + 1)
+    }
+
+    fun startOverAnalyzeComposition() = updateAnalyze {
+        copy(
+            ideogram = IdeogramUiState(selectedTab = IdeogramStructureTab.Preview),
+            compositionElementIds = emptyList(),
+            selectedCompositionElementId = null,
+        )
+    }
+
+    fun runAnalyzeCompositionAction(action: CompositionAction) {
+        scope.launch {
+            val state = _analyzeUiState.value
+            val document = state.ideogram.document ?: run {
+                updateAnalyze { copy(error = "Composition JSON is invalid.") }
+                return@launch
+            }
+            updateAnalyze {
+                copy(activeCompositionImproveAction = action.actionId, message = "Running ${action.actionId}...", error = null)
+            }
+            val settings = settingsStore.load()
+            val presets = llmPresetStore.load()
+            val roles = llmPresetStore.loadRoles()
+            compositionActionExecutor.execute(
+                settings = settings,
+                presets = presets,
+                roles = roles,
+                action = action,
+                document = document,
+                width = state.width.toIntOrNull() ?: 1024,
+                height = state.height.toIntOrNull() ?: 1024,
+                image = state.ideogramCapture.sourceImage?.image,
+            ).onSuccess { mutation ->
+                applyAnalyzeCompositionMutation(mutation)
+                updateAnalyze { copy(activeCompositionImproveAction = null, message = "Completed ${action.actionId}.", error = null) }
+            }.onFailure { error ->
+                updateAnalyze { copy(activeCompositionImproveAction = null, error = error.message ?: "Composition action failed.") }
+            }
+        }
+    }
+
+    fun applyAnalyzeCompositionToGenerate() {
+        val analyze = _analyzeUiState.value
+        val analyzeDocument = analyze.ideogram.document ?: run {
+            updateAnalyze { copy(ideogramCapture = ideogramCapture.copy(error = "Analyze JSON is invalid.")) }
+            return
+        }
+        val generateDocument = _uiState.value.ideogram.document
+        val mutation = if (analyze.ideogramCapture.mode == CaptureImageMode.Merge && generateDocument != null) {
+            val mutations = mutableListOf<CompositionMutation>()
+            if (analyzeDocument.highLevelDescription.isNotBlank()) {
+                mutations += CompositionMutation.UpdateHighLevelDescription(analyzeDocument.highLevelDescription)
+            }
+            if (analyzeDocument.background.isNotBlank()) {
+                mutations += CompositionMutation.UpdateBackground(analyzeDocument.background)
+            }
+            analyzeDocument.elements.forEach { element ->
+                if (generateDocument.elements.none { it.identitySignature() == element.identitySignature() }) {
+                    mutations += CompositionMutation.AddGeneratedElement(element)
+                }
+            }
+            CompositionMutation.Batch(mutations.ifEmpty { listOf(CompositionMutation.UpdateHighLevelDescription(analyzeDocument.highLevelDescription)) })
+        } else {
+            CompositionMutation.ReplaceDocument(analyzeDocument)
+        }
+        applyCompositionMutation(mutation)
+        val sourceImage = analyze.ideogramCapture.sourceImage?.image?.bufferedImage
+        update {
+            copy(
+                width = sourceImage?.width?.toString() ?: width,
+                height = sourceImage?.height?.toString() ?: height,
+                ideogram = ideogram.copy(selectedTab = IdeogramStructureTab.Text),
+                message = "Analyze composition applied to Generate.",
+            )
+        }
+        updateAnalyze { copy(message = "Applied to Generate.", ideogramCapture = ideogramCapture.copy(status = "Applied to Generate.", error = null)) }
     }
 
     fun updateIdeogramJsonPrompt(value: String) = update {
@@ -1338,14 +1938,29 @@ class GenerationViewModel(
         )
     }
 
+    private fun updateAnalyze(transform: GenerationUiState.() -> GenerationUiState) {
+        _analyzeUiState.value = _analyzeUiState.value.transform()
+    }
+
+    private fun applyAnalyzeCompositionMutation(mutation: CompositionMutation, recordHistory: Boolean) = updateAnalyze {
+        withCompositionMutation(mutation, recordHistory)
+    }
+
     private fun applyCompositionMutation(mutation: CompositionMutation, recordHistory: Boolean) = update {
+        withCompositionMutation(mutation, recordHistory)
+    }
+
+    private fun GenerationUiState.withCompositionMutation(
+        mutation: CompositionMutation,
+        recordHistory: Boolean,
+    ): GenerationUiState {
         val document = ideogram.document
-            ?: return@update copy(ideogram = ideogram.copy(jsonError = "JSON is invalid."))
+            ?: return copy(ideogram = ideogram.copy(jsonError = "JSON is invalid."))
         val changed = document.applyMutation(mutation).getOrElse { error ->
-            return@update copy(ideogram = ideogram.copy(jsonError = error.message ?: "Composition update failed."))
+            return copy(ideogram = ideogram.copy(jsonError = error.message ?: "Composition update failed."))
         }
         val nextState = if (recordHistory) commitCompositionJson(changed.serialize()) else updateCompositionJson(changed.serialize())
-        when (mutation) {
+        return when (mutation) {
             is CompositionMutation.AddElement,
             is CompositionMutation.AddGeneratedElement,
             is CompositionMutation.AddElementAndHighLevel -> nextState.selectCompositionIndex(changed.elements.lastIndex.coerceAtLeast(0))
@@ -1384,22 +1999,24 @@ class GenerationViewModel(
     }
 
     private fun GenerationUiState.updateCompositionJson(value: String): GenerationUiState {
-        val validation = validateIdeogramJson(value)
-        val nextIds = reconcileCompositionElementIds(ideogram.jsonPrompt, value, compositionElementIds)
+        val normalized = normalizeIdeogramJsonPrompt(value) ?: value
+        val validation = validateIdeogramJson(normalized)
+        val nextIds = reconcileCompositionElementIds(ideogram.jsonPrompt, normalized, compositionElementIds)
         return copy(
-            ideogram = ideogram.copy(jsonPrompt = value, jsonStatus = validation.first, jsonError = validation.second),
+            ideogram = ideogram.copy(jsonPrompt = normalized, jsonStatus = validation.first, jsonError = validation.second),
             compositionElementIds = nextIds,
             selectedCompositionElementId = selectedCompositionElementId?.takeIf { it in nextIds } ?: nextIds.firstOrNull(),
         )
     }
 
     private fun GenerationUiState.commitCompositionJson(value: String): GenerationUiState {
-        val validation = validateIdeogramJson(value)
-        val history = commitCompositionHistory(ideogram.history, ideogram.historyIndex, value)
-        val nextIds = reconcileCompositionElementIds(ideogram.jsonPrompt, value, compositionElementIds)
+        val normalized = normalizeIdeogramJsonPrompt(value) ?: value
+        val validation = validateIdeogramJson(normalized)
+        val history = commitCompositionHistory(ideogram.history, ideogram.historyIndex, normalized)
+        val nextIds = reconcileCompositionElementIds(ideogram.jsonPrompt, normalized, compositionElementIds)
         return copy(
             ideogram = ideogram.copy(
-                jsonPrompt = value,
+                jsonPrompt = normalized,
                 jsonStatus = validation.first,
                 jsonError = validation.second,
                 history = history.entries,
@@ -2696,6 +3313,44 @@ private fun GeneratedImage.toAssistantImageDataUri(): String {
     }
     return "data:$mime;base64,${Base64.getEncoder().encodeToString(bytes)}"
 }
+
+private fun File.toGeneratedImage(): GeneratedImage {
+    require(isFile) { "Image file does not exist." }
+    val bytes = readBytes()
+    val image = ImageIO.read(bytes.inputStream()) ?: error("Unsupported image file.")
+    return GeneratedImage(
+        bitmap = image.toComposeImageBitmap(),
+        bufferedImage = image,
+        bytes = bytes,
+        sourceUrl = absolutePath,
+    )
+}
+
+private fun emptyCaptureContextDocument(prompt: String): IdeogramCompositionDocument =
+    parseIdeogramCompositionDocument(
+        ideogramJsonPretty.encodeToString(
+            JsonElement.serializer(),
+            JsonObject(
+                linkedMapOf(
+                    "high_level_description" to JsonPrimitive(prompt.ifBlank { "Image composition analysis." }),
+                    "style_description" to JsonObject(
+                        linkedMapOf(
+                            "aesthetics" to JsonPrimitive("visual style inferred from source image"),
+                            "lighting" to JsonPrimitive("lighting inferred from source image"),
+                            "medium" to JsonPrimitive("image"),
+                            "photo" to JsonPrimitive("source image"),
+                        ),
+                    ),
+                    "compositional_deconstruction" to JsonObject(
+                        linkedMapOf(
+                            "background" to JsonPrimitive("background inferred from source image"),
+                            "elements" to JsonArray(emptyList()),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    ).getOrThrow()
 
 private fun String.toIdeogramStyleField(): IdeogramStyleField? =
     when (trim().lowercase()) {
