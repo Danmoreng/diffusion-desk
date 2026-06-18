@@ -119,7 +119,6 @@ fun App(
                             onUndoPrompt = controller.generationViewModel::undoPrompt,
                             onRedoPrompt = controller.generationViewModel::redoPrompt,
                             onNegativePromptChange = controller.generationViewModel::updateNegativePrompt,
-                            onStructuredTabSelected = controller.generationViewModel::selectIdeogramTab,
                             onGenerateStructuredJson = controller.generationViewModel::generateIdeogramJsonPrompt,
                             onRetryStagedJson = controller.generationViewModel::retryStagedIdeogramJsonPrompt,
                             onStartOverComposition = controller.generationViewModel::startOverComposition,

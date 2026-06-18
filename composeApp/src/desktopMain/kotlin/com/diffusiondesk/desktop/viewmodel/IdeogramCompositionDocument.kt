@@ -264,8 +264,8 @@ internal fun IdeogramCompositionDocument.applyMutation(mutation: CompositionMuta
             val elements = composition["elements"]?.asArray()?.toMutableList() ?: mutableListOf()
             elements += JsonObject(linkedMapOf<String, JsonElement>().apply {
                 put("type", JsonPrimitive(mutation.type))
-                if (mutation.type == "text") put("text", JsonPrimitive("New text"))
-                put("desc", JsonPrimitive(if (mutation.type == "text") "New text element." else "New object."))
+                if (mutation.type == "text") put("text", JsonPrimitive(""))
+                put("desc", JsonPrimitive(""))
             })
             composition["elements"] = JsonArray(elements)
             root["compositional_deconstruction"] = JsonObject(composition)
@@ -418,7 +418,7 @@ private fun JsonObject.stringList(key: String): List<String> =
 private fun JsonObject.intList(key: String): List<Int> =
     (get(key) as? JsonArray)?.mapNotNull { (it as? JsonPrimitive)?.content?.toIntOrNull() } ?: emptyList()
 private fun normalizeIdeogramElementType(rawType: String?, text: String?): String =
-    if (rawType.equals("text", ignoreCase = true) && !text.isNullOrBlank()) "text" else "obj"
+    if (rawType.equals("text", ignoreCase = true) || !text.isNullOrBlank()) "text" else "obj"
 
 private val knownRootFields = setOf("high_level_description", "style_description", "compositional_deconstruction")
 private val knownStyleFields = setOf("aesthetics", "lighting", "medium", "photo", "art_style", "color_palette")

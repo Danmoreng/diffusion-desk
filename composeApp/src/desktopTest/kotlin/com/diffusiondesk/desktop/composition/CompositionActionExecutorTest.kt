@@ -143,6 +143,18 @@ class CompositionActionExecutorTest {
     }
 
     @Test
+    fun generationAllowsEmptyStartingElement() {
+        val current = IdeogramCompositionElement("text", listOf(250, 250, 750, 750), "", "", emptyList())
+        val candidate = IdeogramCompositionElement("text", emptyList(), "hand-lettered event title", "OPEN NIGHT", listOf("#FFFFFF"))
+
+        val generated = prepareRegeneratedElement(current, candidate)
+
+        assertEquals(current.bbox, generated.bbox)
+        assertEquals("OPEN NIGHT", generated.text)
+        assertEquals("hand-lettered event title", generated.description)
+    }
+
+    @Test
     fun parsesElementDocumentAndDeleteSummaryPatches() {
         val patch = parseElementDocumentPatch(
             """{"high_level_description":"A scene with a gold title","element":{"type":"text","text":"HELLO","desc":"gold title","color_palette":["#FFD700"]}}""",

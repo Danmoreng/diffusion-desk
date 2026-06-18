@@ -148,15 +148,11 @@ object AssistantToolRegistry {
     private val regenerateSelectedElement = functionTool("regenerate_selected_element", "Create a variant of the selected element.")
     private val addObject = functionTool(
         name = "add_object",
-        description = "Add one object element to the structured composition.",
-        properties = mapOf("description" to stringSchema("The object to add.")),
-        required = listOf("description"),
+        description = "Add one empty object element to the structured composition. The user can edit it or generate details for the selected element afterwards.",
     )
     private val addText = functionTool(
         name = "add_text",
-        description = "Add one text element to the structured composition.",
-        properties = mapOf("description" to stringSchema("The text element to add, including literal text.")),
-        required = listOf("description"),
+        description = "Add one empty text element to the structured composition. The user can enter text or generate details for the selected element afterwards.",
     )
     private val deleteSelectedElement = functionTool("delete_selected_element", "Delete the currently selected element.")
     private val setImageSize = functionTool(

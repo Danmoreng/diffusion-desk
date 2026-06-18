@@ -50,7 +50,7 @@ sealed interface CompositionAction {
     data class RegenerateElement(val index: Int) : CompositionAction {
         override val actionId = "regenerate:compositional_deconstruction.elements[$index]"
     }
-    data class AddElement(val type: String, val description: String) : CompositionAction {
+    data class AddElement(val type: String) : CompositionAction {
         override val actionId = "add:compositional_deconstruction.elements:$type"
     }
     data class DeleteElement(val index: Int) : CompositionAction {
@@ -135,7 +135,7 @@ class CompositionActionExecutor(
             CompositionAction.ImproveStyle -> improveStyle(settings, presets, roles, document, width, height, imageInput)
             CompositionAction.ImproveComposition -> improveComposition(settings, presets, roles, document, width, height, imageInput)
             is CompositionAction.RegenerateElement -> regenerateElement(settings, presets, roles, action.index, document, width, height, imageInput)
-            is CompositionAction.AddElement -> addElement(settings, presets, roles, action.type, action.description, document, width, height, imageInput)
+            is CompositionAction.AddElement -> addElement(action.type)
             is CompositionAction.DeleteElement -> deleteElement(settings, presets, roles, action.index, document, width, height, imageInput)
             is CompositionAction.CaptureImageDetails -> captureImageDetails(settings, presets, roles, action.mode, document, width, height, imageInput)
         }
@@ -346,38 +346,35 @@ class CompositionActionExecutor(
         val current = document.elements.getOrNull(index) ?: error("Element ${index + 1} is missing.")
         val response = completeAction(settings, presets, roles, REGENERATE_ELEMENT_SYSTEM_PROMPT, document, width, height, imageInput,
             buildString {
-                appendLine("Regenerate element index $index as a genuinely different visual alternative.")
+                appendLine("Generate element index $index for its existing slot.")
                 appendLine("Required type: ${current.type}.")
-                appendLine("Current description that must not be repeated or lightly paraphrased: ${current.description}")
-                appendLine("Current palette that should be replaced with a different fitting palette: ${current.colorPalette}")
-                if (current.type == "text") append("Keep this literal text exactly unchanged: ${current.text.orEmpty()}")
+                appendLine("Current bbox to preserve in the app: ${current.bbox}")
+                if (current.description.isBlank()) {
+                    appendLine("The current description is empty; create a fitting new element from the surrounding scene and placement.")
+                } else {
+                    appendLine("Current description that must not be repeated or lightly paraphrased: ${current.description}")
+                }
+                if (current.colorPalette.isNotEmpty()) {
+                    appendLine("Current palette that should be replaced with a different fitting palette: ${current.colorPalette}")
+                }
+                if (current.type == "text" && !current.text.isNullOrBlank()) {
+                    append("Keep this literal text exactly unchanged: ${current.text}")
+                } else if (current.type == "text") {
+                    append("Create fitting literal text for this text element.")
+                }
             }, 1024)
-        val patch = parseElementDocumentPatch(response, current.type)
-        requireUpdatedHighLevel(document.highLevelDescription, patch.highLevelDescription)
-        return CompositionMutation.ReplaceElementAndHighLevel(
+        val element = parseElementPatch(response, current.type)
+        return CompositionMutation.ReplaceElement(
             index,
-            patch.copy(element = prepareRegeneratedElement(current, patch.element)),
+            prepareRegeneratedElement(current, element),
         )
     }
 
-    private suspend fun addElement(
-        settings: DesktopSettings,
-        presets: List<LlmPreset>,
-        roles: LlmRoleSettings,
+    private fun addElement(
         type: String,
-        description: String,
-        document: IdeogramCompositionDocument,
-        width: Int,
-        height: Int,
-        imageInput: CompositionImageInput?,
     ): CompositionMutation {
         require(type in setOf("obj", "text")) { "Element type must be obj or text." }
-        require(description.isNotBlank()) { "Describe the new element first." }
-        val response = completeAction(settings, presets, roles, ELEMENT_SYSTEM_PROMPT, document, width, height, imageInput,
-            "Create exactly one new $type element from this request: ${description.trim()}", 1024)
-        val patch = parseElementDocumentPatch(response, type)
-        requireUpdatedHighLevel(document.highLevelDescription, patch.highLevelDescription)
-        return CompositionMutation.AddElementAndHighLevel(patch)
+        return CompositionMutation.AddElement(type)
     }
 
     private suspend fun deleteElement(
@@ -390,17 +387,8 @@ class CompositionActionExecutor(
         height: Int,
         imageInput: CompositionImageInput?,
     ): CompositionMutation {
-        val removed = document.elements.getOrNull(index) ?: error("Element ${index + 1} is missing.")
-        val highLevelDescription = runCatching {
-            val response = completeAction(settings, presets, roles, DELETE_ELEMENT_SYSTEM_PROMPT, document, width, height, imageInput,
-                "Remove element index $index from the scene summary. Removed element: ${removed.description}", 512)
-            parseHighLevelPatch(response).takeIf(String::isNotBlank)
-        }.getOrNull()
-        return if (highLevelDescription == null) {
-            CompositionMutation.RemoveElement(index)
-        } else {
-            CompositionMutation.RemoveElementAndUpdateHighLevel(index, highLevelDescription)
-        }
+        document.elements.getOrNull(index) ?: error("Element ${index + 1} is missing.")
+        return CompositionMutation.RemoveElement(index)
     }
 
     private suspend fun captureImageDetails(
@@ -606,14 +594,8 @@ You improve only style_description in an Ideogram 4 caption. Return one JSON obj
         private const val COMPOSITION_SYSTEM_PROMPT = """
 You improve only the composition background and element placement. Return {"background":"...","placements":[{"index":0,"bbox":[y_min,x_min,y_max,x_max]}]}. Include every existing element exactly once. Do not alter element types, text, descriptions, palettes, or count. Coordinates are integers from 0 to 1000 with positive dimensions.
 """
-        private const val ELEMENT_SYSTEM_PROMPT = """
-You create exactly one Ideogram 4 element and update the scene summary to include it. Return only {"high_level_description":"...","element":{...}}. The high-level description must accurately summarize the complete scene after adding the element. Object element schema: {"type":"obj","bbox":[y_min,x_min,y_max,x_max],"desc":"...","color_palette":["#RRGGBB"]}. Text element schema: {"type":"text","bbox":[y_min,x_min,y_max,x_max],"text":"...","desc":"...","color_palette":["#RRGGBB"]}. bbox and color_palette are optional. Use no more than 5 uppercase palette colors. Do not return markdown, explanations, or additional fields.
-"""
         private const val REGENERATE_ELEMENT_SYSTEM_PROMPT = """
-You regenerate exactly one Ideogram 4 element as a clearly different creative alternative and update the scene summary accordingly. Return only {"high_level_description":"...","element":{...}}. The high-level description must accurately summarize the complete scene after replacing the element. Keep the requested type and, for text elements, preserve the supplied literal text exactly. Change the subject treatment, visual details, pose, shape, materials, viewpoint, or other defining characteristics substantially; do not repeat or lightly paraphrase the current description. Replace the current palette with a different fitting palette. Placement is not part of this action, so omit bbox. Object element schema: {"type":"obj","desc":"...","color_palette":["#RRGGBB"]}. Text element schema: {"type":"text","text":"...","desc":"...","color_palette":["#RRGGBB"]}. Use no more than 5 uppercase palette colors. Do not return markdown, explanations, or additional fields.
-"""
-        private const val DELETE_ELEMENT_SYSTEM_PROMPT = """
-You remove one element from an Ideogram 4 composition summary. Return only {"high_level_description":"..."}. Rewrite the high-level description so it accurately summarizes the remaining complete scene without mentioning the removed element. Preserve unrelated scene intent and do not return markdown, explanations, or additional fields.
+You generate exactly one Ideogram 4 element for an existing selected slot. Return only the element object. Keep the requested type. The app preserves placement separately, so omit bbox. For non-empty existing descriptions, create a clearly different creative alternative and do not repeat or lightly paraphrase the current description. For empty existing descriptions, create a fitting new element from the full composition context and selected placement. For text elements, preserve a supplied non-empty literal text exactly; otherwise create suitable literal text. Object element schema: {"type":"obj","desc":"...","color_palette":["#RRGGBB"]}. Text element schema: {"type":"text","text":"...","desc":"...","color_palette":["#RRGGBB"]}. Use 1 to 5 uppercase palette colors. Do not return markdown, explanations, or additional fields.
 """
         private const val CAPTURE_REPLACE_SYSTEM_PROMPT = """
 You inspect a generated image to preserve visible composition details for a future Ideogram 4 prompt. Return JSON only: one complete Ideogram 4 structured caption document.
@@ -1100,14 +1082,17 @@ internal fun prepareRegeneratedElement(
     current: IdeogramCompositionElement,
     candidate: IdeogramCompositionElement,
 ): IdeogramCompositionElement {
-    require(candidate.description.normalizedForComparison() != current.description.normalizedForComparison()) {
+    require(
+        current.description.isBlank() ||
+            candidate.description.normalizedForComparison() != current.description.normalizedForComparison(),
+    ) {
         "The LLM returned the same element description. Try Regenerate again."
     }
-    require(candidate.colorPalette.isNotEmpty() && candidate.colorPalette != current.colorPalette) {
+    require(candidate.colorPalette.isNotEmpty() && (current.colorPalette.isEmpty() || candidate.colorPalette != current.colorPalette)) {
         "The LLM returned the same or an empty element palette. Try Regenerate again."
     }
     return candidate.copy(
         bbox = current.bbox,
-        text = if (current.type == "text") current.text else null,
+        text = if (current.type == "text" && !current.text.isNullOrBlank()) current.text else candidate.text,
     )
 }
