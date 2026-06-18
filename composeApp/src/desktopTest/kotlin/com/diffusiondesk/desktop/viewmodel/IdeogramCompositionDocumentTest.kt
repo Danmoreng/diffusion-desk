@@ -106,6 +106,8 @@ class IdeogramCompositionDocumentTest {
         assertEquals(2, added.elements.size)
         assertEquals("text", added.elements.last().type)
         assertEquals(emptyList(), added.elements.last().bbox)
+        assertEquals("", added.elements.last().description)
+        assertEquals("", added.elements.last().text)
 
         val removed = added.applyMutation(CompositionMutation.RemoveElement(0)).getOrThrow()
         assertEquals(1, removed.elements.size)

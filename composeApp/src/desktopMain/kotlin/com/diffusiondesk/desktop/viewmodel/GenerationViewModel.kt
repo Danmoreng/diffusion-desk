@@ -679,8 +679,6 @@ data class GenerationUiState(
 }
 
 internal fun GenerationUiState.startNewCompositionDraft(): GenerationUiState = copy(
-    prompt = "",
-    negativePrompt = "",
     activeCompositionImproveAction = null,
     ideogramCapture = IdeogramCaptureUiState(),
     ideogram = IdeogramUiState(selectedTab = IdeogramStructureTab.Preview),
@@ -1795,17 +1793,22 @@ class GenerationViewModel(
                 runCompositionAction(CompositionAction.RegenerateElement(index))
                 AssistantToolResult(true, "Selected element variant generation has started and is still running in the app.")
             } ?: AssistantToolResult(false, "Select an element first.")
-            "add_object" -> requireComposition() ?: request.description.takeIf(String::isNotBlank)?.let { description ->
-                runCompositionAction(CompositionAction.AddElement("obj", description))
-                AssistantToolResult(true, "Adding the object has started and is still running in the app.")
-            } ?: AssistantToolResult(false, "Describe the object to add.")
-            "add_text" -> requireComposition() ?: request.description.takeIf(String::isNotBlank)?.let { description ->
-                runCompositionAction(CompositionAction.AddElement("text", description))
-                AssistantToolResult(true, "Adding the text element has started and is still running in the app.")
-            } ?: AssistantToolResult(false, "Describe the text element to add.")
+            "add_object" -> requireComposition() ?: applyCompositionMutationForAssistant(CompositionMutation.AddElement("obj"))
+                .fold(
+                    onSuccess = { AssistantToolResult(true, "Added an empty object element. Select its box and generate or edit the details next.") },
+                    onFailure = { AssistantToolResult(false, it.message ?: "Could not add an object element.") },
+                )
+            "add_text" -> requireComposition() ?: applyCompositionMutationForAssistant(CompositionMutation.AddElement("text"))
+                .fold(
+                    onSuccess = { AssistantToolResult(true, "Added an empty text element. Enter text or generate the selected element details next.") },
+                    onFailure = { AssistantToolResult(false, it.message ?: "Could not add a text element.") },
+                )
             "delete_selected_element" -> requireComposition() ?: selectedIndex()?.let { index ->
-                runCompositionAction(CompositionAction.DeleteElement(index))
-                AssistantToolResult(true, "Deleting the selected element has started and is still running in the app.")
+                applyCompositionMutationForAssistant(CompositionMutation.RemoveElement(index))
+                    .fold(
+                        onSuccess = { AssistantToolResult(true, "Deleted the selected element.") },
+                        onFailure = { AssistantToolResult(false, it.message ?: "Could not delete the selected element.") },
+                    )
             } ?: AssistantToolResult(false, "Select an element first.")
             "set_image_size" -> {
                 val width = request.width ?: return AssistantToolResult(false, "Width is required.")

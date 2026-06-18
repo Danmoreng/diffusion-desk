@@ -100,7 +100,7 @@ class GenerationDraftStateTest {
     }
 
     @Test
-    fun startNewCompositionClearsDraftButKeepsPromptHistory() {
+    fun startNewCompositionClearsOnlyCompositionDraft() {
         val state = GenerationUiState(
             prompt = "Current prompt",
             promptHistory = listOf("First prompt", "Current prompt"),
@@ -118,8 +118,8 @@ class GenerationDraftStateTest {
 
         val reset = state.startNewCompositionDraft()
 
-        assertEquals("", reset.prompt)
-        assertEquals("", reset.negativePrompt)
+        assertEquals("Current prompt", reset.prompt)
+        assertEquals("Current negative prompt", reset.negativePrompt)
         assertEquals(state.promptHistory, reset.promptHistory)
         assertEquals(state.promptHistoryIndex, reset.promptHistoryIndex)
         assertEquals("", reset.ideogram.jsonPrompt)

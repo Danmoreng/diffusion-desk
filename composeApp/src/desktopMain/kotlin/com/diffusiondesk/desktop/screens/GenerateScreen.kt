@@ -40,7 +40,6 @@ import androidx.compose.material.icons.filled.Casino
 import androidx.compose.material.icons.filled.AutoFixHigh
 import androidx.compose.material.icons.filled.AddBox
 import androidx.compose.material.icons.filled.CenterFocusStrong
-import androidx.compose.material.icons.filled.Dashboard
 import androidx.compose.material.icons.filled.ImageSearch
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
@@ -57,7 +56,6 @@ import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.TextFields
-import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
@@ -118,7 +116,6 @@ import com.diffusiondesk.desktop.viewmodel.CompositionMutation
 import com.diffusiondesk.desktop.viewmodel.CompositionImproveTarget
 import com.diffusiondesk.desktop.viewmodel.IdeogramCompositionElement
 import com.diffusiondesk.desktop.viewmodel.IdeogramStyleField
-import com.diffusiondesk.desktop.viewmodel.IdeogramStructureTab
 import com.diffusiondesk.desktop.viewmodel.ideogramElementPreviews
 import java.awt.Cursor
 import java.awt.FileDialog
@@ -142,7 +139,6 @@ fun GenerateScreen(
     onUndoPrompt: () -> Unit,
     onRedoPrompt: () -> Unit,
     onNegativePromptChange: (String) -> Unit,
-    onStructuredTabSelected: (IdeogramStructureTab) -> Unit,
     onGenerateStructuredJson: () -> Unit,
     onRetryStagedJson: () -> Unit,
     onStartOverComposition: () -> Unit,
@@ -248,7 +244,6 @@ fun GenerateScreen(
                     onUndoPrompt = onUndoPrompt,
                     onRedoPrompt = onRedoPrompt,
                     onNegativePromptChange = onNegativePromptChange,
-                    onStructuredTabSelected = onStructuredTabSelected,
                     onGenerateStructuredJson = onGenerateStructuredJson,
                     onRetryStagedJson = onRetryStagedJson,
                     onStartOverComposition = onStartOverComposition,
@@ -397,7 +392,6 @@ private fun GenerationPanel(
     onUndoPrompt: () -> Unit,
     onRedoPrompt: () -> Unit,
     onNegativePromptChange: (String) -> Unit,
-    onStructuredTabSelected: (IdeogramStructureTab) -> Unit,
     onGenerateStructuredJson: () -> Unit,
     onRetryStagedJson: () -> Unit,
     onStartOverComposition: () -> Unit,
@@ -431,16 +425,12 @@ private fun GenerationPanel(
     modifier: Modifier = Modifier,
 ) {
     val showNegativePrompt = (state.cfgScale.toDoubleOrNull() ?: 0.0) > 1.0
+    val showCompositionControls = isJsonPromptPreset(state)
 
     Column(
         modifier = modifier,
         verticalArrangement = Arrangement.spacedBy(DeskLayoutGap),
     ) {
-        PromptTabsHeader(
-            state = state,
-            onStructuredTabSelected = onStructuredTabSelected,
-        )
-
         Card(
             modifier = Modifier
                 .fillMaxWidth()
@@ -463,17 +453,6 @@ private fun GenerationPanel(
                     onUndoPrompt = onUndoPrompt,
                     onRedoPrompt = onRedoPrompt,
                     onNegativePromptChange = onNegativePromptChange,
-                    onGenerateStructuredJson = onGenerateStructuredJson,
-                    onRetryStagedJson = onRetryStagedJson,
-                    onStartOverComposition = onStartOverComposition,
-                    onCompositionMutation = onCompositionMutation,
-                    onRunCompositionAction = onRunCompositionAction,
-                    onUndoComposition = onUndoComposition,
-                    onRedoComposition = onRedoComposition,
-                    onCompositionDescriptionChange = onCompositionDescriptionChange,
-                    onCompositionTextChange = onCompositionTextChange,
-                    onCompositionPaletteChange = onCompositionPaletteChange,
-                    onCompositionElementSelected = onCompositionElementSelected,
                     onEnhancePrompt = onEnhancePrompt,
                 )
 
@@ -487,35 +466,50 @@ private fun GenerationPanel(
                     modelDir = modelDir,
                 )
 
-                if (state.ideogram.selectedTab == IdeogramStructureTab.Text) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Label("Parameters")
-                        DeskSubtleTextButton(
-                            icon = Icons.Default.RestartAlt,
-                            text = "Reset to defaults",
-                            onClick = onResetToPresetDefaults,
-                        )
-                    }
-                    GenerationParameterControls(
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Label("Parameters")
+                    DeskSubtleTextButton(
+                        icon = Icons.Default.RestartAlt,
+                        text = "Reset to defaults",
+                        onClick = onResetToPresetDefaults,
+                    )
+                }
+                GenerationParameterControls(
+                    state = state,
+                    samplerOptions = samplerOptions,
+                    onWidthChange = onWidthChange,
+                    onHeightChange = onHeightChange,
+                    onStepsChange = onStepsChange,
+                    onCfgScaleChange = onCfgScaleChange,
+                    onSeedChange = onSeedChange,
+                    onSamplerChange = onSamplerChange,
+                    onRandomizeSeed = onRandomizeSeed,
+                    onReuseLastSeed = onReuseLastSeed,
+                    onSwapDimensions = onSwapDimensions,
+                    onApplyAspectRatio = onApplyAspectRatio,
+                    onScaleResolution = onScaleResolution,
+                    showReset = false,
+                    onResetToPresetDefaults = onResetToPresetDefaults,
+                )
+
+                if (showCompositionControls) {
+                    CompositionPanelContent(
                         state = state,
-                        samplerOptions = samplerOptions,
-                        onWidthChange = onWidthChange,
-                        onHeightChange = onHeightChange,
-                        onStepsChange = onStepsChange,
-                        onCfgScaleChange = onCfgScaleChange,
-                        onSeedChange = onSeedChange,
-                        onSamplerChange = onSamplerChange,
-                        onRandomizeSeed = onRandomizeSeed,
-                        onReuseLastSeed = onReuseLastSeed,
-                        onSwapDimensions = onSwapDimensions,
-                        onApplyAspectRatio = onApplyAspectRatio,
-                        onScaleResolution = onScaleResolution,
-                        showReset = false,
-                        onResetToPresetDefaults = onResetToPresetDefaults,
+                        onGenerateStructuredJson = onGenerateStructuredJson,
+                        onRetryStagedJson = onRetryStagedJson,
+                        onStartOverComposition = onStartOverComposition,
+                        onCompositionMutation = onCompositionMutation,
+                        onRunCompositionAction = onRunCompositionAction,
+                        onUndoComposition = onUndoComposition,
+                        onRedoComposition = onRedoComposition,
+                        onCompositionDescriptionChange = onCompositionDescriptionChange,
+                        onCompositionTextChange = onCompositionTextChange,
+                        onCompositionPaletteChange = onCompositionPaletteChange,
+                        onCompositionElementSelected = onCompositionElementSelected,
                     )
                 }
             }
@@ -639,30 +633,6 @@ private fun DebugPromptBlock(label: String, value: String, color: Color = Materi
 private val LLM_DEBUG_TIME_FORMAT: DateTimeFormatter = DateTimeFormatter.ofPattern("HH:mm:ss")
 
 @Composable
-private fun PromptTabsHeader(
-    state: GenerationUiState,
-    onStructuredTabSelected: (IdeogramStructureTab) -> Unit,
-) {
-    DeskTabHeader(
-        tabs = listOf(
-            DeskTabItem(
-                selected = state.ideogram.selectedTab == IdeogramStructureTab.Text,
-                icon = Icons.Default.Tune,
-                label = "Controls",
-                onClick = { onStructuredTabSelected(IdeogramStructureTab.Text) },
-            ),
-            DeskTabItem(
-                selected = state.ideogram.selectedTab == IdeogramStructureTab.Preview,
-                icon = Icons.Default.Dashboard,
-                label = "Composition",
-                onClick = { onStructuredTabSelected(IdeogramStructureTab.Preview) },
-            ),
-        ),
-        modifier = Modifier.fillMaxWidth(),
-    )
-}
-
-@Composable
 private fun PromptTabContent(
     state: GenerationUiState,
     showNegativePrompt: Boolean,
@@ -671,6 +641,23 @@ private fun PromptTabContent(
     onUndoPrompt: () -> Unit,
     onRedoPrompt: () -> Unit,
     onNegativePromptChange: (String) -> Unit,
+    onEnhancePrompt: () -> Unit,
+) {
+    TextPromptPanel(
+        state = state,
+        showNegativePrompt = showNegativePrompt,
+        onPromptChange = onPromptChange,
+        onPromptCommit = onPromptCommit,
+        onUndoPrompt = onUndoPrompt,
+        onRedoPrompt = onRedoPrompt,
+        onNegativePromptChange = onNegativePromptChange,
+        onEnhancePrompt = onEnhancePrompt,
+    )
+}
+
+@Composable
+private fun CompositionPanelContent(
+    state: GenerationUiState,
     onGenerateStructuredJson: () -> Unit,
     onRetryStagedJson: () -> Unit,
     onStartOverComposition: () -> Unit,
@@ -682,89 +669,63 @@ private fun PromptTabContent(
     onCompositionTextChange: (Int, String) -> Unit,
     onCompositionPaletteChange: (Int, List<String>) -> Unit,
     onCompositionElementSelected: (Int) -> Unit,
-    onEnhancePrompt: () -> Unit,
 ) {
-    when (state.ideogram.selectedTab) {
-        IdeogramStructureTab.Text -> TextPromptPanel(
-            state = state,
-            showNegativePrompt = showNegativePrompt,
-            onPromptChange = onPromptChange,
-            onPromptCommit = onPromptCommit,
-            onUndoPrompt = onUndoPrompt,
-            onRedoPrompt = onRedoPrompt,
-            onNegativePromptChange = onNegativePromptChange,
-            onEnhancePrompt = onEnhancePrompt,
-        )
-        IdeogramStructureTab.Preview -> {
-            var highlightStyleFields by remember { mutableStateOf(false) }
-            var highlightCompositionFields by remember { mutableStateOf(false) }
-            var highlightHighLevelDescription by remember { mutableStateOf(false) }
-            val focusManager = LocalFocusManager.current
-            LaunchedEffect(state.ideogram.isGeneratingJson) {
-                if (state.ideogram.isGeneratingJson) focusManager.clearFocus(force = true)
-            }
-            if (state.ideogram.document == null) {
-                TextPromptPanel(
+    var highlightStyleFields by remember { mutableStateOf(false) }
+    var highlightCompositionFields by remember { mutableStateOf(false) }
+    var highlightHighLevelDescription by remember { mutableStateOf(false) }
+    val focusManager = LocalFocusManager.current
+    LaunchedEffect(state.ideogram.isGeneratingJson) {
+        if (state.ideogram.isGeneratingJson) focusManager.clearFocus(force = true)
+    }
+
+    Label("Composition")
+    CompositionGenerationHeader(
+        state = state,
+        onGenerateComposition = onGenerateStructuredJson,
+        onRetry = onRetryStagedJson,
+    )
+    if (state.ideogram.document != null) {
+        Box(modifier = Modifier.fillMaxWidth()) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .graphicsLayer { alpha = if (state.ideogram.isGeneratingJson) 0.62f else 1f },
+                verticalArrangement = Arrangement.spacedBy(DeskPanelSpacing),
+            ) {
+                IdeogramCompositionForm(
                     state = state,
-                    showNegativePrompt = showNegativePrompt,
-                    onPromptChange = onPromptChange,
-                    onPromptCommit = onPromptCommit,
-                    onUndoPrompt = onUndoPrompt,
-                    onRedoPrompt = onRedoPrompt,
-                    onNegativePromptChange = onNegativePromptChange,
-                    onEnhancePrompt = onEnhancePrompt,
-                    inputsEnabled = !state.ideogram.isGeneratingJson,
+                    onMutation = onCompositionMutation,
+                    onRunAction = onRunCompositionAction,
+                    onStartOver = onStartOverComposition,
+                    onUndo = onUndoComposition,
+                    onRedo = onRedoComposition,
+                    onCompositionDescriptionChange = onCompositionDescriptionChange,
+                    onCompositionTextChange = onCompositionTextChange,
+                    onCompositionPaletteChange = onCompositionPaletteChange,
+                    onCompositionElementSelected = onCompositionElementSelected,
+                    highlightStyleFields = highlightStyleFields,
+                    highlightCompositionFields = highlightCompositionFields,
+                    highlightHighLevelDescription = highlightHighLevelDescription,
+                    onHighlightStyleFieldsChange = { highlightStyleFields = it },
+                    onHighlightCompositionFieldsChange = { highlightCompositionFields = it },
+                    onHighlightHighLevelDescriptionChange = { highlightHighLevelDescription = it },
                 )
             }
-            CompositionGenerationHeader(
-                state = state,
-                onGenerateComposition = onGenerateStructuredJson,
-                onRetry = onRetryStagedJson,
-            )
-            if (state.ideogram.document != null) {
-                Box(modifier = Modifier.fillMaxWidth()) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .graphicsLayer { alpha = if (state.ideogram.isGeneratingJson) 0.62f else 1f },
-                        verticalArrangement = Arrangement.spacedBy(DeskPanelSpacing),
-                    ) {
-                        IdeogramCompositionForm(
-                            state = state,
-                            onMutation = onCompositionMutation,
-                            onRunAction = onRunCompositionAction,
-                            onStartOver = onStartOverComposition,
-                            onUndo = onUndoComposition,
-                            onRedo = onRedoComposition,
-                            onCompositionDescriptionChange = onCompositionDescriptionChange,
-                            onCompositionTextChange = onCompositionTextChange,
-                            onCompositionPaletteChange = onCompositionPaletteChange,
-                            onCompositionElementSelected = onCompositionElementSelected,
-                            highlightStyleFields = highlightStyleFields,
-                            highlightCompositionFields = highlightCompositionFields,
-                            highlightHighLevelDescription = highlightHighLevelDescription,
-                            onHighlightStyleFieldsChange = { highlightStyleFields = it },
-                            onHighlightCompositionFieldsChange = { highlightCompositionFields = it },
-                            onHighlightHighLevelDescriptionChange = { highlightHighLevelDescription = it },
-                        )
-                    }
-                    if (state.ideogram.isGeneratingJson) {
-                        Box(
-                            modifier = Modifier
-                                .matchParentSize()
-                                .pointerInput(Unit) {
-                                    awaitPointerEventScope {
-                                        while (true) {
-                                            val event = awaitPointerEvent()
-                                            if (event.changes.all { it.scrollDelta == Offset.Zero }) {
-                                                event.changes.forEach { it.consume() }
-                                            }
-                                        }
+            if (state.ideogram.isGeneratingJson) {
+                Box(
+                    modifier = Modifier
+                        .matchParentSize()
+                        .pointerInput(Unit) {
+                            awaitPointerEventScope {
+                                while (true) {
+                                    val event = awaitPointerEvent()
+                                    if (event.changes.all { it.scrollDelta == Offset.Zero }) {
+                                        event.changes.forEach { it.consume() }
                                     }
-                                },
-                        )
-                    }
-                }
+                                }
+                            }
+                        },
+                )
             }
         }
     }
@@ -1460,42 +1421,7 @@ private fun CompositionDocumentEditor(
                 }
             }
         }
-        if (showAdditionalFields) {
-        var newFieldPath by remember { mutableStateOf("") }
-        var newFieldValue by remember { mutableStateOf("\"value\"") }
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-            verticalAlignment = Alignment.Bottom,
-        ) {
-            CompactCompositionInput(
-                label = "New field path",
-                value = newFieldPath,
-                onValueChange = { newFieldPath = it },
-                modifier = Modifier.weight(1f),
-            )
-            CompactCompositionInput(
-                label = "JSON value",
-                value = newFieldValue,
-                onValueChange = { newFieldValue = it },
-                modifier = Modifier.weight(1f),
-            )
-            DeskIconButton(
-                icon = Icons.Default.Add,
-                contentDescription = "Add additional field",
-                onClick = {
-                    if (newFieldPath.isNotBlank() && newFieldValue.isNotBlank()) {
-                        onMutation(CompositionMutation.AddAdditionalField(newFieldPath.trim(), newFieldValue.trim()))
-                        newFieldPath = ""
-                        newFieldValue = "\"value\""
-                    }
-                },
-                tooltip = "Add field",
-            )
-        }
-        }
         if (showGenerateElementActions) {
-        var newElementDescription by remember { mutableStateOf("") }
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
@@ -1505,30 +1431,18 @@ private fun CompositionDocumentEditor(
             Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 DeskSubtleTextButton(
                     icon = Icons.Default.Add,
-                    text = if (state.activeCompositionImproveAction == CompositionAction.AddElement("obj", newElementDescription).actionId) "Adding..." else "Add object",
-                    onClick = { onRunAction(CompositionAction.AddElement("obj", newElementDescription)) },
-                    enabled = newElementDescription.isNotBlank() && state.activeCompositionImproveAction == null,
-                    modifier = Modifier
-                        .onPointerEvent(PointerEventType.Enter) { onHighlightHighLevelDescriptionChange(true) }
-                        .onPointerEvent(PointerEventType.Exit) { onHighlightHighLevelDescriptionChange(false) },
+                    text = "Add object",
+                    onClick = { onMutation(CompositionMutation.AddElement("obj")) },
+                    enabled = state.activeCompositionImproveAction == null,
                 )
                 DeskSubtleTextButton(
                     icon = Icons.Default.Add,
-                    text = if (state.activeCompositionImproveAction == CompositionAction.AddElement("text", newElementDescription).actionId) "Adding..." else "Add text",
-                    onClick = { onRunAction(CompositionAction.AddElement("text", newElementDescription)) },
-                    enabled = newElementDescription.isNotBlank() && state.activeCompositionImproveAction == null,
-                    modifier = Modifier
-                        .onPointerEvent(PointerEventType.Enter) { onHighlightHighLevelDescriptionChange(true) }
-                        .onPointerEvent(PointerEventType.Exit) { onHighlightHighLevelDescriptionChange(false) },
+                    text = "Add text",
+                    onClick = { onMutation(CompositionMutation.AddElement("text")) },
+                    enabled = state.activeCompositionImproveAction == null,
                 )
             }
         }
-        CompactCompositionInput(
-            label = "Describe the element to add",
-            value = newElementDescription,
-            onValueChange = { newElementDescription = it },
-            modifier = Modifier.fillMaxWidth(),
-        )
         }
     }
 }
@@ -1663,11 +1577,8 @@ private fun IdeogramElementEditor(
             selected = index == selectedIndex,
             onClick = { onElementSelected(index) },
             onTypeChange = { onMutation(CompositionMutation.UpdateElementType(index, it)) },
-            onDelete = {
-                if (showAiActions) onRunAction(CompositionAction.DeleteElement(index))
-                else onMutation(CompositionMutation.RemoveElement(index))
-            },
-            isDeleting = showAiActions && activeImproveAction == CompositionAction.DeleteElement(index).actionId,
+            onDelete = { onMutation(CompositionMutation.RemoveElement(index)) },
+            isDeleting = false,
             onBboxChange = { onMutation(CompositionMutation.UpdateElementBbox(index, it)) },
             onDescriptionChange = { onElementDescriptionChange(index, it) },
             onImproveDescription = { onRunAction(CompositionAction.ImproveField(CompositionImproveTarget.ElementDescription(index))) },
@@ -2205,17 +2116,15 @@ private fun ElementPreviewRow(
                     )
                     DeskSubtleTextButton(
                         icon = Icons.Default.Refresh,
-                        text = if (isRegenerating) "Creating..." else "Variant",
+                        text = if (isRegenerating) "Creating..." else if (desc.isBlank()) "Generate" else "Variant",
                         onClick = onRegenerate,
                         enabled = actionEnabled,
                         modifier = Modifier
                             .onPointerEvent(PointerEventType.Enter) {
                                 highlightRegeneratedFields = true
-                                onHighlightHighLevelDescriptionChange(true)
                             }
                             .onPointerEvent(PointerEventType.Exit) {
                                 highlightRegeneratedFields = false
-                                onHighlightHighLevelDescriptionChange(false)
                             },
                     )
                     DeskSubtleTextButton(
@@ -2240,9 +2149,6 @@ private fun ElementPreviewRow(
                     text = if (isDeleting) "Deleting..." else "Delete",
                     onClick = onDelete,
                     enabled = actionEnabled,
-                    modifier = Modifier
-                        .onPointerEvent(PointerEventType.Enter) { onHighlightHighLevelDescriptionChange(true) }
-                        .onPointerEvent(PointerEventType.Exit) { onHighlightHighLevelDescriptionChange(false) },
                 )
             }
         }
@@ -2483,12 +2389,17 @@ private fun compositionBboxLabel(values: List<Int>): String {
 }
 
 private fun generationPromptReady(state: GenerationUiState): Boolean {
-    val selectedPreset = state.presets.firstOrNull { it.id == state.selectedPresetId }
-    return when (selectedPreset?.promptMode ?: ImagePromptMode.Text) {
+    return when (activePromptMode(state)) {
         ImagePromptMode.Text -> state.prompt.isNotBlank()
         ImagePromptMode.Json -> state.ideogram.jsonPrompt.isNotBlank() && state.ideogram.isJsonValid
     }
 }
+
+private fun isJsonPromptPreset(state: GenerationUiState): Boolean =
+    activePromptMode(state) == ImagePromptMode.Json
+
+private fun activePromptMode(state: GenerationUiState): ImagePromptMode =
+    state.presets.firstOrNull { it.id == state.selectedPresetId }?.promptMode ?: ImagePromptMode.Text
 
 @Composable
 internal fun GenerationParameterControls(
@@ -2585,18 +2496,22 @@ internal fun PreviewPanel(
         modifier = modifier,
         contentAlignment = Alignment.Center,
     ) {
-        CompositionPreviewHost(
-            state = state,
-            outputDir = outputDir,
-            showCompositionOverlay = showCompositionOverlay,
-            onShowCompositionOverlayChange = onShowCompositionOverlayChange,
-            onUseImageAsCompositionReferenceChange = onUseImageAsCompositionReferenceChange,
-            onCompositionElementSelected = onCompositionElementSelected,
-            onCompositionBboxEditStart = onCompositionBboxEditStart,
-            onCompositionBboxChange = onCompositionBboxChange,
-            onCompositionBboxEditEnd = onCompositionBboxEditEnd,
-            onCompositionBboxEditCancel = onCompositionBboxEditCancel,
-        )
+        if (isJsonPromptPreset(state)) {
+            CompositionPreviewHost(
+                state = state,
+                outputDir = outputDir,
+                showCompositionOverlay = showCompositionOverlay,
+                onShowCompositionOverlayChange = onShowCompositionOverlayChange,
+                onUseImageAsCompositionReferenceChange = onUseImageAsCompositionReferenceChange,
+                onCompositionElementSelected = onCompositionElementSelected,
+                onCompositionBboxEditStart = onCompositionBboxEditStart,
+                onCompositionBboxChange = onCompositionBboxChange,
+                onCompositionBboxEditEnd = onCompositionBboxEditEnd,
+                onCompositionBboxEditCancel = onCompositionBboxEditCancel,
+            )
+        } else {
+            GeneratedImageGrid(state, outputDir)
+        }
     }
 }
 
