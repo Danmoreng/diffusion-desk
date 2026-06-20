@@ -213,10 +213,23 @@ struct GenerationJobManager {
 };
 
 GenerationJobManager g_generation_jobs;
+std::atomic<sd_ctx_t*> g_active_generation_ctx{nullptr};
 
-bool generation_cancel_requested(void* data) {
-    const auto* requested = static_cast<const std::atomic<bool>*>(data);
-    return requested != nullptr && requested->load(std::memory_order_relaxed);
+sd_image_t* generate_image_with_cancel_context(sd_ctx_t* sd_ctx, const sd_img_gen_params_t* img_gen_params) {
+    if (sd_ctx != nullptr) {
+        sd_cancel_generation(sd_ctx, SD_CANCEL_RESET);
+    }
+
+    sd_ctx_t* previous = g_active_generation_ctx.exchange(sd_ctx, std::memory_order_acq_rel);
+    sd_image_t* result = nullptr;
+    try {
+        result = generate_image(sd_ctx, img_gen_params);
+    } catch (...) {
+        g_active_generation_ctx.store(previous, std::memory_order_release);
+        throw;
+    }
+    g_active_generation_ctx.store(previous, std::memory_order_release);
+    return result;
 }
 
 size_t count_pending_generation_jobs_locked() {
@@ -339,24 +352,37 @@ void execute_generation_job(const std::shared_ptr<GenerationJob>& job, ServerCon
         publish_progress_events_until_done(job, progress_done);
     });
 
+    std::atomic<bool> generation_done{false};
+    std::thread cancel_thread([job, &generation_done]() {
+        while (!generation_done.load(std::memory_order_relaxed)) {
+            if (job->cancel_requested.load(std::memory_order_relaxed)) {
+                if (sd_ctx_t* active_ctx = g_active_generation_ctx.load(std::memory_order_acquire)) {
+                    sd_cancel_generation(active_ctx, SD_CANCEL_ALL);
+                }
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(50));
+        }
+    });
+
     httplib::Request generation_req;
     generation_req.body = job->request_body;
     httplib::Response generation_res;
 
     try {
         DD_LOG_INFO("Executing generation job %s: body_bytes=%zu", job->id.c_str(), job->request_body.size());
-        sd_set_cancel_callback(generation_cancel_requested, &job->cancel_requested);
         handle_generate_image(generation_req, generation_res, ctx);
-        sd_set_cancel_callback(nullptr, nullptr);
         DD_LOG_INFO("Generation job %s returned HTTP %d", job->id.c_str(), generation_res.status);
     } catch (const std::exception& e) {
-        sd_set_cancel_callback(nullptr, nullptr);
         generation_res.status = 500;
         generation_res.set_content(make_error_json("server_error", e.what()), "application/json");
     } catch (...) {
-        sd_set_cancel_callback(nullptr, nullptr);
         generation_res.status = 500;
         generation_res.set_content(make_error_json("server_error", "generation job failed"), "application/json");
+    }
+
+    generation_done = true;
+    if (cancel_thread.joinable()) {
+        cancel_thread.join();
     }
 
     progress_done = true;
@@ -725,7 +751,7 @@ void handle_stream_generation_job_events(const httplib::Request& req, httplib::R
     });
 }
 
-void handle_cancel_generation_job(const httplib::Request& req, httplib::Response& res) {
+void handle_cancel_generation_job(const httplib::Request& req, httplib::Response& res, ServerContext&) {
     const std::string job_id = req.matches[1];
     std::lock_guard<std::mutex> lock(g_generation_jobs.mutex);
     auto it = g_generation_jobs.jobs.find(job_id);
@@ -756,6 +782,9 @@ void handle_cancel_generation_job(const httplib::Request& req, httplib::Response
 
     if (job.status == GenerationJobStatus::Processing) {
         job.cancel_requested.store(true, std::memory_order_relaxed);
+        if (sd_ctx_t* active_ctx = g_active_generation_ctx.load(std::memory_order_acquire)) {
+            sd_cancel_generation(active_ctx, SD_CANCEL_ALL);
+        }
         res.status = 202;
         res.set_content(make_generation_job_json_locked(job).dump(), "application/json");
         return;
@@ -785,6 +814,9 @@ void shutdown_generation_jobs() {
             if (entry.second->status == GenerationJobStatus::Processing) {
                 entry.second->cancel_requested.store(true, std::memory_order_relaxed);
             }
+        }
+        if (sd_ctx_t* active_ctx = g_active_generation_ctx.load(std::memory_order_acquire)) {
+            sd_cancel_generation(active_ctx, SD_CANCEL_ALL);
         }
         g_generation_jobs.cv.notify_all();
     }
@@ -1683,7 +1715,7 @@ void handle_generate_image(const httplib::Request& req, httplib::Response& res, 
             }
             log_vram_status("Sampling Start");
             float vram_before = get_current_process_vram_usage_gb();
-            results     = generate_image(ctx.sd_ctx.get(), &img_gen_params);
+            results     = generate_image_with_cancel_context(ctx.sd_ctx.get(), &img_gen_params);
             float vram_after = get_current_process_vram_usage_gb();
             float vram_delta = vram_after - vram_before;
             log_vram_status("Sampling End");
@@ -1714,7 +1746,7 @@ void handle_generate_image(const httplib::Request& req, httplib::Response& res, 
                     img_gen_params.vae_tiling_params.tile_size_y = 32;
                 }
 
-                results = generate_image(ctx.sd_ctx.get(), &img_gen_params);
+                results = generate_image_with_cancel_context(ctx.sd_ctx.get(), &img_gen_params);
 
                 first_pass_success = (results != nullptr);
                 if (first_pass_success) {
@@ -1831,7 +1863,7 @@ void handle_generate_image(const httplib::Request& req, httplib::Response& res, 
                         progress_state.sampling_steps = 4;
                     }
 
-                    sd_image_t* pid_pass = generate_image(pid_ctx.get(), &pid_params);
+                    sd_image_t* pid_pass = generate_image_with_cancel_context(pid_ctx.get(), &pid_params);
                     if (pid_pass && pid_pass[0].data && is_image_valid(pid_pass[0])) {
                         pid_results[i] = pid_pass[0];
                         free(pid_pass);
@@ -1960,7 +1992,7 @@ void handle_generate_image(const httplib::Request& req, httplib::Response& res, 
                         progress_state.sampling_steps = gen_params.hires_steps;
                     }
 
-                    sd_image_t* second_pass_result = generate_image(ctx.sd_ctx.get(), &hires_params);
+                    sd_image_t* second_pass_result = generate_image_with_cancel_context(ctx.sd_ctx.get(), &hires_params);
                     
                     if (second_pass_result && second_pass_result[0].data) {
                         hires_results[i] = second_pass_result[0];
@@ -2306,7 +2338,7 @@ void handle_edit_image(const httplib::Request& req, httplib::Response& res, Serv
         set_progress_phase("Sampling...");
         log_vram_status("Edit Start");
         float vram_before = get_current_process_vram_usage_gb();
-        results     = generate_image(ctx.sd_ctx.get(), &img_gen_params);
+        results     = generate_image_with_cancel_context(ctx.sd_ctx.get(), &img_gen_params);
         float vram_after = get_current_process_vram_usage_gb();
         float vram_delta = vram_after - vram_before;
         log_vram_status("Edit End");
@@ -2347,7 +2379,7 @@ void handle_edit_image(const httplib::Request& req, httplib::Response& res, Serv
                 img_gen_params.vae_tiling_params.tile_size_y = 512;
             }
             
-            results = generate_image(ctx.sd_ctx.get(), &img_gen_params);
+            results = generate_image_with_cancel_context(ctx.sd_ctx.get(), &img_gen_params);
             
             success = (results != nullptr);
             if (success) {

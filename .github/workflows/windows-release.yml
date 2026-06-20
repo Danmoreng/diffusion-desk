@@ -27,8 +27,14 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          submodules: recursive
+
+      - name: Initialize build submodules
+        shell: pwsh
+        run: |
+          git submodule sync --recursive
+          git submodule update --init --depth=1 libs/SQLiteCpp libs/ixwebsocket libs/llama.cpp libs/stable-diffusion.cpp
+          git -C libs/stable-diffusion.cpp submodule sync ggml thirdparty/libwebm thirdparty/libwebp
+          git -C libs/stable-diffusion.cpp submodule update --init --depth=1 ggml thirdparty/libwebm thirdparty/libwebp
 
       - name: Resolve release version
         shell: pwsh

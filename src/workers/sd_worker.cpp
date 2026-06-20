@@ -168,7 +168,7 @@ int run_sd_worker(SDSvrParams& svr_params, SDContextParams& ctx_params, SDGenera
     });
 
     svr.Post(R"(/v1/generation-jobs/([A-Za-z0-9_\-]+)/cancel)", [&](const httplib::Request& req, httplib::Response& res) {
-        handle_cancel_generation_job(req, res);
+        handle_cancel_generation_job(req, res, ctx);
     });
 
     svr.Post("/v1/upscale/load", [&](const httplib::Request& req, httplib::Response& res) {
