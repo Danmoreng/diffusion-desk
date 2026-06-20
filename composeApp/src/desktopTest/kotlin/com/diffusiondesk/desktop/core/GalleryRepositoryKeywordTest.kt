@@ -45,6 +45,45 @@ class GalleryRepositoryKeywordTest {
     }
 
     @Test
+    fun listImagesCanFilterByModelAndDate() {
+        val tempDir = Files.createTempDirectory("diffusion-desk-gallery-keyword-test").toFile()
+        val db = GalleryDatabase(tempDir.resolve("gallery.db"))
+        val repository = GalleryRepository(db)
+        val todayStart = java.time.LocalDate.now()
+            .atStartOfDay(java.time.ZoneId.systemDefault())
+            .toInstant()
+            .toEpochMilli()
+        val firstImageId = insertImage(
+            db,
+            tempDir.resolve("first.png").apply { writeBytes(byteArrayOf(1)) }.absolutePath,
+            modelId = "model-a",
+            createdAt = todayStart + 1_000,
+        )
+        insertImage(
+            db,
+            tempDir.resolve("second.png").apply { writeBytes(byteArrayOf(2)) }.absolutePath,
+            modelId = "model-b",
+            createdAt = todayStart + 2_000,
+        )
+        insertImage(
+            db,
+            tempDir.resolve("old.png").apply { writeBytes(byteArrayOf(3)) }.absolutePath,
+            modelId = "model-a",
+            createdAt = todayStart - 172_800_000,
+        )
+
+        val images = repository.listImages(
+            query = "",
+            keywords = emptyList(),
+            modelId = "model-a",
+            dateFilter = GalleryDateFilter.Today,
+        )
+
+        assertEquals(listOf(firstImageId), images.map { it.id })
+        assertEquals(listOf("model-a", "model-b"), repository.listModelIds())
+    }
+
+    @Test
     fun deleteKeywordRemovesTagFromAllImages() {
         val tempDir = Files.createTempDirectory("diffusion-desk-gallery-keyword-test").toFile()
         val db = GalleryDatabase(tempDir.resolve("gallery.db"))
@@ -93,15 +132,22 @@ class GalleryRepositoryKeywordTest {
         assertEquals(listOf("shared"), repository.listImages().single().keywords)
     }
 
-    private fun insertImage(database: GalleryDatabase, filePath: String, previewPath: String = filePath): Long {
+    private fun insertImage(
+        database: GalleryDatabase,
+        filePath: String,
+        previewPath: String = filePath,
+        modelId: String = "",
+        createdAt: Long = 10,
+    ): Long {
         database.connection().use { conn ->
             conn.prepareStatement(
-                "INSERT INTO images(file_path, preview_path, created_at, modified_at) VALUES (?, ?, ?, ?)",
+                "INSERT INTO images(file_path, preview_path, model_id, created_at, modified_at) VALUES (?, ?, ?, ?, ?)",
             ).use { statement ->
                 statement.setString(1, filePath)
                 statement.setString(2, previewPath)
-                statement.setLong(3, 10)
-                statement.setLong(4, 10)
+                statement.setString(3, modelId)
+                statement.setLong(4, createdAt)
+                statement.setLong(5, createdAt)
                 statement.executeUpdate()
             }
             conn.prepareStatement("SELECT id FROM images WHERE file_path = ?").use { statement ->

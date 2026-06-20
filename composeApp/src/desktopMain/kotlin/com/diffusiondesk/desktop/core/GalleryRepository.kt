@@ -77,10 +77,17 @@ class GalleryRepository(
         return listImages(
             query = query,
             keywords = keyword.trim().takeIf { it.isNotBlank() }?.let(::listOf).orEmpty(),
+            modelId = "",
+            dateFilter = GalleryDateFilter.All,
         )
     }
 
-    fun listImages(query: String, keywords: List<String>): List<GalleryImage> {
+    fun listImages(
+        query: String,
+        keywords: List<String>,
+        modelId: String = "",
+        dateFilter: GalleryDateFilter = GalleryDateFilter.All,
+    ): List<GalleryImage> {
         database.connection().use { conn ->
             val where = mutableListOf<String>()
             val args = mutableListOf<String>()
@@ -96,6 +103,16 @@ class GalleryRepository(
                 .forEach { normalizedKeyword ->
                 where += "EXISTS (SELECT 1 FROM image_keywords ik JOIN keywords k ON k.id = ik.keyword_id WHERE ik.image_id = i.id AND k.name = ?)"
                 args += normalizedKeyword
+            }
+            val normalizedModel = modelId.trim()
+            if (normalizedModel.isNotBlank()) {
+                where += "i.model_id = ?"
+                args += normalizedModel
+            }
+            dateFilter.bounds()?.let { (start, end) ->
+                where += "i.created_at >= ? AND i.created_at < ?"
+                args += start.toString()
+                args += end.toString()
             }
             val sql = buildString {
                 append(
@@ -130,6 +147,25 @@ class GalleryRepository(
         return listKeywordStats()
             .filter { it.count > 0 }
             .map { it.name }
+    }
+
+    fun listModelIds(): List<String> {
+        database.connection().use { conn ->
+            conn.prepareStatement(
+                """
+                SELECT DISTINCT model_id
+                FROM images
+                WHERE model_id <> ''
+                ORDER BY lower(model_id)
+                """.trimIndent(),
+            ).use { statement ->
+                statement.executeQuery().use { rs ->
+                    val models = mutableListOf<String>()
+                    while (rs.next()) models += rs.getString(1)
+                    return models
+                }
+            }
+        }
     }
 
     fun listKeywordStats(): List<GalleryKeyword> {

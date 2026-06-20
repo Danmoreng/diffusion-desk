@@ -1,6 +1,7 @@
 package com.diffusiondesk.desktop.viewmodel
 
 import com.diffusiondesk.desktop.core.GalleryImage
+import com.diffusiondesk.desktop.core.GalleryDateFilter
 import com.diffusiondesk.desktop.core.GalleryKeyword
 import com.diffusiondesk.desktop.core.GalleryRepository
 import com.diffusiondesk.desktop.core.GalleryReusableParams
@@ -23,6 +24,11 @@ data class GalleryUiState(
     val selectedImageId: Long? = null,
     val query: String = "",
     val selectedKeywords: List<String> = emptyList(),
+    val availableModels: List<String> = emptyList(),
+    val selectedModelId: String = "",
+    val selectedDateFilter: GalleryDateFilter = GalleryDateFilter.All,
+    val selectedImageIds: Set<Long> = emptySet(),
+    val lastSelectionAnchorId: Long? = null,
     val keywordDraft: String = "",
     val isIndexing: Boolean = false,
     val isTaggingSelectedImage: Boolean = false,
@@ -50,19 +56,29 @@ class GalleryViewModel(
             runCatching {
                 withContext(Dispatchers.IO) {
                     val indexed = repository.indexOutputDirectory(outputDir)
-                    val images = repository.listImages(_uiState.value.query, _uiState.value.selectedKeywords)
+                    val current = _uiState.value
+                    val images = repository.listImages(
+                        query = current.query,
+                        keywords = current.selectedKeywords,
+                        modelId = current.selectedModelId,
+                        dateFilter = current.selectedDateFilter,
+                    )
                     val keywordStats = repository.listKeywordStats()
-                    Triple(indexed, images, keywordStats)
+                    val models = repository.listModelIds()
+                    IndexedGallery(indexed, images, keywordStats, models)
                 }
-            }.onSuccess { (indexed, images, keywordStats) ->
+            }.onSuccess { result ->
                 update {
                     copy(
-                        images = images,
-                        keywords = keywordStats.filter { it.count > 0 }.map { it.name },
-                        keywordStats = keywordStats,
-                        selectedImageId = selectedImageId?.takeIf { id -> images.any { it.id == id } } ?: images.firstOrNull()?.id,
+                        images = result.images,
+                        keywords = result.keywordStats.filter { it.count > 0 }.map { it.name },
+                        keywordStats = result.keywordStats,
+                        availableModels = result.models,
+                        selectedModelId = selectedModelId.takeIf { it in result.models }.orEmpty(),
+                        selectedImageId = selectedImageId?.takeIf { id -> result.images.any { it.id == id } } ?: result.images.firstOrNull()?.id,
+                        selectedImageIds = selectedImageIds.filterTo(mutableSetOf()) { id -> result.images.any { it.id == id } },
                         isIndexing = false,
-                        message = "Indexed $indexed image files.",
+                        message = "Indexed ${result.indexed} image files.",
                         error = null,
                     )
                 }
@@ -88,6 +104,16 @@ class GalleryViewModel(
         reloadList()
     }
 
+    fun updateModelFilter(value: String) {
+        update { copy(selectedModelId = if (value == AllModelsFilterLabel) "" else value) }
+        reloadList()
+    }
+
+    fun updateDateFilter(value: String) {
+        update { copy(selectedDateFilter = GalleryDateFilter.fromLabel(value)) }
+        reloadList()
+    }
+
     fun selectKeyword(value: String) {
         val normalized = value.trim().lowercase(Locale.US)
         if (normalized.isBlank()) return
@@ -108,7 +134,64 @@ class GalleryViewModel(
         reloadList()
     }
 
-    fun selectImage(id: Long) = update { copy(selectedImageId = id, keywordDraft = "") }
+    fun selectImage(id: Long) = selectImage(id, extendRange = false, toggle = false)
+
+    fun selectImage(id: Long, extendRange: Boolean, toggle: Boolean) = update {
+        val nextSelectedIds = when {
+            extendRange -> {
+                val anchor = lastSelectionAnchorId ?: selectedImageId ?: id
+                val ids = idsBetween(anchor, id)
+                selectedImageIds + ids
+            }
+            toggle -> {
+                if (id in selectedImageIds) selectedImageIds - id else selectedImageIds + id
+            }
+            selectedImageIds.isNotEmpty() -> setOf(id)
+            else -> selectedImageIds
+        }
+        copy(
+            selectedImageId = id,
+            selectedImageIds = nextSelectedIds,
+            lastSelectionAnchorId = if (extendRange) (lastSelectionAnchorId ?: id) else id,
+            keywordDraft = "",
+        )
+    }
+
+    fun clearSelection() = update { copy(selectedImageIds = emptySet(), lastSelectionAnchorId = selectedImageId) }
+
+    fun selectPreviousImage() = moveSelection(-1)
+
+    fun selectNextImage() = moveSelection(1)
+
+    fun deleteSelectedImages() {
+        val selected = _uiState.value.images.filter { it.id in _uiState.value.selectedImageIds }
+        if (selected.isEmpty()) return
+        scope.launch {
+            update { copy(isDeletingImage = true, error = null) }
+            runCatching {
+                withContext(Dispatchers.IO) {
+                    selected.forEach(repository::deleteImage)
+                }
+            }.onSuccess {
+                loadCachedList()
+                update {
+                    copy(
+                        selectedImageIds = emptySet(),
+                        isDeletingImage = false,
+                        message = "Deleted ${selected.size} selected image(s).",
+                        error = null,
+                    )
+                }
+            }.onFailure { error ->
+                update {
+                    copy(
+                        isDeletingImage = false,
+                        error = error.message ?: "Failed to delete selected images.",
+                    )
+                }
+            }
+        }
+    }
 
     fun updateKeywordDraft(value: String) = update { copy(keywordDraft = value) }
 
@@ -253,15 +336,28 @@ class GalleryViewModel(
     private suspend fun loadCachedList(keepIndexing: Boolean = false) {
         runCatching {
             withContext(Dispatchers.IO) {
-                repository.listImages(_uiState.value.query, _uiState.value.selectedKeywords) to repository.listKeywordStats()
+                val current = _uiState.value
+                Triple(
+                    repository.listImages(
+                        query = current.query,
+                        keywords = current.selectedKeywords,
+                        modelId = current.selectedModelId,
+                        dateFilter = current.selectedDateFilter,
+                    ),
+                    repository.listKeywordStats(),
+                    repository.listModelIds(),
+                )
             }
-        }.onSuccess { (images, keywordStats) ->
+        }.onSuccess { (images, keywordStats, models) ->
             update {
                 copy(
                     images = images,
                     keywords = keywordStats.filter { it.count > 0 }.map { it.name },
                     keywordStats = keywordStats,
+                    availableModels = models,
+                    selectedModelId = selectedModelId.takeIf { it in models }.orEmpty(),
                     selectedImageId = selectedImageId?.takeIf { id -> images.any { it.id == id } } ?: images.firstOrNull()?.id,
+                    selectedImageIds = selectedImageIds.filterTo(mutableSetOf()) { id -> images.any { it.id == id } },
                     isIndexing = keepIndexing,
                     message = if (keepIndexing) "Refreshing gallery..." else message,
                 )
@@ -273,5 +369,33 @@ class GalleryViewModel(
 
     private fun update(transform: GalleryUiState.() -> GalleryUiState) {
         _uiState.value = _uiState.value.transform()
+    }
+
+    private fun GalleryUiState.idsBetween(firstId: Long, secondId: Long): Set<Long> {
+        val firstIndex = images.indexOfFirst { it.id == firstId }
+        val secondIndex = images.indexOfFirst { it.id == secondId }
+        if (firstIndex < 0 || secondIndex < 0) return setOf(secondId)
+        val range = if (firstIndex <= secondIndex) firstIndex..secondIndex else secondIndex..firstIndex
+        return range.map { images[it].id }.toSet()
+    }
+
+    private fun moveSelection(delta: Int) {
+        update {
+            if (images.isEmpty()) return@update this
+            val currentIndex = selectedImageId?.let { id -> images.indexOfFirst { it.id == id } }?.takeIf { it >= 0 } ?: 0
+            val nextIndex = (currentIndex + delta).coerceIn(0, images.lastIndex)
+            copy(selectedImageId = images[nextIndex].id, keywordDraft = "")
+        }
+    }
+
+    private data class IndexedGallery(
+        val indexed: Int,
+        val images: List<GalleryImage>,
+        val keywordStats: List<GalleryKeyword>,
+        val models: List<String>,
+    )
+
+    companion object {
+        const val AllModelsFilterLabel = "All models"
     }
 }

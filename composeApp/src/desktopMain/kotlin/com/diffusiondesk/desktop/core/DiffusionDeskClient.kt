@@ -81,6 +81,7 @@ data class GeneratedImage(
     val bufferedImage: BufferedImage,
     val bytes: ByteArray,
     val sourceUrl: String,
+    val generationTime: Double? = null,
 )
 
 data class UpscaleResult(
