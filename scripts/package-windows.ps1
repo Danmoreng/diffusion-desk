@@ -169,6 +169,7 @@ if (-not $SkipNativeBuild) {
     if ($Clean) {
         $buildArgs += "-Clean"
     }
+    $buildArgs += "-SkipWebUi"
     & (Join-Path $PSScriptRoot "build.ps1") @buildArgs
     if ($LASTEXITCODE -ne 0) {
         throw "Native build failed with exit code $LASTEXITCODE"
