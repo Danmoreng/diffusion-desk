@@ -66,6 +66,37 @@ jobs:
         run: |
           choco install ninja cuda -y --no-progress
 
+      - name: Configure CUDA environment
+        shell: pwsh
+        run: |
+          $cudaBase = "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA"
+          $candidates = @()
+          if ($env:CUDA_PATH) {
+            $candidates += $env:CUDA_PATH
+          }
+          if (Test-Path $cudaBase) {
+            $candidates += Get-ChildItem -Path $cudaBase -Directory |
+              Sort-Object Name -Descending |
+              ForEach-Object { $_.FullName }
+          }
+
+          $cudaRoot = $candidates |
+            Where-Object { $_ -and (Test-Path (Join-Path $_ "bin\nvcc.exe")) } |
+            Select-Object -First 1
+
+          if (-not $cudaRoot) {
+            if (Test-Path $cudaBase) {
+              Get-ChildItem -Path $cudaBase -Recurse -Filter nvcc.exe -ErrorAction SilentlyContinue
+            }
+            throw "CUDA Toolkit was installed, but nvcc.exe was not found under $cudaBase."
+          }
+
+          $cudaBin = Join-Path $cudaRoot "bin"
+          "CUDA_PATH=$cudaRoot" | Out-File -FilePath $env:GITHUB_ENV -Append
+          "CUDAToolkit_ROOT=$cudaRoot" | Out-File -FilePath $env:GITHUB_ENV -Append
+          $cudaBin | Out-File -FilePath $env:GITHUB_PATH -Append
+          & (Join-Path $cudaBin "nvcc.exe") --version
+
       - name: Package ZIP and MSI
         shell: pwsh
         run: |
