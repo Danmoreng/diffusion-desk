@@ -8,6 +8,10 @@ plugins {
     alias(libs.plugins.compose.compiler)
 }
 
+val appVersion = providers.gradleProperty("appVersion")
+    .orElse(providers.environmentVariable("APP_VERSION"))
+    .orElse("1.0.0")
+
 kotlin {
     jvmToolchain(25)
 
@@ -53,7 +57,7 @@ compose.desktop {
         nativeDistributions {
             targetFormats(TargetFormat.Dmg, TargetFormat.Msi, TargetFormat.Deb)
             packageName = "diffusion-desk"
-            packageVersion = "1.0.0"
+            packageVersion = appVersion.get()
 
             windows {
                 iconFile.set(project.file("src/desktopMain/resources/icons/app-icon.ico"))

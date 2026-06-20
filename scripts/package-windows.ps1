@@ -1,5 +1,6 @@
 param(
     [switch]$BuildMsi,
+    [switch]$RequireMsi,
     [switch]$SkipNativeBuild,
     [switch]$Clean,
     [int]$GradleRetries = 3
@@ -11,7 +12,12 @@ $RepoRoot = Split-Path -Parent $PSScriptRoot
 $ComposeAppDir = Join-Path $RepoRoot "composeApp"
 $GradleWrapper = Join-Path $RepoRoot "gradlew.bat"
 $PackageName = "diffusion-desk"
+$PackageVersion = if ([string]::IsNullOrWhiteSpace($env:APP_VERSION)) { "1.0.0" } else { $env:APP_VERSION }
 $RequiredJavaMajor = 25
+
+if ($RequireMsi) {
+    $BuildMsi = $true
+}
 
 function Get-JavaMajorVersion([string]$JavaHomePath) {
     if ([string]::IsNullOrWhiteSpace($JavaHomePath)) { return $null }
@@ -118,6 +124,29 @@ function Invoke-Gradle([string[]]$Tasks, [int]$Retries = 1) {
     throw "Gradle failed (exit code $LASTEXITCODE): $($Tasks -join ' ')"
 }
 
+function Add-WixToolsToPath {
+    $candidateDirs = @(
+        (Join-Path $RepoRoot "build\wix311"),
+        (Join-Path $ComposeAppDir "build\wix311")
+    )
+
+    foreach ($dir in $candidateDirs) {
+        if ((Test-Path (Join-Path $dir "wix.exe")) -or
+            ((Test-Path (Join-Path $dir "candle.exe")) -and (Test-Path (Join-Path $dir "light.exe")))) {
+            $env:Path = $dir + ";" + $env:Path
+            Write-Host "Using WiX tools: $dir" -ForegroundColor DarkCyan
+            return $true
+        }
+    }
+
+    $wixTool = Get-Command wix.exe -ErrorAction SilentlyContinue
+    if ($wixTool) { return $true }
+
+    $candleTool = Get-Command candle.exe -ErrorAction SilentlyContinue
+    $lightTool = Get-Command light.exe -ErrorAction SilentlyContinue
+    return [bool]($candleTool -and $lightTool)
+}
+
 if (-not (Test-Path $GradleWrapper)) {
     throw "gradlew.bat not found at $GradleWrapper"
 }
@@ -191,12 +220,40 @@ if (Test-Path $zipPath) {
 Compress-Archive -Path $appRoot -DestinationPath $zipPath -Force
 
 if ($BuildMsi) {
-    Write-Host "Building MSI installer..." -ForegroundColor Cyan
+    Write-Host "Building MSI installer from packaged app image..." -ForegroundColor Cyan
+    if (-not (Add-WixToolsToPath)) {
+        throw "WiX tools were not found. Run Gradle packaging once to download WiX or install WiX and retry."
+    }
+
+    $msiDir = Join-Path $ComposeAppDir "build\compose\binaries\main\msi"
+    New-Item -ItemType Directory -Path $msiDir -Force | Out-Null
+    Get-ChildItem -Path $msiDir -Filter "*.msi" -File -ErrorAction SilentlyContinue | Remove-Item -Force
+
     try {
-        Invoke-Gradle @(":composeApp:packageMsi") -Retries $GradleRetries
+        & (Join-Path $resolvedJavaHome "bin\jpackage.exe") `
+            "--type" "msi" `
+            "--name" $PackageName `
+            "--app-image" $appRoot `
+            "--dest" $msiDir `
+            "--app-version" $PackageVersion `
+            "--win-menu" `
+            "--win-shortcut"
+
+        if ($LASTEXITCODE -ne 0) {
+            throw "jpackage failed with exit code $LASTEXITCODE"
+        }
+
+        $msi = Get-ChildItem -Path $msiDir -Filter "*.msi" -File -ErrorAction SilentlyContinue | Select-Object -First 1
+        if (-not $msi) {
+            throw "jpackage completed but no MSI was written to $msiDir"
+        }
     } catch {
-        Write-Warning "MSI packaging failed. Portable app is still usable."
-        Write-Warning $_
+        if ($RequireMsi) {
+            throw
+        } else {
+            Write-Warning "MSI packaging failed. Portable app is still usable."
+            Write-Warning $_
+        }
     }
 }
 
