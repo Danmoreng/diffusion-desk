@@ -106,10 +106,15 @@ function Invoke-Gradle([string[]]$Tasks, [int]$Retries = 1) {
     $attempt = 1
     while ($attempt -le [Math]::Max($Retries, 1)) {
         Write-Host "Running Gradle (attempt $attempt/$Retries): $($Tasks -join ' ')" -ForegroundColor DarkCyan
-        & $GradleWrapper `
-            "-Dorg.gradle.internal.http.connectionTimeout=120000" `
-            "-Dorg.gradle.internal.http.socketTimeout=180000" `
-            @Tasks
+        Push-Location $RepoRoot
+        try {
+            & $GradleWrapper `
+                "-Dorg.gradle.internal.http.connectionTimeout=120000" `
+                "-Dorg.gradle.internal.http.socketTimeout=180000" `
+                @Tasks
+        } finally {
+            Pop-Location
+        }
 
         if ($LASTEXITCODE -eq 0) {
             return
