@@ -1,6 +1,7 @@
 package com.diffusiondesk.desktop.viewmodel
 
 import com.diffusiondesk.desktop.core.GalleryImage
+import com.diffusiondesk.desktop.core.GalleryKeyword
 import com.diffusiondesk.desktop.core.GalleryRepository
 import com.diffusiondesk.desktop.core.GalleryReusableParams
 import com.diffusiondesk.desktop.core.DesktopSettingsStore
@@ -13,13 +14,15 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.util.Locale
 
 data class GalleryUiState(
     val images: List<GalleryImage> = emptyList(),
     val keywords: List<String> = emptyList(),
+    val keywordStats: List<GalleryKeyword> = emptyList(),
     val selectedImageId: Long? = null,
     val query: String = "",
-    val selectedKeyword: String = "",
+    val selectedKeywords: List<String> = emptyList(),
     val keywordDraft: String = "",
     val isIndexing: Boolean = false,
     val isTaggingSelectedImage: Boolean = false,
@@ -47,15 +50,16 @@ class GalleryViewModel(
             runCatching {
                 withContext(Dispatchers.IO) {
                     val indexed = repository.indexOutputDirectory(outputDir)
-                    val images = repository.listImages(_uiState.value.query, _uiState.value.selectedKeyword)
-                    val keywords = repository.listKeywords()
-                    Triple(indexed, images, keywords)
+                    val images = repository.listImages(_uiState.value.query, _uiState.value.selectedKeywords)
+                    val keywordStats = repository.listKeywordStats()
+                    Triple(indexed, images, keywordStats)
                 }
-            }.onSuccess { (indexed, images, keywords) ->
+            }.onSuccess { (indexed, images, keywordStats) ->
                 update {
                     copy(
                         images = images,
-                        keywords = keywords,
+                        keywords = keywordStats.filter { it.count > 0 }.map { it.name },
+                        keywordStats = keywordStats,
                         selectedImageId = selectedImageId?.takeIf { id -> images.any { it.id == id } } ?: images.firstOrNull()?.id,
                         isIndexing = false,
                         message = "Indexed $indexed image files.",
@@ -85,12 +89,22 @@ class GalleryViewModel(
     }
 
     fun selectKeyword(value: String) {
-        update { copy(selectedKeyword = if (selectedKeyword == value) "" else value) }
+        val normalized = value.trim().lowercase(Locale.US)
+        if (normalized.isBlank()) return
+        update {
+            copy(
+                selectedKeywords = if (normalized in selectedKeywords) {
+                    selectedKeywords - normalized
+                } else {
+                    selectedKeywords + normalized
+                },
+            )
+        }
         reloadList()
     }
 
     fun clearKeywordFilter() {
-        update { copy(selectedKeyword = "") }
+        update { copy(selectedKeywords = emptyList()) }
         reloadList()
     }
 
@@ -121,6 +135,50 @@ class GalleryViewModel(
                 reloadList()
             }.onFailure { error ->
                 update { copy(error = error.message ?: "Failed to remove tag.") }
+            }
+        }
+    }
+
+    fun deleteKeyword(keyword: String) {
+        val normalized = keyword.trim().lowercase(Locale.US)
+        if (normalized.isBlank()) return
+        scope.launch {
+            runCatching {
+                withContext(Dispatchers.IO) { repository.deleteKeyword(normalized) }
+            }.onSuccess {
+                update {
+                    copy(
+                        selectedKeywords = selectedKeywords.filterNot { it == normalized },
+                        message = "Deleted tag '$normalized'.",
+                        error = null,
+                    )
+                }
+                reloadList()
+            }.onFailure { error ->
+                update { copy(error = error.message ?: "Failed to delete tag.") }
+            }
+        }
+    }
+
+    fun cleanupUnusedKeywords() {
+        scope.launch {
+            runCatching {
+                withContext(Dispatchers.IO) { repository.cleanupUnusedKeywords() }
+            }.onSuccess { deleted ->
+                update {
+                    val activeKeywordNames = keywordStats
+                        .filter { it.count > 0 }
+                        .map { it.name }
+                        .toSet()
+                    copy(
+                        selectedKeywords = selectedKeywords.filter { it in activeKeywordNames },
+                        message = "Removed $deleted unused tag(s).",
+                        error = null,
+                    )
+                }
+                reloadList()
+            }.onFailure { error ->
+                update { copy(error = error.message ?: "Failed to clean up tags.") }
             }
         }
     }
@@ -195,13 +253,14 @@ class GalleryViewModel(
     private suspend fun loadCachedList(keepIndexing: Boolean = false) {
         runCatching {
             withContext(Dispatchers.IO) {
-                repository.listImages(_uiState.value.query, _uiState.value.selectedKeyword) to repository.listKeywords()
+                repository.listImages(_uiState.value.query, _uiState.value.selectedKeywords) to repository.listKeywordStats()
             }
-        }.onSuccess { (images, keywords) ->
+        }.onSuccess { (images, keywordStats) ->
             update {
                 copy(
                     images = images,
-                    keywords = keywords,
+                    keywords = keywordStats.filter { it.count > 0 }.map { it.name },
+                    keywordStats = keywordStats,
                     selectedImageId = selectedImageId?.takeIf { id -> images.any { it.id == id } } ?: images.firstOrNull()?.id,
                     isIndexing = keepIndexing,
                     message = if (keepIndexing) "Refreshing gallery..." else message,

@@ -34,6 +34,12 @@ data class GalleryImage(
     val aspectRatio: Float get() = if (width != null && height != null && height > 0) width.toFloat() / height.toFloat() else 1f
 }
 
+data class GalleryKeyword(
+    val name: String,
+    val count: Int,
+    val category: String = "General",
+)
+
 data class GalleryLora(
     val path: String,
     val weight: Double,
