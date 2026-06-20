@@ -7,12 +7,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 get_filename_component(DIFFUSION_DESK_ROOT "${CMAKE_CURRENT_LIST_DIR}/../.." ABSOLUTE)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${DIFFUSION_DESK_ROOT}/build/bin")
 
-include("${DIFFUSION_DESK_ROOT}/cmake/PrepareStableDiffusion.cmake")
-prepare_patched_stable_diffusion(
-    "${DIFFUSION_DESK_ROOT}/libs/stable-diffusion.cpp"
-    "${DIFFUSION_DESK_ROOT}/scripts/patches/stable-diffusion-cancel.patch"
-    STABLE_DIFFUSION_SOURCE_DIR
-)
+set(STABLE_DIFFUSION_SOURCE_DIR "${DIFFUSION_DESK_ROOT}/libs/stable-diffusion.cpp")
 
 set(SD_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 set(SD_BUILD_TESTS OFF CACHE BOOL "" FORCE)

@@ -6,12 +6,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 
-include(cmake/PrepareStableDiffusion.cmake)
-prepare_patched_stable_diffusion(
-    "${CMAKE_SOURCE_DIR}/libs/stable-diffusion.cpp"
-    "${CMAKE_SOURCE_DIR}/scripts/patches/stable-diffusion-cancel.patch"
-    STABLE_DIFFUSION_SOURCE_DIR
-)
+set(STABLE_DIFFUSION_SOURCE_DIR "${CMAKE_SOURCE_DIR}/libs/stable-diffusion.cpp")
 
 # --- Dependencies ---
 

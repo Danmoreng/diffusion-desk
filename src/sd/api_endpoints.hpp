@@ -48,6 +48,6 @@ void handle_generate_image(const httplib::Request& req, httplib::Response& res, 
 void handle_submit_generation_job(const httplib::Request& req, httplib::Response& res, ServerContext& ctx);
 void handle_get_generation_job(const httplib::Request& req, httplib::Response& res);
 void handle_stream_generation_job_events(const httplib::Request& req, httplib::Response& res);
-void handle_cancel_generation_job(const httplib::Request& req, httplib::Response& res);
+void handle_cancel_generation_job(const httplib::Request& req, httplib::Response& res, ServerContext& ctx);
 void shutdown_generation_jobs();
 void handle_edit_image(const httplib::Request& req, httplib::Response& res, ServerContext& ctx);
