@@ -74,6 +74,13 @@ class GalleryRepository(
     }
 
     fun listImages(query: String = "", keyword: String = ""): List<GalleryImage> {
+        return listImages(
+            query = query,
+            keywords = keyword.trim().takeIf { it.isNotBlank() }?.let(::listOf).orEmpty(),
+        )
+    }
+
+    fun listImages(query: String, keywords: List<String>): List<GalleryImage> {
         database.connection().use { conn ->
             val where = mutableListOf<String>()
             val args = mutableListOf<String>()
@@ -82,8 +89,11 @@ class GalleryRepository(
                 where += "(i.prompt LIKE ? OR i.negative_prompt LIKE ? OR i.model_id LIKE ? OR i.file_path LIKE ?)"
                 repeat(4) { args += "%$normalizedQuery%" }
             }
-            val normalizedKeyword = keyword.trim()
-            if (normalizedKeyword.isNotBlank()) {
+            keywords
+                .map { it.trim().lowercase(Locale.US) }
+                .filter { it.isNotBlank() }
+                .distinct()
+                .forEach { normalizedKeyword ->
                 where += "EXISTS (SELECT 1 FROM image_keywords ik JOIN keywords k ON k.id = ik.keyword_id WHERE ik.image_id = i.id AND k.name = ?)"
                 args += normalizedKeyword
             }
@@ -117,19 +127,30 @@ class GalleryRepository(
     }
 
     fun listKeywords(): List<String> {
+        return listKeywordStats()
+            .filter { it.count > 0 }
+            .map { it.name }
+    }
+
+    fun listKeywordStats(): List<GalleryKeyword> {
         database.connection().use { conn ->
             conn.prepareStatement(
                 """
-                SELECT k.name
+                SELECT k.name, COUNT(ik.image_id) AS usage_count
                 FROM keywords k
-                JOIN image_keywords ik ON ik.keyword_id = k.id
+                LEFT JOIN image_keywords ik ON ik.keyword_id = k.id
                 GROUP BY k.id
-                ORDER BY lower(k.name)
+                ORDER BY usage_count DESC, lower(k.name)
                 """.trimIndent(),
             ).use { statement ->
                 statement.executeQuery().use { rs ->
-                    val keywords = mutableListOf<String>()
-                    while (rs.next()) keywords += rs.getString(1)
+                    val keywords = mutableListOf<GalleryKeyword>()
+                    while (rs.next()) {
+                        keywords += GalleryKeyword(
+                            name = rs.getString("name"),
+                            count = rs.getInt("usage_count"),
+                        )
+                    }
                     return keywords
                 }
             }
@@ -277,6 +298,24 @@ class GalleryRepository(
                 statement.setString(2, keyword.trim().lowercase(Locale.US))
                 statement.executeUpdate()
             }
+            deleteUnusedKeywords(conn)
+        }
+    }
+
+    fun deleteKeyword(keyword: String) {
+        val normalized = keyword.trim().lowercase(Locale.US)
+        if (normalized.isBlank()) return
+        database.connection().use { conn ->
+            conn.prepareStatement("DELETE FROM keywords WHERE name = ?").use { statement ->
+                statement.setString(1, normalized)
+                statement.executeUpdate()
+            }
+        }
+    }
+
+    fun cleanupUnusedKeywords(): Int {
+        database.connection().use { conn ->
+            return deleteUnusedKeywords(conn)
         }
     }
 
@@ -299,6 +338,22 @@ class GalleryRepository(
         conn.prepareStatement("DELETE FROM images WHERE id = ?").use { statement ->
             statement.setLong(1, imageId)
             statement.executeUpdate()
+        }
+        deleteUnusedKeywords(conn)
+    }
+
+    private fun deleteUnusedKeywords(conn: Connection): Int {
+        conn.prepareStatement(
+            """
+            DELETE FROM keywords
+            WHERE NOT EXISTS (
+                SELECT 1
+                FROM image_keywords ik
+                WHERE ik.keyword_id = keywords.id
+            )
+            """.trimIndent(),
+        ).use { statement ->
+            return statement.executeUpdate()
         }
     }
 

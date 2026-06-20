@@ -208,6 +208,8 @@ fun App(
                             onQueryChange = controller.galleryViewModel::updateQuery,
                             onSelectKeyword = controller.galleryViewModel::selectKeyword,
                             onClearKeywordFilter = controller.galleryViewModel::clearKeywordFilter,
+                            onDeleteKeyword = controller.galleryViewModel::deleteKeyword,
+                            onCleanupUnusedKeywords = controller.galleryViewModel::cleanupUnusedKeywords,
                             onSelectImage = controller.galleryViewModel::selectImage,
                             onKeywordDraftChange = controller.galleryViewModel::updateKeywordDraft,
                             onAddKeyword = controller.galleryViewModel::addKeywordToSelected,

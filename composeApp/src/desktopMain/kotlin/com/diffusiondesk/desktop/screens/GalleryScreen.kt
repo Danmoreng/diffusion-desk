@@ -8,6 +8,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.VerticalScrollbar
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -24,10 +25,13 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
+import androidx.compose.foundation.lazy.items as lazyItems
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.rememberScrollbarAdapter
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -76,6 +80,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.diffusiondesk.desktop.core.GalleryImage
+import com.diffusiondesk.desktop.core.GalleryKeyword
 import com.diffusiondesk.desktop.viewmodel.GalleryUiState
 import java.awt.Cursor
 import java.io.File
@@ -101,6 +106,8 @@ fun GalleryScreen(
     onQueryChange: (String) -> Unit,
     onSelectKeyword: (String) -> Unit,
     onClearKeywordFilter: () -> Unit,
+    onDeleteKeyword: (String) -> Unit,
+    onCleanupUnusedKeywords: () -> Unit,
     onSelectImage: (Long) -> Unit,
     onKeywordDraftChange: (String) -> Unit,
     onAddKeyword: () -> Unit,
@@ -114,6 +121,9 @@ fun GalleryScreen(
     onAnalyzeComposition: (GalleryImage) -> Unit,
 ) {
     var imagePendingDeletion by remember { mutableStateOf<GalleryImage?>(null) }
+    var keywordPendingDeletion by remember { mutableStateOf<String?>(null) }
+    var cleanupKeywordsPending by remember { mutableStateOf(false) }
+    var showTagManager by remember { mutableStateOf(false) }
 
     LaunchedEffect(outputDir) {
         onRefresh()
@@ -160,6 +170,7 @@ fun GalleryScreen(
                     onQueryChange = onQueryChange,
                     onSelectKeyword = onSelectKeyword,
                     onClearKeywordFilter = onClearKeywordFilter,
+                    onManageTags = { showTagManager = true },
                 )
                 GalleryGrid(
                     images = state.images,
@@ -237,6 +248,38 @@ fun GalleryScreen(
             },
         )
     }
+
+    keywordPendingDeletion?.let { keyword ->
+        DeleteKeywordDialog(
+            keyword = keyword,
+            onDismiss = { keywordPendingDeletion = null },
+            onConfirm = {
+                keywordPendingDeletion = null
+                onDeleteKeyword(keyword)
+            },
+        )
+    }
+
+    if (showTagManager) {
+        TagManagerDialog(
+            keywords = state.keywordStats,
+            selectedKeywords = state.selectedKeywords,
+            onDismiss = { showTagManager = false },
+            onSelectKeyword = onSelectKeyword,
+            onDeleteKeyword = { keywordPendingDeletion = it },
+            onCleanupUnusedKeywords = { cleanupKeywordsPending = true },
+        )
+    }
+
+    if (cleanupKeywordsPending) {
+        CleanupKeywordsDialog(
+            onDismiss = { cleanupKeywordsPending = false },
+            onConfirm = {
+                cleanupKeywordsPending = false
+                onCleanupUnusedKeywords()
+            },
+        )
+    }
 }
 
 @Composable
@@ -248,8 +291,9 @@ private fun GalleryToolbar(
     onQueryChange: (String) -> Unit,
     onSelectKeyword: (String) -> Unit,
     onClearKeywordFilter: () -> Unit,
+    onManageTags: () -> Unit,
 ) {
-    var keywordFilterDraft by remember(state.selectedKeyword) { mutableStateOf("") }
+    var keywordFilterDraft by remember(state.selectedKeywords) { mutableStateOf("") }
 
     DeskPanel(modifier = Modifier.fillMaxWidth()) {
         Row(
@@ -281,6 +325,9 @@ private fun GalleryToolbar(
                 loading = isTaggingGallery,
                 tooltip = "Generate tags",
             )
+            DeskButton(onClick = onManageTags) {
+                Text("Manage tags")
+            }
         }
 
         Row(
@@ -295,10 +342,10 @@ private fun GalleryToolbar(
                 placeholder = "Search images",
                 modifier = Modifier.weight(1f),
             )
-            if (state.keywords.isNotEmpty() || state.selectedKeyword.isNotBlank()) {
-                GalleryKeywordFilter(
+            if (state.keywords.isNotEmpty() || state.selectedKeywords.isNotEmpty()) {
+                GalleryKeywordPicker(
                     keywords = state.keywords,
-                    selectedKeyword = state.selectedKeyword,
+                    selectedKeywords = state.selectedKeywords,
                     draft = keywordFilterDraft,
                     onDraftChange = { keywordFilterDraft = it },
                     onSelectKeyword = {
@@ -309,7 +356,7 @@ private fun GalleryToolbar(
                         onClearKeywordFilter()
                         keywordFilterDraft = ""
                     },
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier.weight(0.9f),
                 )
             }
             Text(
@@ -320,6 +367,17 @@ private fun GalleryToolbar(
                 },
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+
+        if (state.selectedKeywords.isNotEmpty()) {
+            GalleryActiveKeywordFilters(
+                selectedKeywords = state.selectedKeywords,
+                onSelectKeyword = onSelectKeyword,
+                onClearKeywordFilter = {
+                    onClearKeywordFilter()
+                    keywordFilterDraft = ""
+                },
             )
         }
 
@@ -334,9 +392,9 @@ private fun GalleryToolbar(
 }
 
 @Composable
-private fun GalleryKeywordFilter(
+private fun GalleryKeywordPicker(
     keywords: List<String>,
-    selectedKeyword: String,
+    selectedKeywords: List<String>,
     draft: String,
     onDraftChange: (String) -> Unit,
     onSelectKeyword: (String) -> Unit,
@@ -355,29 +413,64 @@ private fun GalleryKeywordFilter(
             fontWeight = FontWeight.SemiBold,
             maxLines = 1,
         )
-        if (selectedKeyword.isNotBlank()) {
-            KeywordChip(
-                text = selectedKeyword,
-                selected = true,
-                onClick = onClearKeywordFilter,
-            )
-        }
         DeskSearchableTextDropdownField(
             label = "",
             value = draft,
-            options = keywords.filterNot { it == selectedKeyword },
+            options = keywords.filterNot { it in selectedKeywords },
             onValueChange = onDraftChange,
             onOptionSelected = onSelectKeyword,
             placeholder = "+ Add filter",
-            modifier = Modifier.weight(1f).widthIn(min = 190.dp, max = 340.dp),
+            modifier = Modifier.weight(1f).widthIn(min = 190.dp, max = 380.dp),
         )
-        if (selectedKeyword.isNotBlank()) {
+        if (selectedKeywords.isNotEmpty()) {
             DeskIconButton(
                 icon = Icons.Default.Close,
-                contentDescription = "Clear tag filter",
+                contentDescription = "Clear tag filters",
                 onClick = onClearKeywordFilter,
             )
         }
+    }
+}
+
+@Composable
+private fun GalleryActiveKeywordFilters(
+    selectedKeywords: List<String>,
+    onSelectKeyword: (String) -> Unit,
+    onClearKeywordFilter: () -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(DeskControlSpacing),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = "Active filters",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            fontWeight = FontWeight.SemiBold,
+            maxLines = 1,
+            modifier = Modifier.width(82.dp),
+        )
+        Row(
+            modifier = Modifier
+                .weight(1f)
+                .horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            selectedKeywords.forEach { keyword ->
+                DeskChip(
+                    text = keyword,
+                    selected = true,
+                    onRemove = { onSelectKeyword(keyword) },
+                )
+            }
+        }
+        DeskIconButton(
+            icon = Icons.Default.Close,
+            contentDescription = "Clear tag filters",
+            onClick = onClearKeywordFilter,
+        )
     }
 }
 
@@ -823,6 +916,202 @@ private fun RemovableKeywordChip(
 }
 
 @Composable
+private fun TagManagerDialog(
+    keywords: List<GalleryKeyword>,
+    selectedKeywords: List<String>,
+    onDismiss: () -> Unit,
+    onSelectKeyword: (String) -> Unit,
+    onDeleteKeyword: (String) -> Unit,
+    onCleanupUnusedKeywords: () -> Unit,
+) {
+    var query by remember { mutableStateOf("") }
+    val filteredKeywords = remember(keywords, query) {
+        val normalized = query.trim().lowercase()
+        if (normalized.isBlank()) {
+            keywords
+        } else {
+            keywords.filter { it.name.lowercase().contains(normalized) }
+        }
+    }
+    val listState = rememberLazyListState()
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Manage tags") },
+        text = {
+            Column(
+                modifier = Modifier.width(620.dp),
+                verticalArrangement = Arrangement.spacedBy(DeskPanelSpacing),
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(DeskControlSpacing),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    DeskTextField(
+                        label = "",
+                        value = query,
+                        onValueChange = { query = it },
+                        placeholder = "Search tags",
+                        modifier = Modifier.weight(1f),
+                    )
+                    DeskOutlinedButton(onClick = onCleanupUnusedKeywords, slim = true) {
+                        Text("Cleanup unused")
+                    }
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(DeskControlSpacing),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = "Name",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.weight(1f),
+                    )
+                    Text(
+                        text = "Category",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.width(96.dp),
+                    )
+                    Text(
+                        text = "Count",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.width(52.dp),
+                    )
+                    Spacer(Modifier.width(72.dp))
+                }
+
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(360.dp),
+                ) {
+                    LazyColumn(
+                        state = listState,
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(end = 12.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp),
+                    ) {
+                        if (filteredKeywords.isEmpty()) {
+                            item {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(24.dp),
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    Text("No tags found.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                            }
+                        }
+                        lazyItems(filteredKeywords, key = { it.name }) { keyword ->
+                            TagManagerRow(
+                                keyword = keyword,
+                                selected = keyword.name in selectedKeywords,
+                                onSelectKeyword = { onSelectKeyword(keyword.name) },
+                                onDeleteKeyword = { onDeleteKeyword(keyword.name) },
+                            )
+                        }
+                    }
+                    VerticalScrollbar(
+                        adapter = rememberScrollbarAdapter(listState),
+                        modifier = Modifier
+                            .align(Alignment.CenterEnd)
+                            .fillMaxHeight(),
+                        style = ScrollbarStyle(
+                            minimalHeight = 48.dp,
+                            thickness = 8.dp,
+                            shape = RoundedCornerShape(999.dp),
+                            hoverDurationMillis = 150,
+                            unhoverColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.48f),
+                            hoverColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.9f),
+                        )
+                    )
+                }
+
+                Text(
+                    text = "Total tags: ${keywords.size}",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Close")
+            }
+        },
+    )
+}
+
+@Composable
+private fun TagManagerRow(
+    keyword: GalleryKeyword,
+    selected: Boolean,
+    onSelectKeyword: () -> Unit,
+    onDeleteKeyword: () -> Unit,
+) {
+    val shape = RoundedCornerShape(5.dp)
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(shape)
+            .background(
+                if (selected) {
+                    MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
+                } else {
+                    MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)
+                },
+            )
+            .then(if (selected) Modifier.border(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.72f), shape) else Modifier)
+            .padding(horizontal = 8.dp, vertical = 5.dp),
+        horizontalArrangement = Arrangement.spacedBy(DeskControlSpacing),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = keyword.name,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurface,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f),
+        )
+        DeskStatusBadge(
+            text = keyword.category,
+            tone = DeskStatusTone.Neutral,
+            modifier = Modifier.width(96.dp),
+        )
+        Text(
+            text = keyword.count.toString(),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            modifier = Modifier.width(52.dp),
+        )
+        DeskIconButton(
+            icon = Icons.Default.ImageSearch,
+            contentDescription = if (selected) "Remove tag filter" else "Filter by tag",
+            onClick = onSelectKeyword,
+            enabled = keyword.count > 0,
+            tooltip = if (selected) "Remove filter" else "Add filter",
+        )
+        DeskIconButton(
+            icon = Icons.Default.Delete,
+            contentDescription = "Delete tag",
+            onClick = onDeleteKeyword,
+            tooltip = "Delete tag everywhere",
+            destructive = true,
+        )
+    }
+}
+
+@Composable
 private fun DeleteImageDialog(
     image: GalleryImage,
     onDismiss: () -> Unit,
@@ -853,6 +1142,83 @@ private fun DeleteImageDialog(
                 ),
             ) {
                 Text("Delete")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        },
+    )
+}
+
+@Composable
+private fun DeleteKeywordDialog(
+    keyword: String,
+    onDismiss: () -> Unit,
+    onConfirm: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        icon = {
+            Icon(
+                imageVector = Icons.Default.Delete,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.error,
+            )
+        },
+        title = { Text("Delete tag?") },
+        text = {
+            Text(
+                "The tag '$keyword' will be removed from every gallery image. The images themselves will not be deleted.",
+            )
+        },
+        confirmButton = {
+            MaterialButton(
+                onClick = onConfirm,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.error,
+                    contentColor = MaterialTheme.colorScheme.onError,
+                ),
+            ) {
+                Text("Delete")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        },
+    )
+}
+
+@Composable
+private fun CleanupKeywordsDialog(
+    onDismiss: () -> Unit,
+    onConfirm: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        icon = {
+            Icon(
+                imageVector = Icons.Default.Delete,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.error,
+            )
+        },
+        title = { Text("Cleanup tags?") },
+        text = {
+            Text("All tags that are not assigned to any image will be deleted. This cannot be undone.")
+        },
+        confirmButton = {
+            MaterialButton(
+                onClick = onConfirm,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.error,
+                    contentColor = MaterialTheme.colorScheme.onError,
+                ),
+            ) {
+                Text("Cleanup")
             }
         },
         dismissButton = {
