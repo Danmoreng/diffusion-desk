@@ -1,6 +1,7 @@
 # DiffusionDesk Build Script (Step-by-Step)
 param (
-    [switch]$Clean
+    [switch]$Clean,
+    [switch]$SkipWebUi
 )
 
 function Import-VSEnv {
@@ -50,7 +51,9 @@ Set-Location $BuildDir
 
 # --- WebUI Build ---
 $WebRootDir = Join-Path $ProjectRoot "webui"
-if (Test-Path $WebRootDir) {
+if ($SkipWebUi) {
+    Write-Host "Skipping legacy WebUI build." -ForegroundColor Yellow
+} elseif (Test-Path $WebRootDir) {
     Push-Location $WebRootDir
     Write-Host "Installing NPM dependencies..."
     cmd /c "npm install"

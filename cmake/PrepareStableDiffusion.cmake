@@ -20,7 +20,7 @@ function(prepare_patched_stable_diffusion upstream_dir patch_file output_var)
 
     set(patched_dir "${CMAKE_BINARY_DIR}/patched/stable-diffusion.cpp")
     set(stamp_file "${patched_dir}/.diffusion-desk-patch-stamp")
-    set(patch_pipeline_version 2)
+    set(patch_pipeline_version 3)
     set(expected_stamp "${patch_pipeline_version}:${upstream_commit}:${patch_hash}")
     set(current_stamp "")
     if(EXISTS "${stamp_file}")
@@ -61,8 +61,6 @@ function(prepare_patched_stable_diffusion upstream_dir patch_file output_var)
         # from the already initialized source worktree without its Git metadata.
         file(COPY "${upstream_dir}/" DESTINATION "${patched_dir}"
             PATTERN ".git" EXCLUDE
-            PATTERN "build" EXCLUDE
-            PATTERN "build-*" EXCLUDE
         )
         execute_process(
             COMMAND git apply --ignore-space-change --ignore-whitespace "${patch_file}"
