@@ -1,6 +1,13 @@
 import org.jetbrains.compose.desktop.application.dsl.TargetFormat
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
+val hostOs = System.getProperty("os.name").lowercase()
+val nativeTargetFormats = when {
+    hostOs.contains("win") -> arrayOf(TargetFormat.Msi)
+    hostOs.contains("mac") -> arrayOf(TargetFormat.Dmg)
+    else -> arrayOf(TargetFormat.Deb)
+}
+
 plugins {
     alias(libs.plugins.kotlinMultiplatform)
     alias(libs.plugins.jetbrainsCompose)
@@ -55,7 +62,7 @@ compose.desktop {
         mainClass = "com.diffusiondesk.desktop.MainKt"
 
         nativeDistributions {
-            targetFormats(TargetFormat.Dmg, TargetFormat.Msi, TargetFormat.Deb)
+            targetFormats(*nativeTargetFormats)
             packageName = "diffusion-desk"
             packageVersion = appVersion.get()
 
