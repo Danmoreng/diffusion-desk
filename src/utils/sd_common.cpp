@@ -252,19 +252,14 @@ sd_ctx_params_t SDContextParams::to_sd_ctx_params_t(bool vae_decode_only, bool f
     params.embedding_count = static_cast<uint32_t>(embedding_vec.size());
     params.photo_maker_path = photo_maker_path.c_str();
     params.tensor_type_rules = tensor_type_rules.c_str();
-    params.vae_decode_only = vae_decode_only;
-    params.free_params_immediately = free_params_immediately;
     params.n_threads = n_threads;
     params.wtype = wtype;
     params.rng_type = rng_type;
     params.sampler_rng_type = sampler_rng_type;
     params.prediction = prediction;
     params.lora_apply_mode = lora_apply_mode;
-    params.offload_params_to_cpu = offload_params_to_cpu;
     params.enable_mmap = enable_mmap;
-    params.keep_clip_on_cpu = clip_on_cpu;
-    params.keep_control_net_on_cpu = control_net_cpu;
-    params.keep_vae_on_cpu = vae_on_cpu;
+    params.flash_attn = false;
     params.diffusion_flash_attn = diffusion_flash_attn;
     params.tae_preview_only = taesd_preview;
     params.diffusion_conv_direct = diffusion_conv_direct;
@@ -275,8 +270,29 @@ sd_ctx_params_t SDContextParams::to_sd_ctx_params_t(bool vae_decode_only, bool f
     params.chroma_t5_mask_pad = chroma_t5_mask_pad;
     params.qwen_image_zero_cond_t = qwen_image_zero_cond_t;
     params.vae_format = vae_format;
-    params.max_vram = max_vram;
+    max_vram_spec = std::to_string(max_vram);
+    params.max_vram = max_vram_spec.c_str();
     params.stream_layers = stream_layers;
+    auto prepend_backend_assignment = [](std::string& spec, const char* assignment) {
+        spec = spec.empty() ? assignment : std::string(assignment) + "," + spec;
+    };
+    backend_spec.clear();
+    params_backend_spec.clear();
+    if (offload_params_to_cpu) {
+        prepend_backend_assignment(params_backend_spec, "*=cpu");
+    }
+    if (clip_on_cpu) {
+        prepend_backend_assignment(backend_spec, "te=cpu");
+    }
+    if (vae_on_cpu) {
+        prepend_backend_assignment(backend_spec, "vae=cpu");
+    }
+    if (control_net_cpu) {
+        prepend_backend_assignment(backend_spec, "controlnet=cpu");
+    }
+    params.backend = backend_spec.c_str();
+    params.params_backend = params_backend_spec.c_str();
+    params.rpc_servers = nullptr;
 
     return params;
 }

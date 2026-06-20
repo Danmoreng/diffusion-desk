@@ -214,6 +214,12 @@ struct GenerationJobManager {
 
 GenerationJobManager g_generation_jobs;
 std::atomic<sd_ctx_t*> g_active_generation_ctx{nullptr};
+std::atomic<std::atomic<bool>*> g_active_generation_cancel_flag{nullptr};
+
+bool active_generation_cancel_requested() {
+    auto* cancel_flag = g_active_generation_cancel_flag.load(std::memory_order_acquire);
+    return cancel_flag != nullptr && cancel_flag->load(std::memory_order_relaxed);
+}
 
 sd_image_t* generate_image_with_cancel_context(sd_ctx_t* sd_ctx, const sd_img_gen_params_t* img_gen_params) {
     if (sd_ctx != nullptr) {
@@ -368,6 +374,7 @@ void execute_generation_job(const std::shared_ptr<GenerationJob>& job, ServerCon
     generation_req.body = job->request_body;
     httplib::Response generation_res;
 
+    auto* previous_cancel_flag = g_active_generation_cancel_flag.exchange(&job->cancel_requested, std::memory_order_acq_rel);
     try {
         DD_LOG_INFO("Executing generation job %s: body_bytes=%zu", job->id.c_str(), job->request_body.size());
         handle_generate_image(generation_req, generation_res, ctx);
@@ -379,6 +386,7 @@ void execute_generation_job(const std::shared_ptr<GenerationJob>& job, ServerCon
         generation_res.status = 500;
         generation_res.set_content(make_error_json("server_error", "generation job failed"), "application/json");
     }
+    g_active_generation_cancel_flag.store(previous_cancel_flag, std::memory_order_release);
 
     generation_done = true;
     if (cancel_thread.joinable()) {
@@ -1136,7 +1144,6 @@ void handle_load_upscale_model(const httplib::Request& req, httplib::Response& r
         {
             std::lock_guard<std::mutex> lock(ctx.sd_ctx_mutex);
             ctx.upscaler_ctx.reset(new_upscaler_ctx(model_path.string().c_str(),
-                                            ctx.ctx_params.offload_params_to_cpu,
                                             false, // direct
                                             ctx.ctx_params.n_threads,
                                             512, // tile_size
@@ -1722,6 +1729,16 @@ void handle_generate_image(const httplib::Request& req, httplib::Response& res, 
             DD_LOG_INFO("Generation Sampling finished. Delta: %+.2f GB", vram_delta);
             num_results = gen_params.batch_count;
 
+            if (active_generation_cancel_requested()) {
+                res.status = 499;
+                res.set_content(make_error_json("cancelled", "generation job cancelled by client"), "application/json");
+                free_sd_images(results, num_results);
+                if (init_image.data) stbi_image_free(init_image.data);
+                if (mask_image.data) stbi_image_free(mask_image.data);
+                if (control_image.data) stbi_image_free(control_image.data);
+                return;
+            }
+
             // B0.1 & B0.2: Fail Loudly + Conservative Retry
             bool first_pass_success = (results != nullptr);
             if (first_pass_success) {
@@ -1910,7 +1927,6 @@ void handle_generate_image(const httplib::Request& req, httplib::Response& res, 
                     DD_LOG_INFO("Attempting to load upscaler: %s", upscaler_path.string().c_str());
                     if (fs::exists(upscaler_path)) {
                         ctx.upscaler_ctx.reset(new_upscaler_ctx(upscaler_path.string().c_str(),
-                                                        ctx.ctx_params.offload_params_to_cpu,
                                                         false,
                                                         ctx.ctx_params.n_threads,
                                                         512,

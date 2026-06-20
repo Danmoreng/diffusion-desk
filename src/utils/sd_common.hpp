@@ -87,6 +87,9 @@ struct SDContextParams {
     bool qwen_image_zero_cond_t = false;
     sd_vae_format_t vae_format = SD_VAE_FORMAT_AUTO;
     float max_vram = 0.f;
+    std::string max_vram_spec;
+    std::string backend_spec;
+    std::string params_backend_spec;
     bool stream_layers = false;
 
     prediction_t prediction           = PREDICTION_COUNT;
