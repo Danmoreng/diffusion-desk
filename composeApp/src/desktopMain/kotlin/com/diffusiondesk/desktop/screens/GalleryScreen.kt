@@ -5,6 +5,7 @@ import androidx.compose.foundation.ScrollbarStyle
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.focusable
 import androidx.compose.foundation.VerticalScrollbar
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Arrangement
@@ -57,8 +58,15 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.toComposeImageBitmap
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.pointer.PointerIcon
 import androidx.compose.ui.input.pointer.pointerHoverIcon
 import androidx.compose.ui.input.pointer.pointerInput
@@ -157,6 +165,11 @@ fun GalleryScreen(
                     images = state.images,
                     selectedImageId = state.selectedImage?.id,
                     onSelectImage = onSelectImage,
+                    onDeleteSelectedImage = {
+                        state.selectedImage
+                            ?.takeIf { it.file.isFile && !state.isDeletingImage }
+                            ?.let { imagePendingDeletion = it }
+                    },
                     modifier = Modifier.weight(1f),
                 )
             }
@@ -373,6 +386,7 @@ private fun GalleryGrid(
     images: List<GalleryImage>,
     selectedImageId: Long?,
     onSelectImage: (Long) -> Unit,
+    onDeleteSelectedImage: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     if (images.isEmpty()) {
@@ -383,6 +397,12 @@ private fun GalleryGrid(
     BoxWithConstraints(modifier = modifier.fillMaxWidth()) {
         val minCell = if (maxWidth < 720.dp) 150.dp else 190.dp
         val gridState = rememberLazyGridState()
+        val focusRequester = remember { FocusRequester() }
+        LaunchedEffect(images.isNotEmpty()) {
+            if (images.isNotEmpty()) {
+                focusRequester.requestFocus()
+            }
+        }
         Box(modifier = Modifier.fillMaxSize()) {
             val scrollbarShape = RoundedCornerShape(999.dp)
             val scrollbarTrackColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.72f)
@@ -393,6 +413,16 @@ private fun GalleryGrid(
                 state = gridState,
                 modifier = Modifier
                     .fillMaxSize()
+                    .focusRequester(focusRequester)
+                    .onKeyEvent { event ->
+                        if (event.key == Key.Delete && event.type == KeyEventType.KeyDown) {
+                            onDeleteSelectedImage()
+                            true
+                        } else {
+                            false
+                        }
+                    }
+                    .focusable()
                     .padding(end = 12.dp),
                 horizontalArrangement = Arrangement.spacedBy(DeskLayoutGap),
                 verticalArrangement = Arrangement.spacedBy(DeskLayoutGap),
@@ -401,7 +431,10 @@ private fun GalleryGrid(
                     GalleryTile(
                         image = image,
                         selected = image.id == selectedImageId,
-                        onClick = { onSelectImage(image.id) },
+                        onClick = {
+                            focusRequester.requestFocus()
+                            onSelectImage(image.id)
+                        },
                     )
                 }
             }
