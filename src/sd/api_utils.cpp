@@ -180,17 +180,6 @@ std::vector<uint8_t> write_image_to_vector(ImageFormat format, const uint8_t* im
     return buffer;
 }
 
-void free_sd_images(sd_image_t* images, int n) {
-    if (images) {
-        for (int i = 0; i < n; i++) {
-            if (images[i].data) {
-                free(images[i].data);
-            }
-        }
-        free(images);
-    }
-}
-
 bool is_image_valid(const sd_image_t& img) {
     if (!img.data || img.width == 0 || img.height == 0) return false;
     
