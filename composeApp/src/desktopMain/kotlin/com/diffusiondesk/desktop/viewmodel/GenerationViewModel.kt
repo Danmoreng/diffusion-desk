@@ -2849,12 +2849,13 @@ class GenerationViewModel(
                 val bitmapResult = client.fetchGeneratedImages(backendManager.state.value.baseUrl, result.imageUrls)
                 bitmapResult.onSuccess { images ->
                     val generationTime = result.generationTime ?: ((System.currentTimeMillis() - startedAt) / 1000.0)
+                    val timedImages = images.map { image -> image.copy(generationTime = generationTime) }
                     updateHistoryItem(nextIndex) {
                         it.copy(
                             status = GenerationStatus.Completed,
                             imageUrls = result.imageUrls,
                             usedSeed = result.usedSeed,
-                            images = images,
+                            images = timedImages,
                             generationTime = generationTime,
                         )
                     }
@@ -2863,7 +2864,7 @@ class GenerationViewModel(
                             copy(
                                 resultUrls = result.imageUrls,
                                 usedSeed = result.usedSeed.toString(),
-                                images = images,
+                                images = timedImages,
                                 message = "Image generated successfully.",
                                 error = null,
                             )
@@ -3326,6 +3327,7 @@ private fun File.toGeneratedImage(): GeneratedImage {
         bufferedImage = image,
         bytes = bytes,
         sourceUrl = absolutePath,
+        generationTime = null,
     )
 }
 

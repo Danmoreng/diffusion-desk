@@ -1,6 +1,8 @@
 package com.diffusiondesk.desktop.core
 
 import java.io.File
+import java.time.LocalDate
+import java.time.ZoneId
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
 
@@ -39,6 +41,35 @@ data class GalleryKeyword(
     val count: Int,
     val category: String = "General",
 )
+
+enum class GalleryDateFilter(val label: String) {
+    All("All dates"),
+    Today("Today"),
+    Yesterday("Yesterday"),
+    Week("This week"),
+    Month("This month");
+
+    fun bounds(now: LocalDate = LocalDate.now(), zoneId: ZoneId = ZoneId.systemDefault()): Pair<Long, Long>? {
+        val startDate = when (this) {
+            All -> return null
+            Today -> now
+            Yesterday -> now.minusDays(1)
+            Week -> now.minusDays(7)
+            Month -> now.minusMonths(1)
+        }
+        val endDate = when (this) {
+            Yesterday -> now
+            else -> now.plusDays(1)
+        }
+        return startDate.atStartOfDay(zoneId).toInstant().toEpochMilli() to
+            endDate.atStartOfDay(zoneId).toInstant().toEpochMilli()
+    }
+
+    companion object {
+        fun fromLabel(label: String): GalleryDateFilter =
+            entries.firstOrNull { it.label == label } ?: All
+    }
+}
 
 data class GalleryLora(
     val path: String,

@@ -60,6 +60,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
@@ -72,6 +73,10 @@ import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.pointer.PointerIcon
+import androidx.compose.ui.input.pointer.PointerEventType
+import androidx.compose.ui.input.pointer.isCtrlPressed
+import androidx.compose.ui.input.pointer.isShiftPressed
+import androidx.compose.ui.input.pointer.onPointerEvent
 import androidx.compose.ui.input.pointer.pointerHoverIcon
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
@@ -80,7 +85,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.diffusiondesk.desktop.core.GalleryImage
+import com.diffusiondesk.desktop.core.GalleryDateFilter
 import com.diffusiondesk.desktop.core.GalleryKeyword
+import com.diffusiondesk.desktop.viewmodel.GalleryViewModel
 import com.diffusiondesk.desktop.viewmodel.GalleryUiState
 import java.awt.Cursor
 import java.io.File
@@ -104,11 +111,18 @@ fun GalleryScreen(
     onRefresh: () -> Unit,
     onTagAllPendingImages: () -> Unit,
     onQueryChange: (String) -> Unit,
+    onModelFilterChange: (String) -> Unit,
+    onDateFilterChange: (String) -> Unit,
     onSelectKeyword: (String) -> Unit,
     onClearKeywordFilter: () -> Unit,
     onDeleteKeyword: (String) -> Unit,
     onCleanupUnusedKeywords: () -> Unit,
     onSelectImage: (Long) -> Unit,
+    onSelectImageWithModifiers: (Long, Boolean, Boolean) -> Unit,
+    onSelectPreviousImage: () -> Unit,
+    onSelectNextImage: () -> Unit,
+    onClearImageSelection: () -> Unit,
+    onDeleteSelectedImages: () -> Unit,
     onKeywordDraftChange: (String) -> Unit,
     onAddKeyword: () -> Unit,
     onRemoveKeyword: (Long, String) -> Unit,
@@ -123,6 +137,7 @@ fun GalleryScreen(
     var imagePendingDeletion by remember { mutableStateOf<GalleryImage?>(null) }
     var keywordPendingDeletion by remember { mutableStateOf<String?>(null) }
     var cleanupKeywordsPending by remember { mutableStateOf(false) }
+    var batchDeletePending by remember { mutableStateOf(false) }
     var showTagManager by remember { mutableStateOf(false) }
 
     LaunchedEffect(outputDir) {
@@ -168,18 +183,30 @@ fun GalleryScreen(
                     onRefresh = onRefresh,
                     onTagAllPendingImages = onTagAllPendingImages,
                     onQueryChange = onQueryChange,
+                    onModelFilterChange = onModelFilterChange,
+                    onDateFilterChange = onDateFilterChange,
                     onSelectKeyword = onSelectKeyword,
                     onClearKeywordFilter = onClearKeywordFilter,
                     onManageTags = { showTagManager = true },
+                    onClearImageSelection = onClearImageSelection,
+                    onDeleteSelectedImages = { batchDeletePending = true },
                 )
                 GalleryGrid(
                     images = state.images,
                     selectedImageId = state.selectedImage?.id,
+                    selectedImageIds = state.selectedImageIds,
                     onSelectImage = onSelectImage,
+                    onSelectImageWithModifiers = onSelectImageWithModifiers,
+                    onSelectPreviousImage = onSelectPreviousImage,
+                    onSelectNextImage = onSelectNextImage,
                     onDeleteSelectedImage = {
-                        state.selectedImage
-                            ?.takeIf { it.file.isFile && !state.isDeletingImage }
-                            ?.let { imagePendingDeletion = it }
+                        if (state.selectedImageIds.isNotEmpty()) {
+                            batchDeletePending = true
+                        } else {
+                            state.selectedImage
+                                ?.takeIf { it.file.isFile && !state.isDeletingImage }
+                                ?.let { imagePendingDeletion = it }
+                        }
                     },
                     modifier = Modifier.weight(1f),
                 )
@@ -280,6 +307,18 @@ fun GalleryScreen(
             },
         )
     }
+
+    if (batchDeletePending) {
+        BatchDeleteImagesDialog(
+            count = state.selectedImageIds.size,
+            onDismiss = { batchDeletePending = false },
+            onConfirm = {
+                batchDeletePending = false
+                onDeleteSelectedImages()
+            },
+        )
+    }
+
 }
 
 @Composable
@@ -289,9 +328,13 @@ private fun GalleryToolbar(
     onRefresh: () -> Unit,
     onTagAllPendingImages: () -> Unit,
     onQueryChange: (String) -> Unit,
+    onModelFilterChange: (String) -> Unit,
+    onDateFilterChange: (String) -> Unit,
     onSelectKeyword: (String) -> Unit,
     onClearKeywordFilter: () -> Unit,
     onManageTags: () -> Unit,
+    onClearImageSelection: () -> Unit,
+    onDeleteSelectedImages: () -> Unit,
 ) {
     var keywordFilterDraft by remember(state.selectedKeywords) { mutableStateOf("") }
 
@@ -359,6 +402,20 @@ private fun GalleryToolbar(
                     modifier = Modifier.weight(0.9f),
                 )
             }
+            DeskCompactDropdownField(
+                label = "Model",
+                value = state.selectedModelId.ifBlank { GalleryViewModel.AllModelsFilterLabel },
+                options = listOf(GalleryViewModel.AllModelsFilterLabel) + state.availableModels,
+                onValueChange = onModelFilterChange,
+                modifier = Modifier.width(190.dp),
+            )
+            DeskCompactDropdownField(
+                label = "Date",
+                value = state.selectedDateFilter.label,
+                options = GalleryDateFilter.entries.map { it.label },
+                onValueChange = onDateFilterChange,
+                modifier = Modifier.width(150.dp),
+            )
             Text(
                 text = when {
                     state.isIndexing && state.images.isEmpty() -> "Indexing..."
@@ -379,6 +436,28 @@ private fun GalleryToolbar(
                     keywordFilterDraft = ""
                 },
             )
+        }
+
+        if (state.selectedImageIds.isNotEmpty()) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(DeskControlSpacing),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = "${state.selectedImageIds.size} selected",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.weight(1f),
+                )
+                DeskOutlinedButton(onClick = onClearImageSelection, slim = true) {
+                    Text("Clear")
+                }
+                DeskOutlinedButton(onClick = onDeleteSelectedImages, slim = true) {
+                    Text("Delete selected")
+                }
+            }
         }
 
         state.error?.let {
@@ -478,7 +557,11 @@ private fun GalleryActiveKeywordFilters(
 private fun GalleryGrid(
     images: List<GalleryImage>,
     selectedImageId: Long?,
+    selectedImageIds: Set<Long>,
     onSelectImage: (Long) -> Unit,
+    onSelectImageWithModifiers: (Long, Boolean, Boolean) -> Unit,
+    onSelectPreviousImage: () -> Unit,
+    onSelectNextImage: () -> Unit,
     onDeleteSelectedImage: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -508,11 +591,23 @@ private fun GalleryGrid(
                     .fillMaxSize()
                     .focusRequester(focusRequester)
                     .onKeyEvent { event ->
-                        if (event.key == Key.Delete && event.type == KeyEventType.KeyDown) {
-                            onDeleteSelectedImage()
-                            true
-                        } else {
-                            false
+                        if (event.type != KeyEventType.KeyDown) {
+                            return@onKeyEvent false
+                        }
+                        when (event.key) {
+                            Key.Delete -> {
+                                onDeleteSelectedImage()
+                                true
+                            }
+                            Key.DirectionLeft, Key.DirectionUp -> {
+                                onSelectPreviousImage()
+                                true
+                            }
+                            Key.DirectionRight, Key.DirectionDown -> {
+                                onSelectNextImage()
+                                true
+                            }
+                            else -> false
                         }
                     }
                     .focusable()
@@ -524,9 +619,14 @@ private fun GalleryGrid(
                     GalleryTile(
                         image = image,
                         selected = image.id == selectedImageId,
+                        batchSelected = image.id in selectedImageIds,
                         onClick = {
                             focusRequester.requestFocus()
                             onSelectImage(image.id)
+                        },
+                        onModifiedClick = { extendRange, toggle ->
+                            focusRequester.requestFocus()
+                            onSelectImageWithModifiers(image.id, extendRange, toggle)
                         },
                     )
                 }
@@ -599,19 +699,35 @@ private fun GallerySplitter(
     }
 }
 
+@OptIn(ExperimentalComposeUiApi::class)
 @Composable
 private fun GalleryTile(
     image: GalleryImage,
     selected: Boolean,
+    batchSelected: Boolean,
     onClick: () -> Unit,
+    onModifiedClick: (extendRange: Boolean, toggle: Boolean) -> Unit,
 ) {
     val shape = RoundedCornerShape(DeskPanelCornerRadius)
     Column(
         modifier = Modifier
             .clip(shape)
             .background(MaterialTheme.colorScheme.surface)
-            .then(if (selected) Modifier.border(2.dp, MaterialTheme.colorScheme.primary, shape) else Modifier)
-            .clickable(onClick = onClick)
+            .then(
+                when {
+                    batchSelected -> Modifier.border(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.82f), shape)
+                    selected -> Modifier.border(2.dp, MaterialTheme.colorScheme.primary, shape)
+                    else -> Modifier
+                },
+            )
+            .onPointerEvent(PointerEventType.Release) { event ->
+                val keyboard = event.keyboardModifiers
+                if (keyboard.isCtrlPressed || keyboard.isShiftPressed) {
+                    onModifiedClick(keyboard.isShiftPressed, keyboard.isCtrlPressed)
+                } else {
+                    onClick()
+                }
+            }
             .padding(DeskControlSpacing),
         verticalArrangement = Arrangement.spacedBy(DeskCompactControlSpacing),
     ) {
@@ -770,6 +886,7 @@ private fun GalleryDetails(
                 label = "Parameters",
                 value = buildList {
                     image.dimensions.takeIf { it.isNotBlank() }?.let { add(it) }
+                    image.generationTime?.let { add(formatGalleryDuration(it)) }
                     image.steps?.let { add("$it steps") }
                     image.cfgScale?.let { add("CFG $it") }
                     image.sampler.takeIf { it.isNotBlank() }?.let { add(it) }
@@ -889,6 +1006,16 @@ private fun formatGalleryTileDate(epochMillis: Long): String {
     return runCatching {
         GalleryTileDateFormatter.format(Instant.ofEpochMilli(epochMillis))
     }.getOrDefault("")
+}
+
+private fun formatGalleryDuration(seconds: Double): String {
+    if (seconds < 60.0) {
+        return "${"%.1f".format(java.util.Locale.US, seconds.coerceAtLeast(0.0))}s"
+    }
+    val roundedSeconds = seconds.roundToInt().coerceAtLeast(0)
+    val minutes = roundedSeconds / 60
+    val remainingSeconds = roundedSeconds % 60
+    return "${minutes}m ${remainingSeconds.toString().padStart(2, '0')}s"
 }
 
 @Composable
@@ -1172,6 +1299,44 @@ private fun DeleteKeywordDialog(
             Text(
                 "The tag '$keyword' will be removed from every gallery image. The images themselves will not be deleted.",
             )
+        },
+        confirmButton = {
+            MaterialButton(
+                onClick = onConfirm,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.error,
+                    contentColor = MaterialTheme.colorScheme.onError,
+                ),
+            ) {
+                Text("Delete")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        },
+    )
+}
+
+@Composable
+private fun BatchDeleteImagesDialog(
+    count: Int,
+    onDismiss: () -> Unit,
+    onConfirm: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        icon = {
+            Icon(
+                imageVector = Icons.Default.Delete,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.error,
+            )
+        },
+        title = { Text("Delete selected images?") },
+        text = {
+            Text("$count selected image(s) will be permanently deleted together with thumbnails and text files.")
         },
         confirmButton = {
             MaterialButton(
