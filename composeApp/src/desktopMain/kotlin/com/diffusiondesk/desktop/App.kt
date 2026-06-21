@@ -12,6 +12,7 @@ import androidx.compose.material.icons.filled.Inventory2
 import androidx.compose.material.icons.filled.Memory
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.SmartToy
+import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
@@ -34,6 +35,7 @@ import com.diffusiondesk.desktop.screens.DeskCompactControlSpacing
 import com.diffusiondesk.desktop.screens.DeskNavigationItem
 import com.diffusiondesk.desktop.screens.NotificationStack
 import com.diffusiondesk.desktop.screens.SettingsScreen
+import com.diffusiondesk.desktop.screens.SetupScreen
 import com.diffusiondesk.desktop.screens.SystemScreen
 import com.diffusiondesk.desktop.screens.UpscaleScreen
 import com.diffusiondesk.desktop.theme.DiffusionDeskTheme
@@ -50,6 +52,7 @@ private enum class Screen(val label: String, val icon: ImageVector, val subtitle
     Library("Presets", Icons.Default.Inventory2, "Manage JSON-backed image generation presets."),
     System("System", Icons.Default.Memory, "Worker status, runtime controls, and diagnostics."),
     Settings("Settings", Icons.Default.Settings, "Local paths and static app configuration."),
+    Setup("Setup", Icons.Default.Tune, "Guided setup for folders and starter presets."),
 }
 
 @Composable
@@ -58,6 +61,7 @@ fun App(
 ) {
     var currentScreen by remember { mutableStateOf(Screen.Generate) }
     val settingsState by controller.settingsViewModel.uiState.collectAsState()
+    val setupState by controller.setupViewModel.uiState.collectAsState()
     val backendState by controller.settingsViewModel.backendState.collectAsState()
     val generationState by controller.generationViewModel.uiState.collectAsState()
     val analyzeState by controller.generationViewModel.analyzeUiState.collectAsState()
@@ -77,12 +81,47 @@ fun App(
     val assistantContext = remember(generationState, currentScreen) {
         generationState.toAssistantContext(currentScreen.label)
     }
+    fun completeSetup() {
+        controller.settingsViewModel.reloadLocalSettings()
+        controller.libraryViewModel.reloadPresets()
+        controller.generationViewModel.reloadPresets()
+        controller.settingsViewModel.reloadLlmPresets()
+        controller.settingsViewModel.startBackend()
+        controller.settingsViewModel.autostartLlmWorkersIfEnabled()
+        currentScreen = Screen.Generate
+    }
 
     DiffusionDeskTheme(darkTheme = darkTheme) {
         Surface(
             modifier = Modifier.fillMaxSize(),
             color = MaterialTheme.colorScheme.background,
         ) {
+            if (!settingsState.setupCompleted) {
+                Box(modifier = Modifier.fillMaxSize()) {
+                    SetupScreen(
+                        state = setupState,
+                        onModelDirChange = controller.setupViewModel::updateModelDir,
+                        onOutputDirChange = controller.setupViewModel::updateOutputDir,
+                        onScan = controller.setupViewModel::scanAndContinue,
+                        onBack = controller.setupViewModel::goBack,
+                        onImagePresetNameChange = controller.setupViewModel::updateImagePresetName,
+                        onImageModelChange = controller.setupViewModel::updateSelectedImageModel,
+                        onEnableLlmPresetChange = controller.setupViewModel::updateEnableLlmPreset,
+                        onLlmPresetNameChange = controller.setupViewModel::updateLlmPresetName,
+                        onLlmModelChange = controller.setupViewModel::updateSelectedLlmModel,
+                        onMmprojChange = controller.setupViewModel::updateSelectedMmproj,
+                        onFinish = { controller.setupViewModel.finish(::completeSetup) },
+                    )
+                    NotificationStack(
+                        notifications = notifications,
+                        onDismiss = controller.notificationCenter::dismiss,
+                        modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            .padding(16.dp),
+                    )
+                }
+                return@Surface
+            }
             Row(modifier = Modifier.fillMaxSize()) {
                 NavigationSidebar(
                     currentScreen = currentScreen,
@@ -330,6 +369,20 @@ fun App(
                                 controller.generationViewModel.reloadLoras()
                                 controller.upscaleViewModel.reloadModels()
                             },
+                        )
+                        Screen.Setup -> SetupScreen(
+                            state = setupState,
+                            onModelDirChange = controller.setupViewModel::updateModelDir,
+                            onOutputDirChange = controller.setupViewModel::updateOutputDir,
+                            onScan = controller.setupViewModel::scanAndContinue,
+                            onBack = controller.setupViewModel::goBack,
+                            onImagePresetNameChange = controller.setupViewModel::updateImagePresetName,
+                            onImageModelChange = controller.setupViewModel::updateSelectedImageModel,
+                            onEnableLlmPresetChange = controller.setupViewModel::updateEnableLlmPreset,
+                            onLlmPresetNameChange = controller.setupViewModel::updateLlmPresetName,
+                            onLlmModelChange = controller.setupViewModel::updateSelectedLlmModel,
+                            onMmprojChange = controller.setupViewModel::updateSelectedMmproj,
+                            onFinish = { controller.setupViewModel.finish(::completeSetup) },
                         )
                     }
                     NotificationStack(

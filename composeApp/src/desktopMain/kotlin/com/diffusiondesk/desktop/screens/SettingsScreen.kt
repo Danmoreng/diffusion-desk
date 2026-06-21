@@ -357,12 +357,12 @@ private fun ExpectedModelFolders(
         DeskLabel("Expected Model Folders")
         ExpectedModelFolderRow(
             label = "LoRAs",
-            folder = File(root, "lora"),
+            folder = File(root).resolveChildIgnoreCase("lora"),
             onRefresh = onRefresh,
         )
         ExpectedModelFolderRow(
             label = "Upscalers",
-            folder = File(root, "esrgan"),
+            folder = File(root).resolveChildIgnoreCase("esrgan"),
             onRefresh = onRefresh,
         )
     }
@@ -432,6 +432,15 @@ private fun openFolder(folder: File) {
             Desktop.getDesktop().open(folder)
         }
     }
+}
+
+private fun File.resolveChildIgnoreCase(name: String): File {
+    val exact = resolve(name)
+    if (exact.exists()) return exact
+    return listFiles()
+        .orEmpty()
+        .firstOrNull { it.name.equals(name, ignoreCase = true) }
+        ?: exact
 }
 
 private fun String.toTitleLabel(): String = replaceFirstChar { char ->

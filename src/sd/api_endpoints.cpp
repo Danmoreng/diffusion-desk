@@ -12,6 +12,7 @@
 #include <unordered_map>
 #include <regex>
 #include <cctype>
+#include <algorithm>
 
 namespace fs = std::filesystem;
 
@@ -49,11 +50,13 @@ int64_t unix_ms_now() {
         std::chrono::system_clock::now().time_since_epoch()).count();
 }
 
+fs::path resolve_model_path_case_insensitive(const std::string& path, const std::string& model_dir);
+
 std::string resolve_model_path(const std::string& path, const std::string& model_dir) {
     if (path.empty()) return "";
     fs::path fp(path);
     if (fp.is_absolute()) return fp.string();
-    return (fs::path(model_dir) / fp).string();
+    return resolve_model_path_case_insensitive(path, model_dir).string();
 }
 
 std::string lowercase_copy(std::string value) {
@@ -61,6 +64,36 @@ std::string lowercase_copy(std::string value) {
         return (char)std::tolower(c);
     });
     return value;
+}
+
+fs::path resolve_child_case_insensitive(const fs::path& parent, const fs::path& child) {
+    fs::path exact = parent / child;
+    if (fs::exists(exact)) return exact;
+    if (!fs::exists(parent) || !fs::is_directory(parent)) return exact;
+
+    const std::string requested = lowercase_copy(child.filename().string());
+    for (const auto& entry : fs::directory_iterator(parent)) {
+        if (lowercase_copy(entry.path().filename().string()) == requested) {
+            return entry.path();
+        }
+    }
+    return exact;
+}
+
+fs::path resolve_model_path_case_insensitive(const std::string& path, const std::string& model_dir) {
+    fs::path fp(path);
+    if (fp.is_absolute()) return fp;
+
+    fs::path resolved(model_dir);
+    for (const auto& part : fp) {
+        if (part.empty() || part == ".") continue;
+        if (part == "..") {
+            resolved /= part;
+        } else {
+            resolved = resolve_child_case_insensitive(resolved, part);
+        }
+    }
+    return resolved;
 }
 
 void sanitize_context_params_for_backend(SDContextParams& params) {
@@ -868,11 +901,11 @@ void handle_get_models(const httplib::Request&, httplib::Response& res, ServerCo
     }
 
     auto scan_dir = [&](const std::string& sub_dir) {
-        fs::path base_path = fs::path(ctx.svr_params.model_dir) / sub_dir;
+        fs::path base_path = resolve_child_case_insensitive(fs::path(ctx.svr_params.model_dir), sub_dir);
         if (fs::exists(base_path) && fs::is_directory(base_path)) {
             for (const auto& entry : fs::recursive_directory_iterator(base_path)) {
                 if (entry.is_regular_file()) {
-                    auto ext = entry.path().extension().string();
+                    auto ext = lowercase_copy(entry.path().extension().string());
                     if (ext == ".gguf" || ext == ".safetensors" || ext == ".ckpt" || ext == ".pth") {
                         diffusion_desk::json model;
                         // Use relative path from model_dir as ID for easy loading
@@ -923,7 +956,7 @@ void handle_get_models(const httplib::Request&, httplib::Response& res, ServerCo
         if (fs::exists(ctx.svr_params.model_dir) && fs::is_directory(ctx.svr_params.model_dir)) {
             for (const auto& entry : fs::directory_iterator(ctx.svr_params.model_dir)) {
                 if (entry.is_regular_file()) {
-                    auto ext = entry.path().extension().string();
+                    auto ext = lowercase_copy(entry.path().extension().string());
                     if (ext == ".gguf" || ext == ".safetensors" || ext == ".ckpt") {
                         diffusion_desk::json model;
                         model["id"] = entry.path().filename().string();
@@ -970,7 +1003,7 @@ void handle_load_model(const httplib::Request& req, httplib::Response& res, Serv
             ctx.sd_ctx.reset();
 
             // Update params based on where it was found
-            std::string rel_s = model_id;
+            std::string rel_s = lowercase_copy(model_id);
             if (rel_s.find("vae/") == 0) {
                     ctx.ctx_params.vae_path = model_path.string();
             } else if (rel_s.find("esrgan/") == 0) {
@@ -999,7 +1032,7 @@ void handle_load_model(const httplib::Request& req, httplib::Response& res, Serv
                         if (p.empty()) return "";
                         fs::path fp(p);
                         if (fp.is_absolute()) return p;
-                        return (fs::path(base) / p).string();
+                        return resolve_model_path_case_insensitive(p, base).string();
                     };
 
                     // Parse config from request body (replaces load_model_config)
@@ -1524,7 +1557,7 @@ void handle_generate_image(const httplib::Request& req, httplib::Response& res, 
 
         std::string lora_dir = ctx.ctx_params.lora_model_dir;
         if (lora_dir.empty()) {
-            lora_dir = (fs::path(ctx.svr_params.model_dir) / "lora").string();
+            lora_dir = resolve_child_case_insensitive(fs::path(ctx.svr_params.model_dir), "lora").string();
         }
 
         if (!gen_params.process_and_check(IMG_GEN, lora_dir)) {
@@ -2247,7 +2280,7 @@ void handle_edit_image(const httplib::Request& req, httplib::Response& res, Serv
 
         std::string lora_dir = ctx.ctx_params.lora_model_dir;
         if (lora_dir.empty()) {
-            lora_dir = (fs::path(ctx.svr_params.model_dir) / "lora").string();
+            lora_dir = resolve_child_case_insensitive(fs::path(ctx.svr_params.model_dir), "lora").string();
         }
 
         if (!gen_params.process_and_check(IMG_GEN, lora_dir)) {

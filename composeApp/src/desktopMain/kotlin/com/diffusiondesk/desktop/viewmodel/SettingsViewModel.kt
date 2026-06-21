@@ -16,6 +16,7 @@ import com.diffusiondesk.desktop.core.NotificationCenter
 import com.diffusiondesk.desktop.core.detectDefaultModelDir
 import com.diffusiondesk.desktop.core.detectDefaultOutputDir
 import com.diffusiondesk.desktop.core.detectDefaultRepoRoot
+import com.diffusiondesk.desktop.core.normalizeConfiguredPath
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -114,12 +115,34 @@ class SettingsViewModel(
         }
     }
 
+    fun reloadLocalSettings() {
+        val settings = store.load()
+        update {
+            settings.toUiState().copy(
+                llmPresets = llmPresetStore.load(),
+                llmRoles = llmPresetStore.loadRoles(),
+                llmWorkers = llmWorkers,
+            )
+        }
+    }
+
     fun saveLocalSettings() {
         runCatching { currentSettings() }
             .onSuccess {
                 store.save(it)
                 notifications.success("Saved desktop settings.")
-                update { copy(message = "", error = null) }
+                update {
+                    copy(
+                        repoRoot = it.repoRoot,
+                        listenPort = it.listenPort.toString(),
+                        modelDir = it.modelDir,
+                        outputDir = it.outputDir,
+                        manualVramBudgetGb = it.manualVramBudgetGb.toString(),
+                        galleryPreviewWidthDp = it.galleryPreviewWidthDp,
+                        message = "",
+                        error = null,
+                    )
+                }
             }
             .onFailure { error ->
                 val message = error.message ?: "Invalid settings."
@@ -451,8 +474,8 @@ class SettingsViewModel(
         return DesktopSettings(
             repoRoot = state.repoRoot.trim(),
             listenPort = port,
-            modelDir = state.modelDir.trim(),
-            outputDir = state.outputDir.trim(),
+            modelDir = normalizeConfiguredPath(state.repoRoot.trim(), state.modelDir),
+            outputDir = normalizeConfiguredPath(state.repoRoot.trim(), state.outputDir),
             setupCompleted = state.setupCompleted,
             themeMode = state.themeMode,
             actionBarPosition = state.actionBarPosition,
