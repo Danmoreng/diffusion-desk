@@ -68,7 +68,7 @@ fun detectDefaultModelDir(repoRoot: String): String {
             .orEmpty()
     }.getOrDefault("")
 
-    return configModelDir.ifBlank { File(repoRoot, "models").absolutePath }
+    return normalizeConfiguredPath(repoRoot, configModelDir.ifBlank { "models" })
 }
 
 fun detectDefaultOutputDir(repoRoot: String): String {
@@ -86,5 +86,17 @@ fun detectDefaultOutputDir(repoRoot: String): String {
             .orEmpty()
     }.getOrDefault("")
 
-    return configOutputDir.ifBlank { File(repoRoot, "outputs").absolutePath }
+    return normalizeConfiguredPath(repoRoot, configOutputDir.ifBlank { "outputs" })
+}
+
+fun normalizeConfiguredPath(baseDir: String, path: String): String {
+    val trimmed = path.trim()
+    if (trimmed.isBlank()) {
+        return trimmed
+    }
+
+    val file = File(trimmed)
+    val resolved = if (file.isAbsolute) file else File(baseDir, trimmed)
+    return runCatching { resolved.canonicalFile.absolutePath }
+        .getOrElse { resolved.absoluteFile.toPath().normalize().toFile().absolutePath }
 }

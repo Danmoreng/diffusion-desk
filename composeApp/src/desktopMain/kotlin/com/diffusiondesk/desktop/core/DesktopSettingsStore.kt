@@ -14,7 +14,7 @@ class DesktopSettingsStore(
             listenPort = 1234,
             modelDir = detectDefaultModelDir(repoRoot),
             outputDir = detectDefaultOutputDir(repoRoot),
-            setupCompleted = true,
+            setupCompleted = false,
             themeMode = "system",
             actionBarPosition = "bottom",
             saveImagesAutomatically = true,
@@ -38,12 +38,20 @@ class DesktopSettingsStore(
             val outputDirFromSettings = props.getProperty("outputDir", defaults.outputDir)
             val detectedModelDir = detectDefaultModelDir(repoRootFromSettings)
             val detectedOutputDir = detectDefaultOutputDir(repoRootFromSettings)
+            val modelDir = modelDirFromSettings
+                .takeIf { it.isNotBlank() }
+                ?.let { normalizeConfiguredPath(repoRootFromSettings, it) }
+                ?: detectedModelDir
+            val outputDir = outputDirFromSettings
+                .takeIf { it.isNotBlank() }
+                ?.let { normalizeConfiguredPath(repoRootFromSettings, it) }
+                ?: detectedOutputDir
 
             defaults.copy(
                 repoRoot = repoRootFromSettings,
                 listenPort = props.getProperty("listenPort", defaults.listenPort.toString()).toIntOrNull() ?: defaults.listenPort,
-                modelDir = modelDirFromSettings.takeIf { File(it).exists() } ?: detectedModelDir,
-                outputDir = outputDirFromSettings.takeIf { it.isNotBlank() } ?: detectedOutputDir,
+                modelDir = modelDir,
+                outputDir = outputDir,
                 setupCompleted = props.getProperty("setupCompleted", defaults.setupCompleted.toString()).toBooleanStrictOrNull()
                     ?: defaults.setupCompleted,
                 themeMode = props.getProperty("themeMode", defaults.themeMode).takeIf { it in setOf("system", "light", "dark") }

@@ -1,5 +1,7 @@
 #include "llm_worker.hpp"
 #include "httplib.h"
+#include <algorithm>
+#include <cctype>
 #include <filesystem>
 #include <vector>
 
@@ -12,6 +14,43 @@ static int last_n_ctx = -1;
 static int last_image_max_tokens = -1;
 static std::vector<std::string> last_advanced_args;
 static bool explicit_unload_requested = false;
+
+static std::string lowercase_copy(std::string value) {
+    std::transform(value.begin(), value.end(), value.begin(), [](unsigned char c) {
+        return (char)std::tolower(c);
+    });
+    return value;
+}
+
+static fs::path resolve_child_case_insensitive(const fs::path& parent, const fs::path& child) {
+    fs::path exact = parent / child;
+    if (fs::exists(exact)) return exact;
+    if (!fs::exists(parent) || !fs::is_directory(parent)) return exact;
+
+    const std::string requested = lowercase_copy(child.filename().string());
+    for (const auto& entry : fs::directory_iterator(parent)) {
+        if (lowercase_copy(entry.path().filename().string()) == requested) {
+            return entry.path();
+        }
+    }
+    return exact;
+}
+
+static fs::path resolve_model_path_case_insensitive(const std::string& path, const std::string& model_dir) {
+    fs::path fp(path);
+    if (fp.is_absolute()) return fp;
+
+    fs::path resolved(model_dir);
+    for (const auto& part : fp) {
+        if (part.empty() || part == ".") continue;
+        if (part == "..") {
+            resolved /= part;
+        } else {
+            resolved = resolve_child_case_insensitive(resolved, part);
+        }
+    }
+    return resolved;
+}
 
 void handle_load_llm_model(const httplib::Request& req, httplib::Response& res, SDSvrParams& svr_params, LlamaServer& llm_server) {
     try {
@@ -35,7 +74,7 @@ void handle_load_llm_model(const httplib::Request& req, httplib::Response& res, 
             }
         }
         
-        fs::path model_path = fs::path(svr_params.model_dir) / model_id;
+        fs::path model_path = resolve_model_path_case_insensitive(model_id, svr_params.model_dir);
         fs::path mmproj_path;
 
         if (!fs::exists(model_path)) {
@@ -45,7 +84,7 @@ void handle_load_llm_model(const httplib::Request& req, httplib::Response& res, 
         }
 
         if (!mmproj_id.empty()) {
-            mmproj_path = fs::path(svr_params.model_dir) / mmproj_id;
+            mmproj_path = resolve_model_path_case_insensitive(mmproj_id, svr_params.model_dir);
              if (!fs::exists(mmproj_path)) {
                 res.status = 404;
                 res.set_content(make_error_json("mmproj_not_found", "Multimodal projector file not found"), "application/json");
@@ -117,10 +156,10 @@ void ensure_llm_loaded(SDSvrParams& svr_params, LlamaServer& llm_server) {
     }
 
     if (!svr_params.default_llm_model.empty()) {
-        fs::path model_path = fs::path(svr_params.model_dir) / svr_params.default_llm_model;
+        fs::path model_path = resolve_model_path_case_insensitive(svr_params.default_llm_model, svr_params.model_dir);
         fs::path mmproj_path;
         if (!svr_params.default_mmproj_model.empty()) {
-            mmproj_path = fs::path(svr_params.model_dir) / svr_params.default_mmproj_model;
+            mmproj_path = resolve_model_path_case_insensitive(svr_params.default_mmproj_model, svr_params.model_dir);
         }
 
         if (fs::exists(model_path)) {

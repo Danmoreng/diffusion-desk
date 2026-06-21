@@ -1,6 +1,6 @@
 # Diffusion Desk
 
-Diffusion Desk is a Windows desktop application for generating, refining, and
+Diffusion Desk is a desktop application for generating, refining, and
 organizing images on your own machine. It combines native workers built around
 [`stable-diffusion.cpp`](https://github.com/leejet/stable-diffusion.cpp) and
 [`llama.cpp`](https://github.com/ggml-org/llama.cpp) with a Kotlin Compose
@@ -79,20 +79,37 @@ Build the native image and LLM workers:
 On Linux, build the native backend and workers with:
 
 ```bash
-bash scripts/build.sh
+./scripts/build.sh --skip-webui
 ```
 
-Then start the desktop application:
+This builds the native workers only. It does not build or launch the Compose
+desktop app.
+
+Then start the desktop application on Windows:
 
 ```powershell
 .\scripts\run-compose.ps1
 ```
 
-The launch script looks for Java 25 through `JAVA_HOME`, `PATH`, common JBR
-installations, and Gradle-provisioned JDKs. You can also pass it explicitly:
+The Windows launch script looks for Java 25 through `JAVA_HOME`, `PATH`, common
+JBR installations, and Gradle-provisioned JDKs. You can also pass it explicitly:
 
 ```powershell
 .\scripts\run-compose.ps1 -JavaHome "C:\Path\To\jdk-25"
+```
+
+On Linux, start the desktop application with:
+
+```bash
+./scripts/run-compose.sh
+```
+
+The Linux launcher prefers Java 25 from `JAVA_HOME`, `PATH`,
+Gradle-provisioned JDKs, and common system JDK locations. You can also pass
+Java explicitly:
+
+```bash
+./scripts/run-compose.sh --java-home /path/to/jdk-25
 ```
 
 ### First Launch
@@ -189,7 +206,7 @@ Packaging requires a Java 25 JDK or JBR that includes `jpackage`.
 Create a portable Linux application folder and tarball with:
 
 ```bash
-bash gradlew packageLinux
+./gradlew packageLinux
 ```
 
 The archive is written to:
@@ -201,18 +218,18 @@ composeApp/build/compose/binaries/main/portable/diffusion-desk-linux-portable.ta
 To reuse an existing native build:
 
 ```bash
-bash scripts/package-linux.sh --skip-native-build
+./scripts/package-linux.sh --skip-native-build
 ```
 
 To also produce a `.deb` package, run:
 
 ```bash
-bash gradlew packageLinuxDeb
+./gradlew packageLinuxDeb
 ```
 
-Linux packaging requires a Java 25 JDK or JBR. Debian packaging additionally
-requires a `jpackage` runtime with the Linux packaging tools available on the
-host system.
+Linux portable packaging uses the Compose Java toolchain. Debian packaging
+additionally requires a Java 25 JDK or JBR with `jpackage` and the Linux
+packaging tools available on the host system.
 
 ## Repository Guide
 
@@ -235,6 +252,12 @@ Run the Compose application directly with Gradle:
 .\gradlew.bat :composeApp:run
 ```
 
+On Linux:
+
+```bash
+./gradlew :composeApp:run
+```
+
 Use the hot-reload helper while working on the desktop UI:
 
 ```powershell
@@ -245,6 +268,12 @@ Run the Compose desktop tests with:
 
 ```powershell
 .\gradlew.bat :composeApp:desktopTest
+```
+
+On Linux:
+
+```bash
+./gradlew :composeApp:desktopTest
 ```
 
 For native changes, use `.\scripts\build.ps1` so the repository's Windows

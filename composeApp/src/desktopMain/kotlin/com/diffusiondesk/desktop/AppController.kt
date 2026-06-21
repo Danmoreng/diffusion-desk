@@ -19,6 +19,7 @@ import com.diffusiondesk.desktop.viewmodel.GalleryViewModel
 import com.diffusiondesk.desktop.viewmodel.GenerationViewModel
 import com.diffusiondesk.desktop.viewmodel.LibraryViewModel
 import com.diffusiondesk.desktop.viewmodel.SettingsViewModel
+import com.diffusiondesk.desktop.viewmodel.SetupViewModel
 import com.diffusiondesk.desktop.viewmodel.UpscaleViewModel
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -46,6 +47,7 @@ class AppController {
     val notificationCenter = NotificationCenter(scope)
 
     val settingsViewModel = SettingsViewModel(scope, settingsStore, backendManager, llmPresetStore, llmWorkerPool, imageTaggingService, client, notificationCenter)
+    val setupViewModel = SetupViewModel(scope, settingsStore, presetStore, llmPresetStore, notificationCenter)
     val generationViewModel = GenerationViewModel(
         scope,
         backendManager,
@@ -76,8 +78,10 @@ class AppController {
 
     init {
         Runtime.getRuntime().addShutdownHook(shutdownHook)
-        settingsViewModel.startBackend()
-        settingsViewModel.autostartLlmWorkersIfEnabled()
+        if (settingsStore.load().setupCompleted) {
+            settingsViewModel.startBackend()
+            settingsViewModel.autostartLlmWorkersIfEnabled()
+        }
     }
 
     fun close() {

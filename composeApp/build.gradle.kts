@@ -1,4 +1,6 @@
 import org.jetbrains.compose.desktop.application.dsl.TargetFormat
+import org.gradle.api.tasks.JavaExec
+import org.gradle.jvm.toolchain.JavaLanguageVersion
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 val hostOs = System.getProperty("os.name").lowercase()
@@ -55,6 +57,14 @@ kotlin {
             implementation(libs.sqlite.jdbc)
         }
     }
+}
+
+tasks.withType<JavaExec>().configureEach {
+    javaLauncher.set(
+        javaToolchains.launcherFor {
+            languageVersion.set(JavaLanguageVersion.of(25))
+        },
+    )
 }
 
 compose.desktop {
