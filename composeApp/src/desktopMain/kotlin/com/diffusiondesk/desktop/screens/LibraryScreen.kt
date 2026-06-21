@@ -45,9 +45,7 @@ import com.diffusiondesk.desktop.core.BackendStatus
 import com.diffusiondesk.desktop.core.BackendUiState
 import com.diffusiondesk.desktop.core.ImagePreset
 import com.diffusiondesk.desktop.core.ImagePromptMode
-import com.diffusiondesk.desktop.core.LlmPlacement
 import com.diffusiondesk.desktop.core.LlmPreset
-import com.diffusiondesk.desktop.core.ModelSummary
 import com.diffusiondesk.desktop.viewmodel.ImagePresetForm
 import com.diffusiondesk.desktop.viewmodel.LibraryMode
 import com.diffusiondesk.desktop.viewmodel.LibraryUiState
@@ -488,56 +486,15 @@ private fun LlmPresetEditorPage(
             verticalArrangement = Arrangement.spacedBy(DeskSectionSpacing),
         ) {
             EditorSection("Preset") {
-                LabeledField(
-                    label = "Preset Name",
-                    value = state.llmForm.name,
-                    onValueChange = { onFormChange(state.llmForm.copy(name = it)) },
-                    placeholder = "e.g. Small Tagger CPU",
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                ModelPathField(
-                    label = "Model Path",
-                    value = state.llmForm.modelPath,
-                    options = llmOptions,
-                    onValueChange = { onFormChange(state.llmForm.copy(modelPath = it)) },
-                    placeholder = "llm/model.gguf or D:\\models\\model.gguf",
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                ModelPathField(
-                    label = "Vision Projector (optional)",
-                    value = state.llmForm.mmprojPath,
-                    options = llmOptions,
-                    onValueChange = { onFormChange(state.llmForm.copy(mmprojPath = it)) },
-                    placeholder = "llm/mmproj-model-f16.gguf",
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                DeskDropdownField(
-                    label = "Placement",
-                    value = state.llmForm.placement.name.uppercase(),
-                    options = listOf("AUTO", "CPU", "GPU"),
-                    onValueChange = {
-                        onFormChange(
-                            state.llmForm.copy(
-                                placement = when (it) {
-                                    "AUTO" -> LlmPlacement.Auto
-                                    "GPU" -> LlmPlacement.Gpu
-                                    else -> LlmPlacement.Cpu
-                                },
-                            ),
-                        )
-                    },
-                    modifier = Modifier.widthIn(min = 180.dp, max = 220.dp),
+                LlmPresetCoreFields(
+                    form = state.llmForm,
+                    llmOptions = llmOptions,
+                    projectorOptions = llmOptions,
+                    onFormChange = onFormChange,
                 )
             }
             EditorSection("Advanced llama.cpp Arguments") {
-                LabeledField(
-                    label = "Arguments",
-                    value = state.llmForm.advancedArgs,
-                    onValueChange = { onFormChange(state.llmForm.copy(advancedArgs = it)) },
-                    placeholder = "--ctx-size 4096 --threads 8",
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = false,
-                )
+                LlmPresetAdvancedArgsField(state.llmForm, onFormChange)
             }
         }
 
@@ -608,7 +565,7 @@ private fun ImagePresetEditorPage(
             verticalArrangement = Arrangement.spacedBy(DeskSectionSpacing),
         ) {
             EditorSection("Preset") {
-                LabeledField(
+                PresetLabeledField(
                     label = "Preset Name",
                     value = state.form.name,
                     onValueChange = { onFormChange(state.form.copy(name = it)) },
@@ -624,257 +581,57 @@ private fun ImagePresetEditorPage(
                         horizontalArrangement = Arrangement.spacedBy(DeskSectionSpacing),
                         verticalAlignment = Alignment.Top,
                     ) {
-                        ModelComponentsSection(
+                        EditorSection("Model Components", modifier = Modifier.weight(1.15f)) {
+                            ImagePresetModelComponentsFields(
                             form = state.form,
                             mainModelOptions = mainModelOptions,
                             vaeOptions = vaeOptions,
                             textEncoderOptions = textEncoderOptions,
                             llmOptions = llmOptions,
                             onFormChange = onFormChange,
-                            modifier = Modifier.weight(1.15f),
-                        )
-                        DefaultGenerationParametersSection(
+                            )
+                        }
+                        EditorSection("Default Generation Parameters", modifier = Modifier.weight(0.85f)) {
+                            ImagePresetGenerationParameterFields(
                             form = state.form,
                             samplerOptions = samplerOptions,
                             onFormChange = onFormChange,
-                            modifier = Modifier.weight(0.85f),
-                        )
+                            )
+                        }
                     }
                 } else {
                     Column(
                         modifier = Modifier.fillMaxWidth(),
                         verticalArrangement = Arrangement.spacedBy(DeskSectionSpacing),
                     ) {
-                        ModelComponentsSection(
+                        EditorSection("Model Components", modifier = Modifier.fillMaxWidth()) {
+                            ImagePresetModelComponentsFields(
                             form = state.form,
                             mainModelOptions = mainModelOptions,
                             vaeOptions = vaeOptions,
                             textEncoderOptions = textEncoderOptions,
                             llmOptions = llmOptions,
                             onFormChange = onFormChange,
-                            modifier = Modifier.fillMaxWidth(),
-                        )
-                        DefaultGenerationParametersSection(
+                            )
+                        }
+                        EditorSection("Default Generation Parameters", modifier = Modifier.fillMaxWidth()) {
+                            ImagePresetGenerationParameterFields(
                             form = state.form,
                             samplerOptions = samplerOptions,
                             onFormChange = onFormChange,
-                            modifier = Modifier.fillMaxWidth(),
-                        )
+                            )
+                        }
                     }
                 }
             }
 
             EditorSection("Performance & Memory") {
-                ToggleLine(
-                    checked = state.form.flashAttention,
-                    onCheckedChange = { onFormChange(state.form.copy(flashAttention = it)) },
-                    title = "Flash attention",
-                    subtitle = "Enable when supported by the selected model and backend build.",
-                )
-                ToggleLine(
-                    checked = state.form.streamLayers,
-                    onCheckedChange = { onFormChange(state.form.copy(streamLayers = it, offloadParamsToCpu = state.form.offloadParamsToCpu || it)) },
-                    title = "Stream diffusion layers",
-                    subtitle = "Stream diffusion layers through CPU memory. Parameter offload is enabled automatically.",
-                )
-                if (state.form.streamLayers) {
-                    DeskDropdownField(
-                        label = "VRAM Budget",
-                        value = if (state.form.useGlobalVramBudget) "Global setting" else "Preset override",
-                        options = listOf("Global setting", "Preset override"),
-                        onValueChange = { selected ->
-                            onFormChange(state.form.copy(useGlobalVramBudget = selected == "Global setting"))
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                    if (!state.form.useGlobalVramBudget) {
-                        LabeledField(
-                            label = "Preset VRAM Budget (GiB)",
-                            value = state.form.maxVramGb,
-                            onValueChange = { onFormChange(state.form.copy(maxVramGb = it)) },
-                            placeholder = "12.0",
-                            modifier = Modifier.fillMaxWidth(),
-                        )
-                    }
-                }
-                Text(
-                    text = "Advanced CPU fallbacks",
-                    style = MaterialTheme.typography.titleSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                ToggleLine(
-                    checked = state.form.clipOnCpu,
-                    onCheckedChange = { onFormChange(state.form.copy(clipOnCpu = it)) },
-                    title = "CLIP on CPU",
-                    subtitle = "Reserve GPU memory when the text encoder does not fit alongside the diffusion model.",
-                )
-                ToggleLine(
-                    checked = state.form.vaeOnCpu,
-                    onCheckedChange = { onFormChange(state.form.copy(vaeOnCpu = it)) },
-                    title = "VAE on CPU",
-                    subtitle = "Fallback for high-resolution VAE decoding or VAE out-of-memory errors.",
-                )
-                if (!state.form.streamLayers) {
-                    ToggleLine(
-                        checked = state.form.offloadParamsToCpu,
-                        onCheckedChange = { onFormChange(state.form.copy(offloadParamsToCpu = it)) },
-                        title = "Offload parameters to CPU",
-                        subtitle = "Keep model parameters in system memory when layer streaming is disabled.",
-                    )
-                }
+                ImagePresetPerformanceFields(state.form, onFormChange)
             }
         }
 
         StatusMessages(state.message, state.error)
     }
-}
-
-@Composable
-private fun ModelComponentsSection(
-    form: ImagePresetForm,
-    mainModelOptions: List<String>,
-    vaeOptions: List<String>,
-    textEncoderOptions: List<String>,
-    llmOptions: List<String>,
-    onFormChange: (ImagePresetForm) -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    EditorSection("Model Components", modifier = modifier) {
-        ModelPathField(
-            label = "UNet / Main Model (required)",
-            value = form.diffusionModel,
-            options = mainModelOptions,
-            onValueChange = { onFormChange(form.copy(diffusionModel = it)) },
-            placeholder = "stable-diffusion/model.gguf or D:\\models\\model.gguf",
-            modifier = Modifier.fillMaxWidth(),
-        )
-        ModelPathField(
-            label = "Unconditional Diffusion Model (optional)",
-            value = form.uncondDiffusionModel,
-            options = mainModelOptions,
-            onValueChange = { onFormChange(form.copy(uncondDiffusionModel = it)) },
-            placeholder = "stable-diffusion/ideogram4_uncond-Q8_0.gguf",
-            modifier = Modifier.fillMaxWidth(),
-        )
-        TwoColumnRow {
-            ModelPathField(
-                label = "VAE (optional)",
-                value = form.vae,
-                options = vaeOptions,
-                onValueChange = { onFormChange(form.copy(vae = it)) },
-                placeholder = "vae/ae.safetensors",
-                modifier = Modifier.weight(1f),
-            )
-            ModelPathField(
-                label = "T5 / Text Encoder 2 (optional)",
-                value = form.t5xxl,
-                options = textEncoderOptions,
-                onValueChange = { onFormChange(form.copy(t5xxl = it)) },
-                placeholder = "text-encoder/t5.gguf",
-                modifier = Modifier.weight(1f),
-            )
-        }
-        TwoColumnRow {
-            ModelPathField(
-                label = "LLM Text Encoder 3 (optional)",
-                value = form.llm,
-                options = llmOptions,
-                onValueChange = { onFormChange(form.copy(llm = it)) },
-                placeholder = "text-encoder/qwen.gguf",
-                modifier = Modifier.weight(1f),
-            )
-            ModelPathField(
-                label = "CLIP L (optional)",
-                value = form.clipL,
-                options = textEncoderOptions,
-                onValueChange = { onFormChange(form.copy(clipL = it)) },
-                placeholder = "clip/clip_l.gguf",
-                modifier = Modifier.weight(1f),
-            )
-        }
-        ModelPathField(
-            label = "CLIP G (optional)",
-            value = form.clipG,
-            options = textEncoderOptions,
-            onValueChange = { onFormChange(form.copy(clipG = it)) },
-            placeholder = "clip/clip_g.gguf",
-            modifier = Modifier.fillMaxWidth(),
-        )
-    }
-}
-
-@Composable
-private fun DefaultGenerationParametersSection(
-    form: ImagePresetForm,
-    samplerOptions: List<String>,
-    onFormChange: (ImagePresetForm) -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    EditorSection("Default Generation Parameters", modifier = modifier) {
-        PromptModeField(
-            value = form.promptMode,
-            onValueChange = { onFormChange(form.copy(promptMode = it)) },
-            modifier = Modifier.fillMaxWidth(),
-        )
-        TwoColumnRow {
-            LabeledField(
-                label = "Width",
-                value = form.defaultWidth,
-                onValueChange = { onFormChange(form.copy(defaultWidth = it)) },
-                placeholder = "1024",
-                modifier = Modifier.weight(1f),
-            )
-            LabeledField(
-                label = "Height",
-                value = form.defaultHeight,
-                onValueChange = { onFormChange(form.copy(defaultHeight = it)) },
-                placeholder = "1024",
-                modifier = Modifier.weight(1f),
-            )
-        }
-        TwoColumnRow {
-            LabeledField(
-                label = "Steps",
-                value = form.defaultSteps,
-                onValueChange = { onFormChange(form.copy(defaultSteps = it)) },
-                placeholder = "4",
-                modifier = Modifier.weight(1f),
-            )
-            LabeledField(
-                label = "CFG Scale",
-                value = form.defaultCfgScale,
-                onValueChange = { onFormChange(form.copy(defaultCfgScale = it)) },
-                placeholder = "1.0",
-                modifier = Modifier.weight(1f),
-            )
-        }
-        SamplerField(
-            value = form.defaultSampler,
-            options = samplerOptions,
-            onValueChange = { onFormChange(form.copy(defaultSampler = it)) },
-            modifier = Modifier.fillMaxWidth(),
-        )
-        LabeledField(
-            label = "Default Negative Prompt",
-            value = form.defaultNegativePrompt,
-            onValueChange = { onFormChange(form.copy(defaultNegativePrompt = it)) },
-            placeholder = "deformed, blurry, low quality, watermark",
-            modifier = Modifier.fillMaxWidth(),
-            singleLine = false,
-        )
-    }
-}
-
-private fun modelOptionsFor(models: List<ModelSummary>, vararg types: String): List<String> {
-    val acceptedTypes = types.toSet()
-    return models
-        .asSequence()
-        .filter { it.type in acceptedTypes }
-        .map { it.id }
-        .filter { it.isNotBlank() }
-        .distinct()
-        .sorted()
-        .toList()
 }
 
 @Composable
@@ -885,114 +642,5 @@ private fun EditorSection(
 ) {
     DeskSection(title = title, modifier = modifier) {
         content()
-    }
-}
-
-@Composable
-private fun TwoColumnRow(content: @Composable RowScope.() -> Unit) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(DeskLayoutGap),
-        content = content,
-    )
-}
-
-@Composable
-private fun LabeledField(
-    label: String,
-    value: String,
-    onValueChange: (String) -> Unit,
-    placeholder: String,
-    modifier: Modifier = Modifier,
-    singleLine: Boolean = true,
-) {
-    DeskTextField(
-        label = label,
-        value = value,
-        onValueChange = onValueChange,
-        placeholder = placeholder,
-        modifier = modifier,
-        singleLine = singleLine,
-    )
-}
-
-@Composable
-private fun ModelPathField(
-    label: String,
-    value: String,
-    options: List<String>,
-    onValueChange: (String) -> Unit,
-    placeholder: String,
-    modifier: Modifier = Modifier,
-) {
-    DeskSearchableTextDropdownField(
-        label = label,
-        value = value,
-        options = options,
-        onValueChange = onValueChange,
-        placeholder = placeholder,
-        modifier = modifier,
-    )
-}
-
-@Composable
-private fun SamplerField(
-    value: String,
-    options: List<String>,
-    onValueChange: (String) -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    DeskDropdownField(
-        label = "Sampler",
-        value = value,
-        options = options,
-        onValueChange = onValueChange,
-        modifier = modifier,
-    )
-}
-
-@Composable
-private fun PromptModeField(
-    value: ImagePromptMode,
-    onValueChange: (ImagePromptMode) -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    DeskDropdownField(
-        label = "Prompt Mode",
-        value = value.displayName,
-        options = ImagePromptMode.values().map { it.displayName },
-        onValueChange = { label ->
-            onValueChange(ImagePromptMode.values().firstOrNull { it.displayName == label } ?: ImagePromptMode.Text)
-        },
-        modifier = modifier,
-    )
-}
-
-@Composable
-private fun ToggleLine(
-    checked: Boolean,
-    onCheckedChange: (Boolean) -> Unit,
-    title: String,
-    subtitle: String,
-) {
-    DeskCheckboxRow(
-        checked = checked,
-        onCheckedChange = onCheckedChange,
-        title = title,
-        subtitle = subtitle,
-    )
-}
-
-@Composable
-private fun StatusMessages(message: String, error: String?) {
-    if (message.isNotBlank() || error != null) {
-        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            if (message.isNotBlank()) {
-                Text(message, color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.bodySmall)
-            }
-            error?.let {
-                Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
-            }
-        }
     }
 }

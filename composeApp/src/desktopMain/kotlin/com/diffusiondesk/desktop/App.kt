@@ -12,7 +12,6 @@ import androidx.compose.material.icons.filled.Inventory2
 import androidx.compose.material.icons.filled.Memory
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.SmartToy
-import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
@@ -52,7 +51,6 @@ private enum class Screen(val label: String, val icon: ImageVector, val subtitle
     Library("Presets", Icons.Default.Inventory2, "Manage JSON-backed image generation presets."),
     System("System", Icons.Default.Memory, "Worker status, runtime controls, and diagnostics."),
     Settings("Settings", Icons.Default.Settings, "Local paths and static app configuration."),
-    Setup("Setup", Icons.Default.Tune, "Guided setup for folders and starter presets."),
 }
 
 @Composable
@@ -78,10 +76,12 @@ fun App(
         else -> systemDarkTheme
     }
     var assistantOpen by remember { mutableStateOf(false) }
+    var showSetupWizard by remember { mutableStateOf(false) }
     val assistantContext = remember(generationState, currentScreen) {
         generationState.toAssistantContext(currentScreen.label)
     }
     fun completeSetup() {
+        showSetupWizard = false
         controller.settingsViewModel.reloadLocalSettings()
         controller.libraryViewModel.reloadPresets()
         controller.generationViewModel.reloadPresets()
@@ -96,7 +96,7 @@ fun App(
             modifier = Modifier.fillMaxSize(),
             color = MaterialTheme.colorScheme.background,
         ) {
-            if (!settingsState.setupCompleted) {
+            if (!settingsState.setupCompleted || showSetupWizard) {
                 Box(modifier = Modifier.fillMaxSize()) {
                     SetupScreen(
                         state = setupState,
@@ -104,13 +104,22 @@ fun App(
                         onOutputDirChange = controller.setupViewModel::updateOutputDir,
                         onScan = controller.setupViewModel::scanAndContinue,
                         onBack = controller.setupViewModel::goBack,
-                        onImagePresetNameChange = controller.setupViewModel::updateImagePresetName,
-                        onImageModelChange = controller.setupViewModel::updateSelectedImageModel,
-                        onEnableLlmPresetChange = controller.setupViewModel::updateEnableLlmPreset,
-                        onLlmPresetNameChange = controller.setupViewModel::updateLlmPresetName,
-                        onLlmModelChange = controller.setupViewModel::updateSelectedLlmModel,
-                        onMmprojChange = controller.setupViewModel::updateSelectedMmproj,
+                        onImagePresetFormChange = controller.setupViewModel::updateImagePresetForm,
+                        onContinueFromImagePreset = controller.setupViewModel::continueFromImagePreset,
+                        onEnableTaggingLlmPresetChange = controller.setupViewModel::updateEnableTaggingLlmPreset,
+                        onTaggingLlmPresetFormChange = controller.setupViewModel::updateTaggingLlmPresetForm,
+                        onEnablePromptEnhancerLlmPresetChange = controller.setupViewModel::updateEnablePromptEnhancerLlmPreset,
+                        onPromptEnhancerLlmPresetFormChange = controller.setupViewModel::updatePromptEnhancerLlmPresetForm,
+                        onEnableAssistantLlmPresetChange = controller.setupViewModel::updateEnableAssistantLlmPreset,
+                        onAssistantLlmPresetFormChange = controller.setupViewModel::updateAssistantLlmPresetForm,
+                        onContinueLlmStep = controller.setupViewModel::continueFromLlmStep,
+                        onSkipLlmStep = controller.setupViewModel::skipLlmStep,
                         onFinish = { controller.setupViewModel.finish(::completeSetup) },
+                        onCancel = if (settingsState.setupCompleted) {
+                            { showSetupWizard = false }
+                        } else {
+                            null
+                        },
                     )
                     NotificationStack(
                         notifications = notifications,
@@ -369,20 +378,10 @@ fun App(
                                 controller.generationViewModel.reloadLoras()
                                 controller.upscaleViewModel.reloadModels()
                             },
-                        )
-                        Screen.Setup -> SetupScreen(
-                            state = setupState,
-                            onModelDirChange = controller.setupViewModel::updateModelDir,
-                            onOutputDirChange = controller.setupViewModel::updateOutputDir,
-                            onScan = controller.setupViewModel::scanAndContinue,
-                            onBack = controller.setupViewModel::goBack,
-                            onImagePresetNameChange = controller.setupViewModel::updateImagePresetName,
-                            onImageModelChange = controller.setupViewModel::updateSelectedImageModel,
-                            onEnableLlmPresetChange = controller.setupViewModel::updateEnableLlmPreset,
-                            onLlmPresetNameChange = controller.setupViewModel::updateLlmPresetName,
-                            onLlmModelChange = controller.setupViewModel::updateSelectedLlmModel,
-                            onMmprojChange = controller.setupViewModel::updateSelectedMmproj,
-                            onFinish = { controller.setupViewModel.finish(::completeSetup) },
+                            onRunSetup = {
+                                controller.setupViewModel.reloadFromSettings()
+                                showSetupWizard = true
+                            },
                         )
                     }
                     NotificationStack(

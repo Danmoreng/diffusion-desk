@@ -46,14 +46,16 @@ class DesktopSettingsStore(
                 .takeIf { it.isNotBlank() }
                 ?.let { normalizeConfiguredPath(repoRootFromSettings, it) }
                 ?: detectedOutputDir
+            val setupCompleted = props.getProperty("setupCompleted")
+                ?.toBooleanStrictOrNull()
+                ?: true
 
             defaults.copy(
                 repoRoot = repoRootFromSettings,
                 listenPort = props.getProperty("listenPort", defaults.listenPort.toString()).toIntOrNull() ?: defaults.listenPort,
                 modelDir = modelDir,
                 outputDir = outputDir,
-                setupCompleted = props.getProperty("setupCompleted", defaults.setupCompleted.toString()).toBooleanStrictOrNull()
-                    ?: defaults.setupCompleted,
+                setupCompleted = setupCompleted,
                 themeMode = props.getProperty("themeMode", defaults.themeMode).takeIf { it in setOf("system", "light", "dark") }
                     ?: defaults.themeMode,
                 actionBarPosition = props.getProperty("actionBarPosition", defaults.actionBarPosition).takeIf { it in setOf("bottom", "top") }
