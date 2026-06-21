@@ -29,10 +29,12 @@ require hosted image-generation or LLM services.
 
 ## Project Status
 
-Diffusion Desk is under active development and currently targets Windows with
-an NVIDIA GPU. The Compose desktop application in `composeApp/` is the current
-product; the Vue application in `webui/` is deprecated and kept only as a
-legacy reference.
+Diffusion Desk is under active development and is primarily validated on
+Windows with an NVIDIA GPU. Linux build and packaging scripts are available for
+CUDA-capable systems, but should be treated as newer than the Windows path until
+they have had more machine coverage. The Compose desktop application in
+`composeApp/` is the current product; the Vue application in `webui/` is
+deprecated and kept only as a legacy reference.
 
 Expect the setup and preset formats to continue evolving while the desktop
 workflow is being developed.
@@ -48,6 +50,10 @@ workflow is being developed.
 - CUDA Toolkit
 - Java 25 JDK or JBR
 - Git with submodule support
+
+For Linux builds, use a CUDA-capable Linux distribution with NVIDIA drivers,
+CUDA Toolkit, CMake, a C++17 compiler, Java 25 JDK or JBR, Git, and optionally
+Ninja.
 
 ### Build From Source
 
@@ -68,6 +74,12 @@ Build the native image and LLM workers:
 
 ```powershell
 .\scripts\build.ps1
+```
+
+On Linux, build the native backend and workers with:
+
+```bash
+bash scripts/build.sh
 ```
 
 Then start the desktop application:
@@ -171,6 +183,36 @@ pwsh -ExecutionPolicy Bypass -File .\scripts\package-windows.ps1 -SkipNativeBuil
 ```
 
 Packaging requires a Java 25 JDK or JBR that includes `jpackage`.
+
+## Portable Linux Build
+
+Create a portable Linux application folder and tarball with:
+
+```bash
+bash gradlew packageLinux
+```
+
+The archive is written to:
+
+```text
+composeApp/build/compose/binaries/main/portable/diffusion-desk-linux-portable.tar.gz
+```
+
+To reuse an existing native build:
+
+```bash
+bash scripts/package-linux.sh --skip-native-build
+```
+
+To also produce a `.deb` package, run:
+
+```bash
+bash gradlew packageLinuxDeb
+```
+
+Linux packaging requires a Java 25 JDK or JBR. Debian packaging additionally
+requires a `jpackage` runtime with the Linux packaging tools available on the
+host system.
 
 ## Repository Guide
 

@@ -40,6 +40,22 @@ fun Exec.configurePowerShellScript(scriptRelativePath: String, vararg scriptArgs
     }
 }
 
+fun Exec.configureBashScript(scriptRelativePath: String, vararg scriptArgs: String) {
+    doFirst {
+        val osName = System.getProperty("os.name").lowercase()
+        if (!osName.contains("linux")) {
+            throw GradleException("Linux package scripts are only supported on Linux.")
+        }
+        val scriptFile = project.layout.projectDirectory.file(scriptRelativePath).asFile
+        commandLine(
+            "bash",
+            scriptFile.absolutePath,
+            *scriptArgs,
+        )
+        workingDir = project.layout.projectDirectory.asFile
+    }
+}
+
 tasks.register("desktopRun") {
     group = "application"
     description = "Run the Compose desktop shell."
@@ -62,4 +78,16 @@ tasks.register<Exec>("packageWindowsMsi") {
     group = "distribution"
     description = "Build Windows portable Compose app package and MSI installer."
     configurePowerShellScript("scripts/package-windows.ps1", "-BuildMsi")
+}
+
+tasks.register<Exec>("packageLinux") {
+    group = "distribution"
+    description = "Build Linux portable Compose app package."
+    configureBashScript("scripts/package-linux.sh")
+}
+
+tasks.register<Exec>("packageLinuxDeb") {
+    group = "distribution"
+    description = "Build Linux portable Compose app package and DEB installer."
+    configureBashScript("scripts/package-linux.sh", "--build-deb", "--require-deb")
 }
