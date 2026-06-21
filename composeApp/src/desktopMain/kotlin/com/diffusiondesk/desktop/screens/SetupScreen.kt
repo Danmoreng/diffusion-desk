@@ -36,8 +36,12 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.diffusiondesk.desktop.viewmodel.ImagePresetForm
+import com.diffusiondesk.desktop.viewmodel.LlmPresetForm
+import com.diffusiondesk.desktop.viewmodel.SetupLlmRole
 import com.diffusiondesk.desktop.viewmodel.SetupModelOption
 import com.diffusiondesk.desktop.viewmodel.SetupUiState
+import com.diffusiondesk.desktop.viewmodel.displayName
 import org.jetbrains.jewel.ui.component.CircularProgressIndicator
 import org.jetbrains.jewel.ui.component.Text
 import java.io.File
@@ -50,13 +54,18 @@ fun SetupScreen(
     onOutputDirChange: (String) -> Unit,
     onScan: () -> Unit,
     onBack: () -> Unit,
-    onImagePresetNameChange: (String) -> Unit,
-    onImageModelChange: (String) -> Unit,
-    onEnableLlmPresetChange: (Boolean) -> Unit,
-    onLlmPresetNameChange: (String) -> Unit,
-    onLlmModelChange: (String) -> Unit,
-    onMmprojChange: (String) -> Unit,
+    onImagePresetFormChange: (ImagePresetForm) -> Unit,
+    onContinueFromImagePreset: () -> Unit,
+    onEnableTaggingLlmPresetChange: (Boolean) -> Unit,
+    onTaggingLlmPresetFormChange: (LlmPresetForm) -> Unit,
+    onEnablePromptEnhancerLlmPresetChange: (Boolean) -> Unit,
+    onPromptEnhancerLlmPresetFormChange: (LlmPresetForm) -> Unit,
+    onEnableAssistantLlmPresetChange: (Boolean) -> Unit,
+    onAssistantLlmPresetFormChange: (LlmPresetForm) -> Unit,
+    onContinueLlmStep: (SetupLlmRole) -> Unit,
+    onSkipLlmStep: (SetupLlmRole) -> Unit,
     onFinish: () -> Unit,
+    onCancel: (() -> Unit)? = null,
 ) {
     Box(
         modifier = Modifier
@@ -85,12 +94,16 @@ fun SetupScreen(
                         onOutputDirChange = onOutputDirChange,
                         onScan = onScan,
                         onBack = onBack,
-                        onImagePresetNameChange = onImagePresetNameChange,
-                        onImageModelChange = onImageModelChange,
-                        onEnableLlmPresetChange = onEnableLlmPresetChange,
-                        onLlmPresetNameChange = onLlmPresetNameChange,
-                        onLlmModelChange = onLlmModelChange,
-                        onMmprojChange = onMmprojChange,
+                        onImagePresetFormChange = onImagePresetFormChange,
+                        onContinueFromImagePreset = onContinueFromImagePreset,
+                        onEnableTaggingLlmPresetChange = onEnableTaggingLlmPresetChange,
+                        onTaggingLlmPresetFormChange = onTaggingLlmPresetFormChange,
+                        onEnablePromptEnhancerLlmPresetChange = onEnablePromptEnhancerLlmPresetChange,
+                        onPromptEnhancerLlmPresetFormChange = onPromptEnhancerLlmPresetFormChange,
+                        onEnableAssistantLlmPresetChange = onEnableAssistantLlmPresetChange,
+                        onAssistantLlmPresetFormChange = onAssistantLlmPresetFormChange,
+                        onContinueLlmStep = onContinueLlmStep,
+                        onSkipLlmStep = onSkipLlmStep,
                         onFinish = onFinish,
                     )
                 }
@@ -109,16 +122,28 @@ fun SetupScreen(
                         onOutputDirChange = onOutputDirChange,
                         onScan = onScan,
                         onBack = onBack,
-                        onImagePresetNameChange = onImagePresetNameChange,
-                        onImageModelChange = onImageModelChange,
-                        onEnableLlmPresetChange = onEnableLlmPresetChange,
-                        onLlmPresetNameChange = onLlmPresetNameChange,
-                        onLlmModelChange = onLlmModelChange,
-                        onMmprojChange = onMmprojChange,
+                        onImagePresetFormChange = onImagePresetFormChange,
+                        onContinueFromImagePreset = onContinueFromImagePreset,
+                        onEnableTaggingLlmPresetChange = onEnableTaggingLlmPresetChange,
+                        onTaggingLlmPresetFormChange = onTaggingLlmPresetFormChange,
+                        onEnablePromptEnhancerLlmPresetChange = onEnablePromptEnhancerLlmPresetChange,
+                        onPromptEnhancerLlmPresetFormChange = onPromptEnhancerLlmPresetFormChange,
+                        onEnableAssistantLlmPresetChange = onEnableAssistantLlmPresetChange,
+                        onAssistantLlmPresetFormChange = onAssistantLlmPresetFormChange,
+                        onContinueLlmStep = onContinueLlmStep,
+                        onSkipLlmStep = onSkipLlmStep,
                         onFinish = onFinish,
                         modifier = Modifier.weight(1f),
                     )
                 }
+            }
+        }
+        onCancel?.let { cancel ->
+            DeskOutlinedButton(
+                onClick = cancel,
+                modifier = Modifier.align(Alignment.TopStart),
+            ) {
+                Text("Close Setup")
             }
         }
     }
@@ -136,7 +161,7 @@ private fun SetupHeader(state: SetupUiState) {
             text = if (state.step == 1) {
                 "Choose where models live and where generated images should be written."
             } else {
-                "Create the starter presets used by Generate and local assistant tools."
+                "Create the starter image preset and optional LLM presets."
             },
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -172,9 +197,33 @@ private fun SetupRail(
         SetupStepIndicator(
             number = "2",
             title = "Presets",
-            subtitle = "Image and optional LLM",
+            subtitle = "Image generation",
             icon = Icons.Default.Image,
             selected = state.step == 2,
+            complete = state.step > 2,
+        )
+        SetupStepIndicator(
+            number = "3",
+            title = "Tagging",
+            subtitle = "Optional vision LLM",
+            icon = Icons.Default.SmartToy,
+            selected = state.step == 3,
+            complete = state.step > 3,
+        )
+        SetupStepIndicator(
+            number = "4",
+            title = "Enhancement",
+            subtitle = "Optional prompt LLM",
+            icon = Icons.Default.SmartToy,
+            selected = state.step == 4,
+            complete = state.step > 4,
+        )
+        SetupStepIndicator(
+            number = "5",
+            title = "Assistant",
+            subtitle = "Optional chat LLM",
+            icon = Icons.Default.SmartToy,
+            selected = state.step == 5,
             complete = false,
         )
         Spacer(Modifier.weight(1f))
@@ -190,12 +239,16 @@ private fun SetupBody(
     onOutputDirChange: (String) -> Unit,
     onScan: () -> Unit,
     onBack: () -> Unit,
-    onImagePresetNameChange: (String) -> Unit,
-    onImageModelChange: (String) -> Unit,
-    onEnableLlmPresetChange: (Boolean) -> Unit,
-    onLlmPresetNameChange: (String) -> Unit,
-    onLlmModelChange: (String) -> Unit,
-    onMmprojChange: (String) -> Unit,
+    onImagePresetFormChange: (ImagePresetForm) -> Unit,
+    onContinueFromImagePreset: () -> Unit,
+    onEnableTaggingLlmPresetChange: (Boolean) -> Unit,
+    onTaggingLlmPresetFormChange: (LlmPresetForm) -> Unit,
+    onEnablePromptEnhancerLlmPresetChange: (Boolean) -> Unit,
+    onPromptEnhancerLlmPresetFormChange: (LlmPresetForm) -> Unit,
+    onEnableAssistantLlmPresetChange: (Boolean) -> Unit,
+    onAssistantLlmPresetFormChange: (LlmPresetForm) -> Unit,
+    onContinueLlmStep: (SetupLlmRole) -> Unit,
+    onSkipLlmStep: (SetupLlmRole) -> Unit,
     onFinish: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -204,24 +257,54 @@ private fun SetupBody(
             .fillMaxHeight()
             .verticalScroll(rememberScrollState()),
     ) {
-        if (state.step == 1) {
-            FolderStep(
+        when (state.step) {
+            1 -> FolderStep(
                 state = state,
                 onModelDirChange = onModelDirChange,
                 onOutputDirChange = onOutputDirChange,
                 onScan = onScan,
             )
-        } else {
-            PresetStep(
+            2 -> ImagePresetStep(
                 state = state,
                 onBack = onBack,
-                onImagePresetNameChange = onImagePresetNameChange,
-                onImageModelChange = onImageModelChange,
-                onEnableLlmPresetChange = onEnableLlmPresetChange,
-                onLlmPresetNameChange = onLlmPresetNameChange,
-                onLlmModelChange = onLlmModelChange,
-                onMmprojChange = onMmprojChange,
-                onFinish = onFinish,
+                onImagePresetFormChange = onImagePresetFormChange,
+                onContinue = onContinueFromImagePreset,
+            )
+            3 -> LlmRoleStep(
+                state = state,
+                role = SetupLlmRole.Tagging,
+                enabled = state.enableTaggingLlmPreset,
+                form = state.taggingLlmForm,
+                onBack = onBack,
+                onEnabledChange = onEnableTaggingLlmPresetChange,
+                onFormChange = onTaggingLlmPresetFormChange,
+                onSkip = { onSkipLlmStep(SetupLlmRole.Tagging) },
+                onContinue = { onContinueLlmStep(SetupLlmRole.Tagging) },
+            )
+            4 -> LlmRoleStep(
+                state = state,
+                role = SetupLlmRole.PromptEnhancement,
+                enabled = state.enablePromptEnhancerLlmPreset,
+                form = state.promptEnhancerLlmForm,
+                onBack = onBack,
+                onEnabledChange = onEnablePromptEnhancerLlmPresetChange,
+                onFormChange = onPromptEnhancerLlmPresetFormChange,
+                onSkip = { onSkipLlmStep(SetupLlmRole.PromptEnhancement) },
+                onContinue = { onContinueLlmStep(SetupLlmRole.PromptEnhancement) },
+            )
+            else -> LlmRoleStep(
+                state = state,
+                role = SetupLlmRole.Assistant,
+                enabled = state.enableAssistantLlmPreset,
+                form = state.assistantLlmForm,
+                onBack = onBack,
+                onEnabledChange = onEnableAssistantLlmPresetChange,
+                onFormChange = onAssistantLlmPresetFormChange,
+                onSkip = {
+                    onSkipLlmStep(SetupLlmRole.Assistant)
+                    onFinish()
+                },
+                onContinue = onFinish,
             )
         }
     }
@@ -282,79 +365,48 @@ private fun FolderStep(
 }
 
 @Composable
-private fun PresetStep(
+private fun ImagePresetStep(
     state: SetupUiState,
     onBack: () -> Unit,
-    onImagePresetNameChange: (String) -> Unit,
-    onImageModelChange: (String) -> Unit,
-    onEnableLlmPresetChange: (Boolean) -> Unit,
-    onLlmPresetNameChange: (String) -> Unit,
-    onLlmModelChange: (String) -> Unit,
-    onMmprojChange: (String) -> Unit,
-    onFinish: () -> Unit,
+    onImagePresetFormChange: (ImagePresetForm) -> Unit,
+    onContinue: () -> Unit,
 ) {
     Text(
-        text = "Starter Presets",
+        text = "Image Preset",
         style = MaterialTheme.typography.titleLarge,
         fontWeight = FontWeight.SemiBold,
     )
     Text(
-        text = "The image preset is required. The LLM preset can be added later from Presets or System.",
+        text = "The starter image preset is required. LLM presets are optional in the next steps.",
         style = MaterialTheme.typography.bodyMedium,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
     )
     SetupPresetBlock(
         icon = Icons.Default.Image,
         title = "Image Generation",
-        subtitle = "Used by the Generate screen for the first image.",
+        subtitle = "Starter defaults for Generate. You can refine every preset later from Presets.",
     ) {
-        DeskTextField(
+        PresetLabeledField(
             label = "Preset Name",
-            value = state.imagePresetName,
-            onValueChange = onImagePresetNameChange,
+            value = state.imageForm.name,
+            onValueChange = { onImagePresetFormChange(state.imageForm.copy(name = it)) },
+            placeholder = "e.g. Z-Image Turbo Q8",
             modifier = Modifier.fillMaxWidth(),
         )
-        ModelDropdown(
-            label = "Main Image Model",
-            selected = state.selectedImageModel,
-            models = state.imageModels,
-            emptyText = "No image models found in stable-diffusion, diffusion_models, unet, or the model root.",
-            onSelected = onImageModelChange,
+        ImagePresetModelComponentsFields(
+            form = state.imageForm,
+            mainModelOptions = setupOptions(state.imageModels),
+            vaeOptions = setupOptions(state.vaeModels),
+            textEncoderOptions = setupOptions(state.textEncoderModels),
+            llmOptions = setupOptions(state.llmModels),
+            onFormChange = onImagePresetFormChange,
         )
-    }
-    SetupPresetBlock(
-        icon = Icons.Default.SmartToy,
-        title = "Local LLM",
-        subtitle = "Optional preset for assistant tools, prompt enhancement, and image tagging when a projector is selected.",
-    ) {
-        DeskCheckboxRow(
-            checked = state.enableLlmPreset,
-            onCheckedChange = onEnableLlmPresetChange,
-            title = "Create LLM preset",
+        ImagePresetGenerationParameterFields(
+            form = state.imageForm,
+            samplerOptions = setupSamplerOptions,
+            onFormChange = onImagePresetFormChange,
         )
-        if (state.enableLlmPreset) {
-            DeskTextField(
-                label = "Preset Name",
-                value = state.llmPresetName,
-                onValueChange = onLlmPresetNameChange,
-                modifier = Modifier.fillMaxWidth(),
-            )
-            ModelDropdown(
-                label = "LLM Model",
-                selected = state.selectedLlmModel,
-                models = state.llmModels,
-                emptyText = "No LLM models found in llm or text-encoder.",
-                onSelected = onLlmModelChange,
-            )
-            ModelDropdown(
-                label = "MMProj",
-                selected = state.selectedMmproj,
-                models = state.mmprojModels,
-                emptyText = "No projector found. Leave blank for text-only models.",
-                allowBlank = true,
-                onSelected = onMmprojChange,
-            )
-        }
+        ImagePresetPerformanceFields(state.imageForm, onImagePresetFormChange)
     }
     SetupMessage(state)
     Row(
@@ -369,19 +421,98 @@ private fun PresetStep(
             )
         }
         DeskButton(
-            onClick = onFinish,
+            onClick = onContinue,
             enabled = state.canFinish,
         ) {
             ButtonLabel(
-                icon = {
-                    if (state.isFinishing) {
-                        CircularProgressIndicator(Modifier.size(16.dp))
-                    } else {
-                        Icon(Icons.Default.CheckCircle, contentDescription = null, modifier = Modifier.size(16.dp))
-                    }
-                },
-                text = if (state.isFinishing) "Finishing" else "Finish Setup",
+                icon = { Icon(Icons.Default.CheckCircle, contentDescription = null, modifier = Modifier.size(16.dp)) },
+                text = "Continue",
             )
+        }
+    }
+}
+
+@Composable
+private fun LlmRoleStep(
+    state: SetupUiState,
+    role: SetupLlmRole,
+    enabled: Boolean,
+    form: LlmPresetForm,
+    onBack: () -> Unit,
+    onEnabledChange: (Boolean) -> Unit,
+    onFormChange: (LlmPresetForm) -> Unit,
+    onSkip: () -> Unit,
+    onContinue: () -> Unit,
+) {
+    val isLastStep = role == SetupLlmRole.Assistant
+    Text(
+        text = "${role.displayName} LLM",
+        style = MaterialTheme.typography.titleLarge,
+        fontWeight = FontWeight.SemiBold,
+    )
+    Text(
+        text = role.setupDescription,
+        style = MaterialTheme.typography.bodyMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+    SetupPresetBlock(
+        icon = Icons.Default.SmartToy,
+        title = role.displayName,
+        subtitle = role.setupSubtitle,
+    ) {
+        DeskCheckboxRow(
+            checked = enabled,
+            onCheckedChange = onEnabledChange,
+            title = "Create and assign ${role.displayName} preset",
+        )
+        if (enabled) {
+            LlmPresetCoreFields(
+                form = form,
+                llmOptions = setupOptions(state.llmModels),
+                projectorOptions = setupOptions(state.mmprojModels),
+                onFormChange = onFormChange,
+            )
+            LlmPresetAdvancedArgsField(form, onFormChange)
+        }
+    }
+    SetupMessage(state)
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        DeskOutlinedButton(onClick = onBack) {
+            ButtonLabel(
+                icon = { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null, modifier = Modifier.size(16.dp)) },
+                text = "Back",
+            )
+        }
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(DeskControlSpacing),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            DeskOutlinedButton(onClick = onSkip, enabled = !state.isFinishing) {
+                Text(if (isLastStep) "Skip and Finish" else "Skip")
+            }
+            DeskButton(
+                onClick = onContinue,
+                enabled = !state.isFinishing,
+            ) {
+                ButtonLabel(
+                    icon = {
+                        if (state.isFinishing) {
+                            CircularProgressIndicator(Modifier.size(16.dp))
+                        } else {
+                            Icon(Icons.Default.CheckCircle, contentDescription = null, modifier = Modifier.size(16.dp))
+                        }
+                    },
+                    text = when {
+                        state.isFinishing -> "Finishing"
+                        isLastStep -> "Finish Setup"
+                        else -> "Continue"
+                    },
+                )
+            }
         }
     }
 }
@@ -482,31 +613,32 @@ private fun SetupPresetBlock(
     }
 }
 
-@Composable
-private fun ModelDropdown(
-    label: String,
-    selected: String,
-    models: List<SetupModelOption>,
-    emptyText: String,
-    allowBlank: Boolean = false,
-    onSelected: (String) -> Unit,
-) {
-    if (models.isEmpty()) {
-        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            DeskLabel(label)
-            Text(emptyText, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
-        return
+private fun setupOptions(models: List<SetupModelOption>): List<String> =
+    models.map { it.id }.filter { it.isNotBlank() }.distinct().sorted()
+
+private val SetupLlmRole.setupDescription: String
+    get() = when (this) {
+        SetupLlmRole.Tagging -> "Create a multimodal LLM preset for gallery image tagging, or skip it for now."
+        SetupLlmRole.PromptEnhancement -> "Create a prompt enhancement preset, or keep enhancement unassigned."
+        SetupLlmRole.Assistant -> "Create a chat assistant preset, or finish without assigning one."
     }
-    val options = if (allowBlank) listOf("") + models.map { it.id } else models.map { it.id }
-    DeskDropdownField(
-        label = label,
-        value = selected,
-        options = options,
-        onValueChange = onSelected,
-        modifier = Modifier.fillMaxWidth(),
-    )
-}
+
+private val SetupLlmRole.setupSubtitle: String
+    get() = when (this) {
+        SetupLlmRole.Tagging -> "Optional. A vision projector is required for image tagging."
+        SetupLlmRole.PromptEnhancement -> "Optional. Used when enhancing prompts before generation."
+        SetupLlmRole.Assistant -> "Optional. Used by the local assistant panel."
+    }
+
+private val setupSamplerOptions = listOf(
+    "euler_a",
+    "euler",
+    "heun",
+    "dpm2",
+    "dpm++2m",
+    "dpm++2mv2",
+    "lcm",
+)
 
 @Composable
 private fun SetupStepIndicator(

@@ -1,6 +1,8 @@
 package com.diffusiondesk.desktop.core
 
+import java.io.File
 import java.nio.file.Files
+import java.util.Properties
 import kotlin.io.path.deleteIfExists
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -35,12 +37,11 @@ class DesktopSettingsStoreTest {
         val repoRoot = tempDir.resolve("repo").apply { mkdirs() }
 
         try {
-            settingsFile.writeText(
-                """
-                repoRoot=${repoRoot.absolutePath}
-                modelDir=../models
-                outputDir=./outputs
-                """.trimIndent(),
+            writeSettings(
+                settingsFile,
+                "repoRoot" to repoRoot.absolutePath,
+                "modelDir" to "../models",
+                "outputDir" to "./outputs",
             )
 
             val settings = DesktopSettingsStore(settingsFile).load()
@@ -60,12 +61,11 @@ class DesktopSettingsStoreTest {
         val modelDir = tempDir.resolve("external-models")
 
         try {
-            settingsFile.writeText(
-                """
-                repoRoot=${repoRoot.absolutePath}
-                modelDir=${modelDir.absolutePath}
-                outputDir=outputs
-                """.trimIndent(),
+            writeSettings(
+                settingsFile,
+                "repoRoot" to repoRoot.absolutePath,
+                "modelDir" to modelDir.absolutePath,
+                "outputDir" to "outputs",
             )
 
             val settings = DesktopSettingsStore(settingsFile).load()
@@ -74,5 +74,31 @@ class DesktopSettingsStoreTest {
         } finally {
             tempDir.deleteRecursively()
         }
+    }
+
+    @Test
+    fun existingSettingsWithoutSetupFlagAreTreatedAsCompleted() {
+        val tempDir = Files.createTempDirectory("diffusion-desk-settings-test").toFile()
+        val settingsFile = tempDir.resolve("settings.properties")
+        val repoRoot = tempDir.resolve("repo").apply { mkdirs() }
+
+        try {
+            writeSettings(
+                settingsFile,
+                "repoRoot" to repoRoot.absolutePath,
+                "modelDir" to "models",
+                "outputDir" to "outputs",
+            )
+
+            assertTrue(DesktopSettingsStore(settingsFile).load().setupCompleted)
+        } finally {
+            tempDir.deleteRecursively()
+        }
+    }
+
+    private fun writeSettings(settingsFile: File, vararg entries: Pair<String, String>) {
+        val props = Properties()
+        entries.forEach { (key, value) -> props.setProperty(key, value) }
+        settingsFile.outputStream().use { props.store(it, "Test settings") }
     }
 }

@@ -50,6 +50,7 @@ fun SettingsScreen(
     onApplyToBackend: () -> Unit,
     onReloadFromBackend: () -> Unit,
     onRefreshModelFolders: () -> Unit,
+    onRunSetup: () -> Unit,
 ) {
     BoxWithConstraints(
         modifier = Modifier
@@ -96,6 +97,7 @@ fun SettingsScreen(
                         onSaveLocal = onSaveLocal,
                         onApplyToBackend = onApplyToBackend,
                         onReloadFromBackend = onReloadFromBackend,
+                        onRunSetup = onRunSetup,
                     )
                 }
             }
@@ -127,6 +129,7 @@ fun SettingsScreen(
                     onSaveLocal = onSaveLocal,
                     onApplyToBackend = onApplyToBackend,
                     onReloadFromBackend = onReloadFromBackend,
+                    onRunSetup = onRunSetup,
                 )
             }
         }
@@ -234,6 +237,7 @@ private fun DesktopSettingsSection(
     onSaveLocal: () -> Unit,
     onApplyToBackend: () -> Unit,
     onReloadFromBackend: () -> Unit,
+    onRunSetup: () -> Unit,
 ) {
     SectionCard(
         title = "Advanced",
@@ -272,6 +276,9 @@ private fun DesktopSettingsSection(
             ) {
                 Text("Reload Config")
             }
+        }
+        DeskOutlinedButton(onClick = onRunSetup) {
+            Text("Run Setup Wizard")
         }
     }
 }
