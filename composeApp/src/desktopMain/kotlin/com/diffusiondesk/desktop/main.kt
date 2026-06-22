@@ -17,7 +17,7 @@ fun main() = application {
             exitApplication()
         },
         title = "Diffusion Desk",
-        icon = painterResource("icons/app-icon.png"),
+        icon = painterResource("icons/app-icon.svg"),
         state = windowState,
     ) {
         App(controller = controller)
