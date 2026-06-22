@@ -7,7 +7,7 @@ organizing images on your own machine. It combines native workers built around
 desktop interface. Image generation, prompt assistance, composition creation,
 and image tagging can all run locally.
 
-![Diffusion Desk Generate view with an Ideogram composition overlay](screenshots/generate-composition-overlay.png)
+![Diffusion Desk Generate view with a structured composition and generated image](screenshots/generate3.png)
 
 ## What It Is
 
