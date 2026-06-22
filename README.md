@@ -1,4 +1,4 @@
-# Diffusion Desk
+# <img src="composeApp/src/desktopMain/resources/icons/app-icon.png" alt="Diffusion Desk icon" width="36" height="36"> Diffusion Desk
 
 Diffusion Desk is a desktop application for generating, refining, and
 organizing images on your own machine. It combines native workers built around
