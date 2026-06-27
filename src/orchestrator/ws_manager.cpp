@@ -13,7 +13,8 @@ WsManager::WsManager(int port, const std::string& host)
         100,   // maxConnections
         10,    // handshakeTimeoutSecs
         2,     // addressFamily (AF_INET)
-        30     // pingIntervalSeconds
+        30,    // pingIntervalSeconds
+        -1     // sendTimeoutSeconds
     );
 
     _server->setOnClientMessageCallback(

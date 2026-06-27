@@ -1,15 +1,15 @@
 [versions]
-compose-plugin = "1.10.0"
+compose-plugin = "1.11.1"
 compose-hot-reload = "1.1.1"
-kotlin = "2.3.20"
-coroutines = "1.8.1"
-serialization = "1.7.3"
+kotlin = "2.4.0"
+coroutines = "1.11.0"
+serialization = "1.11.0"
 jewel = "0.37.0-262.4852.51"
-intellij-platform-icons = "261.25134.147"
-sqlite-jdbc = "3.49.1.0"
+intellij-platform-icons = "261.25134.203"
+sqlite-jdbc = "3.53.2.0"
 
 [libraries]
-androidx-lifecycle-viewmodel-compose = "org.jetbrains.androidx.lifecycle:lifecycle-viewmodel-compose:2.8.0"
+androidx-lifecycle-viewmodel-compose = "org.jetbrains.androidx.lifecycle:lifecycle-viewmodel-compose:2.10.0"
 kotlinx-coroutines-core = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version.ref = "coroutines" }
 kotlinx-coroutines-swing = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-swing", version.ref = "coroutines" }
 kotlinx-serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json", version.ref = "serialization" }
