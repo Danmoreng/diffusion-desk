@@ -100,19 +100,16 @@ fun App(
                 Box(modifier = Modifier.fillMaxSize()) {
                     SetupScreen(
                         state = setupState,
+                        onStart = controller.setupViewModel::startOnboarding,
                         onModelDirChange = controller.setupViewModel::updateModelDir,
                         onOutputDirChange = controller.setupViewModel::updateOutputDir,
                         onScan = controller.setupViewModel::scanAndContinue,
                         onBack = controller.setupViewModel::goBack,
+                        onContinueFromModelGuide = controller.setupViewModel::continueFromModelGuide,
                         onImagePresetFormChange = controller.setupViewModel::updateImagePresetForm,
-                        onContinueFromImagePreset = controller.setupViewModel::continueFromImagePreset,
                         onEnableTaggingLlmPresetChange = controller.setupViewModel::updateEnableTaggingLlmPreset,
                         onTaggingLlmPresetFormChange = controller.setupViewModel::updateTaggingLlmPresetForm,
-                        onEnablePromptEnhancerLlmPresetChange = controller.setupViewModel::updateEnablePromptEnhancerLlmPreset,
-                        onPromptEnhancerLlmPresetFormChange = controller.setupViewModel::updatePromptEnhancerLlmPresetForm,
-                        onEnableAssistantLlmPresetChange = controller.setupViewModel::updateEnableAssistantLlmPreset,
-                        onAssistantLlmPresetFormChange = controller.setupViewModel::updateAssistantLlmPresetForm,
-                        onContinueLlmStep = controller.setupViewModel::continueFromLlmStep,
+                        onContinueFromTaggingGuide = controller.setupViewModel::continueFromTaggingGuide,
                         onSkipLlmStep = controller.setupViewModel::skipLlmStep,
                         onFinish = { controller.setupViewModel.finish(::completeSetup) },
                         onCancel = if (settingsState.setupCompleted) {

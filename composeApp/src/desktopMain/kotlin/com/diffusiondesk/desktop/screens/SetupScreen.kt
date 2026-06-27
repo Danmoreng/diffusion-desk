@@ -24,6 +24,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.Image
+import androidx.compose.material.icons.filled.Memory
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.SmartToy
 import androidx.compose.material3.Icon
@@ -44,25 +45,24 @@ import com.diffusiondesk.desktop.viewmodel.SetupUiState
 import com.diffusiondesk.desktop.viewmodel.displayName
 import org.jetbrains.jewel.ui.component.CircularProgressIndicator
 import org.jetbrains.jewel.ui.component.Text
+import java.awt.Desktop
 import java.io.File
+import java.net.URI
 import javax.swing.JFileChooser
 
 @Composable
 fun SetupScreen(
     state: SetupUiState,
+    onStart: () -> Unit,
     onModelDirChange: (String) -> Unit,
     onOutputDirChange: (String) -> Unit,
     onScan: () -> Unit,
     onBack: () -> Unit,
+    onContinueFromModelGuide: () -> Unit,
     onImagePresetFormChange: (ImagePresetForm) -> Unit,
-    onContinueFromImagePreset: () -> Unit,
     onEnableTaggingLlmPresetChange: (Boolean) -> Unit,
     onTaggingLlmPresetFormChange: (LlmPresetForm) -> Unit,
-    onEnablePromptEnhancerLlmPresetChange: (Boolean) -> Unit,
-    onPromptEnhancerLlmPresetFormChange: (LlmPresetForm) -> Unit,
-    onEnableAssistantLlmPresetChange: (Boolean) -> Unit,
-    onAssistantLlmPresetFormChange: (LlmPresetForm) -> Unit,
-    onContinueLlmStep: (SetupLlmRole) -> Unit,
+    onContinueFromTaggingGuide: () -> Unit,
     onSkipLlmStep: (SetupLlmRole) -> Unit,
     onFinish: () -> Unit,
     onCancel: (() -> Unit)? = null,
@@ -90,19 +90,16 @@ fun SetupScreen(
                     SetupHeader(state)
                     SetupBody(
                         state = state,
+                        onStart = onStart,
                         onModelDirChange = onModelDirChange,
                         onOutputDirChange = onOutputDirChange,
                         onScan = onScan,
                         onBack = onBack,
+                        onContinueFromModelGuide = onContinueFromModelGuide,
                         onImagePresetFormChange = onImagePresetFormChange,
-                        onContinueFromImagePreset = onContinueFromImagePreset,
                         onEnableTaggingLlmPresetChange = onEnableTaggingLlmPresetChange,
                         onTaggingLlmPresetFormChange = onTaggingLlmPresetFormChange,
-                        onEnablePromptEnhancerLlmPresetChange = onEnablePromptEnhancerLlmPresetChange,
-                        onPromptEnhancerLlmPresetFormChange = onPromptEnhancerLlmPresetFormChange,
-                        onEnableAssistantLlmPresetChange = onEnableAssistantLlmPresetChange,
-                        onAssistantLlmPresetFormChange = onAssistantLlmPresetFormChange,
-                        onContinueLlmStep = onContinueLlmStep,
+                        onContinueFromTaggingGuide = onContinueFromTaggingGuide,
                         onSkipLlmStep = onSkipLlmStep,
                         onFinish = onFinish,
                     )
@@ -118,19 +115,16 @@ fun SetupScreen(
                     )
                     SetupBody(
                         state = state,
+                        onStart = onStart,
                         onModelDirChange = onModelDirChange,
                         onOutputDirChange = onOutputDirChange,
                         onScan = onScan,
                         onBack = onBack,
+                        onContinueFromModelGuide = onContinueFromModelGuide,
                         onImagePresetFormChange = onImagePresetFormChange,
-                        onContinueFromImagePreset = onContinueFromImagePreset,
                         onEnableTaggingLlmPresetChange = onEnableTaggingLlmPresetChange,
                         onTaggingLlmPresetFormChange = onTaggingLlmPresetFormChange,
-                        onEnablePromptEnhancerLlmPresetChange = onEnablePromptEnhancerLlmPresetChange,
-                        onPromptEnhancerLlmPresetFormChange = onPromptEnhancerLlmPresetFormChange,
-                        onEnableAssistantLlmPresetChange = onEnableAssistantLlmPresetChange,
-                        onAssistantLlmPresetFormChange = onAssistantLlmPresetFormChange,
-                        onContinueLlmStep = onContinueLlmStep,
+                        onContinueFromTaggingGuide = onContinueFromTaggingGuide,
                         onSkipLlmStep = onSkipLlmStep,
                         onFinish = onFinish,
                         modifier = Modifier.weight(1f),
@@ -159,9 +153,9 @@ private fun SetupHeader(state: SetupUiState) {
         )
         Text(
             text = if (state.step == 1) {
-                "Choose where models live and where generated images should be written."
+                "Set up a local GGUF-first image workflow without downloading files inside the app."
             } else {
-                "Create the starter image preset and optional LLM presets."
+                "Follow the Hugging Face checklist, place the files in your model folders, then scan again."
             },
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -181,48 +175,48 @@ private fun SetupRail(
             fontWeight = FontWeight.SemiBold,
         )
         Text(
-            text = "A short path through folders, presets, and the first Generate workspace.",
+            text = "A guided setup for model folders, starter files, and the first usable preset.",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         Spacer(Modifier.height(DeskSectionSpacing))
         SetupStepIndicator(
             number = "1",
-            title = "Folders",
-            subtitle = "Models and outputs",
-            icon = Icons.Default.FolderOpen,
+            title = "Welcome",
+            subtitle = "Setup path",
+            icon = Icons.Default.CheckCircle,
             selected = state.step == 1,
             complete = state.step > 1,
         )
         SetupStepIndicator(
             number = "2",
-            title = "Presets",
-            subtitle = "Image generation",
-            icon = Icons.Default.Image,
+            title = "Folders",
+            subtitle = "Models and outputs",
+            icon = Icons.Default.FolderOpen,
             selected = state.step == 2,
             complete = state.step > 2,
         )
         SetupStepIndicator(
             number = "3",
-            title = "Tagging",
-            subtitle = "Optional vision LLM",
-            icon = Icons.Default.SmartToy,
+            title = "Starter Model",
+            subtitle = "Z-Image Turbo",
+            icon = Icons.Default.Image,
             selected = state.step == 3,
             complete = state.step > 3,
         )
         SetupStepIndicator(
             number = "4",
-            title = "Enhancement",
-            subtitle = "Optional prompt LLM",
+            title = "Tagging",
+            subtitle = "Optional vision LLM",
             icon = Icons.Default.SmartToy,
             selected = state.step == 4,
             complete = state.step > 4,
         )
         SetupStepIndicator(
             number = "5",
-            title = "Assistant",
-            subtitle = "Optional chat LLM",
-            icon = Icons.Default.SmartToy,
+            title = "Preset",
+            subtitle = "Generation defaults",
+            icon = Icons.Default.Memory,
             selected = state.step == 5,
             complete = false,
         )
@@ -235,19 +229,16 @@ private fun SetupRail(
 @Composable
 private fun SetupBody(
     state: SetupUiState,
+    onStart: () -> Unit,
     onModelDirChange: (String) -> Unit,
     onOutputDirChange: (String) -> Unit,
     onScan: () -> Unit,
     onBack: () -> Unit,
+    onContinueFromModelGuide: () -> Unit,
     onImagePresetFormChange: (ImagePresetForm) -> Unit,
-    onContinueFromImagePreset: () -> Unit,
     onEnableTaggingLlmPresetChange: (Boolean) -> Unit,
     onTaggingLlmPresetFormChange: (LlmPresetForm) -> Unit,
-    onEnablePromptEnhancerLlmPresetChange: (Boolean) -> Unit,
-    onPromptEnhancerLlmPresetFormChange: (LlmPresetForm) -> Unit,
-    onEnableAssistantLlmPresetChange: (Boolean) -> Unit,
-    onAssistantLlmPresetFormChange: (LlmPresetForm) -> Unit,
-    onContinueLlmStep: (SetupLlmRole) -> Unit,
+    onContinueFromTaggingGuide: () -> Unit,
     onSkipLlmStep: (SetupLlmRole) -> Unit,
     onFinish: () -> Unit,
     modifier: Modifier = Modifier,
@@ -258,52 +249,34 @@ private fun SetupBody(
             .verticalScroll(rememberScrollState()),
     ) {
         when (state.step) {
-            1 -> FolderStep(
+            1 -> WelcomeStep(onStart = onStart)
+            2 -> FolderStep(
                 state = state,
+                onBack = onBack,
                 onModelDirChange = onModelDirChange,
                 onOutputDirChange = onOutputDirChange,
                 onScan = onScan,
             )
-            2 -> ImagePresetStep(
+            3 -> StarterModelGuideStep(
                 state = state,
                 onBack = onBack,
+                onScan = onScan,
                 onImagePresetFormChange = onImagePresetFormChange,
-                onContinue = onContinueFromImagePreset,
+                onContinue = onContinueFromModelGuide,
             )
-            3 -> LlmRoleStep(
+            4 -> TaggingGuideStep(
                 state = state,
-                role = SetupLlmRole.Tagging,
-                enabled = state.enableTaggingLlmPreset,
-                form = state.taggingLlmForm,
                 onBack = onBack,
+                onScan = onScan,
                 onEnabledChange = onEnableTaggingLlmPresetChange,
                 onFormChange = onTaggingLlmPresetFormChange,
                 onSkip = { onSkipLlmStep(SetupLlmRole.Tagging) },
-                onContinue = { onContinueLlmStep(SetupLlmRole.Tagging) },
+                onContinue = onContinueFromTaggingGuide,
             )
-            4 -> LlmRoleStep(
+            else -> ImagePresetStep(
                 state = state,
-                role = SetupLlmRole.PromptEnhancement,
-                enabled = state.enablePromptEnhancerLlmPreset,
-                form = state.promptEnhancerLlmForm,
                 onBack = onBack,
-                onEnabledChange = onEnablePromptEnhancerLlmPresetChange,
-                onFormChange = onPromptEnhancerLlmPresetFormChange,
-                onSkip = { onSkipLlmStep(SetupLlmRole.PromptEnhancement) },
-                onContinue = { onContinueLlmStep(SetupLlmRole.PromptEnhancement) },
-            )
-            else -> LlmRoleStep(
-                state = state,
-                role = SetupLlmRole.Assistant,
-                enabled = state.enableAssistantLlmPreset,
-                form = state.assistantLlmForm,
-                onBack = onBack,
-                onEnabledChange = onEnableAssistantLlmPresetChange,
-                onFormChange = onAssistantLlmPresetFormChange,
-                onSkip = {
-                    onSkipLlmStep(SetupLlmRole.Assistant)
-                    onFinish()
-                },
+                onImagePresetFormChange = onImagePresetFormChange,
                 onContinue = onFinish,
             )
         }
@@ -311,19 +284,59 @@ private fun SetupBody(
 }
 
 @Composable
+private fun WelcomeStep(onStart: () -> Unit) {
+    Text(
+        text = "Welcome",
+        style = MaterialTheme.typography.titleLarge,
+        fontWeight = FontWeight.SemiBold,
+    )
+    Text(
+        text = "This setup helps you prepare the local files Diffusion Desk needs. Downloads stay in your browser; the app only checks the folders and creates presets.",
+        style = MaterialTheme.typography.bodyMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+    SetupPresetBlock(
+        icon = Icons.Default.Image,
+        title = "Starter image model",
+        subtitle = "Z-Image Turbo GGUF with its required text encoder and VAE.",
+    ) {
+        SetupBullet("Open the recommended Hugging Face pages from the checklist.")
+        SetupBullet("Download the files yourself and place them in the matching model folders.")
+        SetupBullet("Scan the folders, review the detected files, then create the starter preset.")
+    }
+    SetupPresetBlock(
+        icon = Icons.Default.SmartToy,
+        title = "Optional image tagger",
+        subtitle = "Qwen3-VL 4B can be assigned for gallery tagging and image descriptions.",
+    ) {
+        SetupBullet("This is optional and can be skipped during first setup.")
+        SetupBullet("Vision LLM presets need both the GGUF model and a matching mmproj file.")
+    }
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.End,
+    ) {
+        DeskButton(onClick = onStart) {
+            Text("Start Setup")
+        }
+    }
+}
+
+@Composable
 private fun FolderStep(
     state: SetupUiState,
+    onBack: () -> Unit,
     onModelDirChange: (String) -> Unit,
     onOutputDirChange: (String) -> Unit,
     onScan: () -> Unit,
 ) {
     Text(
-        text = "Folders",
+        text = "Folders and System Check",
         style = MaterialTheme.typography.titleLarge,
         fontWeight = FontWeight.SemiBold,
     )
     Text(
-        text = "Use absolute paths when your model library is outside this repository.",
+        text = "Choose where Diffusion Desk should look for manually downloaded model files.",
         style = MaterialTheme.typography.bodyMedium,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
     )
@@ -343,9 +356,15 @@ private fun FolderStep(
     SetupMessage(state)
     Row(
         modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.End,
+        horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        DeskOutlinedButton(onClick = onBack) {
+            ButtonLabel(
+                icon = { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null, modifier = Modifier.size(16.dp)) },
+                text = "Back",
+            )
+        }
         DeskButton(
             onClick = onScan,
             enabled = state.canContinueFromFolders,
@@ -372,15 +391,24 @@ private fun ImagePresetStep(
     onContinue: () -> Unit,
 ) {
     Text(
-        text = "Image Preset",
+        text = "Basis Preset",
         style = MaterialTheme.typography.titleLarge,
         fontWeight = FontWeight.SemiBold,
     )
     Text(
-        text = "The starter image preset is required. LLM presets are optional in the next steps.",
+        text = "This preset is what the Generate workspace will use first. You can refine every value later.",
         style = MaterialTheme.typography.bodyMedium,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
     )
+    SetupPresetBlock(
+        icon = Icons.Default.CheckCircle,
+        title = "What presets control",
+        subtitle = "Presets keep model wiring and generation defaults together.",
+    ) {
+        SetupBullet("Quality presets mainly affect resolution, steps, sampler, CFG scale, and VRAM behavior.")
+        SetupBullet("Model components stay explicit: image model, text encoder, and VAE are separate files.")
+        SetupBullet("The Generate screen remains the full workspace; this setup only prepares the defaults.")
+    }
     SetupPresetBlock(
         icon = Icons.Default.Image,
         title = "Image Generation",
@@ -426,8 +454,193 @@ private fun ImagePresetStep(
         ) {
             ButtonLabel(
                 icon = { Icon(Icons.Default.CheckCircle, contentDescription = null, modifier = Modifier.size(16.dp)) },
-                text = "Continue",
+                text = "Finish Setup",
             )
+        }
+    }
+}
+
+@Composable
+private fun StarterModelGuideStep(
+    state: SetupUiState,
+    onBack: () -> Unit,
+    onScan: () -> Unit,
+    onImagePresetFormChange: (ImagePresetForm) -> Unit,
+    onContinue: () -> Unit,
+) {
+    Text(
+        text = "Starter Model",
+        style = MaterialTheme.typography.titleLarge,
+        fontWeight = FontWeight.SemiBold,
+    )
+    Text(
+        text = "Z-Image Turbo needs three local files before the first image preset can be saved.",
+        style = MaterialTheme.typography.bodyMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+    ModelDownloadCard(
+        title = "Z-Image Turbo GGUF",
+        role = "Image model / transformer",
+        url = zImageTurboUrl,
+        targetPath = File(state.modelDir, "diffusion_models"),
+        found = state.imageForm.diffusionModel.isNotBlank(),
+        foundLabel = state.imageForm.diffusionModel.ifBlank { "No Z-Image GGUF selected" },
+    )
+    ModelDownloadCard(
+        title = "Qwen3-4B GGUF",
+        role = "Required text encoder for Z-Image prompts",
+        url = qwenTextEncoderUrl,
+        targetPath = File(state.modelDir, "text-encoder"),
+        found = state.imageForm.llm.isNotBlank(),
+        foundLabel = state.imageForm.llm.ifBlank { "No text encoder selected" },
+    )
+    ModelDownloadCard(
+        title = "FLUX VAE ae.safetensors",
+        role = "Required VAE decoder for image output",
+        url = fluxVaeUrl,
+        targetPath = File(state.modelDir, "vae"),
+        found = state.imageForm.vae.isNotBlank(),
+        foundLabel = state.imageForm.vae.ifBlank { "No VAE selected" },
+    )
+    SetupPresetBlock(
+        icon = Icons.Default.Image,
+        title = "Detected files",
+        subtitle = "Adjust these only if the scan picked the wrong file.",
+    ) {
+        ImagePresetModelComponentsFields(
+            form = state.imageForm,
+            mainModelOptions = setupOptions(state.imageModels),
+            vaeOptions = setupOptions(state.vaeModels),
+            textEncoderOptions = setupOptions(state.textEncoderModels),
+            llmOptions = setupOptions(state.llmModels),
+            onFormChange = onImagePresetFormChange,
+        )
+    }
+    SetupMessage(state)
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        DeskOutlinedButton(onClick = onBack) {
+            ButtonLabel(
+                icon = { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null, modifier = Modifier.size(16.dp)) },
+                text = "Back",
+            )
+        }
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(DeskControlSpacing),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            DeskOutlinedButton(onClick = onScan, enabled = state.canContinueFromFolders) {
+                ButtonLabel(
+                    icon = {
+                        if (state.isScanning) {
+                            CircularProgressIndicator(Modifier.size(16.dp))
+                        } else {
+                            Icon(Icons.Default.Search, contentDescription = null, modifier = Modifier.size(16.dp))
+                        }
+                    },
+                    text = if (state.isScanning) "Scanning" else "Scan Again",
+                )
+            }
+            DeskButton(onClick = onContinue, enabled = state.canFinish) {
+                Text("Continue")
+            }
+        }
+    }
+}
+
+@Composable
+private fun TaggingGuideStep(
+    state: SetupUiState,
+    onBack: () -> Unit,
+    onScan: () -> Unit,
+    onEnabledChange: (Boolean) -> Unit,
+    onFormChange: (LlmPresetForm) -> Unit,
+    onSkip: () -> Unit,
+    onContinue: () -> Unit,
+) {
+    Text(
+        text = "Optional Image Tagger",
+        style = MaterialTheme.typography.titleLarge,
+        fontWeight = FontWeight.SemiBold,
+    )
+    Text(
+        text = "Qwen3-VL 4B can describe images and create gallery tags. You can skip this and add it later.",
+        style = MaterialTheme.typography.bodyMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+    ModelDownloadCard(
+        title = "Qwen3-VL 4B Instruct GGUF",
+        role = "Vision-language model for image tagging",
+        url = qwenVlUrl,
+        targetPath = File(state.modelDir, "llm"),
+        found = state.taggingLlmForm.modelPath.isNotBlank(),
+        foundLabel = state.taggingLlmForm.modelPath.ifBlank { "No Qwen3-VL GGUF selected" },
+    )
+    ModelDownloadCard(
+        title = "Qwen3-VL mmproj",
+        role = "Required vision projector for image inputs",
+        url = qwenVlUrl,
+        targetPath = File(state.modelDir, "mmproj"),
+        found = state.taggingLlmForm.mmprojPath.isNotBlank(),
+        foundLabel = state.taggingLlmForm.mmprojPath.ifBlank { "No mmproj selected" },
+    )
+    SetupPresetBlock(
+        icon = Icons.Default.SmartToy,
+        title = "Image Tagging Preset",
+        subtitle = "Enable this only if the model and projector are already in place.",
+    ) {
+        DeskCheckboxRow(
+            checked = state.enableTaggingLlmPreset,
+            onCheckedChange = onEnabledChange,
+            title = "Create and assign Qwen3-VL image tagging preset",
+        )
+        if (state.enableTaggingLlmPreset) {
+            LlmPresetCoreFields(
+                form = state.taggingLlmForm,
+                llmOptions = setupOptions(state.llmModels),
+                projectorOptions = setupOptions(state.mmprojModels),
+                onFormChange = onFormChange,
+            )
+            LlmPresetAdvancedArgsField(state.taggingLlmForm, onFormChange)
+        }
+    }
+    SetupMessage(state)
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        DeskOutlinedButton(onClick = onBack) {
+            ButtonLabel(
+                icon = { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null, modifier = Modifier.size(16.dp)) },
+                text = "Back",
+            )
+        }
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(DeskControlSpacing),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            DeskOutlinedButton(onClick = onScan, enabled = state.canContinueFromFolders) {
+                ButtonLabel(
+                    icon = {
+                        if (state.isScanning) {
+                            CircularProgressIndicator(Modifier.size(16.dp))
+                        } else {
+                            Icon(Icons.Default.Search, contentDescription = null, modifier = Modifier.size(16.dp))
+                        }
+                    },
+                    text = if (state.isScanning) "Scanning" else "Scan Again",
+                )
+            }
+            DeskOutlinedButton(onClick = onSkip) {
+                Text("Skip")
+            }
+            DeskButton(onClick = onContinue) {
+                Text("Continue")
+            }
         }
     }
 }
@@ -613,6 +826,74 @@ private fun SetupPresetBlock(
     }
 }
 
+@Composable
+private fun ModelDownloadCard(
+    title: String,
+    role: String,
+    url: String,
+    targetPath: File,
+    found: Boolean,
+    foundLabel: String,
+) {
+    SetupPresetBlock(
+        icon = if (found) Icons.Default.CheckCircle else Icons.Default.FolderOpen,
+        title = title,
+        subtitle = role,
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                DeskStatusBadge(
+                    text = if (found) "Found" else "Missing",
+                    tone = if (found) DeskStatusTone.Success else DeskStatusTone.Warning,
+                )
+                Text(
+                    text = foundLabel,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    text = targetPath.absolutePath,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(DeskControlSpacing),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                DeskOutlinedButton(onClick = { openFolder(targetPath) }) {
+                    Text("Folder")
+                }
+                DeskButton(onClick = { openUrl(url) }) {
+                    Text("Hugging Face")
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SetupBullet(text: String) {
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(DeskCompactControlSpacing),
+        verticalAlignment = Alignment.Top,
+    ) {
+        Text("-", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
+        Text(text, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
 private fun setupOptions(models: List<SetupModelOption>): List<String> =
     models.map { it.id }.filter { it.isNotBlank() }.distinct().sorted()
 
@@ -639,6 +920,11 @@ private val setupSamplerOptions = listOf(
     "dpm++2mv2",
     "lcm",
 )
+
+private const val zImageTurboUrl = "https://huggingface.co/unsloth/Z-Image-Turbo-GGUF/tree/main"
+private const val qwenTextEncoderUrl = "https://huggingface.co/unsloth/Qwen3-4B-GGUF/tree/main"
+private const val fluxVaeUrl = "https://huggingface.co/black-forest-labs/FLUX.1-schnell/tree/main"
+private const val qwenVlUrl = "https://huggingface.co/unsloth/Qwen3-VL-4B-Instruct-GGUF/tree/main"
 
 @Composable
 private fun SetupStepIndicator(
@@ -714,5 +1000,18 @@ private fun chooseFolder(current: String): String? {
         chooser.selectedFile.absolutePath
     } else {
         null
+    }
+}
+
+private fun openUrl(url: String) {
+    runCatching {
+        Desktop.getDesktop().browse(URI(url))
+    }
+}
+
+private fun openFolder(folder: File) {
+    runCatching {
+        folder.mkdirs()
+        Desktop.getDesktop().open(folder)
     }
 }
