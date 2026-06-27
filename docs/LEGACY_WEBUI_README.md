@@ -4,6 +4,9 @@ This is the earlier README for the Vue/orchestrator-focused version of
 DiffusionDesk. The current top-level README now documents the minimal Compose
 desktop app first.
 
+The Dynamic Exploration workflow described below is legacy-only and is not part
+of the current Compose roadmap.
+
 ---
 
 # DiffusionDesk
@@ -12,7 +15,7 @@ DiffusionDesk is a high-performance, self-hosted **Creative AI Workstation** bui
 
 ![DiffusionDesk UI](../screenshots/Screenshot_1.png)
 
-Unlike simple generation frontends, DiffusionDesk functions as a complete **Asset Management System**. It persists your creative history, uses local LLMs to intelligently analyze and tag your images, and provides advanced workflows for refinement and exploration.
+Unlike simple generation frontends, DiffusionDesk functions as a complete **Asset Management System**. It persists your creative history, uses local LLMs to intelligently analyze and tag your images, and provides advanced workflows for refinement.
 
 ## Key Capabilities
 
@@ -21,7 +24,7 @@ Unlike simple generation frontends, DiffusionDesk functions as a complete **Asse
 - **Image Generation:** Supports FLUX, Z-Image, SDXL, and more with full GPU acceleration (CUDA).
 - **Inpainting Canvas:** Integrated editor for masking and regenerating specific parts of an image.
 - **Built-in Upscaling:** Native integration of ESRGAN for high-quality image enhancement.
-- **Dynamic Exploration:** Generate variations of prompts and seeds to explore the latent space and discover new styles.
+- **Dynamic Exploration (legacy-only):** Generate variations of prompts and seeds to explore the latent space and discover new styles. This workflow is not planned for the Compose app.
 
 ### Smart Asset Management
 - **SQLite Database:** Stores all your creative assets, including:

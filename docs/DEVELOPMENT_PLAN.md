@@ -1,209 +1,239 @@
-# DiffusionDesk Development Plan (Consolidated)
+# DiffusionDesk Development Plan
 
-**Last Updated:** January 1, 2026
-**Status:** Active Development
+**Last Updated:** June 27, 2026
+**Status:** Canonical roadmap for active work
 
-This document outlines the roadmap for DiffusionDesk, merging original milestones with architectural review recommendations and the "Model Presets + Creative Assistant" vision.
+This document is the single source of truth for roadmap status. The remaining
+files in `docs/` are supporting references for legacy WebUI context, LLM worker
+behavior, runtime memory notes, and repeatable benchmarks.
 
----
+## Current Product Shape
 
-## 0. Core Principles
+DiffusionDesk is now primarily a Kotlin Compose Desktop application. The legacy
+Vue/Vite `webui/` remains buildable and audit-clean, but new product UI should
+go into `composeApp/`.
 
-1.  **Stability through Isolation:** Orchestrator + specialized workers remains the default architecture.
-2.  **Predictability before Intelligence:** Solidify the substrate (DB, VRAM prediction) before adding "smart" agentic features.
-3.  **HTTP for IPC:** Keep HTTP for internal communication for debuggability; optimize only if proven bottleneck.
-4.  **Database as Memory:** All state (presets, prompt libraries, search, jobs) must be durable.
+The current Compose app includes:
 
----
+- Generate workspace with local SD worker control, structured Ideogram
+  composition editing, image preview, compact progress, cancellation, and
+  Endless Generation.
+- Analyze workspace for turning uploaded or gallery images into editable
+  Ideogram 4 compositions, then applying them back to Generate in Merge or
+  Replace mode.
+- Gallery workspace with search/filtering, tag/rating workflows, parameter
+  reuse, upscale handoff, and Analyze handoff.
+- Upscale workspace for ESRGAN-based image upscaling.
+- Presets workspace for image and LLM presets.
+- System workspace for image and LLM worker diagnostics, explicit unload, and
+  stop controls.
+- Assistant panel with controlled tool calls, including prompt edits,
+  generation-setting edits, latest-image inspection, and Ideogram composition
+  mutations.
 
-## Release A — Platform Contracts & Observability (Foundation)
+Native inference remains isolated in subprocesses:
 
-**Goal:** Make every core subsystem *inspectable*, *restartable*, and *consistent*.
+- `diffusion_desk_sd_worker`
+- one or more `diffusion_desk_llm_worker` instances managed by Compose
 
-*   [x] **A1. Standardize Contracts (Verify):**
-    *   [x] Ensure all workers return standard health object: `{ ok, service, version, model_loaded, vram_allocated_mb, vram_free_mb }`.
-    *   [x] Ensure all endpoints use standard error envelope.
-    *   [x] Verify internal token auth on *all* routes (including proxy).
-*   [x] **A2. Worker Lifecycle Resilience:**
-    *   [x] Orchestrator monitors worker health.
-    *   [x] Automatic restart on crash.
-    *   [x] Broadcast "system alert" to UI via WebSockets.
-*   [x] **A3. Structured Logs & Correlation:**
-    *   [x] Add request IDs to logs.
-    *   [x] Standardized text logging format (Apache/PHP style): `[timestamp] [level] [file:line] message`.
-*   [x] **A4. UI Modularity & Stores:**
-    *   [x] Extract `Sidebar.vue` sub-components (e.g., `VramIndicator.vue`, `ModelSelector.vue`).
-    *   [x] Move business rules (validation, generation logic) from components into Pinia store actions.
-*   [x] **A5. Config Hygiene:**
-    *   [x] Move hardcoded system prompts (Assistant, Tagger) to `config.json` / `SDSvrParams`.
-    *   [x] Externalize tool schemas/descriptions.
+## Completed Foundations
 
-**Definition of Done:**
-*   `curl /internal/health` works uniformly across all services.
-*   UI components do not contain generation logic; they only invoke Store actions.
-*   No prompt text exists in `.cpp` or `.ts` files; all are loaded from config.
+### Platform, Workers, and Observability
 
----
+- [x] Local worker subprocess architecture for SD and LLM inference.
+- [x] Worker health, shutdown, unload, and diagnostics endpoints used by
+  Compose.
+- [x] Compose-side worker lifecycle supervision.
+- [x] Explicit user controls for starting/stopping the image worker and LLM
+  workers.
+- [x] Internal token handling for worker requests.
+- [x] Structured user-visible notifications for common worker actions.
 
-## Release B0 — "Stop the Bleeding" (Immediate Reliability)
+### Compose Desktop Migration
 
-**Goal:** Prevent silent failures and improve error visibility before full VRAM system is ready.
+- [x] Compose desktop module and root Gradle tasks.
+- [x] Desktop app shell, navigation, settings persistence, and setup wizard.
+- [x] Backend worker bootstrap from Compose.
+- [x] Core generation workflow.
+- [x] Inpainting-style composition canvas primitives and bbox editing for
+  structured Ideogram prompts.
+- [x] Upscale workflow.
+- [x] Gallery workflow.
+- [x] Preset/library management.
+- [x] Assistant panel and local LLM integration.
+- [x] Windows and Linux packaging scripts for portable app images.
 
-*   [x] **B0.1. Fail Loudly:** Detect "blank output" or generation failure and return hard error to UI.
-*   [x] **B0.2. Conservative Retry:** Implement single retry with conservative settings on OOM/failure.
+Legacy-only note: the old Vue Dynamic Exploration grid has not been ported to
+Compose and is not part of the current product roadmap. Endless Generation
+exists in Compose as a separate workflow.
 
----
+### Database and Gallery
 
-## Release B — VRAM Management v2 (Predictive + Surgical)
+- [x] SQLite-backed gallery database.
+- [x] Schema migration support with `PRAGMA user_version`.
+- [x] Gallery search, filtering, tags, ratings, and reusable generation
+  parameters.
+- [x] Pending LLM tag state and gallery tagging service.
+- [x] Metadata parsing for generated image reuse.
 
-**Goal:** Prevent OOM *without* brute-force unloading; explain behavior to the user.
+### Presets and LLM Roles
 
-*   [x] **B1. Health-Driven VRAM Registry:**
-    *   [x] Workers report detailed memory usage.
-    *   [x] Orchestrator tracks model footprints.
-*   [x] **B2. Predictive Arbitration (Orchestrator):**
-    *   [x] Compute expected VRAM (Weights + Compute + Safety).
-    *   [x] Logic: Proceed vs. Soft Unload (KV) vs. Hard Unload.
-*   [x] **B2.5. Latency-Optimized State Transitions:**
-    *   [x] LRU / Idle unload policy (e.g., "unload after 10m idle").
-    *   [ ] Pre-warm models when resources allow.
-*   [x] **B3. Surgical Worker-Level Mitigations:**
-    *   [x] Dynamic VAE tiling based on resolution.
-    *   [x] Auto VAE-on-CPU fallback if VRAM is tight.
-    *   [x] **B3.4 Text Encoder Offload:** Enable `clip_on_cpu` for massive encoders (e.g., T5XXL) per preset.
-*   [x] **B4. UI Feedback:**
-    *   [x] Indicate "Projected vs Actual" VRAM.
-    *   [x] Notifications for "VAE moved to CPU" or "LLM Unloaded".
+- [x] JSON-backed image presets.
+- [x] JSON-backed LLM presets.
+- [x] Role bindings for tagging, prompt enhancement, and assistant workflows.
+- [x] Multimodal `mmproj` support for vision-capable LLM presets.
+- [x] Advanced llama.cpp arguments with parser validation and reserved
+  app-managed argument rejection.
+- [x] Multiple distinct LLM workers can be loaded concurrently through
+  `LlmWorkerPool`.
+- [x] Matching roles can reuse a compatible worker.
+- [x] CPU/GPU placement is represented at preset level.
 
-**Definition of Done:**
-*   Zero "silent crashes" or blank images due to VRAM.
-*   System creates specific log entry when falling back to CPU or unloading.
-*   Idle models unload automatically after configured timeout.
+### Ideogram 4 Composition Workflow
 
----
+- [x] Structured Ideogram document model and canonical JSON mutation path.
+- [x] Right-side composition/image canvas with overlay behavior.
+- [x] Manual composition editing for fields, elements, palettes, and bboxes.
+- [x] Composition undo/redo history for manual and LLM-driven mutations.
+- [x] Field-, style-, composition-, element-, and palette-level LLM actions.
+- [x] Staged composition generation with accepted intermediate drafts.
+- [x] Analyze workspace for image-to-composition capture.
+- [x] Gallery-to-Analyze handoff.
+- [x] Analyze-to-Generate Merge and Replace application.
+- [x] Assistant composition tools filtered by active prompt mode and context.
+- [x] Assistant cannot start image generation through a tool.
 
-## Release C — Database Hardening v2 (The "Memory" Layer)
+### Reliability
 
-**Goal:** A robust persistence layer supporting advanced features (Search, Jobs, Presets).
+- [x] Blank output and generation failure are surfaced as hard errors.
+- [x] Conservative retry paths exist for selected failure/OOM scenarios.
+- [x] SD and LLM idle unload behavior exists.
+- [x] Generation jobs support cancellation through Compose and the SD worker.
+- [x] User can explicitly unload image and LLM models.
 
-*   [x] **C1. Schema Versioning & Migrations:**
-    *   [x] Use `PRAGMA user_version`.
-    *   [x] Implement idempotent migration system on startup.
-*   [x] **C2. Performance Optimization:**
-    *   [x] Keyset pagination for Gallery (cursor-based).
-    *   [x] Verify/Add indexes.
-*   [x] **C3. Asset Management:**
-    *   [x] `generation_files` table (thumbnails, previews, masks).
-    *   [x] Job for background thumbnail creation.
-*   [x] **C4. FTS5 Search:**
-    *   [x] Virtual table for prompt search.
-    *   [x] Endpoints for full-text search query.
-*   [x] **C5. Tag Normalization:**
-    *   [x] `normalized_name` column.
-    *   [x] `tag_aliases` table.
-*   [x] **C6. Job Queue:**
-    *   [x] `jobs` table for background tasks (Auto-tagging, Thumbnails).
-    *   [x] Job runner service in Orchestrator.
-*   [x] **C7. Prompt Library (Generalized Styles):**
-    *   [x] `prompt_library` table: `id`, `label`, `content`, `category`, `created_at`.
-    *   [x] Categories: "Style", "Character", "Lighting", "Negative", etc.
+### Packaging
 
-**Definition of Done:**
-*   Database upgrades automatically without data loss.
-*   Gallery pagination remains instant (>50fps equivalent) with 50k items.
-*   Jobs persist across application restarts.
+- [x] Native worker build script.
+- [x] Compose distributable build tasks.
+- [x] Windows portable packaging script.
+- [x] Optional Windows MSI packaging through `jpackage`/WiX.
+- [x] Linux portable packaging script.
+- [x] Optional Linux DEB packaging through `jpackage`.
 
----
+## Active Roadmap
 
-## Release D — Model Presets System (The "Palette")
+### P1 - First-Run Onboarding
 
-**Goal:** Formalize model stacks to enable reliable VRAM prediction and user convenience.
+Goal: make the first installation successful without requiring users to already
+understand local model layout, Hugging Face downloads, or preset setup.
 
-*   [x] **D1. Preset Schema:**
-    *   [x] `image_presets` table: `unet`, `vae`, `clip`, `vram_weights_mb_estimate`, `vram_weights_mb_measured`, `default_params`, `preferred_params`.
-    *   [x] `llm_presets` table: `model`, `mmproj`, `n_ctx`, `capabilities`, `role` (e.g., "Vision", "Assistant").
-*   [x] **D2. Preset Manager UI:**
-    *   [x] Interface to assemble/edit presets.
-    *   [x] Auto-calculate VRAM estimates from file sizes (heuristic).
-    *   [x] Update `vram_weights_mb_measured` from actual usage reports.
-*   [x] **D3. Runtime Integration:**
-    *   [x] Orchestrator loads by Preset ID.
-    *   [x] VRAM Arbiter uses preset metadata for predictions.
+- [ ] Improve the first-run setup flow with clearer folder, worker, and runtime
+  checks.
+- [ ] Offer one or two recommended starter model examples from Hugging Face.
+- [ ] Document where to download those models, which files are required, and
+  where users should place them locally.
+- [ ] Provide preset templates or guided preset creation for the recommended
+  starter models.
+- [ ] Add validation that explains missing model files, unsupported file
+  combinations, and common CUDA/runtime mismatches in user-facing language.
 
-**Definition of Done:**
-*   User can switch between "SDXL High Quality" and "Flux Fast" with one click.
-*   VRAM prediction accuracy improves over time (using measured vs. estimated).
+### P2 - Roadmap and Test Hygiene
 
----
+Goal: keep the now-large app maintainable and measurable.
 
-## Release E — Creative Assistant v1 (Tool Use)
+- [ ] Keep this roadmap in sync when feature plans are completed.
+- [ ] Add or refresh focused tests for worker pooling, advanced-args parsing,
+  role routing, generation cancellation, Analyze capture, and composition
+  mutations.
+- [ ] Update user-facing docs whenever setup, packaging, or preset formats
+  change.
 
-**Goal:** An integrated Chat Agent that can control the application.
+### P3 - UI Cleanup
 
-*   [x] **E1. Assistant UI:** Persistent sidebar chat drawer (now `AssistantPanel`, configurable Left/Right).
-*   [x] **E2. Tool Definition:**
-    *   [x] `get_library_items(category)`, `apply_style()`, `enhance_prompt()`, `search_history()` (Depends on C4).
-*   [x] **E3. Safety Rails:**
-    *   [x] Orchestrator executes tools (not the LLM worker directly).
-    *   [x] Permission checks and loop prevention.
-*   [x] **E4. Integration:**
-    *   [x] Connect `prompt_library` (C7) to Assistant context.
-    *   [x] Inject current generation parameters into system prompt.
+Goal: reduce unnecessary complexity in the Compose UI and make common workflows
+clearer.
 
-**Definition of Done:**
-*   Assistant can "Find that blue robot image I made yesterday" (FTS + History).
-*   Assistant can "Apply the 'Cinematic' style" (Library Tool).
+- [ ] Audit Generate, Analyze, Gallery, Presets, and System for controls or
+  states that are redundant, unclear, or too deeply nested.
+- [ ] Simplify first-use paths without removing advanced controls.
+- [ ] Improve empty states, error states, and recovery actions.
+- [ ] Review assistant and composition-tool affordances for discoverability.
+- [ ] Keep cleanup targeted; avoid broad visual redesigns without a concrete
+  workflow problem.
 
----
+### P4 - Performance
 
-## Release F — Vision & Auto-Tagging v2
+Goal: make everyday app use feel faster and reduce avoidable waiting.
 
-**Goal:** Image-grounded intelligence.
+- [ ] Profile Compose startup, first worker launch, gallery loading, and
+  composition editor interactions.
+- [ ] Tighten gallery/database queries and thumbnail loading where needed.
+- [ ] Reduce avoidable LLM worker reloads through clearer reuse and idle
+  behavior.
+- [ ] Review image generation progress polling and UI recomposition hotspots.
+- [ ] Use `docs/RUNTIME_MEMORY_NOTES.md` when changing unload/offload behavior
+  or low-VRAM preset guidance.
+- [ ] Keep the existing Ideogram backend performance benchmark current when
+  runtime behavior changes.
 
-*   [x] **F1. Vision Presets:** Support `mmproj` in LLM presets (Depends on D1).
-*   [x] **F2. Image Handoff:** Mechanism to pass image paths to LLM worker (Implemented in Assistant).
-*   [x] **F3. Vision Tagging Job:** Background job to tag images based on visual content (Depends on C6 + D1).
-*   [ ] **F4. Feedback Loop:** "Analyze last image and suggest improvements."
+## Backlog
 
----
+### Feedback Loop
 
-## Release H — Real-time Control
+Goal: close the loop from generated result back into improved prompts.
 
-**Goal:** Responsive user experience and dynamic interaction.
+- [ ] Add a first-class "Analyze last image and suggest improvements" workflow.
+- [ ] Let the user apply suggestions as targeted normal-prompt edits, structured
+  composition mutations, or Analyze-to-Generate Merge changes.
+- [ ] Preserve all applied changes in the same undo/redo history used by
+  composition editing.
 
-*   [ ] **H1. Request Cancellation:**
-    *   Support canceling pending/active generation requests.
-    *   (Blocked by upstream `stable-diffusion.cpp` support, implement signaling first).
-*   [ ] **H2. Dynamic Updates:**
-    *   Allow parameter updates (e.g., guidance scale) during generation if supported.
+This is a useful future workflow, but it is not an active priority.
 
----
+### Packaging and Installer Polish
 
-## Release G — Distribution & Packaging
+Goal: make the app installer-grade for non-developer users.
 
-**Goal:** Installer-grade polish.
+- [x] Portable Windows package.
+- [x] Optional Windows MSI package.
+- [x] Portable Linux package.
+- [x] Optional Linux DEB package.
+- [x] First-run setup wizard for folders and initial presets.
+- [ ] Validate packaged app startup on clean Windows and Linux machines.
+- [ ] Fail packaging if required worker binaries, runtime DLLs, or default
+  assets are missing.
+- [ ] Decide whether named pipes or another IPC hardening layer is needed.
 
-*   [x] **G1. Build Automation:** One-command release build.
-*   [ ] **G2. Installer:** Inno Setup / NSIS.
-*   [ ] **G2.1. First-Run Wizard:**
-    *   Set model paths.
-    *   Download curated baseline models.
-    *   Validate GPU capability + VRAM.
-    *   Write initial `config.json`.
-*   [ ] **G3. IPC Hardening:** Optional Named Pipes support (if needed).
+### Runtime Polish
 
----
+Goal: make long sessions less surprising.
 
-## Cross-Cutting & Maintainability
+- [ ] Optional model pre-warm when resources allow and the user enables it.
+- [ ] Better worker log surfaces in the System workspace.
+- [ ] Clearer recovery guidance after worker crashes or failed model loads.
+- [ ] More explicit memory status for loaded image and LLM models.
+- [ ] Revisit dynamic parameter updates during generation if upstream support
+  makes it useful.
 
-*   **Safety:** Ensure stable-diffusion "blank output" is treated as an error (Release B0). [DONE]
-*   **Refactoring:** Continue RAII adoption (SD context, Upscaler context).
-*   **Dependencies:**
-    *   E2 (`search_history`) depends on C4 (FTS5).
-    *   F3 (Vision Tagging) depends on C6 (Jobs) + D1 (Vision Presets).
+## Supporting Docs
 
-## Priority Order (Next Steps)
+- `compose-llm-worker-support-spec.md`: LLM worker pool design and remaining
+  validation context.
+- `RUNTIME_MEMORY_NOTES.md`: Compose-first notes for unload/offload behavior,
+  diagnostics, and low-VRAM preset guidance.
+- `ideogram4-performance-benchmark.md`: repeatable Ideogram backend benchmark
+  instructions.
+- `LEGACY_WEBUI_README.md`: reference for the deprecated Vue WebUI while
+  `webui/` remains in the repository.
 
-1.  **Release C (DB Hardening):** Unlocks safe schema evolution for Presets/Jobs.
-2.  **Release B (VRAM v2):** Fixes reliability/OOM issues comprehensively.
-3.  **Release D (Presets):** Improves UX and enables accurate VRAM prediction.
+## Suggested Next Work
+
+1. Improve first-run onboarding with starter Hugging Face model examples and
+   guided preset creation.
+2. Add focused tests around the Compose LLM worker pool and composition
+   mutations.
+3. Audit the Compose UI for unnecessary complexity and simplify the highest
+   friction workflows.
+4. Profile startup, gallery, worker reuse, and composition editing performance.
+5. Validate portable/MSI packages on clean machines and tighten packaging
+   failure checks.
