@@ -35,9 +35,14 @@ data class SetupUiState(
     val step: Int = 1,
     val modelDir: String,
     val outputDir: String,
-    val imageForm: ImagePresetForm = ImagePresetForm(name = "Starter Image"),
+    val imageForm: ImagePresetForm = ImagePresetForm(
+        name = "Z-Image Turbo Starter",
+        defaultSteps = "8",
+        defaultCfgScale = "1.0",
+        defaultSampler = "euler",
+    ),
     val enableTaggingLlmPreset: Boolean = false,
-    val taggingLlmForm: LlmPresetForm = LlmPresetForm(name = "Image Tagging", placement = LlmPlacement.Auto),
+    val taggingLlmForm: LlmPresetForm = LlmPresetForm(name = "Qwen3-VL 4B Image Tagger", placement = LlmPlacement.Auto),
     val enablePromptEnhancerLlmPreset: Boolean = false,
     val promptEnhancerLlmForm: LlmPresetForm = LlmPresetForm(name = "Prompt Enhancement", placement = LlmPlacement.Auto),
     val enableAssistantLlmPreset: Boolean = false,
@@ -53,7 +58,7 @@ data class SetupUiState(
     val error: String? = null,
 ) {
     val canContinueFromFolders: Boolean get() = modelDir.isNotBlank() && outputDir.isNotBlank() && !isScanning
-    val canFinish: Boolean get() = imageForm.diffusionModel.isNotBlank() && !isFinishing
+    val canFinish: Boolean get() = imageForm.diffusionModel.isNotBlank() && imageForm.vae.isNotBlank() && imageForm.llm.isNotBlank() && !isFinishing
 }
 
 class SetupViewModel(
@@ -81,7 +86,26 @@ class SetupViewModel(
     fun updatePromptEnhancerLlmPresetForm(value: LlmPresetForm) = update { copy(promptEnhancerLlmForm = value, error = null) }
     fun updateEnableAssistantLlmPreset(value: Boolean) = update { copy(enableAssistantLlmPreset = value, error = null) }
     fun updateAssistantLlmPresetForm(value: LlmPresetForm) = update { copy(assistantLlmForm = value, error = null) }
+    fun startOnboarding() = update { copy(step = 2, error = null, message = "") }
     fun goBack() = update { copy(step = (step - 1).coerceAtLeast(1), error = null) }
+
+    fun continueFromModelGuide() {
+        val state = _uiState.value
+        when {
+            state.imageForm.diffusionModel.isBlank() -> update { copy(error = "Place a Z-Image Turbo GGUF file in the model folder and scan again.") }
+            state.imageForm.llm.isBlank() -> update { copy(error = "Place a Qwen3-4B Text Encoder GGUF file in the text encoder folder and scan again.") }
+            state.imageForm.vae.isBlank() -> update { copy(error = "Place ae.safetensors in the VAE folder and scan again.") }
+            else -> update { copy(step = 4, error = null, message = "") }
+        }
+    }
+
+    fun continueFromTaggingGuide() {
+        val state = _uiState.value
+        if (!state.validateLlmRole(SetupLlmRole.Tagging)) {
+            return
+        }
+        update { copy(step = 5, error = null, message = "") }
+    }
 
     fun continueFromImagePreset() {
         val state = _uiState.value
@@ -89,7 +113,11 @@ class SetupViewModel(
             update { copy(error = "Select an image model before continuing.") }
             return
         }
-        update { copy(step = 3, error = null, message = "") }
+        if (state.imageForm.llm.isBlank() || state.imageForm.vae.isBlank()) {
+            update { copy(error = "Select the Z-Image text encoder and VAE before continuing.") }
+            return
+        }
+        update { copy(step = 5, error = null, message = "") }
     }
 
     fun continueFromLlmStep(role: SetupLlmRole) {
@@ -157,7 +185,7 @@ class SetupViewModel(
                 )
                 update {
                     copy(
-                        step = 2,
+                        step = if (current.step >= 3) current.step else 3,
                         imageModels = result.imageModels,
                         vaeModels = result.vaeModels,
                         textEncoderModels = result.textEncoderModels,
@@ -165,9 +193,24 @@ class SetupViewModel(
                         mmprojModels = result.mmprojModels,
                         imageForm = imageForm.copy(
                             diffusionModel = imageForm.diffusionModel.takeIf { it in imageIds }
+                                ?: result.imageModels.preferredZImageTurbo()?.id
                                 ?: result.imageModels.firstOrNull()?.id.orEmpty(),
+                            vae = imageForm.vae.takeIf { it in result.vaeModels.map(SetupModelOption::id) }
+                                ?: result.vaeModels.preferredFluxVae()?.id
+                                ?: result.vaeModels.firstOrNull()?.id.orEmpty(),
+                            llm = imageForm.llm.takeIf { it in llmIds }
+                                ?: result.llmModels.preferredQwen3TextEncoder()?.id
+                                ?: result.textEncoderModels.preferredQwen3TextEncoder()?.id
+                                ?: result.llmModels.firstOrNull()?.id.orEmpty(),
                         ),
-                        taggingLlmForm = taggingLlmForm.withScannedDefaults(defaultProjector = true),
+                        taggingLlmForm = taggingLlmForm.copy(
+                            modelPath = taggingLlmForm.modelPath.takeIf { it in llmIds }
+                                ?: result.llmModels.preferredQwen3VlTagger()?.id
+                                ?: result.llmModels.firstOrNull()?.id.orEmpty(),
+                            mmprojPath = taggingLlmForm.mmprojPath.takeIf { it in mmprojIds }
+                                ?: result.mmprojModels.preferredQwen3VlProjector()?.id
+                                ?: result.mmprojModels.firstOrNull()?.id.orEmpty(),
+                        ),
                         promptEnhancerLlmForm = promptEnhancerLlmForm.withScannedDefaults(defaultProjector = false),
                         assistantLlmForm = assistantLlmForm.withScannedDefaults(defaultProjector = false),
                         isScanning = false,
@@ -189,6 +232,10 @@ class SetupViewModel(
             val imageForm = state.imageForm
             if (imageForm.diffusionModel.isBlank()) {
                 update { copy(error = "Select an image model before finishing setup.") }
+                return@launch
+            }
+            if (imageForm.llm.isBlank() || imageForm.vae.isBlank()) {
+                update { copy(error = "Select the Z-Image text encoder and VAE before finishing setup.") }
                 return@launch
             }
             if (!state.validateLlmRole(SetupLlmRole.Tagging) ||
@@ -307,18 +354,18 @@ class SetupViewModel(
         val llmModels = mutableListOf<SetupModelOption>()
         val mmprojModels = mutableListOf<SetupModelOption>()
 
-        scanFolder(root, "stable-diffusion", "stable-diffusion", imageModels)
-        scanFolder(root, "diffusion_models", "diffusion_models", imageModels)
-        scanFolder(root, "unet", "unet", imageModels)
+        scanFolder(root, "stable-diffusion", "stable-diffusion", imageModels, ggufModelExtensions)
+        scanFolder(root, "diffusion_models", "diffusion_models", imageModels, ggufModelExtensions)
+        scanFolder(root, "unet", "unet", imageModels, ggufModelExtensions)
         scanRootImageModels(root, imageModels)
-        scanFolder(root, "vae", "vae", vaeModels)
-        scanFolder(root, "text-encoder", "text-encoder", textEncoderModels)
-        scanFolder(root, "text_encoders", "text_encoders", textEncoderModels)
-        scanFolder(root, "clip", "clip", textEncoderModels)
-        scanFolder(root, "llm", "llm", llmModels)
-        scanFolder(root, "text-encoder", "text-encoder", llmModels)
-        scanFolder(root, "text_encoders", "text_encoders", llmModels)
-        scanFolder(root, "mmproj", "mmproj", mmprojModels)
+        scanFolder(root, "vae", "vae", vaeModels, vaeModelExtensions)
+        scanFolder(root, "text-encoder", "text-encoder", textEncoderModels, ggufModelExtensions)
+        scanFolder(root, "text_encoders", "text_encoders", textEncoderModels, ggufModelExtensions)
+        scanFolder(root, "clip", "clip", textEncoderModels, ggufModelExtensions)
+        scanFolder(root, "llm", "llm", llmModels, ggufModelExtensions)
+        scanFolder(root, "text-encoder", "text-encoder", llmModels, ggufModelExtensions)
+        scanFolder(root, "text_encoders", "text_encoders", llmModels, ggufModelExtensions)
+        scanFolder(root, "mmproj", "mmproj", mmprojModels, ggufModelExtensions)
         scanMmprojCandidates(root.resolveChildIgnoreCase("llm"), mmprojModels)
 
         return SetupScanResult(
@@ -330,17 +377,23 @@ class SetupViewModel(
         )
     }
 
-    private fun scanFolder(root: File, folderName: String, type: String, target: MutableList<SetupModelOption>) {
+    private fun scanFolder(
+        root: File,
+        folderName: String,
+        type: String,
+        target: MutableList<SetupModelOption>,
+        extensions: Set<String>,
+    ) {
         val folder = root.resolveChildIgnoreCase(folderName)
         if (!folder.isDirectory) return
         folder.walkTopDown()
-            .filter { it.isFile && it.extension.lowercase() in modelExtensions }
+            .filter { it.isFile && it.extension.lowercase() in extensions }
             .take(maxScanResults)
             .forEach { file -> target += file.toOption(root, type) }
     }
 
     private fun scanRootImageModels(root: File, target: MutableList<SetupModelOption>) {
-        root.listFiles { file -> file.isFile && file.extension.lowercase() in modelExtensions }
+        root.listFiles { file -> file.isFile && file.extension.lowercase() in ggufModelExtensions }
             .orEmpty()
             .take(maxScanResults)
             .forEach { file -> target += file.toOption(root, "root") }
@@ -349,7 +402,7 @@ class SetupViewModel(
     private fun scanMmprojCandidates(folder: File, target: MutableList<SetupModelOption>) {
         if (!folder.isDirectory) return
         folder.walkTopDown()
-            .filter { it.isFile && it.name.contains("mmproj", ignoreCase = true) && it.extension.lowercase() in modelExtensions }
+            .filter { it.isFile && it.name.contains("mmproj", ignoreCase = true) && it.extension.lowercase() in ggufModelExtensions }
             .take(maxScanResults)
             .forEach { file -> target += file.toOption(folder.parentFile ?: folder, "mmproj") }
     }
@@ -379,6 +432,86 @@ class SetupViewModel(
             .trim('-')
         return slug.ifBlank { "preset" }
     }
+
+    private fun List<SetupModelOption>.preferredZImageTurbo(): SetupModelOption? =
+        bestMatch(
+            required = listOf("z", "image", "turbo"),
+            preferred = listOf("z-image-turbo", "z_image_turbo", "z image turbo", "unsloth"),
+            rejected = listOf("qwen", "vl", "mmproj", "vae", "clip", "t5", "text-encoder", "text_encoder"),
+        )
+
+    private fun List<SetupModelOption>.preferredQwen3TextEncoder(): SetupModelOption? =
+        bestMatch(
+            required = listOf("qwen3", "4b"),
+            preferred = listOf("qwen3-4b", "qwen3_4b", "qwen3 4b", "unsloth"),
+            rejected = listOf("vl", "vision", "mmproj", "instruct", "coder", "embedding"),
+        )
+
+    private fun List<SetupModelOption>.preferredFluxVae(): SetupModelOption? =
+        bestMatch(
+            required = listOf("ae"),
+            preferred = listOf("ae.safetensors", "/vae/ae", "\\vae\\ae", "flux"),
+            rejected = listOf("diffusion", "qwen", "clip", "text-encoder", "text_encoder", "mmproj"),
+        )
+
+    private fun List<SetupModelOption>.preferredQwen3VlTagger(): SetupModelOption? =
+        bestMatch(
+            required = listOf("qwen3", "vl", "4b"),
+            preferred = listOf("qwen3-vl-4b", "qwen3_vl_4b", "qwen3 vl 4b", "instruct", "unsloth"),
+            rejected = listOf("mmproj", "projector"),
+        )
+
+    private fun List<SetupModelOption>.preferredQwen3VlProjector(): SetupModelOption? =
+        bestMatch(
+            required = listOf("mmproj"),
+            preferred = listOf("qwen3-vl", "qwen3_vl", "qwen3 vl", "4b", "projector"),
+            rejected = listOf("q4_", "q5_", "q6_", "q8_", "iq", "f16-00001"),
+        )
+
+    private fun List<SetupModelOption>.bestMatch(
+        required: List<String>,
+        preferred: List<String>,
+        rejected: List<String>,
+    ): SetupModelOption? =
+        mapNotNull { option ->
+            val searchable = option.searchableName()
+            val requiredScore = required.sumOf { token ->
+                if (searchable.contains(token, ignoreCase = true)) 25 else 0
+            }
+            if (requiredScore == 0) return@mapNotNull null
+            val preferredScore = preferred.sumOf { token ->
+                if (searchable.contains(token, ignoreCase = true)) 12 else 0
+            }
+            val rejectedPenalty = rejected.sumOf { token ->
+                if (searchable.contains(token, ignoreCase = true)) 40 else 0
+            }
+            val folderBonus = when (option.type) {
+                "diffusion_models", "unet", "stable-diffusion" -> if ("z" in required && "image" in required) 10 else 0
+                "vae" -> if ("ae" in required) 10 else 0
+                "llm" -> if ("qwen3" in required) 8 else 0
+                "mmproj" -> if ("mmproj" in required) 12 else 0
+                else -> 0
+            }
+            ScoredModelOption(option, requiredScore + preferredScore + folderBonus - rejectedPenalty)
+        }
+            .filter { it.score > 0 }
+            .maxWithOrNull(
+                compareBy<ScoredModelOption> { it.score }
+                    .thenByDescending { it.option.id.length }
+                    .thenBy { it.option.id.lowercase() },
+            )
+            ?.option
+
+    private fun SetupModelOption.searchableName(): String =
+        listOf(id, name, type)
+            .joinToString(" ")
+            .replace('_', '-')
+            .replace('\\', '/')
+
+    private data class ScoredModelOption(
+        val option: SetupModelOption,
+        val score: Int,
+    )
 
     private fun parseIntRange(value: String, label: String, min: Int, max: Int): Int =
         value.toIntOrNull()?.coerceIn(min, max) ?: error("$label must be numeric.")
@@ -430,7 +563,7 @@ class SetupViewModel(
 
     private fun nextStep(role: SetupLlmRole): Int =
         when (role) {
-            SetupLlmRole.Tagging -> 4
+            SetupLlmRole.Tagging -> 5
             SetupLlmRole.PromptEnhancement -> 5
             SetupLlmRole.Assistant -> 5
         }
@@ -448,15 +581,16 @@ class SetupViewModel(
     )
 
     private companion object {
-        val modelExtensions = setOf("gguf", "safetensors", "ckpt", "pth", "pt", "bin")
+        val ggufModelExtensions = setOf("gguf")
+        val vaeModelExtensions = setOf("safetensors", "gguf")
         const val maxScanResults = 500
     }
 }
 
 val SetupLlmRole.step: Int
     get() = when (this) {
-        SetupLlmRole.Tagging -> 3
-        SetupLlmRole.PromptEnhancement -> 4
+        SetupLlmRole.Tagging -> 4
+        SetupLlmRole.PromptEnhancement -> 5
         SetupLlmRole.Assistant -> 5
     }
 
