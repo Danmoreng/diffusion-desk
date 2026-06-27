@@ -1,5 +1,11 @@
 # Compose LLM Worker Support Spec
 
+> **Status as of June 27, 2026:** Most of this spec is implemented in the
+> Compose app. `LlmWorkerPool`, role bindings, CPU/GPU placement, advanced
+> argument parsing, worker diagnostics, explicit unload/stop controls, and
+> gallery tagging support exist. Keep this file as design rationale and
+> validation context; track active work in `docs/DEVELOPMENT_PLAN.md`.
+
 ## Purpose
 
 Re-introduce llama.cpp support in the current Kotlin Compose desktop app without
@@ -492,7 +498,30 @@ The README/runtime layout should be updated once implementation is complete.
 - Ensure shutdown tries graceful API shutdown first, then process termination.
 - Keep logs per worker instance or include worker identity in log diagnostics.
 
+## Current Implementation Status
+
+Implemented in the Compose app:
+
+- Native SD and LLM worker subprocess supervision.
+- Multi-worker LLM pool with runtime signatures and worker reuse.
+- LLM preset placement, role binding, and advanced argument validation.
+- Explicit model unload and worker stop controls for image and LLM workers.
+- Worker diagnostics in the System area.
+- Gallery metadata/tagging integration and role-routed LLM calls.
+- Portable packaging inputs for native workers.
+
+Remaining work belongs in roadmap polish rather than core architecture:
+
+- Broaden automated tests for argument parsing, placement behavior, worker pool
+  reuse, and role routing.
+- Keep packaging validation strict for both Windows and Linux artifacts.
+- Improve diagnostics copy and failure recovery around crashed or missing
+  workers.
+
 ## Implementation Phases
+
+These phases are retained as historical implementation notes. Use the status
+section above and the canonical roadmap for current planning.
 
 ### Phase 1: Foundation
 
@@ -540,4 +569,3 @@ The README/runtime layout should be updated once implementation is complete.
 - Whether idle unload should be global, per role, or per preset.
 - Whether prompt enhancement and chat should remain separate roles or share one
   assistant role by default.
-

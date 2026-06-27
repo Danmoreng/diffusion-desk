@@ -1,5 +1,9 @@
 # Ideogram 4 performance benchmark
 
+> **Status as of June 27, 2026:** Current supporting documentation for backend
+> performance benchmarking. Staged Ideogram composition generation is already
+> implemented and working well.
+
 The repeatable benchmark is `scripts/tests/benchmark_ideogram4.ps1`. It uses the
 same prompt, seed, image size, sampler, CFG, and step count for each selected
 backend. Every invocation creates a timestamped directory under
