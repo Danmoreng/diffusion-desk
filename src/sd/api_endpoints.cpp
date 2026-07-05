@@ -254,7 +254,10 @@ bool active_generation_cancel_requested() {
     return cancel_flag != nullptr && cancel_flag->load(std::memory_order_relaxed);
 }
 
-sd_image_t* generate_image_with_cancel_context(sd_ctx_t* sd_ctx, const sd_img_gen_params_t* img_gen_params) {
+sd_image_t* generate_image_with_cancel_context(sd_ctx_t* sd_ctx, const sd_img_gen_params_t* img_gen_params, int* num_images_out) {
+    if (num_images_out != nullptr) {
+        *num_images_out = 0;
+    }
     if (sd_ctx != nullptr) {
         sd_cancel_generation(sd_ctx, SD_CANCEL_RESET);
     }
@@ -262,7 +265,14 @@ sd_image_t* generate_image_with_cancel_context(sd_ctx_t* sd_ctx, const sd_img_ge
     sd_ctx_t* previous = g_active_generation_ctx.exchange(sd_ctx, std::memory_order_acq_rel);
     sd_image_t* result = nullptr;
     try {
-        result = generate_image(sd_ctx, img_gen_params);
+        int num_images = 0;
+        if (generate_image(sd_ctx, img_gen_params, &result, &num_images)) {
+            if (num_images_out != nullptr) {
+                *num_images_out = num_images;
+            }
+        } else {
+            result = nullptr;
+        }
     } catch (...) {
         g_active_generation_ctx.store(previous, std::memory_order_release);
         throw;
@@ -1263,7 +1273,14 @@ void handle_upscale_image(const httplib::Request& req, httplib::Response& res, S
             }
 
             DD_LOG_INFO("Upscaling image: %dx%d -> factor %d", input_image.width, input_image.height, upscale_factor);
-            upscaled_image = upscale(ctx.upscaler_ctx.get(), input_image, upscale_factor);
+            sd_image_t* upscaled_images = nullptr;
+            int upscaled_count = 0;
+            if (upscale(ctx.upscaler_ctx.get(), input_image, upscale_factor, &upscaled_images, &upscaled_count) &&
+                upscaled_count > 0 && upscaled_images[0].data != nullptr) {
+                upscaled_image = upscaled_images[0];
+                upscaled_images[0] = {0, 0, 0, nullptr};
+            }
+            free_sd_images(upscaled_images, upscaled_count);
         }
 
         stbi_image_free(input_image.data);
@@ -1755,12 +1772,11 @@ void handle_generate_image(const httplib::Request& req, httplib::Response& res, 
             }
             log_vram_status("Sampling Start");
             float vram_before = get_current_process_vram_usage_gb();
-            results     = generate_image_with_cancel_context(ctx.sd_ctx.get(), &img_gen_params);
+            results = generate_image_with_cancel_context(ctx.sd_ctx.get(), &img_gen_params, &num_results);
             float vram_after = get_current_process_vram_usage_gb();
             float vram_delta = vram_after - vram_before;
             log_vram_status("Sampling End");
             DD_LOG_INFO("Generation Sampling finished. Delta: %+.2f GB", vram_delta);
-            num_results = gen_params.batch_count;
 
             if (active_generation_cancel_requested()) {
                 res.status = 499;
@@ -1796,7 +1812,7 @@ void handle_generate_image(const httplib::Request& req, httplib::Response& res, 
                     img_gen_params.vae_tiling_params.tile_size_y = 32;
                 }
 
-                results = generate_image_with_cancel_context(ctx.sd_ctx.get(), &img_gen_params);
+                results = generate_image_with_cancel_context(ctx.sd_ctx.get(), &img_gen_params, &num_results);
 
                 first_pass_success = (results != nullptr);
                 if (first_pass_success) {
@@ -1913,13 +1929,15 @@ void handle_generate_image(const httplib::Request& req, httplib::Response& res, 
                         progress_state.sampling_steps = 4;
                     }
 
-                    sd_image_t* pid_pass = generate_image_with_cancel_context(pid_ctx.get(), &pid_params);
-                    if (pid_pass && pid_pass[0].data && is_image_valid(pid_pass[0])) {
+                    int pid_pass_count = 0;
+                    sd_image_t* pid_pass = generate_image_with_cancel_context(pid_ctx.get(), &pid_params, &pid_pass_count);
+                    if (pid_pass_count > 0 && pid_pass && pid_pass[0].data && is_image_valid(pid_pass[0])) {
                         pid_results[i] = pid_pass[0];
-                        free(pid_pass);
+                        pid_pass[0] = {0, 0, 0, nullptr};
+                        free_sd_images(pid_pass, pid_pass_count);
                     } else {
                         DD_LOG_ERROR("PiD highres upscale failed for image %d.", i + 1);
-                        if (pid_pass) free_sd_images(pid_pass, 1);
+                        free_sd_images(pid_pass, pid_pass_count);
                         pid_success = false;
                     }
 
@@ -1980,7 +1998,18 @@ void handle_generate_image(const httplib::Request& req, httplib::Response& res, 
 
                     if (ctx.upscaler_ctx) {
                         DD_LOG_INFO("Upscaling for highres-fix (factor %.2f)...", gen_params.hires_upscale_factor);
-                        upscaled_img = upscale(ctx.upscaler_ctx.get(), base_img, (uint32_t)gen_params.hires_upscale_factor);
+                        sd_image_t* upscaled_images = nullptr;
+                        int upscaled_count = 0;
+                        if (upscale(ctx.upscaler_ctx.get(),
+                                    base_img,
+                                    (uint32_t)gen_params.hires_upscale_factor,
+                                    &upscaled_images,
+                                    &upscaled_count) &&
+                            upscaled_count > 0 && upscaled_images[0].data != nullptr) {
+                            upscaled_img = upscaled_images[0];
+                            upscaled_images[0] = {0, 0, 0, nullptr};
+                        }
+                        free_sd_images(upscaled_images, upscaled_count);
                     } else {
                         DD_LOG_INFO("Resizing for highres-fix (factor %.2f) using simple resize...", gen_params.hires_upscale_factor);
                         upscaled_img.width = (uint32_t)(base_img.width * gen_params.hires_upscale_factor);
@@ -2041,13 +2070,16 @@ void handle_generate_image(const httplib::Request& req, httplib::Response& res, 
                         progress_state.sampling_steps = gen_params.hires_steps;
                     }
 
-                    sd_image_t* second_pass_result = generate_image_with_cancel_context(ctx.sd_ctx.get(), &hires_params);
+                    int second_pass_count = 0;
+                    sd_image_t* second_pass_result = generate_image_with_cancel_context(ctx.sd_ctx.get(), &hires_params, &second_pass_count);
                     
-                    if (second_pass_result && second_pass_result[0].data) {
+                    if (second_pass_count > 0 && second_pass_result && second_pass_result[0].data) {
                         hires_results[i] = second_pass_result[0];
-                        free(second_pass_result); // Free the container, not the data
+                        second_pass_result[0] = {0, 0, 0, nullptr};
+                        free_sd_images(second_pass_result, second_pass_count);
                     } else {
                         hires_results[i] = upscaled_img; // Fallback to upscaled if second pass fails
+                        free_sd_images(second_pass_result, second_pass_count);
                     }
 
                     {
@@ -2387,12 +2419,11 @@ void handle_edit_image(const httplib::Request& req, httplib::Response& res, Serv
         set_progress_phase("Sampling...");
         log_vram_status("Edit Start");
         float vram_before = get_current_process_vram_usage_gb();
-        results     = generate_image_with_cancel_context(ctx.sd_ctx.get(), &img_gen_params);
+        results = generate_image_with_cancel_context(ctx.sd_ctx.get(), &img_gen_params, &num_results);
         float vram_after = get_current_process_vram_usage_gb();
         float vram_delta = vram_after - vram_before;
         log_vram_status("Edit End");
         DD_LOG_INFO("Edit Sampling finished. Delta: %+.2f GB", vram_delta);
-        num_results = gen_params.batch_count;
 
         // B0.1 & B0.2: Fail Loudly + Conservative Retry
         bool success = (results != nullptr);
@@ -2428,7 +2459,7 @@ void handle_edit_image(const httplib::Request& req, httplib::Response& res, Serv
                 img_gen_params.vae_tiling_params.tile_size_y = 512;
             }
             
-            results = generate_image_with_cancel_context(ctx.sd_ctx.get(), &img_gen_params);
+            results = generate_image_with_cancel_context(ctx.sd_ctx.get(), &img_gen_params, &num_results);
             
             success = (results != nullptr);
             if (success) {
