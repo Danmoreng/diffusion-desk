@@ -6,6 +6,7 @@ import com.diffusiondesk.desktop.core.BackendUiState
 import com.diffusiondesk.desktop.core.DesktopSettings
 import com.diffusiondesk.desktop.core.DesktopSettingsStore
 import com.diffusiondesk.desktop.core.DiffusionDeskClient
+import com.diffusiondesk.desktop.core.GallerySortMode
 import com.diffusiondesk.desktop.core.ImageTaggingService
 import com.diffusiondesk.desktop.core.LlmPreset
 import com.diffusiondesk.desktop.core.LlmPresetStore
@@ -39,6 +40,8 @@ data class SettingsUiState(
     val manualVramBudgetGb: String,
     val autostartLlmWorkers: Boolean,
     val galleryPreviewWidthDp: Int,
+    val galleryThumbnailSizeDp: Int,
+    val gallerySortMode: GallerySortMode,
     val llmPresets: List<LlmPreset> = emptyList(),
     val llmRoles: LlmRoleSettings = LlmRoleSettings(),
     val llmWorkers: List<LlmWorkerState> = emptyList(),
@@ -90,6 +93,8 @@ class SettingsViewModel(
     fun updateManualVramBudgetGb(value: String) = update { copy(manualVramBudgetGb = value) }
     fun updateAutostartLlmWorkers(value: Boolean) = updateAndSave { copy(autostartLlmWorkers = value) }
     fun updateGalleryPreviewWidth(value: Int) = updateAndSave { copy(galleryPreviewWidthDp = value.coerceIn(320, 760)) }
+    fun updateGalleryThumbnailSize(value: Int) = updateAndSave { copy(galleryThumbnailSizeDp = value.coerceIn(140, 320)) }
+    fun updateGallerySortMode(value: GallerySortMode) = updateAndSave { copy(gallerySortMode = value) }
     fun updateTaggingPresetId(value: String) = updateRoles { copy(taggingPresetId = value) }
     fun updateAssistantPresetId(value: String) = updateRoles { copy(assistantPresetId = value) }
     fun updatePromptEnhancerPresetId(value: String) = updateRoles { copy(promptEnhancerPresetId = value) }
@@ -486,6 +491,8 @@ class SettingsViewModel(
             manualVramBudgetGb = manualVramBudgetGb,
             autostartLlmWorkers = state.autostartLlmWorkers,
             galleryPreviewWidthDp = state.galleryPreviewWidthDp.coerceIn(320, 760),
+            galleryThumbnailSizeDp = state.galleryThumbnailSizeDp.coerceIn(140, 320),
+            gallerySortMode = state.gallerySortMode,
         )
     }
 
@@ -531,6 +538,8 @@ class SettingsViewModel(
         manualVramBudgetGb = manualVramBudgetGb.toString(),
         autostartLlmWorkers = autostartLlmWorkers,
         galleryPreviewWidthDp = galleryPreviewWidthDp,
+        galleryThumbnailSizeDp = galleryThumbnailSizeDp,
+        gallerySortMode = gallerySortMode,
     )
 
     private fun update(transform: SettingsUiState.() -> SettingsUiState) {

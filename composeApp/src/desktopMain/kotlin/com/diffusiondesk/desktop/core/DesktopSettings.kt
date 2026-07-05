@@ -20,6 +20,8 @@ data class DesktopSettings(
     val manualVramBudgetGb: Double,
     val autostartLlmWorkers: Boolean,
     val galleryPreviewWidthDp: Int,
+    val galleryThumbnailSizeDp: Int,
+    val gallerySortMode: GallerySortMode,
 )
 
 fun detectDefaultRepoRoot(): String {

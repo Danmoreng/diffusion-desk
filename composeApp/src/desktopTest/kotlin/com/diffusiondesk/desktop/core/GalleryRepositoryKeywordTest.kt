@@ -132,6 +132,29 @@ class GalleryRepositoryKeywordTest {
         assertEquals(listOf("shared"), repository.listImages().single().keywords)
     }
 
+    @Test
+    fun listImagesSupportsPinnedFavoriteAndSortFilters() {
+        val tempDir = Files.createTempDirectory("diffusion-desk-gallery-keyword-test").toFile()
+        val db = GalleryDatabase(tempDir.resolve("gallery.db"))
+        val repository = GalleryRepository(db)
+        val zetaImageId = insertImage(db, tempDir.resolve("zeta.png").apply { writeBytes(byteArrayOf(1)) }.absolutePath, createdAt = 10)
+        val alphaImageId = insertImage(db, tempDir.resolve("alpha.png").apply { writeBytes(byteArrayOf(2)) }.absolutePath, createdAt = 20)
+        val middleImageId = insertImage(db, tempDir.resolve("middle.png").apply { writeBytes(byteArrayOf(3)) }.absolutePath, createdAt = 30)
+
+        repository.updatePinned(zetaImageId, true)
+        repository.updateFavorite(alphaImageId, true)
+
+        val sortedImages = repository.listImages(query = "", keywords = emptyList(), sortMode = GallerySortMode.NameAsc)
+        val favoriteImages = repository.listImages(query = "", keywords = emptyList(), favoritesOnly = true)
+        val pinnedImages = repository.listImages(query = "", keywords = emptyList(), pinnedOnly = true)
+
+        assertEquals(listOf(zetaImageId, alphaImageId, middleImageId), sortedImages.map { it.id })
+        assertTrue(sortedImages.first().pinned)
+        assertEquals(listOf(alphaImageId), favoriteImages.map { it.id })
+        assertTrue(favoriteImages.single().favorite)
+        assertEquals(listOf(zetaImageId), pinnedImages.map { it.id })
+    }
+
     private fun insertImage(
         database: GalleryDatabase,
         filePath: String,

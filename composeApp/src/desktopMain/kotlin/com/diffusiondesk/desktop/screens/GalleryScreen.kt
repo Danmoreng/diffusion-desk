@@ -43,8 +43,10 @@ import androidx.compose.material.icons.filled.CropFree
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.ImageSearch
+import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.RestartAlt
+import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
@@ -65,8 +67,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.toComposeImageBitmap
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
@@ -87,6 +91,7 @@ import androidx.compose.ui.unit.dp
 import com.diffusiondesk.desktop.core.GalleryImage
 import com.diffusiondesk.desktop.core.GalleryDateFilter
 import com.diffusiondesk.desktop.core.GalleryKeyword
+import com.diffusiondesk.desktop.core.GallerySortMode
 import com.diffusiondesk.desktop.viewmodel.GalleryViewModel
 import com.diffusiondesk.desktop.viewmodel.GalleryUiState
 import java.awt.Cursor
@@ -98,6 +103,7 @@ import kotlin.math.roundToInt
 import javax.imageio.ImageIO
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import org.jetbrains.jewel.ui.component.Slider
 import org.jetbrains.jewel.ui.component.Text
 
 private val GalleryTileDateFormatter: DateTimeFormatter =
@@ -113,6 +119,10 @@ fun GalleryScreen(
     onQueryChange: (String) -> Unit,
     onModelFilterChange: (String) -> Unit,
     onDateFilterChange: (String) -> Unit,
+    onSortModeChange: (GallerySortMode) -> Unit,
+    onThumbnailSizeChange: (Int) -> Unit,
+    onToggleFavoritesOnly: () -> Unit,
+    onTogglePinnedOnly: () -> Unit,
     onSelectKeyword: (String) -> Unit,
     onClearKeywordFilter: () -> Unit,
     onDeleteKeyword: (String) -> Unit,
@@ -127,6 +137,8 @@ fun GalleryScreen(
     onAddKeyword: () -> Unit,
     onRemoveKeyword: (Long, String) -> Unit,
     onTagSelectedImage: () -> Unit,
+    onToggleFavoriteImage: (Long) -> Unit,
+    onTogglePinnedImage: (Long) -> Unit,
     onDeleteImage: () -> Unit,
     previewPanelWidthDp: Int,
     onPreviewPanelWidthChange: (Int) -> Unit,
@@ -185,6 +197,10 @@ fun GalleryScreen(
                     onQueryChange = onQueryChange,
                     onModelFilterChange = onModelFilterChange,
                     onDateFilterChange = onDateFilterChange,
+                    onSortModeChange = onSortModeChange,
+                    onThumbnailSizeChange = onThumbnailSizeChange,
+                    onToggleFavoritesOnly = onToggleFavoritesOnly,
+                    onTogglePinnedOnly = onTogglePinnedOnly,
                     onSelectKeyword = onSelectKeyword,
                     onClearKeywordFilter = onClearKeywordFilter,
                     onManageTags = { showTagManager = true },
@@ -193,6 +209,7 @@ fun GalleryScreen(
                 )
                 GalleryGrid(
                     images = state.images,
+                    thumbnailSizeDp = state.thumbnailSizeDp,
                     selectedImageId = state.selectedImage?.id,
                     selectedImageIds = state.selectedImageIds,
                     onSelectImage = onSelectImage,
@@ -254,6 +271,8 @@ fun GalleryScreen(
                 onAddKeyword = onAddKeyword,
                 onRemoveKeyword = onRemoveKeyword,
                 onTagSelectedImage = onTagSelectedImage,
+                onToggleFavoriteImage = onToggleFavoriteImage,
+                onTogglePinnedImage = onTogglePinnedImage,
                 onDeleteImage = { imagePendingDeletion = it },
                 onReuseImage = onReuseImage,
                 onUpscaleImage = onUpscaleImage,
@@ -330,6 +349,10 @@ private fun GalleryToolbar(
     onQueryChange: (String) -> Unit,
     onModelFilterChange: (String) -> Unit,
     onDateFilterChange: (String) -> Unit,
+    onSortModeChange: (GallerySortMode) -> Unit,
+    onThumbnailSizeChange: (Int) -> Unit,
+    onToggleFavoritesOnly: () -> Unit,
+    onTogglePinnedOnly: () -> Unit,
     onSelectKeyword: (String) -> Unit,
     onClearKeywordFilter: () -> Unit,
     onManageTags: () -> Unit,
@@ -416,6 +439,13 @@ private fun GalleryToolbar(
                 onValueChange = onDateFilterChange,
                 modifier = Modifier.width(150.dp),
             )
+            DeskCompactDropdownField(
+                label = "Sort",
+                value = state.sortMode.label,
+                options = GallerySortMode.entries.map { it.label },
+                onValueChange = { onSortModeChange(GallerySortMode.fromLabel(it)) },
+                modifier = Modifier.width(150.dp),
+            )
             Text(
                 text = when {
                     state.isIndexing && state.images.isEmpty() -> "Indexing..."
@@ -424,6 +454,47 @@ private fun GalleryToolbar(
                 },
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(DeskControlSpacing),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            GalleryStateIconButton(
+                icon = Icons.Default.Star,
+                contentDescription = "Show starred images",
+                selected = state.favoritesOnly,
+                onClick = onToggleFavoritesOnly,
+            )
+            GalleryStateIconButton(
+                icon = Icons.Default.PushPin,
+                contentDescription = "Show pinned images",
+                selected = state.pinnedOnly,
+                onClick = onTogglePinnedOnly,
+            )
+            Spacer(Modifier.weight(1f))
+            Text(
+                text = "Thumbnails",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+            )
+            Slider(
+                value = state.thumbnailSizeDp.toFloat(),
+                onValueChange = { value -> onThumbnailSizeChange(value.roundToInt()) },
+                valueRange = 140f..320f,
+                steps = 17,
+                modifier = Modifier.width(160.dp),
+            )
+            Text(
+                text = "${state.thumbnailSizeDp}dp",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.primary,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
             )
         }
 
@@ -556,6 +627,7 @@ private fun GalleryActiveKeywordFilters(
 @Composable
 private fun GalleryGrid(
     images: List<GalleryImage>,
+    thumbnailSizeDp: Int,
     selectedImageId: Long?,
     selectedImageIds: Set<Long>,
     onSelectImage: (Long) -> Unit,
@@ -571,7 +643,7 @@ private fun GalleryGrid(
     }
 
     BoxWithConstraints(modifier = modifier.fillMaxWidth()) {
-        val minCell = if (maxWidth < 720.dp) 150.dp else 190.dp
+        val minCell = thumbnailSizeDp.coerceIn(140, 320).dp
         val gridState = rememberLazyGridState()
         val focusRequester = remember { FocusRequester() }
         LaunchedEffect(images.isNotEmpty()) {
@@ -731,14 +803,26 @@ private fun GalleryTile(
             .padding(DeskControlSpacing),
         verticalArrangement = Arrangement.spacedBy(DeskCompactControlSpacing),
     ) {
-        GalleryImagePreview(
-            file = image.file,
-            displayFile = image.previewFile,
+        Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .aspectRatio(1f)
-                .clip(RoundedCornerShape(5.dp)),
-        )
+                .aspectRatio(1f),
+        ) {
+            GalleryImagePreview(
+                file = image.file,
+                displayFile = image.previewFile,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .clip(RoundedCornerShape(5.dp)),
+            )
+            GalleryImageFlags(
+                favorite = image.favorite,
+                pinned = image.pinned,
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(6.dp),
+            )
+        }
         Text(
             text = image.displayName,
             style = MaterialTheme.typography.bodySmall,
@@ -782,6 +866,8 @@ private fun GalleryDetails(
     onAddKeyword: () -> Unit,
     onRemoveKeyword: (Long, String) -> Unit,
     onTagSelectedImage: () -> Unit,
+    onToggleFavoriteImage: (Long) -> Unit,
+    onTogglePinnedImage: (Long) -> Unit,
     onDeleteImage: (GalleryImage) -> Unit,
     onReuseImage: (GalleryImage) -> Unit,
     onUpscaleImage: (GalleryImage) -> Unit,
@@ -877,6 +963,24 @@ private fun GalleryDetails(
                 }
             }
 
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                GalleryStateIconButton(
+                    icon = Icons.Default.Star,
+                    contentDescription = if (image.favorite) "Remove star" else "Add star",
+                    selected = image.favorite,
+                    onClick = { onToggleFavoriteImage(image.id) },
+                )
+                GalleryStateIconButton(
+                    icon = Icons.Default.PushPin,
+                    contentDescription = if (image.pinned) "Unpin image" else "Pin image",
+                    selected = image.pinned,
+                    onClick = { onTogglePinnedImage(image.id) },
+                )
+            }
+
             DetailBlock("Prompt", image.prompt)
             if (image.negativePrompt.isNotBlank()) {
                 DetailBlock("Negative Prompt", image.negativePrompt)
@@ -943,6 +1047,90 @@ private fun GalleryDetails(
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun GalleryImageFlags(
+    favorite: Boolean,
+    pinned: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    if (!favorite && !pinned) return
+    Row(
+        modifier = modifier,
+        horizontalArrangement = Arrangement.spacedBy(5.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (favorite) {
+            GalleryImageFlagIcon(
+                icon = Icons.Default.Star,
+                contentDescription = "Starred",
+                tone = DeskStatusTone.Success,
+            )
+        }
+        if (pinned) {
+            GalleryImageFlagIcon(
+                icon = Icons.Default.PushPin,
+                contentDescription = "Pinned",
+                tone = DeskStatusTone.Warning,
+            )
+        }
+    }
+}
+
+@Composable
+private fun GalleryImageFlagIcon(
+    icon: ImageVector,
+    contentDescription: String,
+    tone: DeskStatusTone,
+    modifier: Modifier = Modifier,
+) {
+    val color = deskStatusColor(tone)
+    Box(
+        modifier = modifier
+            .size(25.dp)
+            .clip(RoundedCornerShape(999.dp))
+            .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.86f))
+            .border(1.dp, color.copy(alpha = 0.45f), RoundedCornerShape(999.dp)),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = contentDescription,
+            tint = color,
+            modifier = Modifier.size(15.dp),
+        )
+    }
+}
+
+@Composable
+private fun GalleryStateIconButton(
+    icon: ImageVector,
+    contentDescription: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val shape = RoundedCornerShape(5.dp)
+    val color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+    val background = if (selected) MaterialTheme.colorScheme.primary.copy(alpha = DeskSelectedContainerAlpha) else Color.Transparent
+    DeskTooltip(text = contentDescription) {
+        Box(
+            modifier = modifier
+                .size(32.dp)
+                .clip(shape)
+                .background(background)
+                .clickable(onClick = onClick),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = contentDescription,
+                tint = color,
+                modifier = Modifier.size(17.dp),
+            )
         }
     }
 }

@@ -5,6 +5,7 @@ import com.diffusiondesk.desktop.core.GalleryDateFilter
 import com.diffusiondesk.desktop.core.GalleryKeyword
 import com.diffusiondesk.desktop.core.GalleryRepository
 import com.diffusiondesk.desktop.core.GalleryReusableParams
+import com.diffusiondesk.desktop.core.GallerySortMode
 import com.diffusiondesk.desktop.core.DesktopSettingsStore
 import com.diffusiondesk.desktop.core.ImageTaggingService
 import com.diffusiondesk.desktop.core.LlmPresetStore
@@ -27,6 +28,10 @@ data class GalleryUiState(
     val availableModels: List<String> = emptyList(),
     val selectedModelId: String = "",
     val selectedDateFilter: GalleryDateFilter = GalleryDateFilter.All,
+    val sortMode: GallerySortMode = GallerySortMode.Newest,
+    val thumbnailSizeDp: Int = 190,
+    val favoritesOnly: Boolean = false,
+    val pinnedOnly: Boolean = false,
     val selectedImageIds: Set<Long> = emptySet(),
     val lastSelectionAnchorId: Long? = null,
     val keywordDraft: String = "",
@@ -46,7 +51,13 @@ class GalleryViewModel(
     private val llmPresetStore: LlmPresetStore,
     private val imageTaggingService: ImageTaggingService,
 ) {
-    private val _uiState = MutableStateFlow(GalleryUiState())
+    private val initialSettings = settingsStore.load()
+    private val _uiState = MutableStateFlow(
+        GalleryUiState(
+            sortMode = initialSettings.gallerySortMode,
+            thumbnailSizeDp = initialSettings.galleryThumbnailSizeDp,
+        ),
+    )
     val uiState: StateFlow<GalleryUiState> = _uiState.asStateFlow()
 
     fun refresh(outputDir: String) {
@@ -62,6 +73,9 @@ class GalleryViewModel(
                         keywords = current.selectedKeywords,
                         modelId = current.selectedModelId,
                         dateFilter = current.selectedDateFilter,
+                        sortMode = current.sortMode,
+                        favoritesOnly = current.favoritesOnly,
+                        pinnedOnly = current.pinnedOnly,
                     )
                     val keywordStats = repository.listKeywordStats()
                     val models = repository.listModelIds()
@@ -111,6 +125,25 @@ class GalleryViewModel(
 
     fun updateDateFilter(value: String) {
         update { copy(selectedDateFilter = GalleryDateFilter.fromLabel(value)) }
+        reloadList()
+    }
+
+    fun updateSortMode(value: GallerySortMode) {
+        update { copy(sortMode = value) }
+        reloadList()
+    }
+
+    fun updateThumbnailSize(value: Int) {
+        update { copy(thumbnailSizeDp = value.coerceIn(140, 320)) }
+    }
+
+    fun toggleFavoritesOnly() {
+        update { copy(favoritesOnly = !favoritesOnly) }
+        reloadList()
+    }
+
+    fun togglePinnedOnly() {
+        update { copy(pinnedOnly = !pinnedOnly) }
         reloadList()
     }
 
@@ -189,6 +222,48 @@ class GalleryViewModel(
                         error = error.message ?: "Failed to delete selected images.",
                     )
                 }
+            }
+        }
+    }
+
+    fun toggleFavorite(imageId: Long) {
+        val image = _uiState.value.images.firstOrNull { it.id == imageId } ?: return
+        val nextFavorite = !image.favorite
+        scope.launch {
+            runCatching {
+                withContext(Dispatchers.IO) { repository.updateFavorite(imageId, nextFavorite) }
+            }.onSuccess {
+                loadCachedList()
+                update {
+                    copy(
+                        selectedImageId = imageId.takeIf { id -> images.any { it.id == id } } ?: selectedImageId,
+                        message = if (nextFavorite) "Added to favorites." else "Removed from favorites.",
+                        error = null,
+                    )
+                }
+            }.onFailure { error ->
+                update { copy(error = error.message ?: "Failed to update favorite state.") }
+            }
+        }
+    }
+
+    fun togglePinned(imageId: Long) {
+        val image = _uiState.value.images.firstOrNull { it.id == imageId } ?: return
+        val nextPinned = !image.pinned
+        scope.launch {
+            runCatching {
+                withContext(Dispatchers.IO) { repository.updatePinned(imageId, nextPinned) }
+            }.onSuccess {
+                loadCachedList()
+                update {
+                    copy(
+                        selectedImageId = imageId.takeIf { id -> images.any { it.id == id } } ?: selectedImageId,
+                        message = if (nextPinned) "Pinned image to the top." else "Unpinned image.",
+                        error = null,
+                    )
+                }
+            }.onFailure { error ->
+                update { copy(error = error.message ?: "Failed to update pin state.") }
             }
         }
     }
@@ -343,6 +418,9 @@ class GalleryViewModel(
                         keywords = current.selectedKeywords,
                         modelId = current.selectedModelId,
                         dateFilter = current.selectedDateFilter,
+                        sortMode = current.sortMode,
+                        favoritesOnly = current.favoritesOnly,
+                        pinnedOnly = current.pinnedOnly,
                     ),
                     repository.listKeywordStats(),
                     repository.listModelIds(),

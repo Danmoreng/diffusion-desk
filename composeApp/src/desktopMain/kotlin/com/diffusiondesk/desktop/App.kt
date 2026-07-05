@@ -253,6 +253,16 @@ fun App(
                             onQueryChange = controller.galleryViewModel::updateQuery,
                             onModelFilterChange = controller.galleryViewModel::updateModelFilter,
                             onDateFilterChange = controller.galleryViewModel::updateDateFilter,
+                            onSortModeChange = { sortMode ->
+                                controller.settingsViewModel.updateGallerySortMode(sortMode)
+                                controller.galleryViewModel.updateSortMode(sortMode)
+                            },
+                            onThumbnailSizeChange = { thumbnailSize ->
+                                controller.settingsViewModel.updateGalleryThumbnailSize(thumbnailSize)
+                                controller.galleryViewModel.updateThumbnailSize(thumbnailSize)
+                            },
+                            onToggleFavoritesOnly = controller.galleryViewModel::toggleFavoritesOnly,
+                            onTogglePinnedOnly = controller.galleryViewModel::togglePinnedOnly,
                             onSelectKeyword = controller.galleryViewModel::selectKeyword,
                             onClearKeywordFilter = controller.galleryViewModel::clearKeywordFilter,
                             onDeleteKeyword = controller.galleryViewModel::deleteKeyword,
@@ -267,6 +277,8 @@ fun App(
                             onAddKeyword = controller.galleryViewModel::addKeywordToSelected,
                             onRemoveKeyword = controller.galleryViewModel::removeKeyword,
                             onTagSelectedImage = controller.galleryViewModel::tagSelectedImage,
+                            onToggleFavoriteImage = controller.galleryViewModel::toggleFavorite,
+                            onTogglePinnedImage = controller.galleryViewModel::togglePinned,
                             onDeleteImage = controller.galleryViewModel::deleteSelectedImage,
                             previewPanelWidthDp = settingsState.galleryPreviewWidthDp,
                             onPreviewPanelWidthChange = controller.settingsViewModel::updateGalleryPreviewWidth,

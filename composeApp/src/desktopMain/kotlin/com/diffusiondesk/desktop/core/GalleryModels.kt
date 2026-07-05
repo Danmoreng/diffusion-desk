@@ -26,6 +26,7 @@ data class GalleryImage(
     val metadataText: String,
     val loras: List<GalleryLora>,
     val favorite: Boolean,
+    val pinned: Boolean,
     val rating: Int,
     val keywords: List<String>,
 ) {
@@ -34,6 +35,23 @@ data class GalleryImage(
     val displayName: String get() = file.name
     val dimensions: String get() = if (width != null && height != null) "${width}x${height}" else ""
     val aspectRatio: Float get() = if (width != null && height != null && height > 0) width.toFloat() / height.toFloat() else 1f
+}
+
+enum class GallerySortMode(val label: String) {
+    Newest("Newest"),
+    Oldest("Oldest"),
+    NameAsc("Name A-Z"),
+    NameDesc("Name Z-A"),
+    Largest("Largest"),
+    Smallest("Smallest");
+
+    companion object {
+        fun fromStorage(value: String): GallerySortMode =
+            entries.firstOrNull { it.name == value } ?: Newest
+
+        fun fromLabel(label: String): GallerySortMode =
+            entries.firstOrNull { it.label == label } ?: Newest
+    }
 }
 
 data class GalleryKeyword(

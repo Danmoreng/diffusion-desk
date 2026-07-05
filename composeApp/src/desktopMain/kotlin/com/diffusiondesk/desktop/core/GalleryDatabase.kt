@@ -37,6 +37,7 @@ class GalleryDatabase(
                         modified_at INTEGER NOT NULL,
                         metadata_text TEXT NOT NULL DEFAULT '',
                         favorite INTEGER NOT NULL DEFAULT 0,
+                        pinned INTEGER NOT NULL DEFAULT 0,
                         rating INTEGER NOT NULL DEFAULT 0
                     )
                     """.trimIndent(),
@@ -46,6 +47,24 @@ class GalleryDatabase(
                     tableName = "images",
                     columnName = "preview_path",
                     definition = "TEXT NOT NULL DEFAULT ''",
+                )
+                ensureColumn(
+                    conn = conn,
+                    tableName = "images",
+                    columnName = "favorite",
+                    definition = "INTEGER NOT NULL DEFAULT 0",
+                )
+                ensureColumn(
+                    conn = conn,
+                    tableName = "images",
+                    columnName = "pinned",
+                    definition = "INTEGER NOT NULL DEFAULT 0",
+                )
+                ensureColumn(
+                    conn = conn,
+                    tableName = "images",
+                    columnName = "rating",
+                    definition = "INTEGER NOT NULL DEFAULT 0",
                 )
                 statement.execute(
                     """
@@ -81,6 +100,8 @@ class GalleryDatabase(
                     """.trimIndent(),
                 )
                 statement.execute("CREATE INDEX IF NOT EXISTS idx_images_created_at ON images(created_at DESC)")
+                statement.execute("CREATE INDEX IF NOT EXISTS idx_images_pinned ON images(pinned DESC, created_at DESC)")
+                statement.execute("CREATE INDEX IF NOT EXISTS idx_images_favorite ON images(favorite DESC, created_at DESC)")
                 statement.execute("CREATE INDEX IF NOT EXISTS idx_images_prompt ON images(prompt)")
                 statement.execute("CREATE INDEX IF NOT EXISTS idx_keywords_name ON keywords(name)")
                 statement.execute("CREATE INDEX IF NOT EXISTS idx_llm_tagging_status ON llm_tagging_queue(status, updated_at)")

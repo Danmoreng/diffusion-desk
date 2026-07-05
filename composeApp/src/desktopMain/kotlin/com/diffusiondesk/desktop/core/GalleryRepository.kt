@@ -79,6 +79,9 @@ class GalleryRepository(
             keywords = keyword.trim().takeIf { it.isNotBlank() }?.let(::listOf).orEmpty(),
             modelId = "",
             dateFilter = GalleryDateFilter.All,
+            sortMode = GallerySortMode.Newest,
+            favoritesOnly = false,
+            pinnedOnly = false,
         )
     }
 
@@ -87,6 +90,9 @@ class GalleryRepository(
         keywords: List<String>,
         modelId: String = "",
         dateFilter: GalleryDateFilter = GalleryDateFilter.All,
+        sortMode: GallerySortMode = GallerySortMode.Newest,
+        favoritesOnly: Boolean = false,
+        pinnedOnly: Boolean = false,
     ): List<GalleryImage> {
         database.connection().use { conn ->
             val where = mutableListOf<String>()
@@ -109,17 +115,31 @@ class GalleryRepository(
                 where += "i.model_id = ?"
                 args += normalizedModel
             }
+            if (favoritesOnly) {
+                where += "i.favorite = 1"
+            }
+            if (pinnedOnly) {
+                where += "i.pinned = 1"
+            }
             dateFilter.bounds()?.let { (start, end) ->
                 where += "i.created_at >= ? AND i.created_at < ?"
                 args += start.toString()
                 args += end.toString()
+            }
+            val orderBy = when (sortMode) {
+                GallerySortMode.Newest -> "i.pinned DESC, i.created_at DESC, i.id DESC"
+                GallerySortMode.Oldest -> "i.pinned DESC, i.created_at ASC, i.id ASC"
+                GallerySortMode.NameAsc -> "i.pinned DESC, lower(i.file_path) ASC, i.id ASC"
+                GallerySortMode.NameDesc -> "i.pinned DESC, lower(i.file_path) DESC, i.id DESC"
+                GallerySortMode.Largest -> "i.pinned DESC, (i.width * i.height) DESC, i.created_at DESC, i.id DESC"
+                GallerySortMode.Smallest -> "i.pinned DESC, (i.width * i.height) ASC, i.created_at DESC, i.id DESC"
             }
             val sql = buildString {
                 append(
                     """
                     SELECT i.id, i.file_path, i.preview_path, i.prompt, i.negative_prompt, i.seed, i.width, i.height,
                            i.steps, i.cfg_scale, i.sampler, i.model_id, i.preset_id, i.generation_time,
-                           i.created_at, i.modified_at, i.metadata_text, i.favorite, i.rating,
+                           i.created_at, i.modified_at, i.metadata_text, i.favorite, i.pinned, i.rating,
                            GROUP_CONCAT(k.name, char(31)) AS keywords
                     FROM images i
                     LEFT JOIN image_keywords ik ON ik.image_id = i.id
@@ -127,7 +147,7 @@ class GalleryRepository(
                     """.trimIndent(),
                 )
                 if (where.isNotEmpty()) append(" WHERE ").append(where.joinToString(" AND "))
-                append(" GROUP BY i.id ORDER BY i.created_at DESC, i.id DESC LIMIT 500")
+                append(" GROUP BY i.id ORDER BY ").append(orderBy).append(" LIMIT 500")
             }
 
             conn.prepareStatement(sql).use { statement ->
@@ -195,6 +215,26 @@ class GalleryRepository(
 
     fun addKeyword(imageId: Long, keyword: String) {
         addKeyword(imageId, keyword, "manual")
+    }
+
+    fun updateFavorite(imageId: Long, favorite: Boolean) {
+        database.connection().use { conn ->
+            conn.prepareStatement("UPDATE images SET favorite = ? WHERE id = ?").use { statement ->
+                statement.setInt(1, if (favorite) 1 else 0)
+                statement.setLong(2, imageId)
+                statement.executeUpdate()
+            }
+        }
+    }
+
+    fun updatePinned(imageId: Long, pinned: Boolean) {
+        database.connection().use { conn ->
+            conn.prepareStatement("UPDATE images SET pinned = ? WHERE id = ?").use { statement ->
+                statement.setInt(1, if (pinned) 1 else 0)
+                statement.setLong(2, imageId)
+                statement.executeUpdate()
+            }
+        }
     }
 
     fun addKeyword(imageId: Long, keyword: String, source: String) {
@@ -296,7 +336,7 @@ class GalleryRepository(
                 """
                 SELECT i.id, i.file_path, i.preview_path, i.prompt, i.negative_prompt, i.seed, i.width, i.height,
                        i.steps, i.cfg_scale, i.sampler, i.model_id, i.preset_id, i.generation_time,
-                       i.created_at, i.modified_at, i.metadata_text, i.favorite, i.rating,
+                       i.created_at, i.modified_at, i.metadata_text, i.favorite, i.pinned, i.rating,
                        GROUP_CONCAT(k.name, char(31)) AS keywords
                 FROM images i
                 LEFT JOIN image_keywords ik ON ik.image_id = i.id
@@ -611,7 +651,7 @@ class GalleryRepository(
             """
             SELECT i.id, i.file_path, i.preview_path, i.prompt, i.negative_prompt, i.seed, i.width, i.height,
                    i.steps, i.cfg_scale, i.sampler, i.model_id, i.preset_id, i.generation_time,
-                   i.created_at, i.modified_at, i.metadata_text, i.favorite, i.rating,
+                   i.created_at, i.modified_at, i.metadata_text, i.favorite, i.pinned, i.rating,
                    GROUP_CONCAT(k.name, char(31)) AS keywords
             FROM images i
             LEFT JOIN image_keywords ik ON ik.image_id = i.id
@@ -674,6 +714,7 @@ class GalleryRepository(
             metadataText = getString("metadata_text").orEmpty(),
             loras = GalleryMetadataParser.parseGenerationText(getString("metadata_text").orEmpty()).loras,
             favorite = getInt("favorite") != 0,
+            pinned = getInt("pinned") != 0,
             rating = getInt("rating"),
             keywords = getString("keywords")
                 ?.split(31.toChar())

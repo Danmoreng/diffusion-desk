@@ -24,6 +24,8 @@ class DesktopSettingsStore(
             manualVramBudgetGb = 12.0,
             autostartLlmWorkers = false,
             galleryPreviewWidthDp = 420,
+            galleryThumbnailSizeDp = 190,
+            gallerySortMode = GallerySortMode.Newest,
         )
 
         if (!settingsFile.exists()) {
@@ -77,6 +79,12 @@ class DesktopSettingsStore(
                 galleryPreviewWidthDp = props.getProperty("galleryPreviewWidthDp", defaults.galleryPreviewWidthDp.toString()).toIntOrNull()
                     ?.coerceIn(320, 760)
                     ?: defaults.galleryPreviewWidthDp,
+                galleryThumbnailSizeDp = props.getProperty("galleryThumbnailSizeDp", defaults.galleryThumbnailSizeDp.toString()).toIntOrNull()
+                    ?.coerceIn(140, 320)
+                    ?: defaults.galleryThumbnailSizeDp,
+                gallerySortMode = GallerySortMode.fromStorage(
+                    props.getProperty("gallerySortMode", defaults.gallerySortMode.name),
+                ),
             )
         }.getOrElse { defaults }
     }
@@ -101,6 +109,8 @@ class DesktopSettingsStore(
         props.setProperty("manualVramBudgetGb", settings.manualVramBudgetGb.toString())
         props.setProperty("autostartLlmWorkers", settings.autostartLlmWorkers.toString())
         props.setProperty("galleryPreviewWidthDp", settings.galleryPreviewWidthDp.toString())
+        props.setProperty("galleryThumbnailSizeDp", settings.galleryThumbnailSizeDp.toString())
+        props.setProperty("gallerySortMode", settings.gallerySortMode.name)
 
         settingsFile.outputStream().use { props.store(it, "Diffusion Desk Desktop Settings") }
     }
