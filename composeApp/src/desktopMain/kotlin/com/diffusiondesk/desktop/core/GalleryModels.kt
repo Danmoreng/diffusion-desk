@@ -10,6 +10,7 @@ data class GalleryImage(
     val id: Long,
     val filePath: String,
     val previewPath: String,
+    val title: String,
     val prompt: String,
     val negativePrompt: String,
     val seed: Long?,
@@ -32,7 +33,7 @@ data class GalleryImage(
 ) {
     val file: File get() = File(filePath)
     val previewFile: File get() = previewPath.takeIf { it.isNotBlank() }?.let(::File)?.takeIf { it.isFile } ?: file
-    val displayName: String get() = file.name
+    val displayName: String get() = title.ifBlank { file.name }
     val dimensions: String get() = if (width != null && height != null) "${width}x${height}" else ""
     val aspectRatio: Float get() = if (width != null && height != null && height > 0) width.toFloat() / height.toFloat() else 1f
 }

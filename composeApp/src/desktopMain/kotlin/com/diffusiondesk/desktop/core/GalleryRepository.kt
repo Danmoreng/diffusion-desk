@@ -17,6 +17,10 @@ class GalleryRepository(
     private companion object {
         const val PREVIEW_MAX_DIMENSION = 320
         const val PREVIEW_QUALITY_HINT = "jpg"
+        val NEGATIVE_PROMPT_BLOCK_REGEX = Regex(
+            pattern = """^Negative prompt:\s*.*?(?=^Steps:|\z)""",
+            options = setOf(RegexOption.IGNORE_CASE, RegexOption.MULTILINE, RegexOption.DOT_MATCHES_ALL),
+        )
     }
 
     fun indexOutputDirectory(outputDir: String): Int {
@@ -99,8 +103,8 @@ class GalleryRepository(
             val args = mutableListOf<String>()
             val normalizedQuery = query.trim()
             if (normalizedQuery.isNotBlank()) {
-                where += "(i.prompt LIKE ? OR i.negative_prompt LIKE ? OR i.model_id LIKE ? OR i.file_path LIKE ?)"
-                repeat(4) { args += "%$normalizedQuery%" }
+                where += "(i.title LIKE ? OR i.prompt LIKE ? OR i.negative_prompt LIKE ? OR i.model_id LIKE ? OR i.file_path LIKE ?)"
+                repeat(5) { args += "%$normalizedQuery%" }
             }
             keywords
                 .map { it.trim().lowercase(Locale.US) }
@@ -129,15 +133,15 @@ class GalleryRepository(
             val orderBy = when (sortMode) {
                 GallerySortMode.Newest -> "i.pinned DESC, i.created_at DESC, i.id DESC"
                 GallerySortMode.Oldest -> "i.pinned DESC, i.created_at ASC, i.id ASC"
-                GallerySortMode.NameAsc -> "i.pinned DESC, lower(i.file_path) ASC, i.id ASC"
-                GallerySortMode.NameDesc -> "i.pinned DESC, lower(i.file_path) DESC, i.id DESC"
+                GallerySortMode.NameAsc -> "i.pinned DESC, lower(COALESCE(NULLIF(i.title, ''), i.file_path)) ASC, i.id ASC"
+                GallerySortMode.NameDesc -> "i.pinned DESC, lower(COALESCE(NULLIF(i.title, ''), i.file_path)) DESC, i.id DESC"
                 GallerySortMode.Largest -> "i.pinned DESC, (i.width * i.height) DESC, i.created_at DESC, i.id DESC"
                 GallerySortMode.Smallest -> "i.pinned DESC, (i.width * i.height) ASC, i.created_at DESC, i.id DESC"
             }
             val sql = buildString {
                 append(
                     """
-                    SELECT i.id, i.file_path, i.preview_path, i.prompt, i.negative_prompt, i.seed, i.width, i.height,
+                    SELECT i.id, i.file_path, i.preview_path, i.title, i.prompt, i.negative_prompt, i.seed, i.width, i.height,
                            i.steps, i.cfg_scale, i.sampler, i.model_id, i.preset_id, i.generation_time,
                            i.created_at, i.modified_at, i.metadata_text, i.favorite, i.pinned, i.rating,
                            GROUP_CONCAT(k.name, char(31)) AS keywords
@@ -303,10 +307,11 @@ class GalleryRepository(
         }
     }
 
-    fun completeLlmTagging(imageId: Long, presetId: String, tags: List<String>) {
+    fun completeLlmTagging(imageId: Long, presetId: String, tags: List<String>, title: String = "") {
         database.connection().use { conn ->
             conn.autoCommit = false
             try {
+                updateTitle(conn, imageId, title)
                 tags.forEach { tag ->
                     val normalized = tag.trim().lowercase(Locale.US)
                     if (normalized.isNotBlank()) {
@@ -334,7 +339,7 @@ class GalleryRepository(
         database.connection().use { conn ->
             conn.prepareStatement(
                 """
-                SELECT i.id, i.file_path, i.preview_path, i.prompt, i.negative_prompt, i.seed, i.width, i.height,
+                SELECT i.id, i.file_path, i.preview_path, i.title, i.prompt, i.negative_prompt, i.seed, i.width, i.height,
                        i.steps, i.cfg_scale, i.sampler, i.model_id, i.preset_id, i.generation_time,
                        i.created_at, i.modified_at, i.metadata_text, i.favorite, i.pinned, i.rating,
                        GROUP_CONCAT(k.name, char(31)) AS keywords
@@ -451,8 +456,9 @@ class GalleryRepository(
     }
 
     private fun upsertImage(conn: Connection, file: File, previewFile: File, metadata: ParsedImageMetadata) {
-            conn.prepareStatement(
-                """
+        val normalizedMetadata = metadata.withEffectiveNegativePrompt()
+        conn.prepareStatement(
+            """
                 INSERT INTO images(
                     file_path, preview_path, prompt, negative_prompt, seed, width, height, steps, cfg_scale,
                     sampler, model_id, preset_id, generation_time, created_at, modified_at, metadata_text
@@ -472,26 +478,39 @@ class GalleryRepository(
                     generation_time = excluded.generation_time,
                     modified_at = excluded.modified_at,
                     metadata_text = excluded.metadata_text
-                """.trimIndent(),
-            ).use { statement ->
-                statement.setString(1, file.absolutePath)
-                statement.setString(2, previewFile.absolutePath)
-                statement.setString(3, metadata.prompt)
-                statement.setString(4, metadata.negativePrompt)
-                statement.setNullableLong(5, metadata.seed)
-                statement.setNullableInt(6, metadata.width)
-                statement.setNullableInt(7, metadata.height)
-                statement.setNullableInt(8, metadata.steps)
-                statement.setNullableDouble(9, metadata.cfgScale)
-                statement.setString(10, metadata.sampler)
-                statement.setString(11, metadata.modelId)
-                statement.setString(12, "")
-                statement.setNullableDouble(13, metadata.generationTime)
-                statement.setLong(14, file.lastModified())
-                statement.setLong(15, file.lastModified())
-                statement.setString(16, metadata.metadataText)
-                statement.executeUpdate()
-            }
+            """.trimIndent(),
+        ).use { statement ->
+            statement.setString(1, file.absolutePath)
+            statement.setString(2, previewFile.absolutePath)
+            statement.setString(3, normalizedMetadata.prompt)
+            statement.setString(4, normalizedMetadata.negativePrompt)
+            statement.setNullableLong(5, normalizedMetadata.seed)
+            statement.setNullableInt(6, normalizedMetadata.width)
+            statement.setNullableInt(7, normalizedMetadata.height)
+            statement.setNullableInt(8, normalizedMetadata.steps)
+            statement.setNullableDouble(9, normalizedMetadata.cfgScale)
+            statement.setString(10, normalizedMetadata.sampler)
+            statement.setString(11, normalizedMetadata.modelId)
+            statement.setString(12, "")
+            statement.setNullableDouble(13, normalizedMetadata.generationTime)
+            statement.setLong(14, file.lastModified())
+            statement.setLong(15, file.lastModified())
+            statement.setString(16, normalizedMetadata.metadataText)
+            statement.executeUpdate()
+        }
+    }
+
+    private fun ParsedImageMetadata.withEffectiveNegativePrompt(): ParsedImageMetadata {
+        if ((cfgScale ?: Double.MAX_VALUE) > 1.0) return this
+        return copy(
+            negativePrompt = "",
+            metadataText = metadataText.stripNegativePromptBlock(),
+        )
+    }
+
+    private fun String.stripNegativePromptBlock(): String {
+        if (isBlank()) return this
+        return replace(NEGATIVE_PROMPT_BLOCK_REGEX, "").trim()
     }
 
     private fun resolvePreviewFile(root: File, sourceFile: File, legacyPreviews: Map<String, File>): File {
@@ -615,6 +634,22 @@ class GalleryRepository(
             statement.setLong(2, now)
             statement.executeUpdate()
         }
+        conn.prepareStatement(
+            """
+            UPDATE llm_tagging_queue
+            SET status = 'pending', updated_at = ?
+            WHERE status = 'completed'
+              AND title_attempted = 0
+              AND EXISTS (
+                SELECT 1 FROM images i
+                WHERE i.id = llm_tagging_queue.image_id
+                  AND i.title = ''
+              )
+            """.trimIndent(),
+        ).use { statement ->
+            statement.setLong(1, now)
+            statement.executeUpdate()
+        }
     }
 
     private fun updateLlmTaggingStatus(
@@ -633,6 +668,10 @@ class GalleryRepository(
                 status = excluded.status,
                 preset_id = excluded.preset_id,
                 error = excluded.error,
+                title_attempted = CASE
+                    WHEN excluded.status = 'completed' THEN 1
+                    ELSE llm_tagging_queue.title_attempted
+                END,
                 updated_at = excluded.updated_at
             """.trimIndent(),
         ).use { statement ->
@@ -649,7 +688,7 @@ class GalleryRepository(
     private fun selectImageById(conn: Connection, imageId: Long): GalleryImage? {
         conn.prepareStatement(
             """
-            SELECT i.id, i.file_path, i.preview_path, i.prompt, i.negative_prompt, i.seed, i.width, i.height,
+            SELECT i.id, i.file_path, i.preview_path, i.title, i.prompt, i.negative_prompt, i.seed, i.width, i.height,
                    i.steps, i.cfg_scale, i.sampler, i.model_id, i.preset_id, i.generation_time,
                    i.created_at, i.modified_at, i.metadata_text, i.favorite, i.pinned, i.rating,
                    GROUP_CONCAT(k.name, char(31)) AS keywords
@@ -679,6 +718,16 @@ class GalleryRepository(
         }
     }
 
+    private fun updateTitle(conn: Connection, imageId: Long, title: String) {
+        val normalized = title.normalizeTitle()
+        if (normalized.isBlank()) return
+        conn.prepareStatement("UPDATE images SET title = ? WHERE id = ?").use { statement ->
+            statement.setString(1, normalized)
+            statement.setLong(2, imageId)
+            statement.executeUpdate()
+        }
+    }
+
     private fun findOrCreateKeyword(conn: Connection, keyword: String): Long {
         conn.prepareStatement("INSERT OR IGNORE INTO keywords(name) VALUES (?)").use { statement ->
             statement.setString(1, keyword)
@@ -698,6 +747,7 @@ class GalleryRepository(
             id = getLong("id"),
             filePath = getString("file_path").orEmpty(),
             previewPath = getString("preview_path").orEmpty(),
+            title = getString("title").orEmpty(),
             prompt = getString("prompt").orEmpty(),
             negativePrompt = getString("negative_prompt").orEmpty(),
             seed = nullableLong("seed"),
@@ -733,6 +783,14 @@ class GalleryRepository(
 
     private fun java.sql.PreparedStatement.setNullableDouble(index: Int, value: Double?) {
         if (value == null) setNull(index, java.sql.Types.REAL) else setDouble(index, value)
+    }
+
+    private fun String.normalizeTitle(): String {
+        return trim()
+            .trim('"', '\'', '.', ':')
+            .replace(Regex("\\s+"), " ")
+            .take(80)
+            .trim()
     }
 
     private fun ResultSet.nullableLong(column: String): Long? {

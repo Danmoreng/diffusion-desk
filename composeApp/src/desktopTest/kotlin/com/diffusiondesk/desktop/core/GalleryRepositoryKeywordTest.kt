@@ -155,6 +155,25 @@ class GalleryRepositoryKeywordTest {
         assertEquals(listOf(zetaImageId), pinnedImages.map { it.id })
     }
 
+    @Test
+    fun listImagesUsesGeneratedTitleForDisplaySearchAndNameSort() {
+        val tempDir = Files.createTempDirectory("diffusion-desk-gallery-keyword-test").toFile()
+        val db = GalleryDatabase(tempDir.resolve("gallery.db"))
+        val repository = GalleryRepository(db)
+        val firstImageId = insertImage(db, tempDir.resolve("zeta.png").apply { writeBytes(byteArrayOf(1)) }.absolutePath, createdAt = 10)
+        val secondImageId = insertImage(db, tempDir.resolve("alpha.png").apply { writeBytes(byteArrayOf(2)) }.absolutePath, createdAt = 20)
+
+        repository.completeLlmTagging(firstImageId, "tagger", listOf("city"), title = "Neon City")
+        repository.completeLlmTagging(secondImageId, "tagger", listOf("portrait"), title = "Amber Portrait")
+
+        val images = repository.listImages(query = "", keywords = emptyList(), sortMode = GallerySortMode.NameAsc)
+        val searched = repository.listImages(query = "neon", keywords = emptyList())
+
+        assertEquals(listOf(secondImageId, firstImageId), images.map { it.id })
+        assertEquals("Neon City", images.first { it.id == firstImageId }.displayName)
+        assertEquals(listOf(firstImageId), searched.map { it.id })
+    }
+
     private fun insertImage(
         database: GalleryDatabase,
         filePath: String,

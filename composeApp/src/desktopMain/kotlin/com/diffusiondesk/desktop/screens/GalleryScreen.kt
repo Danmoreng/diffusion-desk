@@ -46,7 +46,9 @@ import androidx.compose.material.icons.filled.ImageSearch
 import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.RestartAlt
+import androidx.compose.material.icons.filled.Sell
 import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.Style
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
@@ -384,7 +386,7 @@ private fun GalleryToolbar(
                 enabled = !state.isIndexing,
             )
             DeskIconButton(
-                icon = Icons.Default.ImageSearch,
+                icon = Icons.Default.Style,
                 contentDescription = "Generate tags",
                 onClick = onTagAllPendingImages,
                 enabled = !state.isIndexing && !isTaggingGallery,
@@ -898,75 +900,39 @@ private fun GalleryDetails(
                     .clip(RoundedCornerShape(6.dp)),
             )
 
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                DeskButton(
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                DeskIconButton(
+                    icon = Icons.Default.RestartAlt,
+                    contentDescription = "Reuse generation parameters",
                     onClick = { onReuseImage(image) },
-                    modifier = Modifier.weight(1f),
-                ) {
-                    Row(
-                        horizontalArrangement = Arrangement.Center,
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Icon(Icons.Default.RestartAlt, contentDescription = null, modifier = Modifier.size(17.dp))
-                        Spacer(Modifier.width(8.dp))
-                        Text("Reuse")
-                    }
-                }
-                DeskButton(
+                    tooltip = "Reuse parameters",
+                )
+                DeskIconButton(
+                    icon = Icons.Default.CropFree,
+                    contentDescription = "Upscale image",
                     onClick = { onUpscaleImage(image) },
-                    modifier = Modifier.weight(1f),
-                ) {
-                    Row(
-                        horizontalArrangement = Arrangement.Center,
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Icon(Icons.Default.CropFree, contentDescription = null, modifier = Modifier.size(17.dp))
-                        Spacer(Modifier.width(8.dp))
-                        Text("Upscale")
-                    }
-                }
-                DeskButton(
+                    tooltip = "Upscale",
+                )
+                DeskIconButton(
+                    icon = Icons.Default.ImageSearch,
+                    contentDescription = "Analyze composition",
                     onClick = { onAnalyzeComposition(image) },
-                    modifier = Modifier.weight(1f),
-                ) {
-                    Row(
-                        horizontalArrangement = Arrangement.Center,
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Icon(Icons.Default.ImageSearch, contentDescription = null, modifier = Modifier.size(17.dp))
-                        Spacer(Modifier.width(8.dp))
-                        Text("Analyze")
-                    }
-                }
+                    tooltip = "Analyze composition",
+                )
                 DeskIconButton(
                     icon = Icons.Default.FolderOpen,
                     contentDescription = "Show image in folder",
                     onClick = { showImageInExplorer(image.file) },
+                    tooltip = "Show in folder",
                 )
                 DeskIconButton(
-                    icon = Icons.Default.ImageSearch,
+                    icon = Icons.Default.Sell,
                     contentDescription = "Generate tags",
                     onClick = onTagSelectedImage,
                     enabled = !isTaggingSelectedImage,
                     loading = isTaggingSelectedImage,
                     tooltip = "Generate tags",
                 )
-                if (image.file.isFile) {
-                    DeskIconButton(
-                        icon = Icons.Default.Delete,
-                        contentDescription = "Delete image from disk and gallery",
-                        onClick = { onDeleteImage(image) },
-                        enabled = !isDeletingImage,
-                        tooltip = "Delete from disk and database",
-                        destructive = true,
-                    )
-                }
-            }
-
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
                 GalleryStateIconButton(
                     icon = Icons.Default.Star,
                     contentDescription = if (image.favorite) "Remove star" else "Add star",
@@ -979,6 +945,16 @@ private fun GalleryDetails(
                     selected = image.pinned,
                     onClick = { onTogglePinnedImage(image.id) },
                 )
+                if (image.file.isFile) {
+                    DeskIconButton(
+                        icon = Icons.Default.Delete,
+                        contentDescription = "Delete image from disk and gallery",
+                        onClick = { onDeleteImage(image) },
+                        enabled = !isDeletingImage,
+                        tooltip = "Delete from disk and database",
+                        destructive = true,
+                    )
+                }
             }
 
             DetailBlock("Prompt", image.prompt)

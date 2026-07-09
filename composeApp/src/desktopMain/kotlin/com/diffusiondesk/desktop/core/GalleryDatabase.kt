@@ -22,6 +22,7 @@ class GalleryDatabase(
                         id INTEGER PRIMARY KEY,
                         file_path TEXT NOT NULL UNIQUE,
                         preview_path TEXT NOT NULL DEFAULT '',
+                        title TEXT NOT NULL DEFAULT '',
                         prompt TEXT NOT NULL DEFAULT '',
                         negative_prompt TEXT NOT NULL DEFAULT '',
                         seed INTEGER,
@@ -46,6 +47,12 @@ class GalleryDatabase(
                     conn = conn,
                     tableName = "images",
                     columnName = "preview_path",
+                    definition = "TEXT NOT NULL DEFAULT ''",
+                )
+                ensureColumn(
+                    conn = conn,
+                    tableName = "images",
+                    columnName = "title",
                     definition = "TEXT NOT NULL DEFAULT ''",
                 )
                 ensureColumn(
@@ -93,11 +100,18 @@ class GalleryDatabase(
                         status TEXT NOT NULL DEFAULT 'pending',
                         preset_id TEXT NOT NULL DEFAULT '',
                         error TEXT NOT NULL DEFAULT '',
+                        title_attempted INTEGER NOT NULL DEFAULT 0,
                         created_at INTEGER NOT NULL,
                         updated_at INTEGER NOT NULL,
                         FOREIGN KEY(image_id) REFERENCES images(id) ON DELETE CASCADE
                     )
                     """.trimIndent(),
+                )
+                ensureColumn(
+                    conn = conn,
+                    tableName = "llm_tagging_queue",
+                    columnName = "title_attempted",
+                    definition = "INTEGER NOT NULL DEFAULT 0",
                 )
                 statement.execute("CREATE INDEX IF NOT EXISTS idx_images_created_at ON images(created_at DESC)")
                 statement.execute("CREATE INDEX IF NOT EXISTS idx_images_pinned ON images(pinned DESC, created_at DESC)")

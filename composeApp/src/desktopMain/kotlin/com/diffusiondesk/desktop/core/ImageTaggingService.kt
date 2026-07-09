@@ -15,6 +15,7 @@ import kotlinx.serialization.json.jsonPrimitive
 data class TaggingResult(
     val imageId: Long,
     val imageName: String,
+    val title: String,
     val tags: List<String>,
 )
 
@@ -112,15 +113,16 @@ class ImageTaggingService(
                 ).getOrThrow()
             }
 
-            val tags = parseTags(response)
-            require(tags.isNotEmpty()) { "The tagging LLM did not return any tags." }
+            val metadata = parseTaggingMetadata(response)
+            require(metadata.tags.isNotEmpty()) { "The tagging LLM did not return any tags." }
             val existingTags = image.keywords.map { it.trim().lowercase(Locale.US) }.toSet()
-            val newTags = tags.filterNot { it in existingTags }
-            galleryRepository.completeLlmTagging(image.id, preset.id, newTags)
+            val newTags = metadata.tags.filterNot { it in existingTags }
+            galleryRepository.completeLlmTagging(image.id, preset.id, newTags, title = metadata.title)
 
             return TaggingResult(
                 imageId = image.id,
-                imageName = image.displayName,
+                imageName = metadata.title.ifBlank { image.displayName },
+                title = metadata.title,
                 tags = newTags,
             )
         } catch (error: Throwable) {
@@ -140,20 +142,61 @@ class ImageTaggingService(
             if (image.negativePrompt.isNotBlank()) appendLine("Negative prompt: ${image.negativePrompt}")
             if (image.modelId.isNotBlank()) appendLine("Model: ${image.modelId}")
             image.dimensions.takeIf { it.isNotBlank() }?.let { appendLine("Size: $it") }
-            appendLine("Return 5 to 12 lowercase tags separated by commas.")
+            appendLine("Return JSON only with a short human title and 5 to 12 lowercase tags.")
         }
     }
 
     companion object {
         const val METADATA_TAGGING_SYSTEM_PROMPT =
-            "Return only concise comma-separated image tags. Do not write a sentence."
+            "Return only JSON: {\"title\":\"short gallery title\",\"tags\":[\"tag\"]}. The title must be 2 to 6 words, descriptive, and not a filename. Tags must be concise lowercase image tags."
         const val VISION_TAGGING_SYSTEM_PROMPT =
             "Extract the following fields from the image:\n\n" +
+                "title: A concise 2 to 6 word gallery title that names the visible subject, mood, or scene. Do not use a filename, generic words like image/render/output, or punctuation-heavy captions.\n\n" +
                 "tags: A JSON array of 8 to 12 concise lowercase gallery tags covering the main subject, specific visible objects, medium or style, composition, lighting, background, mood, and any readable text. Prefer visually specific tags over generic category labels.\n\n" +
                 "Respond with only a JSON object. Do not include any text outside the JSON."
         const val VISION_TAGGING_USER_PROMPT =
-            "Analyze this image and extract useful gallery search tags."
+            "Analyze this image and extract a gallery title plus useful search tags."
         val TAG_FIELD_NAMES = setOf("tags", "tag", "keywords", "keyword")
+        val TITLE_FIELD_NAMES = setOf("title", "name", "caption")
+    }
+
+    private data class ParsedTaggingMetadata(
+        val title: String,
+        val tags: List<String>,
+    )
+
+    private fun parseTaggingMetadata(value: String): ParsedTaggingMetadata {
+        return ParsedTaggingMetadata(
+            title = parseTitle(value),
+            tags = parseTags(value),
+        )
+    }
+
+    private fun parseTitle(value: String): String {
+        return runCatching {
+            val root = json.parseToJsonElement(extractJson(value))
+            titleFromJson(root)
+        }
+            .getOrNull()
+            .orEmpty()
+            .normalizeTitle()
+    }
+
+    private fun titleFromJson(root: JsonElement): String {
+        return when (root) {
+            is JsonObject -> {
+                TITLE_FIELD_NAMES
+                    .firstNotNullOfOrNull { field -> root[field]?.jsonPrimitive?.contentOrNull }
+                    ?: root.entries
+                        .asSequence()
+                        .filterNot { (field, _) -> field in TAG_FIELD_NAMES }
+                        .mapNotNull { (_, value) -> titleFromJson(value).takeIf { it.isNotBlank() } }
+                        .firstOrNull()
+                    ?: ""
+            }
+            is JsonArray -> ""
+            is JsonPrimitive -> root.contentOrNull.orEmpty()
+        }
     }
 
     private fun parseTags(value: String): List<String> {
@@ -215,6 +258,21 @@ class ImageTaggingService(
             .trim('-', '*', '.', ':')
             .lowercase(Locale.US)
             .replace(Regex("\\s+"), " ")
+    }
+
+    private fun String.normalizeTitle(): String {
+        val normalized = trim()
+            .trim('"', '\'', '.', ':', '-', '*')
+            .replace(Regex("\\s+"), " ")
+            .take(80)
+            .trim()
+        val lower = normalized.lowercase(Locale.US)
+        return normalized.takeUnless {
+            it.isBlank() ||
+                lower in setOf("image", "render", "output", "untitled") ||
+                lower.startsWith("image ") ||
+                lower.startsWith("render ")
+        }.orEmpty()
     }
 
     private fun GalleryImage.toDataUri(): String {

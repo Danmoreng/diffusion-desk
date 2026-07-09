@@ -787,17 +787,25 @@ class DiffusionDeskClient(
         put(
             "json_schema",
             buildJsonObject {
-                put("name", JsonPrimitive("image_tags"))
+                put("name", JsonPrimitive("image_gallery_metadata"))
                 put("strict", JsonPrimitive(true))
                 put(
                     "schema",
                     buildJsonObject {
                         put("type", JsonPrimitive("object"))
                         put("additionalProperties", JsonPrimitive(false))
-                        put("required", JsonArray(listOf(JsonPrimitive("tags"))))
+                        put("required", JsonArray(listOf(JsonPrimitive("title"), JsonPrimitive("tags"))))
                         put(
                             "properties",
                             buildJsonObject {
+                                put(
+                                    "title",
+                                    buildJsonObject {
+                                        put("type", JsonPrimitive("string"))
+                                        put("minLength", JsonPrimitive(2))
+                                        put("maxLength", JsonPrimitive(80))
+                                    },
+                                )
                                 put(
                                     "tags",
                                     buildJsonObject {
@@ -829,7 +837,7 @@ class DiffusionDeskClient(
                     put("model_id", JsonPrimitive(requestData.modelId))
                 }
                 put("prompt", JsonPrimitive(requestData.prompt))
-                put("negative_prompt", JsonPrimitive(requestData.negativePrompt))
+                put("negative_prompt", JsonPrimitive(requestData.effectiveNegativePrompt()))
                 put("sample_steps", JsonPrimitive(requestData.steps))
                 put("cfg_scale", JsonPrimitive(requestData.cfgScale))
                 put("strength", JsonPrimitive(0.75))
@@ -1061,7 +1069,7 @@ class DiffusionDeskClient(
             put("model_id", JsonPrimitive(requestData.modelId))
         }
         put("prompt", JsonPrimitive(requestData.prompt))
-        put("negative_prompt", JsonPrimitive(requestData.negativePrompt))
+        put("negative_prompt", JsonPrimitive(requestData.effectiveNegativePrompt()))
         put("sample_steps", JsonPrimitive(requestData.steps))
         put("cfg_scale", JsonPrimitive(requestData.cfgScale))
         put("strength", JsonPrimitive(0.75))
@@ -1073,6 +1081,9 @@ class DiffusionDeskClient(
         put("save_image", JsonPrimitive(requestData.saveImage))
         put("no_base64", JsonPrimitive(true))
     }
+
+    private fun GenerationRequest.effectiveNegativePrompt(): String =
+        negativePrompt.takeIf { cfgScale > 1.0 } ?: ""
 
     private fun parseGenerationJobEvent(eventName: String, data: String): GenerationJobEvent {
         val root = json.parseToJsonElement(data).jsonObject
