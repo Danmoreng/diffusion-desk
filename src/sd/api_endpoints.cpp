@@ -1536,24 +1536,15 @@ void handle_generate_image(const httplib::Request& req, httplib::Response& res, 
         }
         gen_params.clip_on_cpu = request_clip_on_cpu;
 
-        // B2.6: Dynamic VAE Offloading (Force CPU/FP32 for high res to prevent NaNs)
+        // B2.6: Dynamic VAE placement
         bool request_vae_on_cpu = ideogram4_context
             ? ctx.ctx_params.vae_on_cpu
             : j.value("vae_on_cpu", ctx.ctx_params.vae_on_cpu);
-        float mp_check = (float)(gen_params.width * gen_params.height) / (1024.0f * 1024.0f);
-        if (!ideogram4_context && mp_check >= 3.0f && !request_vae_on_cpu) {
-             DD_LOG_INFO("High resolution detected (%.2f MP). Forcing VAE to CPU to avoid NaN/static artifacts.", mp_check);
-             request_vae_on_cpu = true;
-        }
 
-        // B2.7: Dynamic Model Weight Offloading (Crucial for ultra-high res)
+        // B2.7: Dynamic model weight offloading
         bool request_offload = ideogram4_context
             ? ctx.ctx_params.offload_params_to_cpu
             : j.value("offload_params_to_cpu", j.value("offload_to_cpu", ctx.ctx_params.offload_params_to_cpu));
-        if (!ideogram4_context && mp_check >= 4.0f && !request_offload) {
-             DD_LOG_INFO("Ultra-high resolution detected (%.2f MP). Enabling model weight offloading to prevent OOM.", mp_check);
-             request_offload = true;
-        }
         if (request_vae_on_cpu != ctx.ctx_params.vae_on_cpu || request_offload != ctx.ctx_params.offload_params_to_cpu) {
             DD_LOG_INFO("Context update required: VAE on CPU: %s, Offload: %s", request_vae_on_cpu ? "Yes" : "No", request_offload ? "Yes" : "No");
             std::lock_guard<std::mutex> lock(ctx.sd_ctx_mutex);
