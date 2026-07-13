@@ -22,6 +22,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AutoFixHigh
 import androidx.compose.material.icons.filled.CropFree
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.Refresh
@@ -59,6 +60,7 @@ import com.diffusiondesk.desktop.core.BackendUiState
 import com.diffusiondesk.desktop.core.GeneratedImage
 import com.diffusiondesk.desktop.viewmodel.UpscaleSourceImage
 import com.diffusiondesk.desktop.viewmodel.UpscaleUiState
+import com.diffusiondesk.desktop.viewmodel.UpscaleMode
 import java.awt.Cursor
 import java.awt.FileDialog
 import java.awt.Frame
@@ -76,7 +78,16 @@ fun UpscaleScreen(
     onSelectImage: (File) -> Unit,
     onReloadModels: () -> Unit,
     onSelectModel: (String) -> Unit,
+    onSelectMode: (UpscaleMode) -> Unit,
+    onSelectPreset: (String) -> Unit,
     onFactorChange: (Double) -> Unit,
+    onTargetWidthChange: (String) -> Unit,
+    onTargetHeightChange: (String) -> Unit,
+    onPromptChange: (String) -> Unit,
+    onNegativePromptChange: (String) -> Unit,
+    onCfgScaleChange: (String) -> Unit,
+    onHighResStepsChange: (String) -> Unit,
+    onDenoisingStrengthChange: (Double) -> Unit,
     onUpscale: () -> Unit,
 ) {
     Row(
@@ -108,44 +119,135 @@ fun UpscaleScreen(
                     UpscaleSourceSummary(source)
                 } ?: UpscaleHint("Choose a source image or send one here from the Gallery.")
 
-                UpscaleSectionTitle("ESRGAN model")
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    when {
-                        state.isLoadingModels -> UpscaleHint(
-                            text = "Loading ESRGAN models...",
-                            modifier = Modifier.weight(1f),
-                        )
-                        state.upscaleModels.isEmpty() -> UpscaleHint(
-                            text = "No ESRGAN models found in the models/esrgan folder.",
-                            modifier = Modifier.weight(1f),
-                        )
-                        else -> {
-                            val optionsByLabel = state.upscaleModels.associateBy { it.upscaleModelLabel() }
-                            val selectedLabel = state.selectedModel
-                                ?.upscaleModelLabel()
-                                ?: "Choose ESRGAN model"
-                            DeskDropdownField(
-                                label = "",
-                                value = selectedLabel,
-                                options = optionsByLabel.keys.toList(),
-                                onValueChange = { label ->
-                                    optionsByLabel[label]?.let { onSelectModel(it.id) }
-                                },
+                DeskTabHeader(
+                    tabs = listOf(
+                        DeskTabItem(
+                            selected = state.mode == UpscaleMode.Classical,
+                            icon = Icons.Default.CropFree,
+                            label = "ESRGAN",
+                            onClick = { onSelectMode(UpscaleMode.Classical) },
+                        ),
+                        DeskTabItem(
+                            selected = state.mode == UpscaleMode.Generative,
+                            icon = Icons.Default.AutoFixHigh,
+                            label = "Generative High-res",
+                            onClick = { onSelectMode(UpscaleMode.Generative) },
+                        ),
+                    ),
+                    horizontalPadding = 0.dp,
+                    verticalPadding = 0.dp,
+                )
+
+                if (state.mode == UpscaleMode.Classical) {
+                    UpscaleSectionTitle("ESRGAN model")
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        when {
+                            state.isLoadingModels -> UpscaleHint(
+                                text = "Loading ESRGAN models...",
                                 modifier = Modifier.weight(1f),
                             )
+                            state.upscaleModels.isEmpty() -> UpscaleHint(
+                                text = "No ESRGAN models found in the models/esrgan folder.",
+                                modifier = Modifier.weight(1f),
+                            )
+                            else -> {
+                                val optionsByLabel = state.upscaleModels.associateBy { it.upscaleModelLabel() }
+                                val selectedLabel = state.selectedModel
+                                    ?.upscaleModelLabel()
+                                    ?: "Choose ESRGAN model"
+                                DeskDropdownField(
+                                    label = "",
+                                    value = selectedLabel,
+                                    options = optionsByLabel.keys.toList(),
+                                    onValueChange = { label ->
+                                        optionsByLabel[label]?.let { onSelectModel(it.id) }
+                                    },
+                                    modifier = Modifier.weight(1f),
+                                )
+                            }
                         }
+                        DeskIconButton(
+                            icon = Icons.Default.Refresh,
+                            contentDescription = "Reload ESRGAN models",
+                            onClick = onReloadModels,
+                            enabled = backendState.status == BackendStatus.Ready,
+                            loading = state.isLoadingModels,
+                        )
                     }
-                    DeskIconButton(
-                        icon = Icons.Default.Refresh,
-                        contentDescription = "Reload ESRGAN models",
-                        onClick = onReloadModels,
-                        enabled = backendState.status == BackendStatus.Ready,
-                        loading = state.isLoadingModels,
+                } else {
+                    UpscaleSectionTitle("Image model preset")
+                    val presetsByLabel = state.generativePresets.associateBy { it.name }
+                    if (presetsByLabel.isEmpty()) {
+                        UpscaleHint("No image preset found in the preset library.")
+                    } else {
+                        DeskDropdownField(
+                            label = "",
+                            value = state.selectedPreset?.name ?: "Choose image preset",
+                            options = presetsByLabel.keys.toList(),
+                            onValueChange = { label -> presetsByLabel[label]?.let { onSelectPreset(it.id) } },
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
+                    UpscaleHint("The source image is resized first, then refined with the selected model as an img2img pass.")
+
+                    DeskTextField(
+                        label = "Prompt",
+                        value = state.prompt,
+                        onValueChange = onPromptChange,
+                        placeholder = "Use Gallery > Upscale to bring the original prompt along automatically.",
+                        singleLine = false,
+                        modifier = Modifier.fillMaxWidth().height(120.dp),
                     )
+
+                    DeskTextField(
+                        label = "Negative prompt",
+                        value = state.negativePrompt,
+                        onValueChange = onNegativePromptChange,
+                        placeholder = "Optional; used when the selected model and CFG support it.",
+                        singleLine = false,
+                        modifier = Modifier.fillMaxWidth().height(84.dp),
+                    )
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        DeskTextField(
+                            label = "High-res steps",
+                            value = state.highResStepsText,
+                            onValueChange = onHighResStepsChange,
+                            modifier = Modifier.weight(1f),
+                        )
+                        DeskTextField(
+                            label = "CFG scale",
+                            value = state.cfgScaleText,
+                            onValueChange = onCfgScaleChange,
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                        ) {
+                            UpscaleHint("Denoising strength")
+                            Text(
+                                text = "%.2f".format(Locale.US, state.denoisingStrength),
+                                color = MaterialTheme.colorScheme.primary,
+                                fontWeight = FontWeight.Bold,
+                            )
+                        }
+                        Slider(
+                            value = state.denoisingStrength.toFloat(),
+                            onValueChange = { onDenoisingStrengthChange(it.toDouble()) },
+                            valueRange = 0.05f..0.95f,
+                            steps = 89,
+                        )
+                    }
                 }
 
                 UpscaleSectionTitle("Scale")
@@ -153,24 +255,49 @@ fun UpscaleScreen(
                     factor = state.factor,
                     onFactorChange = onFactorChange,
                 )
-                val target = state.targetWidth?.let { width ->
-                    val height = state.targetHeight ?: 0
-                    "$width x $height"
-                } ?: "-"
-                UpscaleHint("Target size: $target")
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    DeskTextField(
+                        label = "Target width",
+                        value = state.targetWidthText,
+                        onValueChange = onTargetWidthChange,
+                        modifier = Modifier.weight(1f),
+                    )
+                    DeskTextField(
+                        label = "Target height",
+                        value = state.targetHeightText,
+                        onValueChange = onTargetHeightChange,
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+                UpscaleHint("The aspect ratio stays locked; generative targets must be divisible by 8.")
 
                 DeskButton(
                     onClick = onUpscale,
                     enabled = state.canUpscale && backendState.status == BackendStatus.Ready,
                     modifier = Modifier.fillMaxWidth().height(52.dp),
                 ) {
-                    UpscaleButtonContent(Icons.Default.CropFree, if (state.isUpscaling) "Upscaling..." else "Upscale")
+                    val label = when {
+                        state.isUpscaling -> if (state.mode == UpscaleMode.Generative) "Running high-res pass..." else "Upscaling..."
+                        state.mode == UpscaleMode.Generative -> "Run generative high-res pass"
+                        else -> "Upscale"
+                    }
+                    UpscaleButtonContent(
+                        if (state.mode == UpscaleMode.Generative) Icons.Default.AutoFixHigh else Icons.Default.CropFree,
+                        label,
+                    )
                 }
                 if (state.isUpscaling) {
                     UpscaleProgressPanel(
                         stage = state.upscaleStage,
                         detail = state.upscaleDetail,
                         progress = state.upscaleProgress,
+                        step = state.upscaleStep,
+                        steps = state.upscaleSteps,
+                        elapsedSeconds = state.upscaleElapsedSeconds,
+                        etaSeconds = state.upscaleEtaSeconds,
                     )
                 }
 
@@ -284,6 +411,10 @@ private fun UpscaleProgressPanel(
     stage: String,
     detail: String,
     progress: Float,
+    step: Int,
+    steps: Int,
+    elapsedSeconds: Double,
+    etaSeconds: Int,
 ) {
     Column(
         verticalArrangement = Arrangement.spacedBy(6.dp),
@@ -303,14 +434,14 @@ private fun UpscaleProgressPanel(
                 modifier = Modifier.weight(1f),
             )
             Text(
-                text = "${(progress.coerceIn(0f, 0.98f) * 100f).roundToInt()}%",
+                text = "${(progress.coerceIn(0f, 0.99f) * 100f).roundToInt()}%",
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.primary,
                 fontWeight = FontWeight.SemiBold,
             )
         }
         DeskProgressTrack(
-            progress = progress.coerceIn(0f, 0.98f),
+            progress = progress.coerceIn(0f, 0.99f),
             modifier = Modifier
                 .fillMaxWidth()
                 .height(7.dp),
@@ -323,7 +454,35 @@ private fun UpscaleProgressPanel(
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Text(
+                text = if (steps > 0) "Step $step / $steps" else "Phase in progress",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Text(
+                text = buildString {
+                    append(formatUpscaleDuration(elapsedSeconds))
+                    if (etaSeconds > 0) {
+                        append("  /  ~")
+                        append(formatUpscaleDuration(etaSeconds.toDouble()))
+                        append(" left")
+                    }
+                },
+                style = MaterialTheme.typography.labelSmall,
+                fontWeight = FontWeight.SemiBold,
+            )
+        }
     }
+}
+
+private fun formatUpscaleDuration(seconds: Double): String {
+    val rounded = seconds.roundToInt().coerceAtLeast(0)
+    if (rounded < 60) return "${rounded}s"
+    return "${rounded / 60}m ${(rounded % 60).toString().padStart(2, '0')}s"
 }
 
 @Composable

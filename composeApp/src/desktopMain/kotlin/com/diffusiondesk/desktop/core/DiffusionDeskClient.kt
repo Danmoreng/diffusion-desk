@@ -68,6 +68,8 @@ data class GenerationRequest(
     val seed: Int,
     val sampler: String,
     val saveImage: Boolean,
+    val initImageBase64: String? = null,
+    val strength: Double = 0.75,
 )
 
 data class GenerationResult(
@@ -840,7 +842,7 @@ class DiffusionDeskClient(
                 put("negative_prompt", JsonPrimitive(requestData.effectiveNegativePrompt()))
                 put("sample_steps", JsonPrimitive(requestData.steps))
                 put("cfg_scale", JsonPrimitive(requestData.cfgScale))
-                put("strength", JsonPrimitive(0.75))
+                put("strength", JsonPrimitive(requestData.strength))
                 put("n", JsonPrimitive(1))
                 put("sampling_method", JsonPrimitive(requestData.sampler))
                 put("seed", JsonPrimitive(requestData.seed))
@@ -848,6 +850,9 @@ class DiffusionDeskClient(
                 put("height", JsonPrimitive(requestData.height))
                 put("save_image", JsonPrimitive(requestData.saveImage))
                 put("no_base64", JsonPrimitive(true))
+                requestData.initImageBase64?.takeIf(String::isNotBlank)?.let { image ->
+                    put("init_image", JsonPrimitive(image))
+                }
             }
 
             val request = requestBuilder("$baseUrl/v1/images/generations")
@@ -875,7 +880,7 @@ class DiffusionDeskClient(
 
     suspend fun submitGenerationJob(baseUrl: String, requestData: GenerationRequest): Result<GenerationJobSubmission> = withContext(Dispatchers.IO) {
         runCatching {
-            val payload = generationPayload(requestData)
+            val payload = buildGenerationPayload(requestData)
             val request = requestBuilder("$baseUrl/v1/generation-jobs")
                 .header("Content-Type", "application/json")
                 .POST(HttpRequest.BodyPublishers.ofString(payload.toString()))
@@ -1064,27 +1069,6 @@ class DiffusionDeskClient(
         }
     }
 
-    private fun generationPayload(requestData: GenerationRequest) = buildJsonObject {
-        if (requestData.modelId.isNotBlank()) {
-            put("model_id", JsonPrimitive(requestData.modelId))
-        }
-        put("prompt", JsonPrimitive(requestData.prompt))
-        put("negative_prompt", JsonPrimitive(requestData.effectiveNegativePrompt()))
-        put("sample_steps", JsonPrimitive(requestData.steps))
-        put("cfg_scale", JsonPrimitive(requestData.cfgScale))
-        put("strength", JsonPrimitive(0.75))
-        put("n", JsonPrimitive(1))
-        put("sampling_method", JsonPrimitive(requestData.sampler))
-        put("seed", JsonPrimitive(requestData.seed))
-        put("width", JsonPrimitive(requestData.width))
-        put("height", JsonPrimitive(requestData.height))
-        put("save_image", JsonPrimitive(requestData.saveImage))
-        put("no_base64", JsonPrimitive(true))
-    }
-
-    private fun GenerationRequest.effectiveNegativePrompt(): String =
-        negativePrompt.takeIf { cfgScale > 1.0 } ?: ""
-
     private fun parseGenerationJobEvent(eventName: String, data: String): GenerationJobEvent {
         val root = json.parseToJsonElement(data).jsonObject
         val jobId = root["job_id"]?.jsonPrimitive?.content.orEmpty()
@@ -1240,3 +1224,27 @@ class DiffusionDeskClient(
         return if (compact.length <= maxLength) compact else compact.take(maxLength) + "..."
     }
 }
+
+internal fun buildGenerationPayload(requestData: GenerationRequest) = buildJsonObject {
+    if (requestData.modelId.isNotBlank()) {
+        put("model_id", JsonPrimitive(requestData.modelId))
+    }
+    put("prompt", JsonPrimitive(requestData.prompt))
+    put("negative_prompt", JsonPrimitive(requestData.effectiveNegativePrompt()))
+    put("sample_steps", JsonPrimitive(requestData.steps))
+    put("cfg_scale", JsonPrimitive(requestData.cfgScale))
+    put("strength", JsonPrimitive(requestData.strength))
+    put("n", JsonPrimitive(1))
+    put("sampling_method", JsonPrimitive(requestData.sampler))
+    put("seed", JsonPrimitive(requestData.seed))
+    put("width", JsonPrimitive(requestData.width))
+    put("height", JsonPrimitive(requestData.height))
+    put("save_image", JsonPrimitive(requestData.saveImage))
+    put("no_base64", JsonPrimitive(true))
+    requestData.initImageBase64?.takeIf(String::isNotBlank)?.let { image ->
+        put("init_image", JsonPrimitive(image))
+    }
+}
+
+private fun GenerationRequest.effectiveNegativePrompt(): String =
+    negativePrompt.takeIf { cfgScale > 1.0 } ?: ""

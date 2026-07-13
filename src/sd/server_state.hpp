@@ -22,6 +22,7 @@ struct ProgressState {
 extern ProgressState progress_state;
 
 void on_progress(int step, int steps, float time, void* data);
+void mark_sampling_started();
 void reset_progress();
 void set_progress_phase(const std::string& phase);
 void set_progress_message(const std::string& message);

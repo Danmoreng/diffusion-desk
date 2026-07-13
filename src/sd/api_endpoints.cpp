@@ -1740,23 +1740,37 @@ void handle_generate_image(const httplib::Request& req, httplib::Response& res, 
                 }
             }
 
+            int effective_sampling_steps = gen_params.sample_params.sample_steps;
+            if (init_image.data != nullptr && gen_params.strength < 1.0f) {
+                // stable-diffusion.cpp keeps one extra sigma interval when it
+                // slices the img2img schedule (t_enc + 1 actual callbacks).
+                // Match that exact callback count so prompt/VAE progress series
+                // cannot be mistaken for the diffusion sampling pass.
+                const int t_enc = static_cast<int>(gen_params.sample_params.sample_steps * gen_params.strength);
+                effective_sampling_steps = std::clamp(
+                    t_enc + 1,
+                    1,
+                    gen_params.sample_params.sample_steps);
+            }
+
             {
                 std::lock_guard<std::mutex> lock_prog(progress_state.mutex);
-                int sampling_steps = gen_params.sample_params.sample_steps;
                 if (gen_params.highres_pid_fix) {
-                    progress_state.total_steps = sampling_steps + (4 * gen_params.batch_count);
+                    progress_state.total_steps = effective_sampling_steps + (4 * gen_params.batch_count);
                 } else if (gen_params.hires_fix) {
                     // One sampling pass for all batch + One hires pass for EACH image in batch
-                    progress_state.total_steps = sampling_steps + (gen_params.hires_steps * gen_params.batch_count);
+                    progress_state.total_steps = effective_sampling_steps + (gen_params.hires_steps * gen_params.batch_count);
                 } else {
-                    progress_state.total_steps = sampling_steps;
+                    progress_state.total_steps = effective_sampling_steps;
                 }
-                progress_state.sampling_steps = sampling_steps;
+                progress_state.sampling_steps = effective_sampling_steps;
                 progress_state.base_step = 0;
                 DD_LOG_INFO("Total expected steps: %d", progress_state.total_steps);
             }
 
-            if (gen_params.clip_on_cpu) {
+            if (init_image.data != nullptr) {
+                set_progress_phase("Encoding Source Image and Prompt...");
+            } else if (gen_params.clip_on_cpu) {
                 set_progress_phase("Encoding Prompt (CLIP CPU)...");
             } else {
                 set_progress_phase("Encoding Prompt...");
@@ -1831,7 +1845,7 @@ void handle_generate_image(const httplib::Request& req, httplib::Response& res, 
 
             {
                 std::lock_guard<std::mutex> lock_prog(progress_state.mutex);
-                progress_state.base_step = gen_params.sample_params.sample_steps;
+                progress_state.base_step = effective_sampling_steps;
             }
 
             DD_LOG_INFO("Generation done, num_results: %d, hires_fix: %s", num_results, gen_params.hires_fix ? "true" : "false");

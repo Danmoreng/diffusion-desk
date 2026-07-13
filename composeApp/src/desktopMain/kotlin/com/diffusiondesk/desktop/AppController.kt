@@ -72,7 +72,14 @@ class AppController {
     )
     val libraryViewModel = LibraryViewModel(scope, presetStore, llmPresetStore, backendManager, client)
     val galleryViewModel = GalleryViewModel(scope, galleryRepository, settingsStore, llmPresetStore, imageTaggingService)
-    val upscaleViewModel = UpscaleViewModel(scope, backendManager, client, settingsStore)
+    val upscaleViewModel = UpscaleViewModel(
+        scope,
+        backendManager,
+        client,
+        settingsStore,
+        presetStore,
+        llmWorkerPool,
+    )
     private val closed = AtomicBoolean(false)
     private val shutdownHook = Thread({ close() }, "diffusion-desk-shutdown")
 

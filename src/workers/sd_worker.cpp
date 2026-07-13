@@ -3,10 +3,27 @@
 #include "sd/server_state.hpp"
 #include "httplib.h"
 
+#include <string>
+
+namespace {
+
+void sd_worker_log_cb(enum sd_log_level_t level, const char* log, void* data) {
+    sd_log_cb(level, log, data);
+
+    // stable-diffusion.cpp emits this after prompt/source-image conditioning
+    // and immediately before it enters the diffusion loop. This semantic
+    // marker is more reliable than comparing shared progress counter totals.
+    if (log != nullptr && std::string(log).find("generating image:") != std::string::npos) {
+        mark_sampling_started();
+    }
+}
+
+} // namespace
+
 int run_sd_worker(SDSvrParams& svr_params, SDContextParams& ctx_params, SDGenerationParams& default_gen_params) {
     DD_LOG_INFO("Starting SD Worker on port %d...", svr_params.listen_port);
 
-    sd_set_log_callback(sd_log_cb, (void*)&svr_params);
+    sd_set_log_callback(sd_worker_log_cb, (void*)&svr_params);
     sd_set_progress_callback(on_progress, &progress_state);
     set_log_verbose(svr_params.verbose);
     set_log_color(svr_params.color);

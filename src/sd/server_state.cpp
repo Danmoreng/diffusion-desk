@@ -7,52 +7,21 @@ ProgressState progress_state;
 void on_progress(int step, int steps, float time, void* data) {
     std::lock_guard<std::mutex> lock(progress_state.mutex);
 
-    const bool encoding_prompt = progress_state.phase.rfind("Encoding Prompt", 0) == 0;
+    const bool encoding_prompt = progress_state.phase.rfind("Encoding", 0) == 0;
     const bool sampling_progress = progress_state.sampling_steps <= 0 || steps == progress_state.sampling_steps;
-    const int log_interval = std::max(steps / 20, 1);
-    const bool log_callback = step <= 1 || step >= steps || step % log_interval == 0;
 
-    if (log_callback) {
-        DD_LOG_INFO(
-            "Progress callback raw: step=%d/%d phase='%s' expected_sampling_steps=%d total_steps=%d base_step=%d encoding=%s sampling_match=%s",
-            step,
-            steps,
-            progress_state.phase.c_str(),
-            progress_state.sampling_steps,
-            progress_state.total_steps,
-            progress_state.base_step,
-            encoding_prompt ? "true" : "false",
-            sampling_progress ? "true" : "false");
-    }
-
-    if (encoding_prompt && !sampling_progress) {
-        progress_state.step = step;
-        progress_state.steps = steps;
-        progress_state.time = time;
-        progress_state.version++;
-        progress_state.cv.notify_all();
-        if (log_callback) {
-            DD_LOG_INFO("Progress callback classified as prompt encoding: published=%d/%d", step, steps);
-        }
+    // Text encoders, VAE preparation, tensor loading, and diffusion sampling all
+    // share the same upstream callback. Their step totals can collide (for
+    // example Ideogram's VAE encode and an 8-step sampling pass both report
+    // 0/8..8/8), so counters cannot reliably identify the active phase.
+    // mark_sampling_started() performs the semantic transition from the
+    // upstream "generating image" marker; preparation counters stay hidden.
+    if (encoding_prompt) {
         return;
     }
 
-    // The first callback matching the configured diffusion step count marks the
-    // transition from text encoding to sampling.
-    if (encoding_prompt) {
-        DD_LOG_INFO(
-            "Progress phase transition: prompt encoding -> sampling on callback %d/%d (expected sampling steps: %d)",
-            step,
-            steps,
-            progress_state.sampling_steps);
-        progress_state.phase = "Sampling...";
-    }
-
-    // Ignore unrelated progress series once prompt encoding has completed.
+    // Ignore unrelated progress series such as tensor loading and tiled VAE.
     if (!sampling_progress) {
-        if (log_callback) {
-            DD_LOG_INFO("Progress callback ignored outside prompt encoding: step=%d/%d", step, steps);
-        }
         return;
     }
 
@@ -67,6 +36,21 @@ void on_progress(int step, int steps, float time, void* data) {
                  progress_state.step, progress_state.steps, 
                  progress_state.phase.c_str(), progress_state.time);
     }
+}
+
+void mark_sampling_started() {
+    std::lock_guard<std::mutex> lock(progress_state.mutex);
+    if (progress_state.phase.rfind("Encoding", 0) != 0) {
+        return;
+    }
+
+    DD_LOG_INFO("Progress phase transition: encoding -> sampling");
+    progress_state.phase = "Sampling...";
+    progress_state.step = progress_state.base_step;
+    progress_state.steps = progress_state.total_steps;
+    progress_state.time = 0;
+    progress_state.version++;
+    progress_state.cv.notify_all();
 }
 
 void reset_progress() {
