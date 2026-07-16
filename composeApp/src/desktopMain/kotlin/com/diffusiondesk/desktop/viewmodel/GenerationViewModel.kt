@@ -21,6 +21,7 @@ import com.diffusiondesk.desktop.core.api.GeneratedImage
 import com.diffusiondesk.desktop.core.api.GenerationJobEvent
 import com.diffusiondesk.desktop.core.api.GenerationRequest
 import com.diffusiondesk.desktop.core.api.ModelMetadata
+import com.diffusiondesk.desktop.core.coroutines.mapCatchingCancellable
 import com.diffusiondesk.desktop.core.SavedGenerationSettings
 import com.diffusiondesk.desktop.composition.CaptureImageMode
 import com.diffusiondesk.desktop.composition.CompositionAction
@@ -2889,7 +2890,7 @@ class GenerationViewModel(
 
             val jobSubmission = client.submitGenerationJob(baseUrl, item.params.toRequest())
 
-            val generationResult = jobSubmission.mapCatching { submission ->
+            val generationResult = jobSubmission.mapCatchingCancellable { submission ->
                 activeGenerationJobId = submission.id
                 update { copy(message = "Queued worker job ${submission.id}.") }
                 if (generationCancelRequested) {

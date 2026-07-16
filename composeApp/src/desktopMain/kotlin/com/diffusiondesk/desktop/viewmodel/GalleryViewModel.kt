@@ -9,7 +9,7 @@ import com.diffusiondesk.desktop.core.GallerySortMode
 import com.diffusiondesk.desktop.core.DesktopSettingsStore
 import com.diffusiondesk.desktop.core.ImageTaggingService
 import com.diffusiondesk.desktop.core.LlmPresetStore
-import kotlinx.coroutines.CancellationException
+import com.diffusiondesk.desktop.core.coroutines.runCatchingCancellable
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -71,7 +71,7 @@ class GalleryViewModel(
         refreshJob = scope.launch {
             update { copy(isIndexing = true, error = null, message = "Loading gallery...") }
             loadCachedList(keepIndexing = true)
-            runCatchingPreservingCancellation {
+            runCatchingCancellable {
                 withContext(Dispatchers.IO) {
                     val indexed = repository.indexOutputDirectory(outputDir)
                     val current = _uiState.value
@@ -206,10 +206,10 @@ class GalleryViewModel(
         if (selected.isEmpty()) return
         scope.launch {
             update { copy(isDeletingImage = true, error = null) }
-            val results = runCatchingPreservingCancellation {
+            val results = runCatchingCancellable {
                 withContext(Dispatchers.IO) {
                     selected.map { image ->
-                        image to runCatching { repository.deleteImage(image) }
+                        image to runCatchingCancellable { repository.deleteImage(image) }
                     }
                 }
             }
@@ -241,7 +241,7 @@ class GalleryViewModel(
         val image = _uiState.value.images.firstOrNull { it.id == imageId } ?: return
         val nextFavorite = !image.favorite
         scope.launch {
-            runCatching {
+            runCatchingCancellable {
                 withContext(Dispatchers.IO) { repository.updateFavorite(imageId, nextFavorite) }
             }.onSuccess {
                 loadCachedList()
@@ -262,7 +262,7 @@ class GalleryViewModel(
         val image = _uiState.value.images.firstOrNull { it.id == imageId } ?: return
         val nextPinned = !image.pinned
         scope.launch {
-            runCatching {
+            runCatchingCancellable {
                 withContext(Dispatchers.IO) { repository.updatePinned(imageId, nextPinned) }
             }.onSuccess {
                 loadCachedList()
@@ -285,7 +285,7 @@ class GalleryViewModel(
         val image = _uiState.value.selectedImage ?: return
         val keyword = _uiState.value.keywordDraft
         scope.launch {
-            runCatching {
+            runCatchingCancellable {
                 withContext(Dispatchers.IO) { repository.addKeyword(image.id, keyword) }
             }.onSuccess {
                 update { copy(keywordDraft = "") }
@@ -298,7 +298,7 @@ class GalleryViewModel(
 
     fun removeKeyword(imageId: Long, keyword: String) {
         scope.launch {
-            runCatching {
+            runCatchingCancellable {
                 withContext(Dispatchers.IO) { repository.removeKeyword(imageId, keyword) }
             }.onSuccess {
                 reloadList()
@@ -312,7 +312,7 @@ class GalleryViewModel(
         val normalized = keyword.trim().lowercase(Locale.US)
         if (normalized.isBlank()) return
         scope.launch {
-            runCatching {
+            runCatchingCancellable {
                 withContext(Dispatchers.IO) { repository.deleteKeyword(normalized) }
             }.onSuccess {
                 update {
@@ -331,7 +331,7 @@ class GalleryViewModel(
 
     fun cleanupUnusedKeywords() {
         scope.launch {
-            runCatching {
+            runCatchingCancellable {
                 withContext(Dispatchers.IO) { repository.cleanupUnusedKeywords() }
             }.onSuccess { deleted ->
                 update {
@@ -356,7 +356,7 @@ class GalleryViewModel(
         val image = _uiState.value.selectedImage ?: return
         scope.launch {
             update { copy(isDeletingImage = true, error = null) }
-            runCatching {
+            runCatchingCancellable {
                 withContext(Dispatchers.IO) { repository.deleteImage(image) }
             }.onSuccess {
                 loadCachedList()
@@ -420,7 +420,7 @@ class GalleryViewModel(
     fun reusableParams(image: GalleryImage): GalleryReusableParams = repository.reusableParams(image)
 
     private suspend fun loadCachedList(keepIndexing: Boolean = false) {
-        runCatchingPreservingCancellation {
+        runCatchingCancellable {
             val current = _uiState.value
             withContext(Dispatchers.IO) {
                 Triple(
@@ -501,12 +501,3 @@ class GalleryViewModel(
         private const val SEARCH_DEBOUNCE_MS = 200L
     }
 }
-
-private inline fun <T> runCatchingPreservingCancellation(block: () -> T): Result<T> =
-    try {
-        Result.success(block())
-    } catch (error: CancellationException) {
-        throw error
-    } catch (error: Throwable) {
-        Result.failure(error)
-    }

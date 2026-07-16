@@ -1,6 +1,7 @@
 package com.diffusiondesk.desktop.core
 
 import com.diffusiondesk.desktop.core.api.LlmChatMessage
+import com.diffusiondesk.desktop.core.coroutines.runCatchingCancellable
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -37,7 +38,7 @@ class ImageTaggingService(
         settings: DesktopSettings,
         preset: LlmPreset,
     ): Result<TaggingResult> = withContext(Dispatchers.IO) {
-        runCatchingPreservingCancellation {
+        runCatchingCancellable {
             tagClaimedImage(settings, preset, claimNextImage(preset))
         }
     }
@@ -47,7 +48,7 @@ class ImageTaggingService(
         preset: LlmPreset,
         image: GalleryImage,
     ): Result<TaggingResult> = withContext(Dispatchers.IO) {
-        runCatchingPreservingCancellation {
+        runCatchingCancellable {
             tagClaimedImage(settings, preset, image)
         }
     }
@@ -59,7 +60,7 @@ class ImageTaggingService(
         refreshOutputIndex: Boolean = true,
         retryFailed: Boolean = false,
     ): Result<TaggingBatchResult> = withContext(Dispatchers.IO) {
-        runCatchingPreservingCancellation {
+        runCatchingCancellable {
             if (refreshOutputIndex) {
                 galleryRepository.indexOutputDirectory(settings.outputDir)
             }
@@ -71,7 +72,7 @@ class ImageTaggingService(
             var failed = 0
             while (completed + failed < maxItems) {
                 val image = galleryRepository.claimNextPendingLlmTag(preset.id) ?: break
-                runCatchingPreservingCancellation {
+                runCatchingCancellable {
                     tagClaimedImage(settings, preset, image)
                 }.onSuccess {
                     completed += 1
@@ -142,15 +143,6 @@ class ImageTaggingService(
             throw error
     }
 }
-
-    private inline fun <T> runCatchingPreservingCancellation(block: () -> T): Result<T> =
-        try {
-            Result.success(block())
-        } catch (error: CancellationException) {
-            throw error
-        } catch (error: Throwable) {
-            Result.failure(error)
-        }
 
     private fun buildPrompt(image: GalleryImage): String {
         return buildString {

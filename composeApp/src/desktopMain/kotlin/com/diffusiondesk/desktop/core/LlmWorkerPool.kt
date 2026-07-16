@@ -1,5 +1,6 @@
 package com.diffusiondesk.desktop.core
 
+import com.diffusiondesk.desktop.core.coroutines.runCatchingCancellable
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -87,29 +88,29 @@ class LlmWorkerPool(
         parsedArgs: List<String>,
         signature: String,
     ): Result<LlmWorkerHandle> {
-        return runCatching {
+        return runCatchingCancellable {
             check(!closing.get()) { "LLM worker pool is closing." }
             workers[signature]?.takeIf { it.process.isAlive }?.let { existing ->
                 val existingState = _state.value.firstOrNull { it.id == signature }
                 when (existingState?.status) {
                     LlmWorkerStatus.Ready -> {
-                        return@runCatching LlmWorkerHandle(signature, baseUrl(existing.port), existing.preset)
+                        return@runCatchingCancellable LlmWorkerHandle(signature, baseUrl(existing.port), existing.preset)
                     }
                     LlmWorkerStatus.ReadyNoModel -> {
                         loadExistingWorker(signature, existing, parsedArgs)
-                        return@runCatching LlmWorkerHandle(signature, baseUrl(existing.port), existing.preset)
+                        return@runCatchingCancellable LlmWorkerHandle(signature, baseUrl(existing.port), existing.preset)
                     }
                     LlmWorkerStatus.Starting -> {
                         val url = baseUrl(existing.port)
                         waitForHealth(signature, existing.process, url)
                         updateFromHealth(signature, url, status = LlmWorkerStatus.ReadyNoModel, message = "LLM worker ready.")
                         loadExistingWorker(signature, existing, parsedArgs)
-                        return@runCatching LlmWorkerHandle(signature, url, existing.preset)
+                        return@runCatchingCancellable LlmWorkerHandle(signature, url, existing.preset)
                     }
                     LlmWorkerStatus.Loading,
                     LlmWorkerStatus.Busy -> {
                         waitForReadyModel(signature, existing.process)
-                        return@runCatching LlmWorkerHandle(signature, baseUrl(existing.port), existing.preset)
+                        return@runCatchingCancellable LlmWorkerHandle(signature, baseUrl(existing.port), existing.preset)
                     }
                     LlmWorkerStatus.Stopped,
                     LlmWorkerStatus.Error,
