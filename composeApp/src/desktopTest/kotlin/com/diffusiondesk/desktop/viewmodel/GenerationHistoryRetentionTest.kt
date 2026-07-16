@@ -1,7 +1,7 @@
 package com.diffusiondesk.desktop.viewmodel
 
 import androidx.compose.ui.graphics.toComposeImageBitmap
-import com.diffusiondesk.desktop.core.GeneratedImage
+import com.diffusiondesk.desktop.core.api.GeneratedImage
 import java.awt.image.BufferedImage
 import java.nio.file.Files
 import kotlin.test.Test

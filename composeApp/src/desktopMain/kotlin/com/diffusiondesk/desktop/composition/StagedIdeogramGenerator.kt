@@ -1,7 +1,7 @@
 package com.diffusiondesk.desktop.composition
 
 import com.diffusiondesk.desktop.core.IDEOGRAM4_SCHEMA_INSTRUCTION
-import com.diffusiondesk.desktop.core.LlmChatMessage
+import com.diffusiondesk.desktop.core.api.LlmChatMessage
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray

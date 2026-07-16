@@ -1,5 +1,6 @@
 package com.diffusiondesk.desktop.core
 
+import com.diffusiondesk.desktop.core.api.GenerationRequest
 import kotlinx.serialization.json.double
 import kotlinx.serialization.json.jsonPrimitive
 import kotlin.test.Test

@@ -1,6 +1,6 @@
 package com.diffusiondesk.desktop.composition
 
-import com.diffusiondesk.desktop.core.LlmChatMessage
+import com.diffusiondesk.desktop.core.api.LlmChatMessage
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue

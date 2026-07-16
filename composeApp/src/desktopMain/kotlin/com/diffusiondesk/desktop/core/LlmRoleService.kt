@@ -1,5 +1,8 @@
 package com.diffusiondesk.desktop.core
 
+import com.diffusiondesk.desktop.core.api.LlmChatCompletion
+import com.diffusiondesk.desktop.core.api.LlmChatMessage
+import com.diffusiondesk.desktop.core.api.LlmToolCall
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json

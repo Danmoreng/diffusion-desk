@@ -10,7 +10,7 @@ import com.diffusiondesk.desktop.core.ImagePromptMode
 import com.diffusiondesk.desktop.core.LlmPlacement
 import com.diffusiondesk.desktop.core.LlmPreset
 import com.diffusiondesk.desktop.core.LlmPresetStore
-import com.diffusiondesk.desktop.core.ModelSummary
+import com.diffusiondesk.desktop.core.api.ModelSummary
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow

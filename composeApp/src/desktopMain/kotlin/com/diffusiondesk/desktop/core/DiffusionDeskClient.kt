@@ -1,6 +1,19 @@
 package com.diffusiondesk.desktop.core
 
-import androidx.compose.ui.graphics.ImageBitmap
+import com.diffusiondesk.desktop.core.api.GeneratedImage
+import com.diffusiondesk.desktop.core.api.GenerationJobEvent
+import com.diffusiondesk.desktop.core.api.GenerationJobSubmission
+import com.diffusiondesk.desktop.core.api.GenerationRequest
+import com.diffusiondesk.desktop.core.api.GenerationResult
+import com.diffusiondesk.desktop.core.api.LlmChatCompletion
+import com.diffusiondesk.desktop.core.api.LlmChatMessage
+import com.diffusiondesk.desktop.core.api.LlmHealth
+import com.diffusiondesk.desktop.core.api.LlmToolCall
+import com.diffusiondesk.desktop.core.api.ModelMetadata
+import com.diffusiondesk.desktop.core.api.ModelSummary
+import com.diffusiondesk.desktop.core.api.ProgressSnapshot
+import com.diffusiondesk.desktop.core.api.ServerConfig
+import com.diffusiondesk.desktop.core.api.UpscaleResult
 import androidx.compose.ui.graphics.toComposeImageBitmap
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -27,132 +40,8 @@ import java.net.http.HttpRequest
 import java.net.http.HttpResponse
 import java.nio.charset.StandardCharsets
 import java.time.Duration
-import java.awt.image.BufferedImage
 import java.util.concurrent.ConcurrentHashMap
 import javax.imageio.ImageIO
-
-data class ServerConfig(
-    val modelDir: String,
-    val outputDir: String,
-    val setupCompleted: Boolean,
-)
-
-data class ModelSummary(
-    val id: String,
-    val name: String,
-    val type: String,
-    val active: Boolean,
-    val loaded: Boolean,
-)
-
-data class ModelMetadata(
-    val id: String,
-    val triggerWord: String = "",
-    val previewPath: String = "",
-)
-
-data class ProgressSnapshot(
-    val step: Int,
-    val steps: Int,
-    val time: Double,
-    val phase: String,
-    val message: String,
-)
-
-data class GenerationRequest(
-    val modelId: String,
-    val prompt: String,
-    val negativePrompt: String,
-    val width: Int,
-    val height: Int,
-    val steps: Int,
-    val cfgScale: Double,
-    val seed: Int,
-    val sampler: String,
-    val saveImage: Boolean,
-    val initImageBase64: String? = null,
-    val strength: Double = 0.75,
-)
-
-data class GenerationResult(
-    val imageUrls: List<String>,
-    val usedSeed: Int,
-    val generationTime: Double? = null,
-)
-
-data class GeneratedImage(
-    val bitmap: ImageBitmap,
-    val bufferedImage: BufferedImage,
-    val bytes: ByteArray,
-    val sourceUrl: String,
-    val generationTime: Double? = null,
-)
-
-data class UpscaleResult(
-    val imageUrl: String,
-    val width: Int,
-    val height: Int,
-    val name: String,
-)
-
-data class GenerationJobSubmission(
-    val id: String,
-    val status: String,
-)
-
-data class LlmHealth(
-    val modelLoaded: Boolean,
-    val modelPath: String,
-    val placement: String,
-    val nGpuLayers: Int,
-    val advancedArgs: List<String>,
-    val vramAllocatedMb: Int,
-    val vramFreeMb: Int,
-)
-
-data class LlmChatMessage(
-    val role: String,
-    val content: String = "",
-    val imageDataUri: String? = null,
-    val toolCalls: List<LlmToolCall> = emptyList(),
-    val toolCallId: String? = null,
-)
-
-data class LlmToolCall(
-    val id: String,
-    val name: String,
-    val arguments: String,
-)
-
-data class LlmChatCompletion(
-    val content: String,
-    val reasoningContent: String,
-    val finishReason: String,
-    val promptTokens: Int?,
-    val completionTokens: Int?,
-    val totalTokens: Int?,
-    val promptTokensPerSecond: Double?,
-    val predictedTokensPerSecond: Double?,
-    val elapsedMs: Long,
-    val rawResponsePreview: String,
-    val toolCalls: List<LlmToolCall> = emptyList(),
-)
-
-sealed class GenerationJobEvent {
-    data class Queued(val jobId: String, val queuePosition: Int) : GenerationJobEvent()
-    data class Started(val jobId: String) : GenerationJobEvent()
-    data class Progress(
-        val jobId: String,
-        val step: Int,
-        val steps: Int,
-        val time: Double,
-        val phase: String,
-        val message: String,
-    ) : GenerationJobEvent()
-    data class Completed(val jobId: String, val result: GenerationResult) : GenerationJobEvent()
-    data class Failed(val jobId: String, val message: String) : GenerationJobEvent()
-    data class Cancelled(val jobId: String, val message: String) : GenerationJobEvent()
-}
 
 class DiffusionDeskClient(
     private val internalToken: String = "",

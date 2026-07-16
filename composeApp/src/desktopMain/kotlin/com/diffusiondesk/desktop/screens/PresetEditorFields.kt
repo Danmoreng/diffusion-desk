@@ -13,7 +13,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.diffusiondesk.desktop.core.ImagePromptMode
 import com.diffusiondesk.desktop.core.LlmPlacement
-import com.diffusiondesk.desktop.core.ModelSummary
+import com.diffusiondesk.desktop.core.api.ModelSummary
 import com.diffusiondesk.desktop.viewmodel.ImagePresetForm
 import com.diffusiondesk.desktop.viewmodel.LlmPresetForm
 import org.jetbrains.jewel.ui.component.Text

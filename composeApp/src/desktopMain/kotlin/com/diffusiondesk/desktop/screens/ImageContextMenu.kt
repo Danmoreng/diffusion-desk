@@ -3,7 +3,7 @@ package com.diffusiondesk.desktop.screens
 import androidx.compose.foundation.ContextMenuArea
 import androidx.compose.foundation.ContextMenuItem
 import androidx.compose.runtime.Composable
-import com.diffusiondesk.desktop.core.GeneratedImage
+import com.diffusiondesk.desktop.core.api.GeneratedImage
 import java.awt.Desktop
 import java.awt.EventQueue
 import java.awt.FileDialog

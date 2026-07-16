@@ -8,9 +8,6 @@ import com.diffusiondesk.desktop.core.DiffusionDeskClient
 import com.diffusiondesk.desktop.core.GalleryImage
 import com.diffusiondesk.desktop.core.GalleryRepository
 import com.diffusiondesk.desktop.core.GalleryLora
-import com.diffusiondesk.desktop.core.GeneratedImage
-import com.diffusiondesk.desktop.core.GenerationJobEvent
-import com.diffusiondesk.desktop.core.GenerationRequest
 import com.diffusiondesk.desktop.core.GenerationSettingsStore
 import com.diffusiondesk.desktop.core.GalleryReusableParams
 import com.diffusiondesk.desktop.core.ImagePreset
@@ -20,7 +17,10 @@ import com.diffusiondesk.desktop.core.ImageTaggingService
 import com.diffusiondesk.desktop.core.LlmPresetStore
 import com.diffusiondesk.desktop.core.LlmRoleService
 import com.diffusiondesk.desktop.core.LlmWorkerPool
-import com.diffusiondesk.desktop.core.ModelMetadata
+import com.diffusiondesk.desktop.core.api.GeneratedImage
+import com.diffusiondesk.desktop.core.api.GenerationJobEvent
+import com.diffusiondesk.desktop.core.api.GenerationRequest
+import com.diffusiondesk.desktop.core.api.ModelMetadata
 import com.diffusiondesk.desktop.core.SavedGenerationSettings
 import com.diffusiondesk.desktop.composition.CaptureImageMode
 import com.diffusiondesk.desktop.composition.CompositionAction

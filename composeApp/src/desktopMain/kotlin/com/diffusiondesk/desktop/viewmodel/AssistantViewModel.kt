@@ -5,7 +5,7 @@ import com.diffusiondesk.desktop.core.AssistantChatResult
 import com.diffusiondesk.desktop.core.AssistantToolContext
 import com.diffusiondesk.desktop.core.AssistantToolPlan
 import com.diffusiondesk.desktop.core.AssistantToolRegistry
-import com.diffusiondesk.desktop.core.LlmChatMessage
+import com.diffusiondesk.desktop.core.api.LlmChatMessage
 import com.diffusiondesk.desktop.core.LlmPresetStore
 import com.diffusiondesk.desktop.core.LlmRoleService
 import com.diffusiondesk.desktop.core.effectiveAdvancedArgs

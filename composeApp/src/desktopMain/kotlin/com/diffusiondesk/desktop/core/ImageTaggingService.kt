@@ -1,5 +1,6 @@
 package com.diffusiondesk.desktop.core
 
+import com.diffusiondesk.desktop.core.api.LlmChatMessage
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext

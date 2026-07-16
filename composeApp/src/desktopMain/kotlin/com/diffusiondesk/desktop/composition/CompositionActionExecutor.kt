@@ -1,7 +1,7 @@
 package com.diffusiondesk.desktop.composition
 
 import com.diffusiondesk.desktop.core.DesktopSettings
-import com.diffusiondesk.desktop.core.GeneratedImage
+import com.diffusiondesk.desktop.core.api.GeneratedImage
 import com.diffusiondesk.desktop.core.LlmPreset
 import com.diffusiondesk.desktop.core.LlmRoleService
 import com.diffusiondesk.desktop.core.LlmRoleSettings

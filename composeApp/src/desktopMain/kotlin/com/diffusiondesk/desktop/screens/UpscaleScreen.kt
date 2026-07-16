@@ -57,7 +57,8 @@ import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import com.diffusiondesk.desktop.core.BackendStatus
 import com.diffusiondesk.desktop.core.BackendUiState
-import com.diffusiondesk.desktop.core.GeneratedImage
+import com.diffusiondesk.desktop.core.api.GeneratedImage
+import com.diffusiondesk.desktop.core.api.ModelSummary
 import com.diffusiondesk.desktop.viewmodel.UpscaleSourceImage
 import com.diffusiondesk.desktop.viewmodel.UpscaleUiState
 import com.diffusiondesk.desktop.viewmodel.UpscaleMode
@@ -647,7 +648,7 @@ private fun ImageComparisonSlider(
     }
 }
 
-private fun com.diffusiondesk.desktop.core.ModelSummary.upscaleModelLabel(): String {
+private fun ModelSummary.upscaleModelLabel(): String {
     val displayName = name.ifBlank { id }
     return if (id.isBlank() || id == displayName) displayName else "$displayName ($id)"
 }

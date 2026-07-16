@@ -105,7 +105,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.zIndex
 import com.diffusiondesk.desktop.core.BackendStatus
 import com.diffusiondesk.desktop.core.BackendUiState
-import com.diffusiondesk.desktop.core.GeneratedImage
+import com.diffusiondesk.desktop.core.api.GeneratedImage
 import com.diffusiondesk.desktop.core.ImagePromptMode
 import com.diffusiondesk.desktop.core.LlmDebugEntry
 import com.diffusiondesk.desktop.composition.CaptureImageMode

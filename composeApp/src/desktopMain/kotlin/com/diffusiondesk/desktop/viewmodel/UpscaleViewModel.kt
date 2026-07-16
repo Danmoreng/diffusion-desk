@@ -8,13 +8,13 @@ import com.diffusiondesk.desktop.core.DesktopSettingsStore
 import com.diffusiondesk.desktop.core.DiffusionDeskClient
 import com.diffusiondesk.desktop.core.GalleryImage
 import com.diffusiondesk.desktop.core.GalleryMetadataParser
-import com.diffusiondesk.desktop.core.GeneratedImage
-import com.diffusiondesk.desktop.core.GenerationJobEvent
-import com.diffusiondesk.desktop.core.GenerationRequest
 import com.diffusiondesk.desktop.core.ImagePreset
 import com.diffusiondesk.desktop.core.ImagePresetStore
 import com.diffusiondesk.desktop.core.LlmWorkerPool
-import com.diffusiondesk.desktop.core.ModelSummary
+import com.diffusiondesk.desktop.core.api.GeneratedImage
+import com.diffusiondesk.desktop.core.api.GenerationJobEvent
+import com.diffusiondesk.desktop.core.api.GenerationRequest
+import com.diffusiondesk.desktop.core.api.ModelSummary
 import com.diffusiondesk.desktop.core.ParsedImageMetadata
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
