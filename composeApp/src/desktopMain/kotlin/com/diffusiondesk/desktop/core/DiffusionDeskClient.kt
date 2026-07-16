@@ -1,6 +1,11 @@
 package com.diffusiondesk.desktop.core
 
 import com.diffusiondesk.desktop.core.api.GeneratedImage
+import com.diffusiondesk.desktop.core.api.HttpRequestSpecBuilder
+import com.diffusiondesk.desktop.core.api.HttpResponse
+import com.diffusiondesk.desktop.core.api.HttpTransport
+import com.diffusiondesk.desktop.core.api.HttpTransportClient
+import com.diffusiondesk.desktop.core.api.JdkHttpTransport
 import com.diffusiondesk.desktop.core.api.GenerationJobEvent
 import com.diffusiondesk.desktop.core.api.GenerationJobSubmission
 import com.diffusiondesk.desktop.core.api.GenerationRequest
@@ -35,9 +40,6 @@ import java.io.ByteArrayInputStream
 import java.io.InputStream
 import java.io.InputStreamReader
 import java.net.URI
-import java.net.http.HttpClient
-import java.net.http.HttpRequest
-import java.net.http.HttpResponse
 import java.nio.charset.StandardCharsets
 import java.time.Duration
 import java.util.concurrent.ConcurrentHashMap
@@ -47,21 +49,15 @@ class DiffusionDeskClient(
     private val internalToken: String = "",
     private val llmDebugLog: LlmDebugLog? = null,
 ) {
-    private val httpClient = HttpClient.newBuilder()
-        .connectTimeout(Duration.ofSeconds(5))
-        .build()
+    private val transport: HttpTransport = JdkHttpTransport(internalToken)
+    private val httpClient = HttpTransportClient(transport)
 
     private val json = Json {
         ignoreUnknownKeys = true
     }
     private val generationEventStreams = ConcurrentHashMap<String, InputStream>()
 
-    private fun requestBuilder(uri: String): HttpRequest.Builder =
-        HttpRequest.newBuilder(URI.create(uri)).apply {
-            if (internalToken.isNotBlank()) {
-                header("X-Internal-Token", internalToken)
-            }
-        }
+    private fun requestBuilder(uri: String) = HttpRequestSpecBuilder(URI.create(uri))
 
     suspend fun fetchConfig(baseUrl: String): Result<ServerConfig> = withContext(Dispatchers.IO) {
         runCatching {
@@ -130,7 +126,7 @@ class DiffusionDeskClient(
 
             val request = requestBuilder("$baseUrl/v1/models/load")
                 .header("Content-Type", "application/json")
-                .POST(HttpRequest.BodyPublishers.ofString(payload.toString()))
+                .POST(payload.toString())
                 .timeout(Duration.ofMinutes(2))
                 .build()
 
@@ -249,7 +245,7 @@ class DiffusionDeskClient(
 
             val request = requestBuilder("$baseUrl/v1/config")
                 .header("Content-Type", "application/json")
-                .POST(HttpRequest.BodyPublishers.ofString(payload.toString()))
+                .POST(payload.toString())
                 .timeout(Duration.ofSeconds(10))
                 .build()
 
@@ -267,7 +263,7 @@ class DiffusionDeskClient(
     fun shutdownImageWorkerBlocking(baseUrl: String) {
         val request = requestBuilder("$baseUrl/internal/shutdown")
             .header("Content-Type", "application/json")
-            .POST(HttpRequest.BodyPublishers.noBody())
+            .POST()
             .timeout(Duration.ofSeconds(3))
             .build()
         httpClient.send(request, HttpResponse.BodyHandlers.discarding())
@@ -282,7 +278,7 @@ class DiffusionDeskClient(
     fun shutdownLlmWorkerBlocking(baseUrl: String) {
         val request = requestBuilder("$baseUrl/internal/shutdown")
             .header("Content-Type", "application/json")
-            .POST(HttpRequest.BodyPublishers.noBody())
+            .POST()
             .timeout(Duration.ofSeconds(3))
             .build()
         httpClient.send(request, HttpResponse.BodyHandlers.discarding())
@@ -292,7 +288,7 @@ class DiffusionDeskClient(
         runCatching {
             val request = requestBuilder("$baseUrl/v1/models/unload")
                 .header("Content-Type", "application/json")
-                .POST(HttpRequest.BodyPublishers.noBody())
+                .POST()
                 .timeout(Duration.ofSeconds(15))
                 .build()
             val response = httpClient.send(request, HttpResponse.BodyHandlers.ofString())
@@ -316,7 +312,7 @@ class DiffusionDeskClient(
 
             val request = requestBuilder("$baseUrl/v1/llm/load")
                 .header("Content-Type", "application/json")
-                .POST(HttpRequest.BodyPublishers.ofString(payload.toString()))
+                .POST(payload.toString())
                 .timeout(Duration.ofMinutes(5))
                 .build()
 
@@ -329,7 +325,7 @@ class DiffusionDeskClient(
         runCatching {
             val request = requestBuilder("$baseUrl/v1/llm/unload")
                 .header("Content-Type", "application/json")
-                .POST(HttpRequest.BodyPublishers.noBody())
+                .POST()
                 .timeout(Duration.ofSeconds(20))
                 .build()
             val response = httpClient.send(request, HttpResponse.BodyHandlers.ofString())
@@ -484,7 +480,7 @@ class DiffusionDeskClient(
 
             val request = requestBuilder("$baseUrl/v1/chat/completions")
                 .header("Content-Type", "application/json")
-                .POST(HttpRequest.BodyPublishers.ofString(payload.toString()))
+                .POST(payload.toString())
                 .timeout(timeout)
                 .build()
 
@@ -575,7 +571,7 @@ class DiffusionDeskClient(
 
             val request = requestBuilder("$baseUrl/v1/chat/completions")
                 .header("Content-Type", "application/json")
-                .POST(HttpRequest.BodyPublishers.ofString(payload.toString()))
+                .POST(payload.toString())
                 .timeout(Duration.ofMinutes(3))
                 .build()
 
@@ -656,7 +652,7 @@ class DiffusionDeskClient(
 
             val request = requestBuilder("$baseUrl/v1/chat/completions")
                 .header("Content-Type", "application/json")
-                .POST(HttpRequest.BodyPublishers.ofString(payload.toString()))
+                .POST(payload.toString())
                 .timeout(timeout)
                 .build()
 
@@ -749,7 +745,7 @@ class DiffusionDeskClient(
 
             val request = requestBuilder("$baseUrl/v1/images/generations")
                 .header("Content-Type", "application/json")
-                .POST(HttpRequest.BodyPublishers.ofString(payload.toString()))
+                .POST(payload.toString())
                 .timeout(Duration.ofMinutes(5))
                 .build()
 
@@ -775,7 +771,7 @@ class DiffusionDeskClient(
             val payload = buildGenerationPayload(requestData)
             val request = requestBuilder("$baseUrl/v1/generation-jobs")
                 .header("Content-Type", "application/json")
-                .POST(HttpRequest.BodyPublishers.ofString(payload.toString()))
+                .POST(payload.toString())
                 .timeout(Duration.ofSeconds(30))
                 .build()
 
@@ -797,7 +793,7 @@ class DiffusionDeskClient(
             }
             val request = requestBuilder("$baseUrl/v1/upscale/load")
                 .header("Content-Type", "application/json")
-                .POST(HttpRequest.BodyPublishers.ofString(payload.toString()))
+                .POST(payload.toString())
                 .timeout(Duration.ofMinutes(2))
                 .build()
 
@@ -820,7 +816,7 @@ class DiffusionDeskClient(
             }
             val request = requestBuilder("$baseUrl/v1/images/upscale")
                 .header("Content-Type", "application/json")
-                .POST(HttpRequest.BodyPublishers.ofString(payload.toString()))
+                .POST(payload.toString())
                 .timeout(Duration.ofMinutes(10))
                 .build()
 
@@ -840,7 +836,7 @@ class DiffusionDeskClient(
     suspend fun cancelGenerationJob(baseUrl: String, jobId: String): Result<Unit> = withContext(Dispatchers.IO) {
         runCatching {
             val request = requestBuilder("$baseUrl/v1/generation-jobs/$jobId/cancel")
-                .POST(HttpRequest.BodyPublishers.noBody())
+                .POST()
                 .timeout(Duration.ofSeconds(30))
                 .build()
 
