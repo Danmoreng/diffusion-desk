@@ -2,14 +2,14 @@ package com.diffusiondesk.desktop.viewmodel
 
 import com.diffusiondesk.desktop.composition.StagedIdeogramGenerator
 import com.diffusiondesk.desktop.composition.StagedIdeogramProgress
+import com.diffusiondesk.desktop.testing.runDeterministicTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
-import kotlinx.coroutines.runBlocking
 
 class StagedCompositionDraftTest {
     @Test
-    fun everyPublishedDraftCanRenderInCompositionUi() = runBlocking {
+    fun everyPublishedDraftCanRenderInCompositionUi() = runDeterministicTest {
         val responses = ArrayDeque(
             listOf(
                 """{"high_level_description":"A poster","style_description":{"aesthetics":"clean","lighting":"soft","photo":"editorial","medium":"photograph"}}""",

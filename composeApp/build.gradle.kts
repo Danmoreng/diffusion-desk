@@ -54,6 +54,7 @@ kotlin {
         val desktopTest by getting
         desktopTest.dependencies {
             implementation(kotlin("test"))
+            implementation(libs.kotlinx.coroutines.test)
             implementation(libs.sqlite.jdbc)
         }
     }
