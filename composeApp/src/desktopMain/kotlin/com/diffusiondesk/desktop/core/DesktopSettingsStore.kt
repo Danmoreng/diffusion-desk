@@ -1,6 +1,9 @@
 package com.diffusiondesk.desktop.core
 
 import java.io.File
+import java.nio.file.AtomicMoveNotSupportedException
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
 import java.util.Properties
 
 class DesktopSettingsStore(
@@ -89,9 +92,11 @@ class DesktopSettingsStore(
         }.getOrElse { defaults }
     }
 
+    @Synchronized
     fun save(settings: DesktopSettings) {
-        if (!AppPaths.appDir.exists()) {
-            AppPaths.appDir.mkdirs()
+        val parentDir = settingsFile.absoluteFile.parentFile
+        if (!parentDir.exists()) {
+            parentDir.mkdirs()
         }
 
         val props = Properties()
@@ -112,6 +117,25 @@ class DesktopSettingsStore(
         props.setProperty("galleryThumbnailSizeDp", settings.galleryThumbnailSizeDp.toString())
         props.setProperty("gallerySortMode", settings.gallerySortMode.name)
 
-        settingsFile.outputStream().use { props.store(it, "Diffusion Desk Desktop Settings") }
+        val tempFile = File.createTempFile("${settingsFile.name}.", ".tmp", parentDir)
+        try {
+            tempFile.outputStream().use { props.store(it, "Diffusion Desk Desktop Settings") }
+            try {
+                Files.move(
+                    tempFile.toPath(),
+                    settingsFile.toPath(),
+                    StandardCopyOption.ATOMIC_MOVE,
+                    StandardCopyOption.REPLACE_EXISTING,
+                )
+            } catch (_: AtomicMoveNotSupportedException) {
+                Files.move(
+                    tempFile.toPath(),
+                    settingsFile.toPath(),
+                    StandardCopyOption.REPLACE_EXISTING,
+                )
+            }
+        } finally {
+            tempFile.delete()
+        }
     }
 }

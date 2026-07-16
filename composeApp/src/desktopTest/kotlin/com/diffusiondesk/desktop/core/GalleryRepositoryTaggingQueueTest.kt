@@ -47,4 +47,32 @@ class GalleryRepositoryTaggingQueueTest {
             }
         }
     }
+
+    @Test
+    fun failedQueueRowsCanBeRetriedByANewBulkRun() {
+        val tempDir = Files.createTempDirectory("diffusion-desk-gallery-retry-test").toFile()
+        val db = GalleryDatabase(tempDir.resolve("gallery.db"))
+        val repository = GalleryRepository(db)
+        val imagePath = tempDir.resolve("image.png").absolutePath
+
+        db.connection().use { conn ->
+            conn.prepareStatement(
+                "INSERT INTO images(file_path, preview_path, created_at, modified_at) VALUES (?, ?, ?, ?)",
+            ).use { statement ->
+                statement.setString(1, imagePath)
+                statement.setString(2, imagePath)
+                statement.setLong(3, 10)
+                statement.setLong(4, 10)
+                statement.executeUpdate()
+            }
+        }
+
+        val firstClaim = repository.claimNextPendingLlmTag("tagger")
+        assertNotNull(firstClaim)
+        repository.failLlmTagging(firstClaim.id, "tagger", "temporary failure")
+        assertNull(repository.claimNextPendingLlmTag("tagger"))
+
+        assertEquals(1, repository.retryFailedLlmTags())
+        assertNotNull(repository.claimNextPendingLlmTag("tagger"))
+    }
 }

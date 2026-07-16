@@ -90,18 +90,23 @@ fun UpscaleScreen(
     onDenoisingStrengthChange: (Double) -> Unit,
     onUpscale: () -> Unit,
 ) {
-    Row(
+    BoxWithConstraints(
         modifier = Modifier
             .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
-            .padding(DeskScreenPadding),
-        horizontalArrangement = Arrangement.spacedBy(DeskLayoutGap),
+            .background(MaterialTheme.colorScheme.background),
     ) {
-        DeskPanel(
+        val controlsWidth = if (maxWidth < 760.dp) 340.dp else 430.dp
+        Row(
             modifier = Modifier
-                .width(430.dp)
-                .fillMaxHeight(),
+                .fillMaxSize()
+                .padding(DeskScreenPadding),
+            horizontalArrangement = Arrangement.spacedBy(DeskLayoutGap),
         ) {
+            DeskPanel(
+                modifier = Modifier
+                    .width(controlsWidth)
+                    .fillMaxHeight(),
+            ) {
             Column(
                 modifier = Modifier
                     .fillMaxSize()
@@ -314,13 +319,14 @@ fun UpscaleScreen(
             }
         }
 
-        DeskPanel(modifier = Modifier.weight(1f).fillMaxHeight()) {
-            UpscaleComparisonPane(
-                source = state.source,
-                result = state.result,
-                outputDir = outputDir,
-                modifier = Modifier.fillMaxSize(),
-            )
+            DeskPanel(modifier = Modifier.weight(1f).fillMaxHeight()) {
+                UpscaleComparisonPane(
+                    source = state.source,
+                    result = state.result,
+                    outputDir = outputDir,
+                    modifier = Modifier.fillMaxSize(),
+                )
+            }
         }
     }
 }

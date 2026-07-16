@@ -19,10 +19,15 @@ import com.diffusiondesk.desktop.core.detectDefaultOutputDir
 import com.diffusiondesk.desktop.core.detectDefaultRepoRoot
 import com.diffusiondesk.desktop.core.normalizeConfiguredPath
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import java.io.File
 
 data class SettingsUiState(
@@ -70,8 +75,20 @@ class SettingsViewModel(
     val uiState: StateFlow<SettingsUiState> = _uiState.asStateFlow()
 
     val backendState: StateFlow<BackendUiState> = backendManager.state
+    private val pendingSettings = Channel<DesktopSettings>(Channel.CONFLATED)
+    private var settingsPersistenceJob: kotlinx.coroutines.Job? = null
 
     init {
+        settingsPersistenceJob = scope.launch(Dispatchers.IO) {
+            for (first in pendingSettings) {
+                delay(SETTINGS_SAVE_DEBOUNCE_MS)
+                var latest = first
+                while (true) {
+                    latest = pendingSettings.tryReceive().getOrNull() ?: break
+                }
+                runCatching { store.save(latest) }
+            }
+        }
         scope.launch {
             llmWorkerPool.state.collect { workers ->
                 update { copy(llmWorkers = workers) }
@@ -381,7 +398,13 @@ class SettingsViewModel(
             }
             notifications.info("Generating gallery tags...")
             update { copy(isBusy = true, isTaggingGallery = true, message = "", error = null) }
-            taggingService.tagPendingImages(settings, preset, maxItems = Int.MAX_VALUE, refreshOutputIndex = true)
+            taggingService.tagPendingImages(
+                settings,
+                preset,
+                maxItems = Int.MAX_VALUE,
+                refreshOutputIndex = true,
+                retryFailed = true,
+            )
                 .onSuccess { result ->
                     notifications.success("Tagged ${result.completed} image(s). ${result.failed} failed.")
                     update { copy(isBusy = false, isTaggingGallery = false, message = "", error = null) }
@@ -542,12 +565,26 @@ class SettingsViewModel(
         gallerySortMode = gallerySortMode,
     )
 
+    @Synchronized
     private fun update(transform: SettingsUiState.() -> SettingsUiState) {
         _uiState.value = _uiState.value.transform()
     }
 
     private fun updateAndSave(transform: SettingsUiState.() -> SettingsUiState) {
         update(transform)
+        currentSettingsOrNull()?.let(pendingSettings::trySend)
+    }
+
+    fun flushSettings() {
+        val persistenceJob = settingsPersistenceJob
+        settingsPersistenceJob = null
+        if (persistenceJob != null) {
+            runBlocking { persistenceJob.cancelAndJoin() }
+        }
         currentSettingsOrNull()?.let(store::save)
+    }
+
+    private companion object {
+        const val SETTINGS_SAVE_DEBOUNCE_MS = 250L
     }
 }

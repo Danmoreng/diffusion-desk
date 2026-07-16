@@ -19,6 +19,7 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import java.io.BufferedReader
 import java.io.ByteArrayInputStream
+import java.io.InputStream
 import java.io.InputStreamReader
 import java.net.URI
 import java.net.http.HttpClient
@@ -27,6 +28,7 @@ import java.net.http.HttpResponse
 import java.nio.charset.StandardCharsets
 import java.time.Duration
 import java.awt.image.BufferedImage
+import java.util.concurrent.ConcurrentHashMap
 import javax.imageio.ImageIO
 
 data class ServerConfig(
@@ -163,6 +165,7 @@ class DiffusionDeskClient(
     private val json = Json {
         ignoreUnknownKeys = true
     }
+    private val generationEventStreams = ConcurrentHashMap<String, InputStream>()
 
     private fun requestBuilder(uri: String): HttpRequest.Builder =
         HttpRequest.newBuilder(URI.create(uri)).apply {
@@ -974,40 +977,53 @@ class DiffusionDeskClient(
             check(response.statusCode() in 200..299) { "Generation event stream failed with ${response.statusCode()}" }
 
             var finalResult: GenerationResult? = null
-            BufferedReader(InputStreamReader(response.body(), StandardCharsets.UTF_8)).use { reader ->
-                var eventName = "message"
-                val dataLines = mutableListOf<String>()
+            val responseStream = response.body()
+            generationEventStreams[jobId] = responseStream
+            try {
+                BufferedReader(InputStreamReader(responseStream, StandardCharsets.UTF_8)).use { reader ->
+                    var eventName = "message"
+                    val dataLines = mutableListOf<String>()
 
-                fun dispatchEvent() {
-                    if (dataLines.isEmpty()) {
+                    fun dispatchEvent() {
+                        if (dataLines.isEmpty()) {
+                            eventName = "message"
+                            return
+                        }
+
+                        val data = dataLines.joinToString("\n")
+                        val event = parseGenerationJobEvent(eventName, data)
+                        if (event is GenerationJobEvent.Completed) {
+                            finalResult = event.result
+                        }
+                        onEvent(event)
+
                         eventName = "message"
-                        return
+                        dataLines.clear()
                     }
 
-                    val data = dataLines.joinToString("\n")
-                    val event = parseGenerationJobEvent(eventName, data)
-                    if (event is GenerationJobEvent.Completed) {
-                        finalResult = event.result
+                    while (true) {
+                        val line = reader.readLine() ?: break
+                        when {
+                            line.isEmpty() -> dispatchEvent()
+                            line.startsWith(":") -> Unit
+                            line.startsWith("event:") -> eventName = line.removePrefix("event:").trim()
+                            line.startsWith("data:") -> dataLines += line.removePrefix("data:").trimStart()
+                        }
                     }
-                    onEvent(event)
-
-                    eventName = "message"
-                    dataLines.clear()
+                    dispatchEvent()
                 }
-
-                while (true) {
-                    val line = reader.readLine() ?: break
-                    when {
-                        line.isEmpty() -> dispatchEvent()
-                        line.startsWith(":") -> Unit
-                        line.startsWith("event:") -> eventName = line.removePrefix("event:").trim()
-                        line.startsWith("data:") -> dataLines += line.removePrefix("data:").trimStart()
-                    }
-                }
-                dispatchEvent()
+            } finally {
+                generationEventStreams.remove(jobId, responseStream)
+                responseStream.close()
             }
 
             finalResult ?: error("Generation event stream closed before completion.")
+        }
+    }
+
+    fun closeGenerationJobEventStream(jobId: String) {
+        generationEventStreams.remove(jobId)?.let { stream ->
+            runCatching { stream.close() }
         }
     }
 

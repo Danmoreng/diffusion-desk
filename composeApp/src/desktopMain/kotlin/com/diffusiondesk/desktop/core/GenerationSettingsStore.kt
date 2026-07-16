@@ -1,6 +1,9 @@
 package com.diffusiondesk.desktop.core
 
 import java.io.File
+import java.nio.file.AtomicMoveNotSupportedException
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
 import java.util.Properties
 
 data class SavedGenerationSettings(
@@ -43,9 +46,11 @@ class GenerationSettingsStore(
         }.getOrElse { SavedGenerationSettings() }
     }
 
+    @Synchronized
     fun save(settings: SavedGenerationSettings) {
-        if (!AppPaths.appDir.exists()) {
-            AppPaths.appDir.mkdirs()
+        val parentDir = settingsFile.absoluteFile.parentFile
+        if (!parentDir.exists()) {
+            parentDir.mkdirs()
         }
         val props = Properties()
         props.setProperty("prompt", settings.prompt)
@@ -58,6 +63,25 @@ class GenerationSettingsStore(
         props.setProperty("sampler", settings.sampler)
         props.setProperty("leftPanelWidthDp", settings.leftPanelWidthDp.toString())
         props.setProperty("ideogramJsonPrompt", settings.ideogramJsonPrompt)
-        settingsFile.outputStream().use { props.store(it, "Diffusion Desk Generation Settings") }
+        val tempFile = File.createTempFile("${settingsFile.name}.", ".tmp", parentDir)
+        try {
+            tempFile.outputStream().use { props.store(it, "Diffusion Desk Generation Settings") }
+            try {
+                Files.move(
+                    tempFile.toPath(),
+                    settingsFile.toPath(),
+                    StandardCopyOption.ATOMIC_MOVE,
+                    StandardCopyOption.REPLACE_EXISTING,
+                )
+            } catch (_: AtomicMoveNotSupportedException) {
+                Files.move(
+                    tempFile.toPath(),
+                    settingsFile.toPath(),
+                    StandardCopyOption.REPLACE_EXISTING,
+                )
+            }
+        } finally {
+            tempFile.delete()
+        }
     }
 }

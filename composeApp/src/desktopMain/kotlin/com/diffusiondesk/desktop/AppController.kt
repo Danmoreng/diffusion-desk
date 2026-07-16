@@ -95,6 +95,8 @@ class AppController {
         if (!closed.compareAndSet(false, true)) {
             return
         }
+        runCatching { settingsViewModel.flushSettings() }
+        runCatching { generationViewModel.flushSettings() }
         scope.cancel()
         llmWorkerPool.close()
         backendManager.close()

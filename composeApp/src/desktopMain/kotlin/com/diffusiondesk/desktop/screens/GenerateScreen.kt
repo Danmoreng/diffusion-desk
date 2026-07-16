@@ -6,6 +6,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Arrangement
@@ -215,8 +216,18 @@ fun GenerateScreen(
                 .weight(1f)
                 .padding(DeskScreenPadding),
         ) {
-            val minPanelWidth = 480.dp
-            val maxPanelWidth = minOf(900.dp, (maxWidth - 280.dp).coerceAtLeast(minPanelWidth))
+            val showInlineDebugConsole = showLlmDebugConsole && maxWidth >= 760.dp
+            val debugPanelWidth = when {
+                !showInlineDebugConsole -> 0.dp
+                maxWidth < 1100.dp -> 280.dp
+                else -> 430.dp
+            }
+            val previewReserve = 240.dp
+            val splitterReserve = DeskLayoutGap * (if (showInlineDebugConsole) 2 else 1)
+            val availablePanelWidth = (maxWidth - previewReserve - debugPanelWidth - splitterReserve).coerceAtLeast(280.dp)
+            val preferredMinPanelWidth = if (maxWidth < 900.dp || showInlineDebugConsole && maxWidth < 1200.dp) 360.dp else 480.dp
+            val minPanelWidth = minOf(preferredMinPanelWidth, availablePanelWidth)
+            val maxPanelWidth = maxOf(minPanelWidth, minOf(900.dp, availablePanelWidth))
             val density = LocalDensity.current
             var panelWidthDp by remember { mutableStateOf(state.leftPanelWidthDp.toFloat()) }
             var isDraggingPanel by remember { mutableStateOf(false) }
@@ -328,7 +339,7 @@ fun GenerateScreen(
                         .fillMaxHeight(),
                 )
 
-                if (showLlmDebugConsole) {
+                if (showInlineDebugConsole) {
                     Splitter(
                         modifier = Modifier
                             .fillMaxHeight()
@@ -339,10 +350,19 @@ fun GenerateScreen(
                         entries = llmDebugEntries,
                         onClear = onClearLlmDebugLog,
                         modifier = Modifier
-                            .width(430.dp)
+                            .width(debugPanelWidth)
                             .fillMaxHeight(),
                     )
                 }
+            }
+            if (showLlmDebugConsole && !showInlineDebugConsole) {
+                DeskStatusBadge(
+                    text = "Widen the window to show the LLM debug console",
+                    tone = DeskStatusTone.Warning,
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(8.dp),
+                )
             }
         }
 
@@ -3111,9 +3131,18 @@ internal fun ActionBar(
             modifier = Modifier.fillMaxSize(),
         ) {
             val compact = maxWidth < 1120.dp
+            val scrollCompact = maxWidth < 820.dp
+            val actionBarScrollState = rememberScrollState()
             Row(
                 modifier = Modifier
                     .fillMaxSize()
+                    .then(
+                        if (scrollCompact) {
+                            Modifier.horizontalScroll(actionBarScrollState)
+                        } else {
+                            Modifier
+                        },
+                    )
                     .padding(horizontal = 14.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(DeskGroupSpacing),

@@ -1,11 +1,13 @@
 package com.diffusiondesk.desktop
 
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
+import java.awt.Dimension
 
 fun main() = application {
     val controller = remember { AppController() }
@@ -20,6 +22,9 @@ fun main() = application {
         icon = painterResource("icons/app-icon.svg"),
         state = windowState,
     ) {
+        LaunchedEffect(Unit) {
+            window.minimumSize = Dimension(1000, 700)
+        }
         App(controller = controller)
     }
 }

@@ -100,7 +100,7 @@ class BackendManager(
             watchLogs(newProcess, logFile)
 
             var ready = false
-            repeat(60) { attempt ->
+            for (attempt in 0 until 60) {
                 if (!newProcess.isAlive) {
                     throw IllegalStateException("Image worker exited before becoming ready.")
                 }
@@ -113,7 +113,7 @@ class BackendManager(
                         baseUrl = baseUrl,
                     )
                     ready = true
-                    return@repeat
+                    break
                 }
 
                 _state.value = _state.value.copy(message = "Waiting for image worker startup... (${attempt + 1}/60)")

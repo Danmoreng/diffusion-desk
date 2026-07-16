@@ -151,7 +151,7 @@ class GalleryRepository(
                     """.trimIndent(),
                 )
                 if (where.isNotEmpty()) append(" WHERE ").append(where.joinToString(" AND "))
-                append(" GROUP BY i.id ORDER BY ").append(orderBy).append(" LIMIT 500")
+                append(" GROUP BY i.id ORDER BY ").append(orderBy)
             }
 
             conn.prepareStatement(sql).use { statement ->
@@ -332,6 +332,21 @@ class GalleryRepository(
     fun failLlmTagging(imageId: Long, presetId: String, message: String) {
         database.connection().use { conn ->
             updateLlmTaggingStatus(conn, imageId, "failed", presetId, message.take(500))
+        }
+    }
+
+    fun retryFailedLlmTags(): Int {
+        database.connection().use { conn ->
+            conn.prepareStatement(
+                """
+                UPDATE llm_tagging_queue
+                SET status = 'pending', error = '', updated_at = ?
+                WHERE status = 'failed'
+                """.trimIndent(),
+            ).use { statement ->
+                statement.setLong(1, System.currentTimeMillis())
+                return statement.executeUpdate()
+            }
         }
     }
 

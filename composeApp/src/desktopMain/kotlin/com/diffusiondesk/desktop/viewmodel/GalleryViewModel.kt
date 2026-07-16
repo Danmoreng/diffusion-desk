@@ -9,8 +9,11 @@ import com.diffusiondesk.desktop.core.GallerySortMode
 import com.diffusiondesk.desktop.core.DesktopSettingsStore
 import com.diffusiondesk.desktop.core.ImageTaggingService
 import com.diffusiondesk.desktop.core.LlmPresetStore
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -59,12 +62,16 @@ class GalleryViewModel(
         ),
     )
     val uiState: StateFlow<GalleryUiState> = _uiState.asStateFlow()
+    private var refreshJob: Job? = null
+    private var reloadJob: Job? = null
 
     fun refresh(outputDir: String) {
-        scope.launch {
+        reloadJob?.cancel()
+        refreshJob?.cancel()
+        refreshJob = scope.launch {
             update { copy(isIndexing = true, error = null, message = "Loading gallery...") }
             loadCachedList(keepIndexing = true)
-            runCatching {
+            runCatchingPreservingCancellation {
                 withContext(Dispatchers.IO) {
                     val indexed = repository.indexOutputDirectory(outputDir)
                     val current = _uiState.value
@@ -108,14 +115,12 @@ class GalleryViewModel(
     }
 
     fun reloadList() {
-        scope.launch {
-            loadCachedList(keepIndexing = _uiState.value.isIndexing)
-        }
+        scheduleReload()
     }
 
     fun updateQuery(value: String) {
         update { copy(query = value) }
-        reloadList()
+        scheduleReload(SEARCH_DEBOUNCE_MS)
     }
 
     fun updateModelFilter(value: String) {
@@ -201,18 +206,24 @@ class GalleryViewModel(
         if (selected.isEmpty()) return
         scope.launch {
             update { copy(isDeletingImage = true, error = null) }
-            runCatching {
+            val results = runCatchingPreservingCancellation {
                 withContext(Dispatchers.IO) {
-                    selected.forEach(repository::deleteImage)
+                    selected.map { image ->
+                        image to runCatching { repository.deleteImage(image) }
+                    }
                 }
-            }.onSuccess {
+            }
+            results.onSuccess { deletions ->
                 loadCachedList()
+                val failed = deletions.filter { (_, result) -> result.isFailure }
+                val deletedCount = deletions.size - failed.size
                 update {
                     copy(
                         selectedImageIds = emptySet(),
                         isDeletingImage = false,
-                        message = "Deleted ${selected.size} selected image(s).",
-                        error = null,
+                        message = "Deleted $deletedCount selected image(s).",
+                        error = failed.firstOrNull()?.second?.exceptionOrNull()?.message
+                            ?.let { "${failed.size} image(s) could not be deleted: $it" },
                     )
                 }
             }.onFailure { error ->
@@ -409,9 +420,9 @@ class GalleryViewModel(
     fun reusableParams(image: GalleryImage): GalleryReusableParams = repository.reusableParams(image)
 
     private suspend fun loadCachedList(keepIndexing: Boolean = false) {
-        runCatching {
+        runCatchingPreservingCancellation {
+            val current = _uiState.value
             withContext(Dispatchers.IO) {
-                val current = _uiState.value
                 Triple(
                     repository.listImages(
                         query = current.query,
@@ -445,6 +456,18 @@ class GalleryViewModel(
         }
     }
 
+    private fun scheduleReload(delayMillis: Long = 0L) {
+        refreshJob?.cancel()
+        refreshJob = null
+        reloadJob?.cancel()
+        reloadJob = scope.launch {
+            if (delayMillis > 0L) {
+                delay(delayMillis)
+            }
+            loadCachedList(keepIndexing = false)
+        }
+    }
+
     private fun update(transform: GalleryUiState.() -> GalleryUiState) {
         _uiState.value = _uiState.value.transform()
     }
@@ -475,5 +498,15 @@ class GalleryViewModel(
 
     companion object {
         const val AllModelsFilterLabel = "All models"
+        private const val SEARCH_DEBOUNCE_MS = 200L
     }
 }
+
+private inline fun <T> runCatchingPreservingCancellation(block: () -> T): Result<T> =
+    try {
+        Result.success(block())
+    } catch (error: CancellationException) {
+        throw error
+    } catch (error: Throwable) {
+        Result.failure(error)
+    }

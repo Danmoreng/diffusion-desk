@@ -1,5 +1,6 @@
 package com.diffusiondesk.desktop.core
 
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.util.Locale
@@ -35,7 +36,7 @@ class ImageTaggingService(
         settings: DesktopSettings,
         preset: LlmPreset,
     ): Result<TaggingResult> = withContext(Dispatchers.IO) {
-        runCatching {
+        runCatchingPreservingCancellation {
             tagClaimedImage(settings, preset, claimNextImage(preset))
         }
     }
@@ -45,7 +46,7 @@ class ImageTaggingService(
         preset: LlmPreset,
         image: GalleryImage,
     ): Result<TaggingResult> = withContext(Dispatchers.IO) {
-        runCatching {
+        runCatchingPreservingCancellation {
             tagClaimedImage(settings, preset, image)
         }
     }
@@ -55,17 +56,21 @@ class ImageTaggingService(
         preset: LlmPreset,
         maxItems: Int = Int.MAX_VALUE,
         refreshOutputIndex: Boolean = true,
+        retryFailed: Boolean = false,
     ): Result<TaggingBatchResult> = withContext(Dispatchers.IO) {
-        runCatching {
+        runCatchingPreservingCancellation {
             if (refreshOutputIndex) {
                 galleryRepository.indexOutputDirectory(settings.outputDir)
+            }
+            if (retryFailed) {
+                galleryRepository.retryFailedLlmTags()
             }
 
             var completed = 0
             var failed = 0
             while (completed + failed < maxItems) {
                 val image = galleryRepository.claimNextPendingLlmTag(preset.id) ?: break
-                runCatching {
+                runCatchingPreservingCancellation {
                     tagClaimedImage(settings, preset, image)
                 }.onSuccess {
                     completed += 1
@@ -125,6 +130,8 @@ class ImageTaggingService(
                 title = metadata.title,
                 tags = newTags,
             )
+        } catch (error: CancellationException) {
+            throw error
         } catch (error: Throwable) {
             galleryRepository.failLlmTagging(
                 imageId = image.id,
@@ -132,8 +139,17 @@ class ImageTaggingService(
                 message = error.message ?: "Tagging failed.",
             )
             throw error
-        }
     }
+}
+
+    private inline fun <T> runCatchingPreservingCancellation(block: () -> T): Result<T> =
+        try {
+            Result.success(block())
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Throwable) {
+            Result.failure(error)
+        }
 
     private fun buildPrompt(image: GalleryImage): String {
         return buildString {

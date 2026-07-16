@@ -35,11 +35,15 @@ import androidx.compose.ui.graphics.toComposeImageBitmap
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.json.Json
@@ -54,6 +58,7 @@ import java.awt.RenderingHints
 import java.awt.image.BufferedImage
 import java.io.ByteArrayOutputStream
 import java.io.File
+import java.net.URI
 import java.util.Base64
 import java.util.UUID
 import javax.imageio.ImageIO
@@ -130,6 +135,45 @@ data class GenerationHistoryItem(
     val error: String? = null,
     val generationTime: Double? = null,
 )
+
+internal fun GenerationUiState.compactGenerationHistory(
+    terminalLimit: Int,
+    imagePayloadLimit: Int,
+): GenerationUiState {
+    val currentId = currentHistoryItem?.id
+    val retainedTerminalIds = history.asReversed()
+        .asSequence()
+        .filter { it.status != GenerationStatus.Pending && it.status != GenerationStatus.Processing }
+        .take(terminalLimit.coerceAtLeast(0))
+        .map { it.id }
+        .toMutableSet()
+        .apply { currentId?.let(::add) }
+    val retainedImageIds = history.asReversed()
+        .asSequence()
+        .filter { it.status != GenerationStatus.Pending && it.status != GenerationStatus.Processing }
+        .take(imagePayloadLimit.coerceAtLeast(0))
+        .map { it.id }
+        .toMutableSet()
+        .apply { currentId?.let(::add) }
+    val retainedHistory = history.mapNotNull { item ->
+        val retainItem = item.status == GenerationStatus.Pending ||
+            item.status == GenerationStatus.Processing ||
+            item.id in retainedTerminalIds
+        when {
+            !retainItem -> null
+            item.images.isNotEmpty() && item.id !in retainedImageIds -> item.copy(images = emptyList())
+            else -> item
+        }
+    }
+    if (retainedHistory == history) return this
+    val retainedIndex = if (currentId == null && historyIndex < 0) {
+        -1
+    } else {
+        currentId?.let { id -> retainedHistory.indexOfFirst { it.id == id } }?.takeIf { it >= 0 }
+            ?: retainedHistory.lastIndex
+    }
+    return copy(history = retainedHistory, historyIndex = retainedIndex)
+}
 
 data class GenerationProgressStage(
     val key: String,
@@ -782,6 +826,8 @@ class GenerationViewModel(
     private var currentEtaPhaseStartStep = 0
     private var autoTaggingJob: Job? = null
     private var activeGenerationJobId: String? = null
+    private var cancelStreamTimeoutJob: Job? = null
+    private var settingsPersistenceJob: Job? = null
     private var generationCancelRequested = false
     private var pendingAutoTagImageCount = 0
     private var compositionEditStartJson: String? = null
@@ -789,8 +835,20 @@ class GenerationViewModel(
     private var stagedIdeogramDraft: StagedIdeogramDraft? = null
     private var stagedIdeogramSourcePrompt: String? = null
     private val recentStepTimes = ArrayDeque<Double>()
+    private val historyImageReloadJobs = mutableMapOf<String, Job>()
+    private val pendingSettings = Channel<SavedGenerationSettings>(Channel.CONFLATED)
 
     init {
+        settingsPersistenceJob = scope.launch(Dispatchers.IO) {
+            for (first in pendingSettings) {
+                delay(GENERATION_SETTINGS_SAVE_DEBOUNCE_MS)
+                var latest = first
+                while (true) {
+                    latest = pendingSettings.tryReceive().getOrNull() ?: break
+                }
+                runCatching { generationSettingsStore.save(latest) }
+            }
+        }
         reloadPresets()
         scope.launch {
             var loadedReadyBaseUrl: String? = null
@@ -2517,10 +2575,22 @@ class GenerationViewModel(
         }
 
         val jobId = activeGenerationJobId ?: return
+        cancelStreamTimeoutJob?.cancel()
+        cancelStreamTimeoutJob = scope.launch {
+            delay(GENERATION_CANCEL_STREAM_TIMEOUT_MS)
+            if (generationCancelRequested && activeGenerationJobId == jobId) {
+                client.closeGenerationJobEventStream(jobId)
+            }
+        }
         scope.launch {
             client.cancelGenerationJob(backendManager.state.value.baseUrl, jobId)
+                .onSuccess {
+                    client.closeGenerationJobEventStream(jobId)
+                }
                 .onFailure { error ->
                     generationCancelRequested = false
+                    cancelStreamTimeoutJob?.cancel()
+                    cancelStreamTimeoutJob = null
                     update {
                         copy(
                             isCancelling = false,
@@ -2738,6 +2808,7 @@ class GenerationViewModel(
                 },
             )
         }
+        reloadHistoryImagesIfNeeded(item.id)
     }
 
     private fun processQueue() {
@@ -2801,6 +2872,7 @@ class GenerationViewModel(
                     }
                     activeGenerationJobId = null
                     generationCancelRequested = false
+                    compactHistory()
                     processQueue()
                     return@launch
                 }
@@ -2810,6 +2882,7 @@ class GenerationViewModel(
                 activeGenerationJobId = null
                 generationCancelRequested = false
                 update { copy(isGenerating = false, isCancelling = false) }
+                compactHistory()
                 processQueue()
                 return@launch
             }
@@ -2821,6 +2894,7 @@ class GenerationViewModel(
                 update { copy(message = "Queued worker job ${submission.id}.") }
                 if (generationCancelRequested) {
                     client.cancelGenerationJob(baseUrl, submission.id).getOrThrow()
+                    throw GenerationCancelledException("Generation cancelled.")
                 }
                 client.streamGenerationJobEvents(baseUrl, submission.id) { event ->
                     when (event) {
@@ -2893,8 +2967,11 @@ class GenerationViewModel(
                     }
                 }
             }
+            compactHistory()
 
             activeGenerationJobId = null
+            cancelStreamTimeoutJob?.cancel()
+            cancelStreamTimeoutJob = null
             generationCancelRequested = false
             update { copy(isGenerating = false, isCancelling = false) }
 
@@ -3229,6 +3306,55 @@ class GenerationViewModel(
         }
     }
 
+    private fun compactHistory() {
+        update {
+            compactGenerationHistory(
+                terminalLimit = MAX_RETAINED_TERMINAL_GENERATIONS,
+                imagePayloadLimit = MAX_RETAINED_GENERATION_IMAGE_PAYLOADS,
+            )
+        }
+    }
+
+    private fun reloadHistoryImagesIfNeeded(itemId: String) {
+        historyImageReloadJobs
+            .filterKeys { it != itemId }
+            .values
+            .forEach(Job::cancel)
+        historyImageReloadJobs.keys.removeAll { it != itemId }
+        val item = _uiState.value.history.firstOrNull { it.id == itemId } ?: return
+        if (item.images.isNotEmpty() || item.imageUrls.isEmpty() || historyImageReloadJobs[itemId]?.isActive == true) {
+            return
+        }
+        historyImageReloadJobs[itemId] = scope.launch {
+            val result = loadHistoryImages(item)
+            result.onSuccess { images ->
+                val index = _uiState.value.history.indexOfFirst { it.id == itemId }
+                if (index >= 0) {
+                    updateHistoryItem(index) { it.copy(images = images) }
+                    if (_uiState.value.currentHistoryItem?.id == itemId) {
+                        update { copy(images = images, error = null) }
+                    }
+                }
+            }.onFailure { error ->
+                if (_uiState.value.currentHistoryItem?.id == itemId) {
+                    update { copy(error = error.message ?: "Could not reload the history image.") }
+                }
+            }
+            historyImageReloadJobs.remove(itemId)
+        }
+    }
+
+    private suspend fun loadHistoryImages(item: GenerationHistoryItem): Result<List<GeneratedImage>> {
+        val outputDir = settingsStore.load().outputDir
+        val diskFiles = item.imageUrls.mapNotNull { resolveGeneratedOutputFile(outputDir, it) }
+        if (diskFiles.size == item.imageUrls.size && diskFiles.all(File::isFile)) {
+            return withContext(Dispatchers.IO) {
+                runCatching { diskFiles.map(File::toGeneratedImage) }
+            }
+        }
+        return client.fetchGeneratedImages(backendManager.state.value.baseUrl, item.imageUrls)
+    }
+
     private fun selectedPresetOrNull(): ImagePreset? {
         val state = _uiState.value
         return state.presets.firstOrNull { it.id == state.selectedPresetId }
@@ -3241,8 +3367,18 @@ class GenerationViewModel(
         ((value + RESOLUTION_STEP / 2) / RESOLUTION_STEP * RESOLUTION_STEP)
             .coerceIn(MIN_RESOLUTION, MAX_RESOLUTION)
 
+    @Synchronized
     private fun update(transform: GenerationUiState.() -> GenerationUiState) {
         _uiState.value = _uiState.value.transform()
+        pendingSettings.trySend(_uiState.value.toSavedSettings())
+    }
+
+    fun flushSettings() {
+        val persistenceJob = settingsPersistenceJob
+        settingsPersistenceJob = null
+        if (persistenceJob != null) {
+            runBlocking { persistenceJob.cancelAndJoin() }
+        }
         generationSettingsStore.save(_uiState.value.toSavedSettings())
     }
 
@@ -3298,6 +3434,10 @@ class GenerationViewModel(
         const val RESOLUTION_STEP = 16
         const val MIN_LEFT_PANEL_WIDTH_DP = 480
         const val MAX_LEFT_PANEL_WIDTH_DP = 900
+        private const val MAX_RETAINED_TERMINAL_GENERATIONS = 100
+        private const val MAX_RETAINED_GENERATION_IMAGE_PAYLOADS = 20
+        private const val GENERATION_SETTINGS_SAVE_DEBOUNCE_MS = 250L
+        private const val GENERATION_CANCEL_STREAM_TIMEOUT_MS = 10_000L
         private const val RECENT_STEP_TIME_WINDOW = 5
         private const val PROGRESS_STAGE_PREPARE = "prepare"
         private const val PROGRESS_STAGE_SAMPLING = "sampling"
@@ -3305,6 +3445,24 @@ class GenerationViewModel(
         private const val PROGRESS_STAGE_DECODE = "decode"
     }
 }
+
+internal fun resolveGeneratedOutputFile(outputDir: String, imageUrl: String): File? = runCatching {
+    val path = if (imageUrl.startsWith("http://") || imageUrl.startsWith("https://")) {
+        URI(imageUrl).path
+    } else {
+        imageUrl.substringBefore('?').substringBefore('#')
+    }
+    val marker = "/outputs/"
+    val markerIndex = path.indexOf(marker)
+    if (markerIndex < 0) return@runCatching null
+    val relativePath = path.substring(markerIndex + marker.length)
+        .replace('/', File.separatorChar)
+        .trimStart(File.separatorChar)
+    if (relativePath.isBlank()) return@runCatching null
+    val root = File(outputDir).canonicalFile
+    val resolved = File(root, relativePath).canonicalFile
+    resolved.takeIf { it.toPath().startsWith(root.toPath()) }
+}.getOrNull()
 
 internal fun <T> selectCompositionReferenceImage(image: T?, enabled: Boolean, resolutionModified: Boolean): T? =
     image.takeIf { enabled && !resolutionModified }
@@ -3326,7 +3484,7 @@ private fun File.toGeneratedImage(): GeneratedImage {
         bitmap = image.toComposeImageBitmap(),
         bufferedImage = image,
         bytes = bytes,
-        sourceUrl = absolutePath,
+        sourceUrl = toURI().toString(),
         generationTime = null,
     )
 }

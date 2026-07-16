@@ -398,65 +398,81 @@ private fun GalleryToolbar(
             }
         }
 
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(DeskLayoutGap),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            DeskTextField(
-                label = "",
-                value = state.query,
-                onValueChange = onQueryChange,
-                placeholder = "Search images",
-                modifier = Modifier.weight(1f),
-            )
-            if (state.keywords.isNotEmpty() || state.selectedKeywords.isNotEmpty()) {
-                GalleryKeywordPicker(
-                    keywords = state.keywords,
-                    selectedKeywords = state.selectedKeywords,
-                    draft = keywordFilterDraft,
-                    onDraftChange = { keywordFilterDraft = it },
-                    onSelectKeyword = {
-                        onSelectKeyword(it)
-                        keywordFilterDraft = ""
-                    },
-                    onClearKeywordFilter = {
-                        onClearKeywordFilter()
-                        keywordFilterDraft = ""
-                    },
-                    modifier = Modifier.weight(0.9f),
-                )
+        BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+            val compactFilters = maxWidth < 900.dp
+            Column(verticalArrangement = Arrangement.spacedBy(DeskControlSpacing)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(DeskLayoutGap),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    DeskTextField(
+                        label = "",
+                        value = state.query,
+                        onValueChange = onQueryChange,
+                        placeholder = "Search images",
+                        modifier = Modifier.weight(1f),
+                    )
+                    if (!compactFilters && (state.keywords.isNotEmpty() || state.selectedKeywords.isNotEmpty())) {
+                        GalleryKeywordPicker(
+                            keywords = state.keywords,
+                            selectedKeywords = state.selectedKeywords,
+                            draft = keywordFilterDraft,
+                            onDraftChange = { keywordFilterDraft = it },
+                            onSelectKeyword = {
+                                onSelectKeyword(it)
+                                keywordFilterDraft = ""
+                            },
+                            onClearKeywordFilter = {
+                                onClearKeywordFilter()
+                                keywordFilterDraft = ""
+                            },
+                            modifier = Modifier.weight(0.9f),
+                        )
+                    }
+                    if (!compactFilters) {
+                        GalleryFilterControls(
+                            state = state,
+                            onModelFilterChange = onModelFilterChange,
+                            onDateFilterChange = onDateFilterChange,
+                            onSortModeChange = onSortModeChange,
+                        )
+                    }
+                }
+                if (compactFilters) {
+                    if (state.keywords.isNotEmpty() || state.selectedKeywords.isNotEmpty()) {
+                        GalleryKeywordPicker(
+                            keywords = state.keywords,
+                            selectedKeywords = state.selectedKeywords,
+                            draft = keywordFilterDraft,
+                            onDraftChange = { keywordFilterDraft = it },
+                            onSelectKeyword = {
+                                onSelectKeyword(it)
+                                keywordFilterDraft = ""
+                            },
+                            onClearKeywordFilter = {
+                                onClearKeywordFilter()
+                                keywordFilterDraft = ""
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(DeskLayoutGap),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        GalleryFilterControls(
+                            state = state,
+                            onModelFilterChange = onModelFilterChange,
+                            onDateFilterChange = onDateFilterChange,
+                            onSortModeChange = onSortModeChange,
+                        )
+                    }
+                }
             }
-            DeskCompactDropdownField(
-                label = "Model",
-                value = state.selectedModelId.ifBlank { GalleryViewModel.AllModelsFilterLabel },
-                options = listOf(GalleryViewModel.AllModelsFilterLabel) + state.availableModels,
-                onValueChange = onModelFilterChange,
-                modifier = Modifier.width(190.dp),
-            )
-            DeskCompactDropdownField(
-                label = "Date",
-                value = state.selectedDateFilter.label,
-                options = GalleryDateFilter.entries.map { it.label },
-                onValueChange = onDateFilterChange,
-                modifier = Modifier.width(150.dp),
-            )
-            DeskCompactDropdownField(
-                label = "Sort",
-                value = state.sortMode.label,
-                options = GallerySortMode.entries.map { it.label },
-                onValueChange = { onSortModeChange(GallerySortMode.fromLabel(it)) },
-                modifier = Modifier.width(150.dp),
-            )
-            Text(
-                text = when {
-                    state.isIndexing && state.images.isEmpty() -> "Indexing..."
-                    state.isIndexing -> "${state.images.size} images, refreshing..."
-                    else -> "${state.images.size} images"
-                },
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
         }
 
         Row(
@@ -541,6 +557,45 @@ private fun GalleryToolbar(
             )
         }
     }
+}
+
+@Composable
+private fun GalleryFilterControls(
+    state: GalleryUiState,
+    onModelFilterChange: (String) -> Unit,
+    onDateFilterChange: (String) -> Unit,
+    onSortModeChange: (GallerySortMode) -> Unit,
+) {
+    DeskCompactDropdownField(
+        label = "Model",
+        value = state.selectedModelId.ifBlank { GalleryViewModel.AllModelsFilterLabel },
+        options = listOf(GalleryViewModel.AllModelsFilterLabel) + state.availableModels,
+        onValueChange = onModelFilterChange,
+        modifier = Modifier.width(190.dp),
+    )
+    DeskCompactDropdownField(
+        label = "Date",
+        value = state.selectedDateFilter.label,
+        options = GalleryDateFilter.entries.map { it.label },
+        onValueChange = onDateFilterChange,
+        modifier = Modifier.width(150.dp),
+    )
+    DeskCompactDropdownField(
+        label = "Sort",
+        value = state.sortMode.label,
+        options = GallerySortMode.entries.map { it.label },
+        onValueChange = { onSortModeChange(GallerySortMode.fromLabel(it)) },
+        modifier = Modifier.width(150.dp),
+    )
+    Text(
+        text = when {
+            state.isIndexing && state.images.isEmpty() -> "Indexing..."
+            state.isIndexing -> "${state.images.size} images, refreshing..."
+            else -> "${state.images.size} images"
+        },
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
 }
 
 @Composable
